@@ -6,6 +6,7 @@ import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { Shield, FileText, Lock, CheckCircle, ChevronRight, ChevronDown, Heart, Clock, Database, Eye } from "lucide-react";
 import { useState } from "react";
+import { extractTenantInfo, logTenantAccess } from "~/lib/tenant-tracker";
 
 export default function HomePage() {
   const { instance, accounts } = useMsal();
@@ -17,7 +18,24 @@ export default function HomePage() {
 
   const handleSignIn = async () => {
     try {
-      await instance.loginPopup(loginRequest);
+      const response = await instance.loginPopup(loginRequest);
+      
+      // Log tenant access immediately after successful login
+      if (response && response.account) {
+        const tenantInfo = extractTenantInfo(response.account);
+        logTenantAccess(tenantInfo, "Homepage-Login-Success");
+        
+        // Also log with explicit details
+        console.log(`
+==== NEW USER LOGIN ====
+Tenant ID: ${response.account.tenantId}
+User UPN: ${response.account.username}
+User Name: ${response.account.name}
+Time: ${new Date().toISOString()}
+========================
+        `);
+      }
+      
       router.push("/dashboard");
     } catch (error) {
       console.error("Login failed:", error);

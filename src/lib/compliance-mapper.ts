@@ -307,13 +307,15 @@ export function generateComplianceSummary(configurations: any[]): ComplianceSumm
     const controls = identifySecurityControls(config);
     
     for (const controlKey of controls) {
-      summary.coveredControls[controlKey].covered = true;
-      summary.coveredControls[controlKey].configurations.push(config.displayName || config.name || 'Unnamed');
-      
-      // Identify platform
-      const platform = config.platforms || config.platformType || 'Unknown';
-      if (!summary.coveredControls[controlKey].platforms.includes(platform)) {
-        summary.coveredControls[controlKey].platforms.push(platform);
+      if (summary.coveredControls[controlKey]) {
+        summary.coveredControls[controlKey].covered = true;
+        summary.coveredControls[controlKey].configurations.push(config.displayName || config.name || 'Unnamed');
+        
+        // Identify platform
+        const platform = config.platforms || config.platformType || 'Unknown';
+        if (!summary.coveredControls[controlKey].platforms.includes(platform)) {
+          summary.coveredControls[controlKey].platforms.push(platform);
+        }
       }
     }
   }
@@ -330,7 +332,7 @@ export function generateComplianceSummary(configurations: any[]): ComplianceSumm
       if (control.complianceMapping[framework]) {
         control.complianceMapping[framework].forEach(c => allControls.add(c));
         
-        if (summary.coveredControls[key].covered) {
+        if (summary.coveredControls[key]?.covered) {
           control.complianceMapping[framework].forEach(c => coveredControlsSet.add(c));
         }
       }
@@ -359,7 +361,9 @@ export function groupConfigurationsByControl(configurations: any[]): Record<stri
   for (const config of configurations) {
     const controls = identifySecurityControls(config);
     for (const control of controls) {
-      grouped[control].push(config);
+      if (grouped[control]) {
+        grouped[control].push(config);
+      }
     }
   }
   

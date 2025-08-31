@@ -54,7 +54,7 @@ export async function generateExecutiveSummaryPDF(data: ExecutiveSummaryData): P
   const complianceSummary = generateComplianceSummary(allConfigurations);
 
   // Helper functions
-  const checkPageBreak = (neededSpace: number = 30) => {
+  const checkPageBreak = (neededSpace = 30) => {
     if (yPosition > pageHeight - neededSpace) {
       doc.addPage();
       yPosition = margin;
@@ -91,7 +91,7 @@ export async function generateExecutiveSummaryPDF(data: ExecutiveSummaryData): P
     doc.setTextColor(0, 0, 0);
   };
 
-  const addText = (text: string, fontSize: number = 11, isBold: boolean = false) => {
+  const addText = (text: string, fontSize = 11, isBold = false) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", isBold ? "bold" : "normal");
     const lines = doc.splitTextToSize(text, maxWidth);
@@ -103,7 +103,7 @@ export async function generateExecutiveSummaryPDF(data: ExecutiveSummaryData): P
     }
   };
 
-  const addBulletPoint = (text: string, indent: number = 5) => {
+  const addBulletPoint = (text: string, indent = 5) => {
     checkPageBreak();
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
@@ -217,13 +217,15 @@ export async function generateExecutiveSummaryPDF(data: ExecutiveSummaryData): P
   addSectionHeader("Security Control Coverage");
 
   // Security controls table
-  const controlsData = Object.entries(complianceSummary.coveredControls).map(([key, data]) => ({
-    name: SECURITY_CONTROLS[key].name,
-    status: data.covered ? "✓" : "✗",
-    covered: data.covered,
-    configurations: data.configurations.length,
-    platforms: data.platforms
-  }));
+  const controlsData = Object.entries(complianceSummary.coveredControls)
+    .filter(([key]) => SECURITY_CONTROLS[key]) // Filter out any undefined controls
+    .map(([key, data]) => ({
+      name: SECURITY_CONTROLS[key]!.name,
+      status: data.covered ? "✓" : "✗",
+      covered: data.covered,
+      configurations: data.configurations.length,
+      platforms: data.platforms
+    }));
 
   // Group by covered/not covered
   const coveredControls = controlsData.filter(c => c.covered);
@@ -387,7 +389,7 @@ function generateRecommendations(summary: any): string[] {
   // Check for missing critical controls
   const criticalControls = ["diskEncryption", "antimalware", "firewall", "passwordPolicy"];
   criticalControls.forEach(control => {
-    if (!summary.coveredControls[control]?.covered) {
+    if (!summary.coveredControls[control]?.covered && SECURITY_CONTROLS[control]) {
       recommendations.push(`Implement ${SECURITY_CONTROLS[control].name} to enhance security posture`);
     }
   });

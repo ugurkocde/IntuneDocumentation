@@ -467,7 +467,7 @@ export class DetailedIntuneService {
 
   // Helper function to determine configuration type
   private getConfigurationType(odataType: string): string {
-    const typeMap: { [key: string]: string } = {
+    const typeMap: Record<string, string> = {
       "#microsoft.graph.windows10GeneralConfiguration": "Windows 10 General Configuration",
       "#microsoft.graph.windows10EndpointProtectionConfiguration": "Windows 10 Endpoint Protection",
       "#microsoft.graph.windows10CustomConfiguration": "Windows 10 Custom Configuration",

@@ -114,7 +114,7 @@ export default function DashboardPage() {
     if (accounts.length === 0) {
       router.push("/");
     } else {
-      fetchConfigurations();
+      void fetchConfigurations();
     }
   }, [accounts, router]);
 

@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { DetailedIntuneService } from "~/lib/intune-detailed-client";
 
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get("Authorization");
     
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

@@ -72,6 +72,7 @@ function analyzeConfigurations(data: DetailedPdfData) {
   
   // Helper function to normalize platform names
   const normalizePlatform = (platform: string): string => {
+    if (typeof platform !== 'string') return String(platform);
     const lower = platform.toLowerCase();
     if (lower.includes("windows")) return "Windows";
     if (lower.includes("mac")) return "macOS";
@@ -90,11 +91,14 @@ function analyzeConfigurations(data: DetailedPdfData) {
     } else if (config.platformType) {
       platform = normalizePlatform(config.platformType);
     } else if (config["@odata.type"]) {
-      const type = config["@odata.type"].toLowerCase();
-      if (type.includes("windows")) platform = "Windows";
-      else if (type.includes("mac")) platform = "macOS";
-      else if (type.includes("ios")) platform = "iOS";
-      else if (type.includes("android")) platform = "Android";
+      const odataType = config["@odata.type"];
+      if (typeof odataType === 'string') {
+        const type = odataType.toLowerCase();
+        if (type.includes("windows")) platform = "Windows";
+        else if (type.includes("mac")) platform = "macOS";
+        else if (type.includes("ios")) platform = "iOS";
+        else if (type.includes("android")) platform = "Android";
+      }
     }
     
     if (platform) {
@@ -335,7 +339,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     const wrapTechnicalString = (str: string, maxWidth: number): string[] => {
       // For technical strings like "defender_configuration_enableconvertwarntoblock_1"
       // Break at underscores if the string is too long
-      if (str.includes('_') && str.length > 40) {
+      if (typeof str === 'string' && str.includes('_') && str.length > 40) {
         const parts = str.split('_');
         const lines: string[] = [];
         let currentLine = '';
@@ -470,9 +474,9 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         
         // Extract the actual base64 data and format
         let format = 'PNG';
-        if (imgData.includes('image/jpeg') || imgData.includes('image/jpg')) {
+        if (typeof imgData === 'string' && (imgData.includes('image/jpeg') || imgData.includes('image/jpg'))) {
           format = 'JPEG';
-        } else if (imgData.includes('image/png')) {
+        } else if (typeof imgData === 'string' && imgData.includes('image/png')) {
           format = 'PNG';
         }
         
@@ -578,7 +582,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     try {
       const imgData = branding.logo.dataUrl;
       let format = 'PNG';
-      if (imgData.includes('image/jpeg') || imgData.includes('image/jpg')) {
+      if (typeof imgData === 'string' && (imgData.includes('image/jpeg') || imgData.includes('image/jpg'))) {
         format = 'JPEG';
       }
       
@@ -1120,6 +1124,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     if (data.deviceCounts) {
       Object.entries(data.deviceCounts).forEach(([os, count]) => {
         const normalizedPlatform = (() => {
+          if (typeof os !== 'string') return String(os);
           const lower = os.toLowerCase();
           if (lower.includes("windows")) return "Windows";
           if (lower.includes("mac")) return "macOS";
@@ -1545,7 +1550,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           let scriptText = script.scriptContent;
           try {
             // Check if it's base64 encoded
-            if (scriptText && !scriptText.includes(' ') && scriptText.length % 4 === 0) {
+            if (scriptText && typeof scriptText === 'string' && !scriptText.includes(' ') && scriptText.length % 4 === 0) {
               const decoded = atob(scriptText);
               scriptText = decoded;
             }
@@ -1608,7 +1613,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           let scriptText = script.scriptContent;
           try {
             // Check if it's base64 encoded
-            if (scriptText && !scriptText.includes(' ') && scriptText.length % 4 === 0) {
+            if (scriptText && typeof scriptText === 'string' && !scriptText.includes(' ') && scriptText.length % 4 === 0) {
               const decoded = atob(scriptText);
               scriptText = decoded;
             }

@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, Lock, CheckCircle, ChevronRight, ChevronDown, Heart, Clock, Database, Eye } from "lucide-react";
+import { Shield, FileText, Lock, CheckCircle, ChevronRight, ChevronDown, Heart, Clock, Database, Eye, Download } from "lucide-react";
 import { useState } from "react";
 
 export default function HomePage() {
@@ -122,6 +122,19 @@ export default function HomePage() {
                         <Clock className="w-4 h-4" />
                         <span>Takes 2-3 minutes</span>
                       </div>
+                    </div>
+                    {/* Sample PDF Download Button */}
+                    <div className="flex items-center gap-3">
+                      <a
+                        href="/api/pdf/sample"
+                        download="IntuneDocumentation-Sample.pdf"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-white/10 backdrop-blur-sm text-white rounded-lg hover:bg-white/20 transition-all border border-white/20 font-medium text-sm cursor-pointer"
+                        aria-label="Download Sample PDF"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Sample PDF
+                      </a>
+                      <span className="text-xs text-blue-200">See what you'll get</span>
                     </div>
                   </div>
                 ) : (

@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { graphScopes } from "~/lib/msal-config";
-import { extractTenantInfo, logTenantAccess } from "~/lib/tenant-tracker";
+import { useTenantLogging } from "~/hooks/use-tenant-logging";
 import { Card, CardHeader, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
@@ -66,6 +66,9 @@ interface IntuneConfigurations {
 export default function DashboardPage() {
   const { instance, accounts } = useMsal();
   const router = useRouter();
+  
+  // Log tenant access server-side only
+  useTenantLogging("Dashboard-Access");
   const [configurations, setConfigurations] = useState<IntuneConfigurations | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,24 +118,6 @@ export default function DashboardPage() {
     if (accounts.length === 0) {
       router.push("/");
     } else {
-      // Log tenant access when dashboard loads with authenticated user
-      const account = accounts[0];
-      const tenantInfo = extractTenantInfo(account || null);
-      logTenantAccess(tenantInfo, "Dashboard-Load");
-      
-      // Extra explicit logging for dashboard access
-      if (account) {
-        console.log(`
-[DASHBOARD-ACCESS] User accessing dashboard
-- Tenant ID: ${account.tenantId}
-- User UPN: ${account.username}
-- User Name: ${account.name || 'Unknown'}
-- Home Account ID: ${account.homeAccountId}
-- Environment: ${account.environment}
-        `);
-        console.warn(`IMPORTANT: User ${account.username} from tenant ${account.tenantId} is now on the dashboard`);
-      }
-      
       void fetchConfigurations();
     }
   }, [accounts, router]);

@@ -38,6 +38,19 @@ export function logTenantAccess(tenantInfo: TenantInfo | null, context: string =
     return;
   }
 
+  // CRITICAL: Log tenant ID and UPN explicitly for Vercel logs
+  console.log(`
+================================================================================
+[TENANT-LOGIN-DETECTED] ${context}
+--------------------------------------------------------------------------------
+TENANT_ID: ${tenantInfo.tenantId}
+USER_UPN: ${tenantInfo.userPrincipalName}
+USER_NAME: ${tenantInfo.userName || 'N/A'}
+TIMESTAMP: ${tenantInfo.timestamp}
+IP_ADDRESS: ${tenantInfo.ipAddress || 'N/A'}
+================================================================================
+  `);
+
   // Main tenant tracking log - This will appear in Vercel logs
   console.log(
     `[TENANT-ACCESS] ${JSON.stringify({
@@ -54,6 +67,9 @@ export function logTenantAccess(tenantInfo: TenantInfo | null, context: string =
 
   // Additional formatted log for readability
   console.log(`[TENANT-ACCESS] Tenant: ${tenantInfo.tenantId} | User: ${tenantInfo.userPrincipalName} | Context: ${context} | Time: ${tenantInfo.timestamp}`);
+  
+  // Extra explicit logging to ensure visibility
+  console.warn(`TENANT_TRACKING: Customer from tenant ${tenantInfo.tenantId} (${tenantInfo.userPrincipalName}) accessed ${context} at ${tenantInfo.timestamp}`);
 }
 
 // Helper function to get tenant info from ID token claims

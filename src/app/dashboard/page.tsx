@@ -117,7 +117,7 @@ export default function DashboardPage() {
     } else {
       // Log tenant access when dashboard loads with authenticated user
       const account = accounts[0];
-      const tenantInfo = extractTenantInfo(account);
+      const tenantInfo = extractTenantInfo(account || null);
       logTenantAccess(tenantInfo, "Dashboard-Load");
       
       void fetchConfigurations();

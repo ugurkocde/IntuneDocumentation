@@ -4,6 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { graphScopes } from "~/lib/msal-config";
+import { extractTenantInfo, logTenantAccess } from "~/lib/tenant-tracker";
 import { Card, CardHeader, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
@@ -114,6 +115,11 @@ export default function DashboardPage() {
     if (accounts.length === 0) {
       router.push("/");
     } else {
+      // Log tenant access when dashboard loads with authenticated user
+      const account = accounts[0];
+      const tenantInfo = extractTenantInfo(account);
+      logTenantAccess(tenantInfo, "Dashboard-Load");
+      
       void fetchConfigurations();
     }
   }, [accounts, router]);

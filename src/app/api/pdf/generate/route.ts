@@ -1,9 +1,13 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { generatePDF } from "~/lib/pdf-generator-jspdf";
+import { extractTenantFromRequest } from "~/lib/auth-middleware";
 
 export async function POST(request: NextRequest) {
   try {
+    // Log tenant access
+    extractTenantFromRequest(request);
+    
     const authHeader = request.headers.get("Authorization");
     
     if (!authHeader?.startsWith("Bearer ")) {

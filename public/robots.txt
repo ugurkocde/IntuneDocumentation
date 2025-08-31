@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+Allow: /dashboard
+
+# High-value pages for crawling
+Allow: /api/intune/*
+
+# Block unnecessary API routes from indexing
+Disallow: /api/auth/
+Disallow: /api/pdf/
+
+# Sitemap location
+Sitemap: https://intunedocumentation.com/sitemap.xml
+
+# Crawl delay (optional, can help with server load)
+Crawl-delay: 1

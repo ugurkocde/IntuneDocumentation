@@ -1,0 +1,27 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="102.4" fill="url(#gradient)"/>
+  <g transform="translate(128, 128)">
+    <!-- Document icon -->
+    <rect x="48" y="32" width="160" height="192" rx="8" fill="white" opacity="0.95"/>
+    
+    <!-- Lines representing text -->
+    <rect x="72" y="64" width="112" height="8" rx="4" fill="url(#gradient)" opacity="0.7"/>
+    <rect x="72" y="88" width="88" height="8" rx="4" fill="url(#gradient)" opacity="0.6"/>
+    <rect x="72" y="112" width="112" height="8" rx="4" fill="url(#gradient)" opacity="0.7"/>
+    <rect x="72" y="136" width="64" height="8" rx="4" fill="url(#gradient)" opacity="0.5"/>
+    <rect x="72" y="160" width="96" height="8" rx="4" fill="url(#gradient)" opacity="0.6"/>
+    <rect x="72" y="184" width="80" height="8" rx="4" fill="url(#gradient)" opacity="0.5"/>
+    
+    <!-- Intune/Cloud symbol -->
+    <circle cx="176" cy="176" r="48" fill="white"/>
+    <path d="M176 152 C150 152, 128 168, 128 188 C128 208, 150 224, 176 224 C202 224, 224 208, 224 188 C224 180, 218 172, 208 166 C208 158, 194 152, 176 152Z" fill="url(#gradient)"/>
+    <circle cx="176" cy="176" r="16" fill="white"/>
+  </g>
+  
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+</svg>

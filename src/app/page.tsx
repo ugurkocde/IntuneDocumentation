@@ -134,7 +134,7 @@ export default function HomePage() {
                         <Download className="w-4 h-4" />
                         Download Sample PDF
                       </a>
-                      <span className="text-xs text-blue-200">See what you'll get</span>
+                      <span className="text-xs text-blue-200">See what you&apos;ll get</span>
                     </div>
                   </div>
                 ) : (

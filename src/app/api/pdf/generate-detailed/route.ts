@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get("Authorization");
     
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Resolve group names
-    let groupNames: Map<string, string> = new Map();
+    let groupNames = new Map<string, string>();
     try {
       const groupResolver = new GroupResolver(accessToken);
       
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch device counts by platform
-    let deviceCounts: Record<string, number> = {};
+    const deviceCounts: Record<string, number> = {};
     try {
       const client = Client.init({
         authProvider: (done) => {

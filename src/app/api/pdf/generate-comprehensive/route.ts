@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get("Authorization");
     
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -62,7 +62,7 @@ async function generateComprehensivePDF(data: ComprehensiveData): Promise<Uint8A
   const maxWidth = pageWidth - 2 * margin;
 
   // Helper function to add text with automatic page breaks
-  const addText = (text: string, fontSize: number = 12, isBold: boolean = false) => {
+  const addText = (text: string, fontSize = 12, isBold = false) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", isBold ? "bold" : "normal");
     

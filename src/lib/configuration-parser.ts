@@ -82,7 +82,7 @@ export function parseDeviceConfiguration(config: any): Array<{
     description?: string;
   }>;
 }> {
-  const categories: { [key: string]: any[] } = {};
+  const categories: Record<string, any[]> = {};
   const ignoredKeys = [
     "id", "@odata.type", "@odata.context", "displayName", "description",
     "createdDateTime", "lastModifiedDateTime", "version", "assignments",
@@ -107,7 +107,7 @@ export function parseDeviceConfiguration(config: any): Array<{
   
   return Object.keys(categories).map(category => ({
     category,
-    settings: categories[category]
+    settings: categories[category] || []
   }));
 }
 
@@ -123,7 +123,7 @@ export function parseAdministrativeTemplate(definitionValues: any[]): Array<{
     const presentationValues = dv.presentationValues || [];
     
     let value = "Not configured";
-    let state = dv.enabled ? "Enabled" : "Disabled";
+    const state = dv.enabled ? "Enabled" : "Disabled";
     
     // Extract values from presentation values
     if (presentationValues.length > 0) {
@@ -240,7 +240,7 @@ export function parseAssignments(assignments: any[]): string {
 
 // Helper functions
 function getCategoryFromKey(key: string): string {
-  const categoryMap: { [key: string]: string } = {
+  const categoryMap: Record<string, string> = {
     password: "Password",
     firewall: "Firewall",
     defender: "Microsoft Defender",
@@ -274,7 +274,7 @@ function formatKeyName(key: string): string {
 
 function getPropertyDescription(key: string, odataType: string): string | undefined {
   // Add common property descriptions
-  const descriptions: { [key: string]: string } = {
+  const descriptions: Record<string, string> = {
     passwordMinimumLength: "Minimum number of characters required for device password",
     passwordRequired: "Require a password to unlock device",
     storageRequireEncryption: "Require encryption on device storage",

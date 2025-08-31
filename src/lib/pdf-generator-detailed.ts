@@ -188,13 +188,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const hexToRgb = (hex: string | undefined): [number, number, number] => {
     if (!hex) return [0, 0, 0];
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result
+    return result?.[1] && result[2] && result[3]
       ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
       : [0, 0, 0];
   };
 
   // Helper functions
-  const checkPageBreak = (neededSpace: number = 30) => {
+  const checkPageBreak = (neededSpace = 30) => {
     // Always leave at least 25mm for footer
     const minFooterSpace = 25;
     const totalSpaceNeeded = Math.max(neededSpace, minFooterSpace);
@@ -250,7 +250,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addWatermark();
   };
 
-  const addText = (text: string, fontSize: number = 11, isBold: boolean = false, color: [number, number, number] = [0, 0, 0]) => {
+  const addText = (text: string, fontSize = 11, isBold = false, color: [number, number, number] = [0, 0, 0]) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", isBold ? "bold" : "normal");
     doc.setTextColor(...color);
@@ -337,7 +337,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       // Break at underscores if the string is too long
       if (str.includes('_') && str.length > 40) {
         const parts = str.split('_');
-        let lines: string[] = [];
+        const lines: string[] = [];
         let currentLine = '';
         
         parts.forEach((part, idx) => {
@@ -369,8 +369,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.text("Setting", margin + 2, yPosition + 5);
-    doc.text("Value", margin + colWidths[0] + 2, yPosition + 5);
-    doc.text("Description", margin + colWidths[0] + colWidths[1] + 2, yPosition + 5);
+    doc.text("Value", margin + (colWidths[0] || 50) + 2, yPosition + 5);
+    doc.text("Description", margin + (colWidths[0] || 50) + (colWidths[1] || 65) + 2, yPosition + 5);
     yPosition += 8;
     
     // Table rows
@@ -379,11 +379,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     settings.forEach((setting, index) => {
       // Prepare text for all columns
-      const nameLines = doc.splitTextToSize(setting.name, colWidths[0] - 4);
+      const nameLines = doc.splitTextToSize(setting.name, (colWidths[0] || 50) - 4);
       const valueText = setting.value || "Not configured";
-      const valueLines = wrapTechnicalString(valueText, colWidths[1] - 4);
+      const valueLines = wrapTechnicalString(valueText, (colWidths[1] || 65) - 4);
       const descLines = setting.description 
-        ? doc.splitTextToSize(setting.description, colWidths[2] - 4)
+        ? doc.splitTextToSize(setting.description, (colWidths[2] || 65) - 4)
         : [""];
       
       // Calculate row height based on maximum lines needed
@@ -417,7 +417,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       textY = yPosition + 4;
       valueLines.forEach((line: string, lineIndex: number) => {
         if (lineIndex < maxLines) {
-          doc.text(line, margin + colWidths[0] + 2, textY);
+          doc.text(line, margin + (colWidths[0] || 50) + 2, textY);
           textY += 4;
         }
       });
@@ -428,7 +428,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         doc.setTextColor(80, 80, 80);
         descLines.forEach((line: string, lineIndex: number) => {
           if (lineIndex < maxLines) {
-            doc.text(line, margin + colWidths[0] + colWidths[1] + 2, textY);
+            doc.text(line, margin + (colWidths[0] || 50) + (colWidths[1] || 65) + 2, textY);
             textY += 4;
           }
         });
@@ -454,7 +454,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       false
     );
     
-    if (shouldShowLogo) {
+    if (shouldShowLogo && branding?.logo?.dataUrl) {
       try {
         const imgData = branding.logo.dataUrl;
         
@@ -549,7 +549,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.scripts.macOS.length;
   
   // === TOP SECTION: Company/Department Text ===
-  let headerY = 20;
+  const headerY = 20;
   let titleStartY = 70;
   
   // Show company/dept as small text in corners (if provided)
@@ -597,7 +597,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    const badgeColor = branding.metadata.classification === 'confidential' || 
+    const badgeColor: [number, number, number] = branding.metadata.classification === 'confidential' || 
                       branding.metadata.classification === 'restricted' 
                       ? [220, 38, 38] : [34, 197, 94];
     doc.setTextColor(badgeColor[0], badgeColor[1], badgeColor[2]);
@@ -697,7 +697,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   // Classification row if provided
   if (branding?.metadata?.classification) {
     doc.setFont("helvetica", "bold");
-    const classColor = branding.metadata.classification === 'confidential' || branding.metadata.classification === 'restricted' 
+    const classColor: [number, number, number] = branding.metadata.classification === 'confidential' || branding.metadata.classification === 'restricted' 
       ? [220, 38, 38] : [80, 80, 80];
     doc.setTextColor(classColor[0], classColor[1], classColor[2]);
     doc.text('Classification:', labelX, tableY);
@@ -778,7 +778,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     const assignmentRate = analytics.totalConfigs > 0 ? (analytics.assignedConfigs / analytics.totalConfigs) * 100 : 0;
     
     // Create metrics cards without emoji icons
-    const metricsData = [
+    const metricsData: Array<{label: string, value: string, color: [number, number, number]}> = [
       { 
         label: "Total Configurations", 
         value: analytics.totalConfigs.toString(),
@@ -848,7 +848,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // Progress bar fill based on assignment rate
     const fillWidth = (assignmentRate / 100) * progressBarWidth;
-    const progressColor = assignmentRate >= 80 ? [39, 174, 96] : // Green for good
+    const progressColor: [number, number, number] = assignmentRate >= 80 ? [39, 174, 96] : // Green for good
                          assignmentRate >= 60 ? [52, 152, 219] : // Blue for moderate
                          assignmentRate >= 40 ? [230, 126, 34] : // Orange for low
                          [231, 76, 60]; // Red for critical
@@ -877,7 +877,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       doc.text("Potential Gaps", margin, yPosition);
       yPosition += 8;
       
-      const risks = [];
+      const risks: Array<{level: string, title: string, description: string, color: [number, number, number]}> = [];
       
       if (analytics.unassignedConfigs > 0) {
         const criticalRisk = analytics.unassignedConfigs >= analytics.totalConfigs * 0.3; // 30% threshold
@@ -885,7 +885,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           level: criticalRisk ? 'critical' : 'warning',
           title: 'Unassigned Configurations',
           description: `${analytics.unassignedConfigs} policies have no group assignments`,
-          color: criticalRisk ? [231, 76, 60] : [230, 126, 34]
+          color: criticalRisk ? [231, 76, 60] as [number, number, number] : [230, 126, 34] as [number, number, number]
         });
       }
       
@@ -895,7 +895,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           level: criticalRisk ? 'critical' : 'warning',
           title: 'Stale Configurations',
           description: `${analytics.staleConfigs} policies haven't been updated in 90+ days`,
-          color: criticalRisk ? [231, 76, 60] : [241, 196, 15]
+          color: criticalRisk ? [231, 76, 60] as [number, number, number] : [241, 196, 15] as [number, number, number]
         });
       }
       
@@ -1160,7 +1160,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     sortedPlatforms.forEach(([platform, data], index) => {
       const barY = yPosition + (index * (barHeight + barSpacing));
       
-      const color = platformColors[platform] || [52, 152, 219];
+      const color: [number, number, number] = platformColors[platform] || [52, 152, 219];
       
       // Platform name - simple text, no colored box
       doc.setFontSize(9);
@@ -1246,12 +1246,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Rank number with colored background for top 3
       if (index < 3) {
-        const rankColors = [
+        const rankColors: Array<[number, number, number]> = [
           [255, 215, 0],  // Gold
           [192, 192, 192], // Silver
           [205, 127, 50]  // Bronze
         ];
-        doc.setFillColor(rankColors[index][0], rankColors[index][1], rankColors[index][2]);
+        const rankColor = rankColors[index]!;
+        doc.setFillColor(rankColor[0], rankColor[1], rankColor[2]);
         doc.circle(margin + 6, yPosition + 5, 3, 'F');
         doc.setFontSize(7);
         doc.setFont("helvetica", "bold");
@@ -1277,7 +1278,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       // Assignment count with visual indicator
       const barMaxWidth = 18;  // Slightly reduced
       const barWidth = Math.min((count / Math.max(...analytics.topGroups.map(g => g[1]))) * barMaxWidth, barMaxWidth);
-      const barColor = count >= 10 ? [39, 174, 96] :  // Green for high activity
+      const barColor: [number, number, number] = count >= 10 ? [39, 174, 96] :  // Green for high activity
                       count >= 5 ? [52, 152, 219] :    // Blue for moderate
                       [230, 126, 34];                  // Orange for low
       

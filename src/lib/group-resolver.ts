@@ -2,7 +2,7 @@ import { Client } from "@microsoft/microsoft-graph-client";
 
 export class GroupResolver {
   private client: Client;
-  private groupCache: Map<string, string> = new Map();
+  private groupCache = new Map<string, string>();
 
   constructor(accessToken: string) {
     this.client = Client.init({

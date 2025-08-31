@@ -81,10 +81,11 @@ export function BrandingSettingsModal({
           author: prev.metadata?.author || preset.options.metadata?.author,
         },
         // Preserve cover page author if set
-        coverPage: {
+        coverPage: preset.options.coverPage ? {
           ...preset.options.coverPage,
+          enabled: preset.options.coverPage.enabled ?? true,
           author: prev.coverPage?.author || preset.options.coverPage?.author,
-        },
+        } : prev.coverPage,
       }));
     }
   };

@@ -30,7 +30,7 @@ export async function generatePDF(data: PdfGenerationData): Promise<Uint8Array> 
   const maxWidth = pageWidth - 2 * margin;
 
   // Helper function to add text with automatic page breaks
-  const addText = (text: string, fontSize: number = 12, isBold: boolean = false) => {
+  const addText = (text: string, fontSize = 12, isBold = false) => {
     doc.setFontSize(fontSize);
     doc.setFont("helvetica", isBold ? "bold" : "normal");
     

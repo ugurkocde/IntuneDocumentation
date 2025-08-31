@@ -25,7 +25,7 @@ export default function HomePage() {
   };
   
   const handleSignOut = () => {
-    instance.logoutRedirect({
+    void instance.logoutRedirect({
       postLogoutRedirectUri: window.location.origin,
     });
   };
@@ -224,7 +224,7 @@ export default function HomePage() {
                     Connect
                   </h3>
                   <p className="text-gray-600">
-                    Sign in with your Microsoft account. We'll fetch all your Intune configurations via Graph API.
+                    Sign in with your Microsoft account. We&apos;ll fetch all your Intune configurations via Graph API.
                   </p>
                 </div>
                 

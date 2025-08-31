@@ -3,6 +3,7 @@ import "~/styles/globals.css";
 import { type Metadata } from "next";
 import { Geist } from "next/font/google";
 import { AuthProvider } from "~/components/auth-provider";
+import PlausibleProvider from "next-plausible";
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://intunedocumentation.com'),
@@ -211,7 +212,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geist.variable}`}>
       <head>
-        <script defer data-domain="intunedocumentation.com" src="https://plausible.io/js/script.js"></script>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -220,7 +220,9 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <PlausibleProvider domain="intunedocumentation.com">
+          <AuthProvider>{children}</AuthProvider>
+        </PlausibleProvider>
       </body>
     </html>
   );

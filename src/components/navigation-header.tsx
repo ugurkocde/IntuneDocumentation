@@ -1,7 +1,7 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { User, LogOut, Home, FileText } from "lucide-react";
@@ -10,7 +10,6 @@ import { useUserProfile } from "~/hooks/use-user-profile";
 
 export function NavigationHeader() {
   const { instance, accounts } = useMsal();
-  const router = useRouter();
   const pathname = usePathname();
   const { userProfile } = useUserProfile();
   const isAuthenticated = accounts.length > 0;
@@ -22,7 +21,7 @@ export function NavigationHeader() {
   };
 
   return (
-    <header className="bg-white shadow-sm border-b border-slate-200">
+    <header className="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-50">
       <div className="max-w-8xl mx-auto px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo and Brand */}

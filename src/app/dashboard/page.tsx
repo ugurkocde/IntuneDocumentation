@@ -22,11 +22,12 @@ import {
   CheckSquare,
   Layers,
   Clock,
-  Server,
   X,
   Search,
-  Filter,
-  Info
+  Info,
+  LayoutGrid,
+  ChevronLeft,
+  Menu
 } from "lucide-react";
 
 interface IntuneConfigurations {
@@ -67,10 +68,11 @@ export default function DashboardPage() {
   const [selectedConfigs, setSelectedConfigs] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showTipBanner, setShowTipBanner] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeView, setActiveView] = useState<string>("overview");
   const [fetchProgress, setFetchProgress] = useState<{
     steps: { name: string; status: "pending" | "loading" | "completed" | "error" }[];
     currentStep: number;
@@ -132,7 +134,6 @@ export default function DashboardPage() {
       // Reset selections when refreshing
       setSelectedConfigs(new Set());
       setSelectAll(false);
-      setActiveFilter(null);
       
       // Step 1: Connect to Graph API
       updateFetchProgress(0, "loading");
@@ -399,7 +400,200 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gradient-subtle">
       <NavigationHeader />
 
-      <div className="max-w-8xl mx-auto px-6 lg:px-8 py-8">
+      <div className="flex">
+        {/* Sidebar */}
+        <div className={`${sidebarOpen ? 'w-64' : 'w-16'} transition-all duration-300 bg-white border-r border-slate-200 h-[calc(100vh-64px)] fixed top-16 left-0 z-30 overflow-y-auto`}>
+          <div className="p-4">
+            {/* Collapse button at the top */}
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+              >
+                {sidebarOpen ? <ChevronLeft className="w-5 h-5 text-slate-600" /> : <Menu className="w-5 h-5 text-slate-600" />}
+              </button>
+            </div>
+            
+            {/* Sidebar Navigation */}
+            <nav className="space-y-1">
+              <button
+                onClick={() => setActiveView("overview")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "overview" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <LayoutGrid className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Overview</span>
+                    <span className="text-xs font-semibold bg-slate-200 px-2 py-0.5 rounded">
+                      {configurations?.summary.totalConfigurations || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <div className={`${sidebarOpen ? 'block' : 'hidden'} my-4 border-t border-slate-200`} />
+              
+              <button
+                onClick={() => setActiveView("settingsCatalog")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "settingsCatalog" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <Settings className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Settings Catalog</span>
+                    <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.settingsCatalog || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("deviceConfigurations")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "deviceConfigurations" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <Laptop className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Device Configs</span>
+                    <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.deviceConfigurations || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("administrativeTemplates")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "administrativeTemplates" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <FileText className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Admin Templates</span>
+                    <span className="text-xs font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.administrativeTemplates || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("securityBaselines")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "securityBaselines" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <Shield className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Security Baselines</span>
+                    <span className="text-xs font-semibold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.securityBaselines || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("compliancePolicies")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "compliancePolicies" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <CheckSquare className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Compliance</span>
+                    <span className="text-xs font-semibold bg-red-100 text-red-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.compliancePolicies || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("scripts")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "scripts" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <Code className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Scripts</span>
+                    <span className="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.scripts || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("appConfigurations")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "appConfigurations" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <Package className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">App Configs</span>
+                    <span className="text-xs font-semibold bg-teal-100 text-teal-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.appConfigurations || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("windowsUpdatePolicies")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "windowsUpdatePolicies" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <RefreshCw className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Windows Update</span>
+                    <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.windowsUpdatePolicies || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <button
+                onClick={() => setActiveView("enrollmentConfigurations")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "enrollmentConfigurations" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <UserCheck className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">Enrollment</span>
+                    <span className="text-xs font-semibold bg-pink-100 text-pink-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.enrollmentConfigurations || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+            </nav>
+          </div>
+        </div>
+        
+        {/* Main Content */}
+        <div className={`flex-1 ${sidebarOpen ? 'ml-64' : 'ml-16'} transition-all duration-300 px-6 lg:px-8 py-8`}>
         {/* First-time user tip banner */}
         {showTipBanner && configurations && !searchQuery && (
           <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
@@ -420,246 +614,117 @@ export default function DashboardPage() {
           </div>
         )}
         
-        {/* Search results tip */}
-        {searchQuery && getFilteredCount() > 0 && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-center justify-between">
-            <div className="flex items-start gap-3">
-              <Search className="w-5 h-5 text-green-600 mt-0.5" />
-              <div>
-                <p className="text-sm text-green-900 font-medium">
-                  Found {getFilteredCount()} matching configuration{getFilteredCount() !== 1 ? 's' : ''}
-                </p>
-                <p className="text-sm text-green-700 mt-0.5">
-                  Search: "{searchQuery}"
-                </p>
-              </div>
-            </div>
-            <div className="text-sm text-green-700">
-              Click "Select Filtered" to select all search results for export
-            </div>
-          </div>
-        )}
         {/* Action Bar */}
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-4">
-              {/* Header row */}
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Layers className="w-5 h-5 text-slate-500" />
-                    <h2 className="text-xl font-semibold text-slate-900">Configuration Overview</h2>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="info" size="md">
-                      {configurations?.summary.totalConfigurations || 0} Total
-                    </Badge>
-                    {lastFetched && (
-                      <span className="text-xs text-slate-500 hidden sm:inline">
-                        Last updated: {lastFetched.toLocaleTimeString()}
-                      </span>
+        <div className="mb-6 space-y-3">
+          {/* Main Header Bar */}
+          <Card>
+            <CardContent className="py-3 px-6">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                {/* Left: Title and Count */}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <Layers className="w-5 h-5 text-slate-500" />
+                  <h2 className="text-lg font-semibold text-slate-900">Configuration Overview</h2>
+                  <Badge variant="info" size="sm">
+                    {configurations?.summary.totalConfigurations || 0} Total
+                  </Badge>
+                </div>
+                
+                {/* Center: Search (more prominent) */}
+                <div className="flex-1 max-w-xl">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search configurations by name or description..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-10 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
                 </div>
-              <div className="flex flex-wrap items-center gap-3">
+                
+                {/* Middle: Last Updated */}
+                {lastFetched && (
+                  <span className="text-xs text-slate-500 flex-shrink-0">
+                    Last updated: {lastFetched.toLocaleTimeString()}
+                  </span>
+                )}
+                
+                {/* Right: Refresh Button */}
                 <Button
                   onClick={() => fetchConfigurations()}
                   disabled={loading}
                   loading={loading}
                   variant="secondary"
-                  size="md"
+                  size="sm"
+                  className="flex-shrink-0"
                 >
                   <RefreshCw className="w-4 h-4" />
                   Refresh
                 </Button>
-                <label className="flex items-center gap-2 cursor-pointer group">
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Selection Bar - Shows when items can be selected */}
+          <div className="bg-white border border-slate-200 rounded-lg px-4 py-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer group hover:bg-slate-50 px-2 py-1 rounded transition-colors">
                   <input
                     type="checkbox"
                     checked={selectAll}
                     onChange={handleSelectAll}
                     className="checkbox-enhanced"
                   />
-                  <span className="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">
+                  <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">
                     Select All
                   </span>
                 </label>
-                {searchQuery && (
-                  <Button
-                    onClick={handleSelectFiltered}
-                    variant="secondary"
-                    size="md"
-                    title={`Select ${getFilteredCount()} filtered items`}
-                  >
-                    <CheckSquare className="w-4 h-4" />
-                    Select Filtered ({getFilteredCount()})
-                  </Button>
+                {searchQuery && getFilteredCount() < (configurations?.summary.totalConfigurations || 0) && (
+                  <label className="flex items-center gap-2 cursor-pointer group hover:bg-slate-50 px-2 py-1 rounded transition-colors">
+                    <Button
+                      onClick={handleSelectFiltered}
+                      variant="ghost"
+                      size="sm"
+                      className="px-2 py-1"
+                    >
+                      <CheckSquare className="w-4 h-4 mr-2" />
+                      Select Filtered ({getFilteredCount()})
+                    </Button>
+                  </label>
                 )}
-                <Button
-                  onClick={handleGeneratePdf}
-                  disabled={generatingPdf}
-                  loading={generatingPdf}
-                  variant={selectedConfigs.size === 0 ? "secondary" : "primary"}
-                  size="md"
-                  title={selectedConfigs.size === 0 ? "Select items to export" : `Export ${selectedConfigs.size} selected items`}
-                >
-                  <Download className="w-4 h-4" />
-                  {generatingPdf ? "Generating..." : selectedConfigs.size === 0 ? "Export Selected" : `Export Selected (${selectedConfigs.size})`}
-                </Button>
               </div>
               
-              {/* Search row */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search configurations by name or description..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Active Filter Display */}
-        {activeFilter && (
-          <div className="mb-4">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full">
-              <span className="text-sm font-medium text-blue-700">
-                Filtering: {activeFilter === "settingsCatalog" ? "Settings Catalog" :
-                          activeFilter === "deviceConfigurations" ? "Device Configurations" :
-                          activeFilter === "administrativeTemplates" ? "Administrative Templates" :
-                          activeFilter === "securityBaselines" ? "Security Baselines" :
-                          activeFilter === "compliancePolicies" ? "Compliance Policies" :
-                          activeFilter === "scripts" ? "Scripts" :
-                          activeFilter === "appConfigurations" ? "App Configurations" :
-                          activeFilter === "windowsUpdatePolicies" ? "Windows Update Policies" :
-                          activeFilter === "enrollmentConfigurations" ? "Enrollment Configurations" :
-                          activeFilter}
-              </span>
-              <button
-                onClick={() => setActiveFilter(null)}
-                className="p-0.5 hover:bg-blue-200 rounded-full transition-colors cursor-pointer"
+              <Button
+                onClick={handleGeneratePdf}
+                disabled={generatingPdf || selectedConfigs.size === 0}
+                loading={generatingPdf}
+                variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
+                size="sm"
+                className="min-w-[140px]"
               >
-                <X className="w-3 h-3 text-blue-700" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Summary Cards */}
-        <div className="mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            <SummaryCard
-              icon={<Settings className="w-5 h-5" />}
-              title="Settings Catalog"
-              count={configurations?.summary.byType.settingsCatalog ?? 0}
-              color="blue"
-              isActive={activeFilter === "settingsCatalog"}
-              onClick={() => setActiveFilter(activeFilter === "settingsCatalog" ? null : "settingsCatalog")}
-              lastUpdated={configurations?.settingsCatalog?.[0]?.lastModifiedDateTime}
-            />
-            <SummaryCard
-              icon={<Laptop className="w-5 h-5" />}
-              title="Device Configs"
-              count={configurations?.summary.byType.deviceConfigurations ?? 0}
-              color="emerald"
-              isActive={activeFilter === "deviceConfigurations"}
-              onClick={() => setActiveFilter(activeFilter === "deviceConfigurations" ? null : "deviceConfigurations")}
-              lastUpdated={configurations?.deviceConfigurations?.[0]?.lastModifiedDateTime}
-            />
-            <SummaryCard
-              icon={<FileText className="w-5 h-5" />}
-              title="Admin Templates"
-              count={configurations?.summary.byType.administrativeTemplates ?? 0}
-              color="purple"
-              isActive={activeFilter === "administrativeTemplates"}
-              onClick={() => setActiveFilter(activeFilter === "administrativeTemplates" ? null : "administrativeTemplates")}
-              lastUpdated={configurations?.administrativeTemplates?.[0]?.lastModifiedDateTime}
-            />
-            <SummaryCard
-              icon={<Shield className="w-5 h-5" />}
-              title="Security Baselines"
-              count={configurations?.summary.byType.securityBaselines ?? 0}
-              color="orange"
-              isActive={activeFilter === "securityBaselines"}
-              onClick={() => setActiveFilter(activeFilter === "securityBaselines" ? null : "securityBaselines")}
-              lastUpdated={configurations?.securityBaselines?.[0]?.lastModifiedDateTime}
-            />
-            <SummaryCard
-              icon={<CheckSquare className="w-5 h-5" />}
-              title="Compliance"
-              count={configurations?.summary.byType.compliancePolicies ?? 0}
-              color="red"
-              isActive={activeFilter === "compliancePolicies"}
-              onClick={() => setActiveFilter(activeFilter === "compliancePolicies" ? null : "compliancePolicies")}
-              lastUpdated={configurations?.compliancePolicies?.[0]?.lastModifiedDateTime}
-            />
-            <SummaryCard
-              icon={<Code className="w-5 h-5" />}
-              title="Scripts"
-              count={configurations?.summary.byType.scripts ?? 0}
-              color="indigo"
-              isActive={activeFilter === "scripts"}
-              onClick={() => setActiveFilter(activeFilter === "scripts" ? null : "scripts")}
-            />
-            <SummaryCard
-              icon={<Package className="w-5 h-5" />}
-              title="App Configs"
-              count={configurations?.summary.byType.appConfigurations ?? 0}
-              color="teal"
-              isActive={activeFilter === "appConfigurations"}
-              onClick={() => setActiveFilter(activeFilter === "appConfigurations" ? null : "appConfigurations")}
-            />
-            <SummaryCard
-              icon={<RefreshCw className="w-5 h-5" />}
-              title="Windows Update"
-              count={configurations?.summary.byType.windowsUpdatePolicies ?? 0}
-              color="amber"
-              isActive={activeFilter === "windowsUpdatePolicies"}
-              onClick={() => setActiveFilter(activeFilter === "windowsUpdatePolicies" ? null : "windowsUpdatePolicies")}
-            />
-            <SummaryCard
-              icon={<UserCheck className="w-5 h-5" />}
-              title="Enrollment"
-              count={configurations?.summary.byType.enrollmentConfigurations ?? 0}
-              color="pink"
-              isActive={activeFilter === "enrollmentConfigurations"}
-              onClick={() => setActiveFilter(activeFilter === "enrollmentConfigurations" ? null : "enrollmentConfigurations")}
-            />
-            <div 
-              className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-4 border border-slate-300 transition-all hover:shadow-md cursor-pointer"
-              onClick={() => setActiveFilter(null)}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 bg-slate-200 rounded-lg flex items-center justify-center">
-                  <Server className="w-5 h-5 text-slate-600" />
-                </div>
-              </div>
-              <h3 className="font-medium text-slate-600 text-xs uppercase tracking-wider mb-1">Total</h3>
-              <p className="text-2xl font-bold text-slate-900">
-                {configurations?.summary.totalConfigurations ?? 0}
-              </p>
+                <Download className="w-4 h-4 mr-2" />
+                {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}
+              </Button>
             </div>
           </div>
         </div>
 
+
+
         {/* Configuration Details */}
         {configurations && (
           <div className="space-y-6">
-            {(!activeFilter || activeFilter === "settingsCatalog") && filterConfigurations(configurations.settingsCatalog)?.length > 0 && (
+            {(activeView === "overview" || activeView === "settingsCatalog") && filterConfigurations(configurations.settingsCatalog)?.length > 0 && (
               <ConfigurationSection
                 title="Settings Catalog"
                 items={filterConfigurations(configurations.settingsCatalog)}
@@ -670,7 +735,7 @@ export default function DashboardPage() {
                 icon={<Settings className="w-5 h-5" />}
               />
             )}
-            {(!activeFilter || activeFilter === "deviceConfigurations") && filterConfigurations(configurations.deviceConfigurations)?.length > 0 && (
+            {(activeView === "overview" || activeView === "deviceConfigurations") && filterConfigurations(configurations.deviceConfigurations)?.length > 0 && (
               <ConfigurationSection
                 title="Device Configurations (Templates)"
                 items={filterConfigurations(configurations.deviceConfigurations)}
@@ -681,7 +746,7 @@ export default function DashboardPage() {
                 icon={<Laptop className="w-5 h-5" />}
               />
             )}
-            {(!activeFilter || activeFilter === "administrativeTemplates") && filterConfigurations(configurations.administrativeTemplates)?.length > 0 && (
+            {(activeView === "overview" || activeView === "administrativeTemplates") && filterConfigurations(configurations.administrativeTemplates)?.length > 0 && (
               <ConfigurationSection
                 title="Administrative Templates (Group Policy)"
                 items={filterConfigurations(configurations.administrativeTemplates)}
@@ -692,7 +757,7 @@ export default function DashboardPage() {
                 icon={<FileText className="w-5 h-5" />}
               />
             )}
-            {(!activeFilter || activeFilter === "securityBaselines") && filterConfigurations(configurations.securityBaselines)?.length > 0 && (
+            {(activeView === "overview" || activeView === "securityBaselines") && filterConfigurations(configurations.securityBaselines)?.length > 0 && (
               <ConfigurationSection
                 title="Security Baselines & Endpoint Security"
                 items={filterConfigurations(configurations.securityBaselines)}
@@ -703,7 +768,7 @@ export default function DashboardPage() {
                 icon={<Shield className="w-5 h-5" />}
               />
             )}
-            {(!activeFilter || activeFilter === "compliancePolicies") && filterConfigurations(configurations.compliancePolicies)?.length > 0 && (
+            {(activeView === "overview" || activeView === "compliancePolicies") && filterConfigurations(configurations.compliancePolicies)?.length > 0 && (
               <ConfigurationSection
                 title="Compliance Policies"
                 items={filterConfigurations(configurations.compliancePolicies)}
@@ -714,7 +779,7 @@ export default function DashboardPage() {
                 icon={<CheckSquare className="w-5 h-5" />}
               />
             )}
-            {(!activeFilter || activeFilter === "scripts") && (configurations.scripts?.macOS?.length > 0 || configurations.scripts?.windows?.length > 0) && (
+            {(activeView === "overview" || activeView === "scripts") && (configurations.scripts?.macOS?.length > 0 || configurations.scripts?.windows?.length > 0) && (
               <Card className="overflow-hidden border-slate-200">
                 <CardHeader className="bg-white border-b border-slate-200">
                   <div className="flex justify-between items-center">
@@ -792,7 +857,7 @@ export default function DashboardPage() {
                 </div>
               </Card>
             )}
-            {(!activeFilter || activeFilter === "appConfigurations") && filterConfigurations(configurations.appConfigurations)?.length > 0 && (
+            {(activeView === "overview" || activeView === "appConfigurations") && filterConfigurations(configurations.appConfigurations)?.length > 0 && (
               <ConfigurationSection
                 title="App Configuration Policies"
                 items={filterConfigurations(configurations.appConfigurations)}
@@ -803,7 +868,7 @@ export default function DashboardPage() {
                 icon={<Package className="w-5 h-5" />}
               />
             )}
-            {(!activeFilter || activeFilter === "windowsUpdatePolicies") && filterConfigurations(configurations.windowsUpdatePolicies)?.length > 0 && (
+            {(activeView === "overview" || activeView === "windowsUpdatePolicies") && filterConfigurations(configurations.windowsUpdatePolicies)?.length > 0 && (
               <ConfigurationSection
                 title="Windows Update Policies"
                 items={filterConfigurations(configurations.windowsUpdatePolicies)}
@@ -814,7 +879,7 @@ export default function DashboardPage() {
                 icon={<RefreshCw className="w-5 h-5" />}
               />
             )}
-            {(!activeFilter || activeFilter === "enrollmentConfigurations") && filterConfigurations(configurations.enrollmentConfigurations)?.length > 0 && (
+            {(activeView === "overview" || activeView === "enrollmentConfigurations") && filterConfigurations(configurations.enrollmentConfigurations)?.length > 0 && (
               <ConfigurationSection
                 title="Enrollment Configurations"
                 items={filterConfigurations(configurations.enrollmentConfigurations)}
@@ -827,62 +892,8 @@ export default function DashboardPage() {
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function SummaryCard({ 
-  icon, 
-  title, 
-  count, 
-  color,
-  isActive,
-  onClick,
-  lastUpdated
-}: { 
-  icon: React.ReactNode;
-  title: string;
-  count: number;
-  color: 'blue' | 'emerald' | 'purple' | 'orange' | 'red' | 'indigo' | 'teal' | 'amber' | 'pink';
-  isActive?: boolean;
-  onClick?: () => void;
-  lastUpdated?: string;
-}) {
-  const colorClasses = {
-    blue: "from-blue-50 to-blue-100 border-blue-200 text-blue-600",
-    emerald: "from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-600",
-    purple: "from-purple-50 to-purple-100 border-purple-200 text-purple-600",
-    orange: "from-orange-50 to-orange-100 border-orange-200 text-orange-600",
-    red: "from-red-50 to-red-100 border-red-200 text-red-600",
-    indigo: "from-indigo-50 to-indigo-100 border-indigo-200 text-indigo-600",
-    teal: "from-teal-50 to-teal-100 border-teal-200 text-teal-600",
-    amber: "from-amber-50 to-amber-100 border-amber-200 text-amber-600",
-    pink: "from-pink-50 to-pink-100 border-pink-200 text-pink-600"
-  };
-
-  const baseColor = colorClasses[color];
-  const textColor = baseColor.split(' ')[3];
-
-  return (
-    <div 
-      className={`bg-white rounded-xl p-4 border transition-all hover:shadow-md ${onClick ? 'cursor-pointer' : ''} ${isActive ? 'ring-2 ring-' + color + '-500 border-' + color + '-500' : 'border-slate-200'}`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between mb-3">
-        <div className={`w-10 h-10 bg-gradient-to-br ${baseColor} rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform`}>
-          <div className={textColor}>
-            {icon}
-          </div>
         </div>
-        {count > 0 && lastUpdated && (
-          <span className="text-xs text-slate-400">
-            {new Date(lastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </span>
-        )}
       </div>
-      <h3 className="font-medium text-slate-600 text-xs uppercase tracking-wider mb-1">{title}</h3>
-      <p className="text-2xl font-bold text-slate-900">{count}</p>
     </div>
   );
 }

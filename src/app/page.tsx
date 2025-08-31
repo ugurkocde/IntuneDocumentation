@@ -59,16 +59,16 @@ export default function HomePage() {
               {/* Left Column - Content */}
               <div className="text-left">
 
-                {/* Main Headline */}
+                {/* Main Headline - SEO Optimized */}
                 <h1 className="text-5xl lg:text-6xl font-bold text-white mb-6 tracking-tight">
-                  Generate Professional
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400"> Intune Documentation</span>
-                  <span className="text-white"> in Minutes</span>
+                  Free Microsoft Intune 
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400"> Documentation Generator</span>
+                  <span className="text-white"> - Export to PDF in Minutes</span>
                 </h1>
                 
-                {/* Subheadline */}
+                {/* Subheadline - SEO Enhanced */}
                 <p className="text-xl lg:text-2xl text-blue-100 mb-8 leading-relaxed">
-                  One click to export all policies, settings, and assignments into a clean, audit-ready PDF document.
+                  Export comprehensive Microsoft Intune configurations, compliance policies, security baselines, and device settings into professional PDF documentation. Perfect for IT audits, MSPs, and enterprise documentation.
                 </p>
 
                 {/* Trust Indicators - More Prominent */}
@@ -209,7 +209,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="max-w-5xl mx-auto">
               <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-                How It Works
+                How to Generate Intune Documentation in 3 Steps
               </h2>
               <p className="text-lg text-gray-600 text-center mb-12 max-w-2xl mx-auto">
                 Three simple steps to comprehensive Intune documentation
@@ -261,7 +261,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="max-w-5xl mx-auto">
               <h2 className="text-3xl font-bold text-gray-900 mb-12 text-center">
-                What Makes It Different
+                Complete Microsoft Intune Documentation Features
               </h2>
               
               <div className="grid md:grid-cols-3 gap-8">
@@ -269,9 +269,9 @@ export default function HomePage() {
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mb-4">
                     <FileText className="w-6 h-6 text-white" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Complete Coverage</h3>
+                  <h3 className="font-semibold text-gray-900 mb-2">Complete Intune Configuration Export</h3>
                   <p className="text-gray-600">
-                    Fetches all 10 Intune configuration types including policies, profiles, scripts, and baselines with full details.
+                    Export all 10 Microsoft Intune configuration types: device policies, compliance policies, administrative templates, security baselines, PowerShell scripts, app configurations, and enrollment profiles with complete settings details.
                   </p>
                 </div>
                 
@@ -279,9 +279,9 @@ export default function HomePage() {
                   <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center mb-4">
                     <CheckCircle className="w-6 h-6 text-white" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Detailed Export</h3>
+                  <h3 className="font-semibold text-gray-900 mb-2">Professional PDF Documentation</h3>
                   <p className="text-gray-600">
-                    Includes nested settings, ADMX values, script content, group assignments, and filters - nothing is missed.
+                    Generate audit-ready PDF reports with nested settings, ADMX policy values, PowerShell script content, Azure AD group assignments, and conditional access filters - perfect for compliance documentation and IT audits.
                   </p>
                 </div>
                 

@@ -59,7 +59,7 @@ export function useUserProfile() {
       }
     };
 
-    fetchUserProfile();
+    void fetchUserProfile();
   }, [accounts, instance]);
 
   return { userProfile, loading, error };

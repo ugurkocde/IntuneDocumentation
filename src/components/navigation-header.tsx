@@ -15,7 +15,7 @@ export function NavigationHeader() {
   const isAuthenticated = accounts.length > 0;
 
   const handleSignOut = () => {
-    instance.logoutRedirect({
+    void instance.logoutRedirect({
       postLogoutRedirectUri: window.location.origin,
     });
   };

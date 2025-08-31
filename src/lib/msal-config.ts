@@ -41,7 +41,7 @@ export function getMsalInstance() {
   
   if (!msalInstance) {
     msalInstance = new PublicClientApplication(msalConfig);
-    msalInstance.initialize();
+    void msalInstance.initialize();
   }
   
   return msalInstance;

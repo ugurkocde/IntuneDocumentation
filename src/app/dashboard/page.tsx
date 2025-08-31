@@ -632,7 +632,7 @@ export default function DashboardPage() {
             <div className="flex-1">
               <p className="text-sm text-blue-900 font-medium">Tip: Getting started with documentation</p>
               <p className="text-sm text-blue-700 mt-1">
-                Select the policies you want to document using the checkboxes, then click "Export Selected" to generate a comprehensive PDF report.
+                Select the policies you want to document using the checkboxes, then click &ldquo;Export Selected&rdquo; to generate a comprehensive PDF report.
                 Use the search bar and filters to quickly find specific configurations.
               </p>
             </div>

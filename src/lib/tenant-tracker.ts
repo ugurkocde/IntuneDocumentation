@@ -69,7 +69,7 @@ IP_ADDRESS: ${tenantInfo.ipAddress || 'N/A'}
   console.log(`[TENANT-ACCESS] Tenant: ${tenantInfo.tenantId} | User: ${tenantInfo.userPrincipalName} | Context: ${context} | Time: ${tenantInfo.timestamp}`);
   
   // Extra explicit logging to ensure visibility
-  console.warn(`TENANT_TRACKING: Customer from tenant ${tenantInfo.tenantId} (${tenantInfo.userPrincipalName}) accessed ${context} at ${tenantInfo.timestamp}`);
+  console.warn(`TENANT_TRACKING: User from tenant ${tenantInfo.tenantId} (${tenantInfo.userPrincipalName}) accessed ${context} at ${tenantInfo.timestamp}`);
 }
 
 // Helper function to get tenant info from ID token claims

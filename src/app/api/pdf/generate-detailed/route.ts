@@ -1,0 +1,104 @@
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { generateDetailedPDF } from "~/lib/pdf-generator-detailed";
+import { GroupResolver } from "~/lib/group-resolver";
+import { Client } from "@microsoft/microsoft-graph-client";
+
+export async function POST(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get("Authorization");
+    
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const accessToken = authHeader.replace("Bearer ", "");
+    const data = await request.json();
+
+    // Resolve group names
+    let groupNames: Map<string, string> = new Map();
+    try {
+      const groupResolver = new GroupResolver(accessToken);
+      
+      // Collect all unique group IDs from configurations
+      const allGroupIds = new Set<string>();
+      const allConfigs = [
+        ...data.settingsCatalog,
+        ...data.deviceConfigurations,
+        ...data.administrativeTemplates,
+        ...data.compliancePolicies,
+        ...data.securityBaselines,
+        ...data.scripts.windows,
+        ...data.scripts.macOS
+      ];
+      
+      allConfigs.forEach(config => {
+        if (config.assignments) {
+          config.assignments.forEach((assignment: any) => {
+            if (assignment.target?.groupId) {
+              allGroupIds.add(assignment.target.groupId);
+            }
+          });
+        }
+      });
+      
+      // Batch resolve group names
+      if (allGroupIds.size > 0) {
+        groupNames = await groupResolver.getGroupNames(Array.from(allGroupIds));
+      }
+    } catch (error) {
+      console.error("Error resolving group names:", error);
+      // Continue without group names if resolution fails
+    }
+
+    // Fetch device counts by platform
+    let deviceCounts: Record<string, number> = {};
+    try {
+      const client = Client.init({
+        authProvider: (done) => {
+          done(null, accessToken);
+        },
+      });
+
+      // Fetch managed devices with platform information
+      const devicesResponse = await client
+        .api("/deviceManagement/managedDevices")
+        .select("id,operatingSystem")
+        .top(999)
+        .get();
+
+      // Count devices by platform
+      if (devicesResponse.value) {
+        devicesResponse.value.forEach((device: any) => {
+          const os = device.operatingSystem || "Unknown";
+          deviceCounts[os] = (deviceCounts[os] || 0) + 1;
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching device counts:", error);
+      // Continue without device counts if fetch fails
+    }
+
+    // Generate detailed PDF with all settings, group names, and device counts
+    const pdfBuffer = await generateDetailedPDF({
+      ...data,
+      groupNames,
+      deviceCounts
+    });
+
+    // Return PDF as response
+    return new NextResponse(pdfBuffer, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="Intune-Detailed-Configuration-${new Date().toISOString().split("T")[0]}.pdf"`,
+      },
+    });
+  } catch (error) {
+    console.error("Error generating detailed PDF:", error);
+    return NextResponse.json(
+      { error: "Failed to generate detailed PDF" },
+      { status: 500 }
+    );
+  }
+}

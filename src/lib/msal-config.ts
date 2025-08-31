@@ -1,4 +1,4 @@
-import type { Configuration, PopupRequest, EventMessage, EventType } from "@azure/msal-browser";
+import type { Configuration, PopupRequest, EventMessage } from "@azure/msal-browser";
 import { PublicClientApplication } from "@azure/msal-browser";
 import { env } from "~/env";
 import { extractTenantFromToken, logTenantAccess } from "~/lib/tenant-tracker";
@@ -44,22 +44,24 @@ export function getMsalInstance() {
     msalInstance = new PublicClientApplication(msalConfig);
     void msalInstance.initialize().then(() => {
       // Add event callback to track tenant access on successful login
-      msalInstance.addEventCallback((event: EventMessage) => {
-        if (event.eventType === "msal:loginSuccess" || event.eventType === "msal:acquireTokenSuccess") {
-          const payload = event.payload as any;
-          if (payload?.account) {
-            const tenantInfo = extractTenantFromToken(payload.account.idTokenClaims);
-            if (tenantInfo) {
-              logTenantAccess({
-                ...tenantInfo,
-                tenantId: tenantInfo.tenantId || "",
-                userPrincipalName: tenantInfo.userPrincipalName || "",
-                timestamp: new Date().toISOString()
-              }, "MSAL-Login");
+      if (msalInstance) {
+        msalInstance.addEventCallback((event: EventMessage) => {
+          if (event.eventType === "msal:loginSuccess" || event.eventType === "msal:acquireTokenSuccess") {
+            const payload = event.payload as any;
+            if (payload?.account) {
+              const tenantInfo = extractTenantFromToken(payload.account.idTokenClaims);
+              if (tenantInfo) {
+                logTenantAccess({
+                  ...tenantInfo,
+                  tenantId: tenantInfo.tenantId || "",
+                  userPrincipalName: tenantInfo.userPrincipalName || "",
+                  timestamp: new Date().toISOString()
+                }, "MSAL-Login");
+              }
             }
           }
-        }
-      });
+        });
+      }
     });
   }
   

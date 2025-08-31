@@ -1,8 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { DetailedIntuneService } from "~/lib/intune-detailed-client";
+import { extractTenantFromRequest } from "~/lib/auth-middleware";
 
 export async function GET(request: NextRequest) {
   try {
+    // Log tenant access
+    extractTenantFromRequest(request);
+    
     const authHeader = request.headers.get("Authorization");
     
     if (!authHeader?.startsWith("Bearer ")) {

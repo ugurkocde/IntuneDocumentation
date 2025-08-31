@@ -1,5 +1,6 @@
 # Intune Documentation Website
 
+s
 A Next.js application that generates comprehensive PDF documentation for Microsoft Intune configurations. Sign in with your Microsoft account to fetch and export your Intune policies and settings.
 
 ## Features
@@ -34,7 +35,7 @@ A Next.js application that generates comprehensive PDF documentation for Microso
 4. Configure:
    - Name: "Intune Documentation"
    - Supported account types: "Accounts in any organizational directory (Multitenant)"
-   - Redirect URI: 
+   - Redirect URI:
      - Type: Single-page application (SPA)
      - URI: `http://localhost:3000` (for development)
 
@@ -66,22 +67,26 @@ Click "Grant admin consent" if you're an admin, or users will need to consent on
 ## Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/yourusername/IntuneDocumentation-Website.git
 cd IntuneDocumentation-Website
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
 3. Create `.env` file from the example:
+
 ```bash
 cp .env.example .env
 ```
 
 4. Update `.env` with your Azure AD details:
+
 ```env
 NEXT_PUBLIC_AZURE_AD_CLIENT_ID="your-client-id"
 NEXT_PUBLIC_AZURE_AD_TENANT_ID="common"  # Keep as "common" for multi-tenant
@@ -111,6 +116,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
    - Add redirect URI: `https://yourdomain.com` (as SPA type)
 
 3. Build and start:
+
 ```bash
 npm run build
 npm start
@@ -135,16 +141,19 @@ npm start
 ## Troubleshooting
 
 ### "Access Denied" error
+
 - Ensure your account has the necessary Intune permissions
 - Check that API permissions are granted in Azure AD
 - Verify admin consent is granted for the permissions
 
 ### Empty configuration list
+
 - Verify your tenant has Intune configured
 - Check that your account can access Intune in the Microsoft Endpoint Manager admin center
 - Ensure API permissions are correctly configured
 
 ### PDF generation fails
+
 - Check browser console for errors
 - Ensure all selected configurations loaded properly
 - Try generating with fewer configurations selected

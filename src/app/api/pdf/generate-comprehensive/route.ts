@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const pdfBuffer = await generateComprehensivePDF(data);
 
     // Return PDF as response
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(Buffer.from(pdfBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",

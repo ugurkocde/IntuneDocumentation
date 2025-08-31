@@ -53,6 +53,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${geist.variable}`}>
+      <head>
+        <script defer data-domain="intunedocumentation.com" src="https://plausible.io/js/script.js"></script>
+      </head>
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>

@@ -27,8 +27,11 @@ import {
   Info,
   LayoutGrid,
   ChevronLeft,
-  Menu
+  Menu,
+  Palette
 } from "lucide-react";
+import { BrandingSettingsModal } from "~/components/branding-settings-modal";
+import type { BrandingOptions } from "~/types/branding";
 
 interface IntuneConfigurations {
   settingsCatalog: any[];
@@ -73,6 +76,21 @@ export default function DashboardPage() {
   const [showTipBanner, setShowTipBanner] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<string>("overview");
+  const [showBrandingModal, setShowBrandingModal] = useState(false);
+  const [brandingOptions, setBrandingOptions] = useState<BrandingOptions | undefined>(() => {
+    // Load saved branding options from localStorage on mount
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('intune-branding-options');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to parse saved branding options:', e);
+        }
+      }
+    }
+    return undefined;
+  });
   const [fetchProgress, setFetchProgress] = useState<{
     steps: { name: string; status: "pending" | "loading" | "completed" | "error" }[];
     currentStep: number;
@@ -311,13 +329,26 @@ export default function DashboardPage() {
       // Always use detailed PDF generation
       const pdfEndpoint = "/api/pdf/generate-detailed";
       
+      // Log branding data being sent
+      console.log('Sending branding to PDF generator:', {
+        hasBranding: !!brandingOptions,
+        companyName: brandingOptions?.companyName,
+        department: brandingOptions?.department,
+        hasLogo: !!brandingOptions?.logo?.dataUrl,
+        logoPosition: brandingOptions?.logo?.position,
+        colors: brandingOptions?.colors
+      });
+      
       const response = await fetch(pdfEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify(selectedData),
+        body: JSON.stringify({
+          ...selectedData,
+          branding: brandingOptions
+        }),
       });
 
       if (!response.ok) {
@@ -704,17 +735,28 @@ export default function DashboardPage() {
                 )}
               </div>
               
-              <Button
-                onClick={handleGeneratePdf}
-                disabled={generatingPdf || selectedConfigs.size === 0}
-                loading={generatingPdf}
-                variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
-                size="sm"
-                className="min-w-[140px]"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => setShowBrandingModal(true)}
+                  variant="secondary"
+                  size="sm"
+                  className="min-w-[120px]"
+                >
+                  <Palette className="w-4 h-4 mr-2" />
+                  Branding
+                </Button>
+                <Button
+                  onClick={handleGeneratePdf}
+                  disabled={generatingPdf || selectedConfigs.size === 0}
+                  loading={generatingPdf}
+                  variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
+                  size="sm"
+                  className="min-w-[140px]"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -894,6 +936,19 @@ export default function DashboardPage() {
         )}
         </div>
       </div>
+      
+      {/* Branding Settings Modal */}
+      <BrandingSettingsModal
+        isOpen={showBrandingModal}
+        onClose={() => setShowBrandingModal(false)}
+        onSave={(options) => {
+          console.log('Saving branding options:', options);
+          setBrandingOptions(options);
+          localStorage.setItem('intune-branding-options', JSON.stringify(options));
+          setShowBrandingModal(false);
+        }}
+        currentOptions={brandingOptions}
+      />
     </div>
   );
 }

@@ -14,6 +14,16 @@ export async function POST(request: NextRequest) {
 
     const accessToken = authHeader.replace("Bearer ", "");
     const data = await request.json();
+    
+    // Debug log the branding data
+    console.log('API Route - Branding data received:', {
+      hasBranding: !!data.branding,
+      companyName: data.branding?.companyName,
+      department: data.branding?.department,
+      hasLogo: !!data.branding?.logo?.dataUrl,
+      logoPosition: data.branding?.logo?.position,
+      colors: data.branding?.colors
+    });
 
     // Resolve group names
     let groupNames: Map<string, string> = new Map();
@@ -79,15 +89,16 @@ export async function POST(request: NextRequest) {
       // Continue without device counts if fetch fails
     }
 
-    // Generate detailed PDF with all settings, group names, and device counts
+    // Generate detailed PDF with all settings, group names, device counts, and branding
     const pdfBuffer = await generateDetailedPDF({
       ...data,
       groupNames,
-      deviceCounts
+      deviceCounts,
+      branding: data.branding
     });
 
-    // Return PDF as response
-    return new NextResponse(pdfBuffer, {
+    // Return PDF as response (convert Uint8Array to Buffer for NextResponse)
+    return new NextResponse(Buffer.from(pdfBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",

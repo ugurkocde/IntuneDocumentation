@@ -54,10 +54,10 @@ function analyzeConfigurations(data: DetailedPdfData) {
           uniqueGroups.add(assignment.target.groupId);
           const groupId = assignment.target.groupId;
           groupAssignmentCount[groupId] = (groupAssignmentCount[groupId] || 0) + 1;
-        } else if (assignment.target?.["@odata.type"]?.includes("allUsers")) {
+        } else if (typeof assignment.target?.["@odata.type"] === "string" && assignment.target["@odata.type"].includes("allUsers")) {
           uniqueGroups.add("All Users");
           groupAssignmentCount["All Users"] = (groupAssignmentCount["All Users"] || 0) + 1;
-        } else if (assignment.target?.["@odata.type"]?.includes("allDevices")) {
+        } else if (typeof assignment.target?.["@odata.type"] === "string" && assignment.target["@odata.type"].includes("allDevices")) {
           uniqueGroups.add("All Devices");
           groupAssignmentCount["All Devices"] = (groupAssignmentCount["All Devices"] || 0) + 1;
         }

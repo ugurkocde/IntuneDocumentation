@@ -4,8 +4,9 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Heart, Clock, Database, Eye, Download } from "lucide-react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, Download } from "lucide-react";
 import { useMemo, useState } from "react";
+import { SiteFooter } from "~/components/site-footer";
 
 export default function HomePage() {
   const { instance, accounts } = useMsal();
@@ -386,23 +387,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Footer */}
-        <footer className="py-8 bg-gray-900">
-          <div className="container mx-auto px-4">
-            <div className="text-center">
-              <a
-                href="https://www.linkedin.com/in/ugurkocde/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <span>Made with</span>
-                <Heart className="w-4 h-4 text-red-500 fill-red-500" />
-                <span>by Ugur</span>
-              </a>
-            </div>
-          </div>
-        </footer>
+        <SiteFooter />
       </main>
     </>
   );

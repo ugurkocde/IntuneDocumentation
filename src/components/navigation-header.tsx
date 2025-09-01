@@ -1,18 +1,23 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { User, LogOut, Home, FileText } from "lucide-react";
+import { User, LogOut, Menu, X, LogIn } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";
+import { useState } from "react";
+import { loginRequest } from "~/lib/msal-config";
 
 export function NavigationHeader() {
   const { instance, accounts } = useMsal();
   const pathname = usePathname();
+  const router = useRouter();
   const { userProfile } = useUserProfile();
   const isAuthenticated = accounts.length > 0;
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
 
   const handleSignOut = () => {
     void instance.logoutRedirect({
@@ -20,87 +25,136 @@ export function NavigationHeader() {
     });
   };
 
+  const handleSignIn = async () => {
+    try {
+      setSigningIn(true);
+      const result = await instance.loginPopup(loginRequest);
+      if (result?.account) {
+        router.push("/dashboard");
+      }
+    } catch (e) {
+      console.error("Sign-in failed:", e);
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
+  const NavLinks = () => (
+    <nav className="flex items-center gap-6">
+      <Link
+        href="/"
+        className={`text-sm font-medium transition-colors ${
+          pathname === "/" ? "text-blue-600" : "text-slate-600 hover:text-slate-900"
+        }`}
+      >
+        Home
+      </Link>
+      {isAuthenticated && (
+        <Link
+          href="/dashboard"
+          className={`text-sm font-medium transition-colors ${
+            pathname === "/dashboard" ? "text-blue-600" : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          Dashboard
+        </Link>
+      )}
+    </nav>
+  );
+
   return (
-    <header className="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-50">
-      <div className="max-w-8xl mx-auto px-6 lg:px-8">
+    <header className="sticky top-0 z-50 backdrop-blur supports-[backdrop-filter]:bg-white/85 bg-white border-b border-slate-200/80">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo and Brand */}
+          {/* Brand */}
           <Link href="/" className="flex items-center gap-3 group">
             <Image
               src="/logo.png"
               alt="Intune Documentation"
-              width={40}
-              height={40}
-              className="group-hover:scale-105 transition-transform"
+              width={36}
+              height={36}
+              className="rounded-md group-hover:scale-105 transition-transform"
             />
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
+            <div className="leading-tight">
+              <span className="block text-base font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
                 Intune Documentation
-              </h1>
+              </span>
+              <span className="block text-[11px] tracking-wide text-slate-500">PDF Generator</span>
             </div>
           </Link>
 
-          {/* Navigation Links */}
-          {isAuthenticated && (
-            <nav className="flex items-center gap-6">
-              <Link
-                href="/"
-                className={`flex items-center gap-2 text-sm font-medium transition-colors ${
-                  pathname === "/" 
-                    ? "text-blue-600" 
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Home className="w-4 h-4" />
-                Home
-              </Link>
-              <Link
-                href="/dashboard"
-                className={`flex items-center gap-2 text-sm font-medium transition-colors ${
-                  pathname === "/dashboard" 
-                    ? "text-blue-600" 
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                Dashboard
-              </Link>
-              {/* Future docs link */}
-              {/* <Link
-                href="/docs"
-                className={`flex items-center gap-2 text-sm font-medium transition-colors ${
-                  pathname === "/docs" 
-                    ? "text-blue-600" 
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <BookOpen className="w-4 h-4" />
-                Documentation
-              </Link> */}
-            </nav>
-          )}
+          {/* Desktop nav */}
+          <div className="hidden md:flex items-center gap-8">
+            <NavLinks />
+          </div>
 
-          {/* User Section */}
-          {isAuthenticated ? (
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg">
-                <User className="w-4 h-4 text-slate-500" />
-                <span className="text-sm text-slate-700 font-medium">
-                  {userProfile?.displayName || accounts[0]?.username || "User"}
-                </span>
-              </div>
-              <Button onClick={handleSignOut} variant="ghost" size="sm">
-                <LogOut className="w-4 h-4" />
-                Sign Out
-              </Button>
-            </div>
-          ) : (
-            <div className="text-sm text-slate-600">
-              Not signed in
-            </div>
-          )}
+          {/* Actions */}
+          <div className="hidden md:flex items-center gap-3">
+            {isAuthenticated ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg">
+                  <User className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm text-slate-700 font-medium max-w-[220px] truncate">
+                    {userProfile?.displayName || accounts[0]?.username || "User"}
+                  </span>
+                </div>
+                <Button onClick={handleSignOut} variant="ghost" size="sm">
+                  <LogOut className="w-4 h-4" />
+                  Sign Out
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={handleSignIn} size="sm" loading={signingIn}>
+                  <LogIn className="w-4 h-4" />
+                  Sign in
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Mobile menu button */}
+          <button
+            className="md:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-700 cursor-pointer"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label="Toggle navigation menu"
+          >
+            {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
       </div>
+
+      {/* Mobile panel */}
+      {mobileOpen && (
+        <div className="md:hidden border-t border-slate-200 bg-white/95 backdrop-blur">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4">
+            <NavLinks />
+            <div className="flex items-center gap-3">
+              {isAuthenticated ? (
+                <>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-lg flex-1">
+                    <User className="w-4 h-4 text-slate-500" />
+                    <span className="text-sm text-slate-700 font-medium truncate">
+                      {userProfile?.displayName || accounts[0]?.username || "User"}
+                    </span>
+                  </div>
+                  <Button onClick={handleSignOut} variant="ghost" size="sm" className="flex-shrink-0">
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button onClick={handleSignIn} size="sm" loading={signingIn} className="flex-shrink-0">
+                    <LogIn className="w-4 h-4" />
+                    Sign in
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

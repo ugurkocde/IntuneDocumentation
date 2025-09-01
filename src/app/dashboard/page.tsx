@@ -356,7 +356,46 @@ export default function DashboardPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate PDF");
+        // Try to get error details from response
+        let errorMessage = "Failed to generate PDF";
+        try {
+          const errorData = await response.json();
+          if (errorData.code === "TOKEN_EXPIRED" || errorData.code === "TOKEN_REFRESH_NEEDED") {
+            // Token expired, refresh it
+            console.log("Token expired, refreshing...");
+            const newToken = await getAccessToken();
+            
+            // Retry with new token
+            const retryResponse = await fetch(pdfEndpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${newToken}`,
+              },
+              body: JSON.stringify({
+                ...selectedData,
+                branding: brandingOptions
+              }),
+            });
+            
+            if (retryResponse.ok) {
+              const blob = await retryResponse.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+              return; // Success after retry
+            }
+          }
+          errorMessage = errorData.message || errorData.error || errorMessage;
+        } catch {
+          // Couldn't parse error response, use default message
+        }
+        throw new Error(errorMessage);
       }
 
       const blob = await response.blob();
@@ -368,9 +407,10 @@ export default function DashboardPage() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error generating PDF:", err);
-      alert("Failed to generate PDF. Please try again.");
+      const errorMessage = err?.message || "Failed to generate PDF";
+      alert(`${errorMessage}. Please try again.`);
     } finally {
       setGeneratingPdf(false);
     }

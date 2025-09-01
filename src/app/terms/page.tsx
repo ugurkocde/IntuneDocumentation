@@ -21,8 +21,8 @@ export default function TermsOfUsePage() {
 
           <section className="space-y-6 text-slate-700 leading-relaxed">
             <p>
-              These Terms of Use ("Terms") govern your access to and use of the Intune Documentation Generator
-              (the "Service"). By using the Service, you agree to these Terms.
+              These Terms of Use (&quot;Terms&quot;) govern your access to and use of the Intune Documentation Generator
+              (the &quot;Service&quot;). By using the Service, you agree to these Terms.
             </p>
 
             <h2 className="text-xl font-semibold text-slate-900">Access and Eligibility</h2>
@@ -46,7 +46,7 @@ export default function TermsOfUsePage() {
 
             <h2 className="text-xl font-semibold text-slate-900">Disclaimer</h2>
             <p>
-              The Service is provided on an "as is" and "as available" basis without warranties of any kind.
+              The Service is provided on an &quot;as is&quot; and &quot;as available&quot; basis without warranties of any kind.
               We do not warrant that reports are error-free, complete, or suitable for any particular purpose.
               Validate outputs against your tenant as needed.
             </p>

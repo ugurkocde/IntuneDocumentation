@@ -21,7 +21,7 @@ export default function PrivacyPolicyPage() {
 
         <section className="space-y-6 text-slate-700 leading-relaxed">
           <p>
-            This Privacy Policy explains how Intune Documentation Generator ("we", "our", or "the Service")
+            This Privacy Policy explains how Intune Documentation Generator (&quot;we&quot;, &quot;our&quot;, or &quot;the Service&quot;)
             handles information when you use the app to generate documentation from Microsoft Intune. We
             designed the Service to minimize data collection and focus on privacy by default.
           </p>

@@ -41,7 +41,7 @@ export function SiteFooter() {
           </div>
 
           <div>
-            <h4 className="text-white font-semibold text-sm tracking-wide">Company</h4>
+            <h4 className="text-white font-semibold text-sm tracking-wide">More</h4>
             <ul className="mt-3 space-y-2 text-sm">
               <li>
                 <Link href="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
@@ -74,13 +74,19 @@ export function SiteFooter() {
       <div className="border-t border-white/10">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="text-xs text-gray-400">
-            © {year} Intune Documentation. All rights reserved.
+            © {year} Ugur Creative Labs. All rights reserved.
           </div>
-          <div className="inline-flex items-center gap-2 text-gray-400 text-sm">
+          <a
+            href="https://www.linkedin.com/in/ugurkocde/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm cursor-pointer"
+            aria-label="Visit Ugur's LinkedIn profile"
+          >
             <span>Made with</span>
             <Heart className="w-4 h-4 text-red-500 fill-red-500" />
             <span>by Ugur</span>
-          </div>
+          </a>
         </div>
       </div>
     </footer>

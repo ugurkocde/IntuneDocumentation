@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, Download } from "lucide-react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, Download, HelpCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
@@ -15,6 +15,7 @@ export default function HomePage() {
   const { userProfile } = useUserProfile();
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [signingIn, setSigningIn] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
 
   const isAuthenticated = accounts.length > 0;
 
@@ -173,48 +174,56 @@ export default function HomePage() {
                 
                 {/* CTA Section */}
                 {!isAuthenticated ? (
-                  <div className="flex flex-col items-start gap-4">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={handleSignIn}
-                        className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
-                        aria-label="Sign in with Microsoft to Generate Report"
-                        aria-disabled={signingIn}
-                      >
-                        <img 
-                          src="/sign-in-light-mode.svg" 
-                          alt="Sign in with Microsoft"
-                          width={215}
-                          height={41}
-                          loading="eager"
-                          decoding="async"
-                          fetchPriority="high"
-                          className="w-[215px] max-w-full h-auto"
-                        />
-                      </button>
-                    <div className="flex items-center gap-2 text-sm text-blue-200">
-                      <Clock className="w-4 h-4" />
-                        <span>2–3 minutes</span>
-                    </div>
-                  </div>
+                  <div className="flex flex-col items-start gap-3">
+                    <button
+                      onClick={handleSignIn}
+                      className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
+                      aria-label="Sign in with Microsoft to Generate Report"
+                      aria-disabled={signingIn}
+                    >
+                      <img 
+                        src="/sign-in-light-mode.svg" 
+                        alt="Sign in with Microsoft"
+                        width={215}
+                        height={41}
+                        loading="eager"
+                        decoding="async"
+                        fetchPriority="high"
+                        className="w-[215px] max-w-full h-auto"
+                      />
+                    </button>
                     {signingIn && (
                       <div className="text-sm text-blue-100" aria-live="polite">
                         Opening Microsoft sign-in…
                       </div>
                     )}
-                    {/* Sample PDF Download Button */}
-                    <div className="flex items-center gap-3">
-                      <a
-                        href="/api/pdf/sample"
-                        download="IntuneDocumentation-Sample.pdf"
-                        className="flex items-center gap-2 px-5 py-2.5 bg-white/10 backdrop-blur-sm text-white rounded-lg hover:bg-white/20 transition-all border border-white/20 font-medium text-sm cursor-pointer"
-                        aria-label="Download Sample PDF"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download Sample PDF
-                      </a>
-                      <span className="text-xs text-blue-200">Preview the report format</span>
+                    <div className="flex items-center gap-3 text-xs text-blue-100">
+                      <div className="inline-flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>2–3 minutes</span>
+                      </div>
+                      <span className="hidden sm:inline text-white/30">•</span>
+                      <div className="inline-flex items-center gap-2">
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>Azure AD OAuth 2.0 • Read‑only delegated access • No storage</span>
+                        <button
+                          onClick={() => setShowSecurity(true)}
+                          className="ml-1 underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
+                          aria-label="Learn why sign-in is safe and which permissions are used"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5" />
+                          Why it’s safe
+                        </button>
+                      </div>
                     </div>
+                    <a
+                      href="/api/pdf/sample"
+                      download="IntuneDocumentation-Sample.pdf"
+                      className="text-sm text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
+                      aria-label="Preview a sample PDF"
+                    >
+                      Preview a sample PDF
+                    </a>
                   </div>
                 ) : (
                   <div className="flex flex-col items-start gap-6">
@@ -473,7 +482,7 @@ export default function HomePage() {
               <h2 className="text-3xl font-bold text-white mb-4">Ready to document your Intune tenant?</h2>
               <p className="text-blue-100 mb-8">Sign in securely with Microsoft and export your report in minutes.</p>
               {!isAuthenticated ? (
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex flex-col items-center gap-3">
                   <button
                     onClick={handleSignIn}
                     className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
@@ -491,15 +500,28 @@ export default function HomePage() {
                       className="w-[215px] max-w-full h-auto"
                     />
                   </button>
-                  <a
-                    href="/api/pdf/sample"
-                    download="IntuneDocumentation-Sample.pdf"
-                    className="flex items-center gap-2 px-5 py-2.5 bg-white/10 backdrop-blur-sm text-white rounded-lg hover:bg-white/20 transition-all border border-white/20 font-medium text-sm cursor-pointer"
-                    aria-label="Download Sample PDF"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download Sample PDF
-                  </a>
+                  <div className="flex flex-col items-center gap-2 text-xs text-blue-100">
+                    <div className="inline-flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>Azure AD OAuth 2.0 • Read‑only delegated access • No storage</span>
+                    </div>
+                    <button
+                      onClick={() => setShowSecurity(true)}
+                      className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
+                      aria-label="Learn why sign-in is safe and which permissions are used"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5" />
+                      Why it’s safe
+                    </button>
+                    <a
+                      href="/api/pdf/sample"
+                      download="IntuneDocumentation-Sample.pdf"
+                      className="text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
+                      aria-label="Preview a sample PDF"
+                    >
+                      Preview a sample PDF
+                    </a>
+                  </div>
                 </div>
               ) : (
                 <button
@@ -515,6 +537,52 @@ export default function HomePage() {
 
         <SiteFooter />
       </main>
+
+      {/* Security Modal */}
+      {showSecurity && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="security-title"
+        >
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowSecurity(false)} />
+          <div className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl ring-1 ring-black/5 max-h-[85svh] overflow-y-auto">
+            <div className="p-5 sm:p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-5 h-5 text-blue-600" />
+                <h3 id="security-title" className="text-lg font-semibold text-slate-900">How sign‑in and security work</h3>
+              </div>
+              <p className="text-slate-600 text-sm mb-4">
+                You sign in with Microsoft; authentication is handled by Entra ID using OAuth 2.0/OpenID Connect. We never see your password and only request read‑only, delegated permissions.
+              </p>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">
+                <li><span className="font-medium">Delegated access only:</span> the app acts on your behalf while you’re signed in. <span className="font-medium">No application (app‑only) permissions</span> are used.</li>
+                <li><span className="font-medium">Read‑only scopes:</span> we request the minimal scopes needed to export configurations. Requested scopes:</li>
+                <li className="ml-4">
+                  <code className="text-xs bg-slate-100 px-2 py-1 rounded">
+                    {(loginRequest.scopes || []).join(', ')}
+                  </code>
+                </li>
+                <li><span className="font-medium">No data stored:</span> configuration data is fetched during your session to generate PDFs and is not persisted on our servers.</li>
+                <li><span className="font-medium">Tokens stay in your browser:</span> access tokens are kept in session storage by MSAL and are not saved server‑side.</li>
+                <li><span className="font-medium">Revoke anytime:</span> remove access from Entra ID &gt; Enterprise Applications, or simply sign out.</li>
+              </ul>
+              <div className="mt-5 flex items-center justify-between">
+                <a href="/privacy-policy" className="text-sm text-blue-700 hover:underline">Read the Privacy Policy</a>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowSecurity(false)}
+                    className="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

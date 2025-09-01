@@ -430,7 +430,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-subtle">
+      <div className="min-h-screen bg-gradient-subtle pt-16">
         <NavigationHeader />
         <div className="max-w-3xl mx-auto px-6 lg:px-8 py-12">
           <Card>
@@ -472,7 +472,7 @@ export default function DashboardPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-subtle">
+    <div className="min-h-screen bg-gradient-subtle pt-16">
       <NavigationHeader />
 
       <div className="flex">

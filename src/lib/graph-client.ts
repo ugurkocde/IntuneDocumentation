@@ -1,5 +1,6 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import "isomorphic-fetch";
+import { collectAllPages } from "./graph-paging";
 
 export function createGraphClient(accessToken: string) {
   return Client.init({
@@ -79,7 +80,7 @@ export class IntuneService {
         .select("id,displayName,description,createdDateTime,lastModifiedDateTime,version")
         .top(999)
         .get();
-      return response.value || [];
+      return await collectAllPages<DeviceConfiguration>(this.client as unknown as Client, response);
     } catch (error) {
       console.error("Error fetching device configurations:", error);
       return [];
@@ -105,7 +106,7 @@ export class IntuneService {
         .select("id,displayName,description,createdDateTime,lastModifiedDateTime,version")
         .top(999)
         .get();
-      return response.value || [];
+      return await collectAllPages<CompliancePolicy>(this.client as unknown as Client, response);
     } catch (error) {
       console.error("Error fetching compliance policies:", error);
       return [];
@@ -126,7 +127,7 @@ export class IntuneService {
 
   async getAppProtectionPolicies(): Promise<AppProtectionPolicy[]> {
     try {
-      const [iosPolicies, androidPolicies] = await Promise.all([
+      const [iosFirst, androidFirst] = await Promise.all([
         this.client
           .api("/deviceAppManagement/iosManagedAppProtections")
           .select("id,displayName,description,createdDateTime,lastModifiedDateTime,version")
@@ -140,7 +141,11 @@ export class IntuneService {
           .get()
           .catch(() => ({ value: [] })),
       ]);
-      return [...(iosPolicies.value || []), ...(androidPolicies.value || [])];
+      const [iosPolicies, androidPolicies] = await Promise.all([
+        collectAllPages<AppProtectionPolicy>(this.client as unknown as Client, iosFirst),
+        collectAllPages<AppProtectionPolicy>(this.client as unknown as Client, androidFirst),
+      ]);
+      return [...iosPolicies, ...androidPolicies];
     } catch (error) {
       console.error("Error fetching app protection policies:", error);
       return [];
@@ -153,7 +158,7 @@ export class IntuneService {
         .api("/identity/conditionalAccess/policies")
         .top(999)
         .get();
-      return response.value || [];
+      return await collectAllPages<ConditionalAccessPolicy>(this.client as unknown as Client, response);
     } catch (error: any) {
       // Conditional Access requires additional permissions that may not be granted
       if (error?.statusCode === 403) {
@@ -172,7 +177,7 @@ export class IntuneService {
         .select("id,displayName,description,priority,createdDateTime,lastModifiedDateTime,version")
         .top(999)
         .get();
-      return response.value || [];
+      return await collectAllPages<EnrollmentRestriction>(this.client as unknown as Client, response);
     } catch (error) {
       console.error("Error fetching enrollment restrictions:", error);
       return [];

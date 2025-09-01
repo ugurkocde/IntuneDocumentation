@@ -1,5 +1,6 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import "isomorphic-fetch";
+import { collectAllPages } from "./graph-paging";
 
 export function createGraphClient(accessToken: string) {
   return Client.init({
@@ -41,8 +42,9 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
       // Map the response to our standard format
-      return (response.value || []).map((policy: any) => ({
+      return items.map((policy: any) => ({
         ...policy,
         displayName: policy.name || policy.displayName,
         "@odata.type": "#microsoft.graph.deviceManagementConfigurationPolicy",
@@ -79,7 +81,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((config: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((config: any) => ({
         ...config,
         configType: "Device Configuration (Template)"
       }));
@@ -99,7 +102,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((config: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((config: any) => ({
         ...config,
         "@odata.type": "#microsoft.graph.groupPolicyConfiguration",
         configType: "Administrative Template",
@@ -121,7 +125,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((intent: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((intent: any) => ({
         ...intent,
         "@odata.type": "#microsoft.graph.deviceManagementIntent",
         configType: "Security Baseline/Endpoint Security"
@@ -156,7 +161,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((policy: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((policy: any) => ({
         ...policy,
         configType: "Compliance Policy"
       }));
@@ -176,7 +182,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((script: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((script: any) => ({
         ...script,
         "@odata.type": "#microsoft.graph.deviceShellScript",
         configType: "Shell Script (macOS)",
@@ -198,7 +205,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((script: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((script: any) => ({
         ...script,
         "@odata.type": "#microsoft.graph.deviceManagementScript",
         configType: "PowerShell Script (Windows)",
@@ -221,7 +229,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((config: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((config: any) => ({
         ...config,
         configType: "App Configuration Policy"
       }));
@@ -242,7 +251,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((policy: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((policy: any) => ({
         ...policy,
         configType: "Windows Update Policy",
         platformType: "Windows"
@@ -263,7 +273,8 @@ export class IntuneConfigurationService {
         .top(999)
         .get();
       
-      return (response.value || []).map((config: any) => ({
+      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+      return items.map((config: any) => ({
         ...config,
         configType: "Enrollment Configuration"
       }));
@@ -282,7 +293,7 @@ export class IntuneConfigurationService {
         .select("id,displayName,description,publishedDateTime,platformType,templateType")
         .top(999)
         .get();
-      return response.value || [];
+      return await collectAllPages<any>(this.client as unknown as Client, response);
     } catch (error) {
       console.error("Error fetching templates:", error);
       return [];

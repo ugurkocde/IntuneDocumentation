@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { generateDetailedPDF } from "~/lib/pdf-generator-detailed";
 import { GroupResolver } from "~/lib/group-resolver";
 import { Client } from "@microsoft/microsoft-graph-client";
+import { collectAllPages } from "~/lib/graph-paging";
 import { isTokenExpired, validateToken } from "~/lib/auth-utils";
 
 export async function POST(request: NextRequest) {
@@ -108,10 +109,11 @@ export async function POST(request: NextRequest) {
         .select("id,operatingSystem")
         .top(999)
         .get();
+      const allDevices = await collectAllPages<any>(client as any, devicesResponse);
 
       // Count devices by platform
-      if (devicesResponse.value) {
-        devicesResponse.value.forEach((device: any) => {
+      if (allDevices) {
+        allDevices.forEach((device: any) => {
           const os = device.operatingSystem || "Unknown";
           deviceCounts[os] = (deviceCounts[os] || 0) + 1;
         });

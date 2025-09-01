@@ -4,23 +4,27 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, Lock, CheckCircle, ChevronRight, ChevronDown, Heart, Clock, Database, Eye, Download } from "lucide-react";
-import { useState } from "react";
+import { Shield, FileText, CheckCircle, ChevronDown, Heart, Clock, Database, Eye, Download } from "lucide-react";
+import { useMemo, useState } from "react";
 
 export default function HomePage() {
   const { instance, accounts } = useMsal();
   const router = useRouter();
   const { userProfile } = useUserProfile();
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
   const isAuthenticated = accounts.length > 0;
 
   const handleSignIn = async () => {
     try {
+      setSigningIn(true);
       await instance.loginPopup(loginRequest);
       router.push("/dashboard");
     } catch (error) {
       console.error("Login failed:", error);
+    } finally {
+      setSigningIn(false);
     }
   };
   
@@ -45,10 +49,37 @@ export default function HomePage() {
     }
   ];
 
+  const faqJsonLd = useMemo(() => ({
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": faqs.map((f) => ({
+      "@type": "Question",
+      "name": f.question,
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": f.answer,
+      },
+    })),
+  }), [faqs]);
+
   return (
     <>
+      {/* Skip link for accessibility */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only fixed top-2 left-2 z-50 bg-white text-slate-900 px-3 py-2 rounded shadow"
+      >
+        Skip to main content
+      </a>
+
       {/* Hero Section - Full Screen */}
-      <main>
+      <main id="main-content">
+        {/* FAQ Structured Data */}
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
         <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-blue-800 flex items-center">
           {/* Geometric Pattern Overlay */}
           <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:50px_50px]" />
@@ -108,8 +139,9 @@ export default function HomePage() {
                     <div className="flex items-center gap-3">
                       <button
                         onClick={handleSignIn}
-                        className="inline-block hover:opacity-90 transition-opacity transform hover:scale-105 cursor-pointer"
+                        className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
                         aria-label="Sign in with Microsoft to Generate Report"
+                        aria-disabled={signingIn}
                       >
                         <img 
                           src="/sign-in-light-mode.svg" 
@@ -123,6 +155,11 @@ export default function HomePage() {
                         <span>Takes 2-3 minutes</span>
                       </div>
                     </div>
+                    {signingIn && (
+                      <div className="text-sm text-blue-100" aria-live="polite">
+                        Opening Microsoft sign-in…
+                      </div>
+                    )}
                     {/* Sample PDF Download Button */}
                     <div className="flex items-center gap-3">
                       <a
@@ -212,8 +249,8 @@ export default function HomePage() {
           </div>
           
           {/* Scroll Indicator */}
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-bounce">
-            <ChevronDown className="w-8 h-8 text-white/50" />
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-bounce" aria-hidden="true">
+            <ChevronDown className="w-8 h-8 text-white/50" aria-hidden="true" />
           </div>
         </div>
 

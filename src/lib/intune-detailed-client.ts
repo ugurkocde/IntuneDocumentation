@@ -1,5 +1,6 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import "isomorphic-fetch";
+import { collectAllPages } from "./graph-paging";
 
 export function createGraphClient(accessToken: string) {
   return Client.init({
@@ -93,8 +94,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
+      const allPolicies = await collectAllPages<any>(this.client as unknown as Client, policies);
+
       const detailedPolicies = await Promise.all(
-        (policies.value || []).map(async (policy: any) => {
+        (allPolicies || []).map(async (policy: any) => {
           try {
             // Fetch settings with expanded definitions
             const settingsResponse = await this.client
@@ -103,6 +106,7 @@ export class DetailedIntuneService {
               .top(1000)
               .expand("settingDefinitions")
               .get();
+            const settings = await collectAllPages<any>(this.client as unknown as Client, settingsResponse);
 
             // Fetch assignments
             const assignmentsResponse = await this.client
@@ -110,13 +114,14 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
+            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
 
             return {
               ...policy,
               displayName: policy.name,
               configType: "Settings Catalog",
-              settings: settingsResponse.value || [],
-              assignments: assignmentsResponse.value || []
+              settings: settings || [],
+              assignments: assignments || []
             };
           } catch (error) {
             console.error(`Error fetching details for policy ${policy.name}:`, error);
@@ -148,8 +153,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
+      const allConfigs = await collectAllPages<any>(this.client as unknown as Client, configs);
+
       const detailedConfigs = await Promise.all(
-        (configs.value || []).map(async (config: any) => {
+        (allConfigs || []).map(async (config: any) => {
           try {
             // Fetch assignments
             const assignmentsResponse = await this.client
@@ -157,12 +164,13 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
+            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
 
             // The config object already contains all settings as properties
             return {
               ...config,
               configType: this.getConfigurationType(config["@odata.type"]),
-              assignments: assignmentsResponse.value || []
+              assignments: assignments || []
             };
           } catch (error) {
             console.error(`Error fetching details for config ${config.displayName}:`, error);
@@ -193,8 +201,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
+      const allConfigs = await collectAllPages<any>(this.client as unknown as Client, configs);
+
       const detailedConfigs = await Promise.all(
-        (configs.value || []).map(async (config: any) => {
+        (allConfigs || []).map(async (config: any) => {
           try {
             // Fetch definition values (actual settings)
             const definitionValues = await this.client
@@ -204,6 +214,7 @@ export class DetailedIntuneService {
               .top(999)
               .get()
               .catch(() => ({ value: [] }));
+            const definitionValuesAll = await collectAllPages<any>(this.client as unknown as Client, definitionValues);
 
             // Fetch assignments
             const assignmentsResponse = await this.client
@@ -211,12 +222,13 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
+            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
 
             return {
               ...config,
               configType: "Administrative Template",
-              definitionValues: definitionValues.value || [],
-              assignments: assignmentsResponse.value || [],
+              definitionValues: definitionValuesAll || [],
+              assignments: assignments || [],
               version: 1
             };
           } catch (error) {
@@ -249,8 +261,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
+      const allPolicies = await collectAllPages<any>(this.client as unknown as Client, policies);
+
       const detailedPolicies = await Promise.all(
-        (policies.value || []).map(async (policy: any) => {
+        (allPolicies || []).map(async (policy: any) => {
           try {
             // Fetch assignments
             const assignmentsResponse = await this.client
@@ -258,6 +272,7 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
+            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
 
             // Fetch scheduled actions for rules
             const scheduledActions = await this.client
@@ -266,12 +281,13 @@ export class DetailedIntuneService {
               .expand("scheduledActionConfigurations")
               .get()
               .catch(() => ({ value: [] }));
+            const scheduledActionsAll = await collectAllPages<any>(this.client as unknown as Client, scheduledActions);
 
             return {
               ...policy,
               configType: "Compliance Policy",
-              scheduledActionsForRule: scheduledActions.value || [],
-              assignments: assignmentsResponse.value || []
+              scheduledActionsForRule: scheduledActionsAll || [],
+              assignments: assignments || []
             };
           } catch (error) {
             console.error(`Error fetching details for compliance policy ${policy.displayName}:`, error);
@@ -303,8 +319,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
+      const allIntents = await collectAllPages<any>(this.client as unknown as Client, intents);
+
       const detailedIntents = await Promise.all(
-        (intents.value || []).map(async (intent: any) => {
+        (allIntents || []).map(async (intent: any) => {
           try {
             // Fetch categories with settings
             const categories = await this.client
@@ -313,6 +331,7 @@ export class DetailedIntuneService {
               .expand("settings")
               .get()
               .catch(() => ({ value: [] }));
+            const categoriesAll = await collectAllPages<any>(this.client as unknown as Client, categories);
 
             // Fetch assignments
             const assignmentsResponse = await this.client
@@ -320,12 +339,13 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
+            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
 
             return {
               ...intent,
               configType: "Security Baseline",
-              categories: categories.value || [],
-              assignments: assignmentsResponse.value || []
+              categories: categoriesAll || [],
+              assignments: assignments || []
             };
           } catch (error) {
             console.error(`Error fetching details for intent ${intent.displayName}:`, error);
@@ -367,8 +387,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
+      const allScripts = await collectAllPages<any>(this.client as unknown as Client, scripts);
+
       const detailedScripts = await Promise.all(
-        (scripts.value || []).map(async (script: any) => {
+        (allScripts || []).map(async (script: any) => {
           try {
             // Fetch script content
             const scriptContent = await this.client
@@ -384,13 +406,14 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
+            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
 
             return {
               ...script,
               scriptContent: scriptContent.scriptContent ? atob(scriptContent.scriptContent) : null,
               configType: "PowerShell Script",
               platformType: "Windows",
-              assignments: assignmentsResponse.value || []
+              assignments: assignments || []
             };
           } catch (error) {
             console.error(`Error fetching details for script ${script.displayName}:`, error);
@@ -421,8 +444,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
+      const allScripts = await collectAllPages<any>(this.client as unknown as Client, scripts);
+
       const detailedScripts = await Promise.all(
-        (scripts.value || []).map(async (script: any) => {
+        (allScripts || []).map(async (script: any) => {
           try {
             // Fetch script content
             const scriptContent = await this.client
@@ -438,13 +463,14 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
+            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
 
             return {
               ...script,
               scriptContent: scriptContent.scriptContent ? atob(scriptContent.scriptContent) : null,
               configType: "Shell Script",
               platformType: "macOS",
-              assignments: assignmentsResponse.value || []
+              assignments: assignments || []
             };
           } catch (error) {
             console.error(`Error fetching details for script ${script.displayName}:`, error);
@@ -496,8 +522,7 @@ export class DetailedIntuneService {
         .expand("assignments,apps")
         .top(999)
         .get();
-
-      return response.value || [];
+      return await collectAllPages<any>(this.client as unknown as Client, response);
     } catch (error) {
       console.error("Error fetching app configurations:", error);
       return [];
@@ -515,10 +540,11 @@ export class DetailedIntuneService {
         .expand("assignments")
         .top(999)
         .get();
+      const list = await collectAllPages<any>(this.client as unknown as Client, response);
 
       // Fetch detailed settings for each policy
       const detailedPolicies = await Promise.all(
-        response.value.map(async (policy: any) => {
+        list.map(async (policy: any) => {
           try {
             const detailResponse = await this.client
               .api(`/deviceManagement/deviceConfigurations/${policy.id}`)
@@ -550,8 +576,7 @@ export class DetailedIntuneService {
         .expand("assignments")
         .top(999)
         .get();
-
-      return response.value || [];
+      return await collectAllPages<any>(this.client as unknown as Client, response);
     } catch (error) {
       console.error("Error fetching enrollment configurations:", error);
       return [];

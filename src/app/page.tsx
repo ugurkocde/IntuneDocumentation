@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, Download, HelpCircle } from "lucide-react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
@@ -139,14 +139,13 @@ export default function HomePage() {
 
                 {/* Main Headline */}
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-6 tracking-tight leading-[1.05]">
-                  Generate
+                  Stop Spending Hours on
                   <span className="mx-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">Intune Documentation</span>
-                  in Minutes
                 </h1>
                 
                 {/* Subheadline */}
                 <p className="text-lg sm:text-xl lg:text-2xl text-blue-100/90 mb-8 leading-relaxed max-w-2xl">
-                  Create audit‑ready PDF reports of your Microsoft Intune policies, settings catalogs, scripts, and assignments — fast, accurate, and secure.
+                  Generate comprehensive PDF reports of all your Microsoft Intune configurations in under 3 minutes. Export 150+ policies with complete settings, assignments, and ADMX values — ready for audits, compliance reviews, or knowledge transfer.
                 </p>
 
                 {/* Trust / Value points */}
@@ -328,6 +327,32 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Social Proof Section */}
+        <section className="py-16 bg-gradient-to-b from-gray-50 to-white">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-5xl mx-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+                <div>
+                  <div className="text-3xl font-bold text-blue-600 mb-1">10+</div>
+                  <div className="text-sm text-gray-600">Configuration Types</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-blue-600 mb-1">3 min</div>
+                  <div className="text-sm text-gray-600">Average Export Time</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-blue-600 mb-1">150+</div>
+                  <div className="text-sm text-gray-600">Policies per Report</div>
+                </div>
+                <div>
+                  <div className="text-3xl font-bold text-blue-600 mb-1">100%</div>
+                  <div className="text-sm text-gray-600">Free Forever</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* How It Works Section */}
         <section className="py-24 bg-white scroll-mt-24" id="how-it-works">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -336,7 +361,7 @@ export default function HomePage() {
                 Generate Your Report in 3 Steps
               </h2>
               <p className="text-lg text-gray-600 text-center mb-12 max-w-2xl mx-auto">
-                Simple, secure, and fast — from sign‑in to download.
+                Replace hours of manual documentation with a 3-minute automated process.
               </p>
               
               <div className="grid md:grid-cols-3 gap-8">
@@ -380,8 +405,66 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Perfect For Section */}
+        <section className="py-24 bg-gray-50 scroll-mt-24" id="perfect-for">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-5xl mx-auto">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">
+                Perfect for IT Professionals Who Need
+              </h2>
+              <p className="text-lg text-gray-600 text-center mb-12 max-w-3xl mx-auto">
+                Whether you&apos;re preparing for audits, onboarding team members, or managing multiple tenants, save hours on documentation.
+              </p>
+              
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-blue-600">
+                  <h3 className="font-semibold text-gray-900 mb-2">IT Administrators</h3>
+                  <p className="text-gray-600 text-sm">
+                    Document your Intune environment for audits, compliance reviews, or disaster recovery planning.
+                  </p>
+                </div>
+                
+                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-green-600">
+                  <h3 className="font-semibold text-gray-900 mb-2">MSPs & Consultants</h3>
+                  <p className="text-gray-600 text-sm">
+                    Quickly assess client configurations, create baseline documentation, or prepare handover reports.
+                  </p>
+                </div>
+                
+                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-purple-600">
+                  <h3 className="font-semibold text-gray-900 mb-2">Compliance Teams</h3>
+                  <p className="text-gray-600 text-sm">
+                    Generate audit-ready reports with complete policy details, assignments, and security configurations.
+                  </p>
+                </div>
+                
+                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-orange-600">
+                  <h3 className="font-semibold text-gray-900 mb-2">Security Analysts</h3>
+                  <p className="text-gray-600 text-sm">
+                    Review security baselines, compliance policies, and conditional access settings in a single document.
+                  </p>
+                </div>
+                
+                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-cyan-600">
+                  <h3 className="font-semibold text-gray-900 mb-2">Documentation Teams</h3>
+                  <p className="text-gray-600 text-sm">
+                    Maintain up-to-date configuration documentation without manual screenshots or copy-pasting.
+                  </p>
+                </div>
+                
+                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-indigo-600">
+                  <h3 className="font-semibold text-gray-900 mb-2">New Team Members</h3>
+                  <p className="text-gray-600 text-sm">
+                    Understand existing Intune configurations quickly with comprehensive, organized documentation.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Key Features Section */}
-        <section className="py-24 bg-gray-50 scroll-mt-24" id="features">
+        <section className="py-24 bg-white scroll-mt-24" id="features">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-5xl mx-auto">
               <h2 className="text-3xl font-bold text-gray-900 mb-12 text-center">
@@ -393,9 +476,9 @@ export default function HomePage() {
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mb-4">
                     <FileText className="w-6 h-6 text-white" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Comprehensive Export</h3>
+                  <h3 className="font-semibold text-gray-900 mb-2">Save 10+ Hours Per Audit</h3>
                   <p className="text-gray-600 text-sm">
-                    Settings Catalog, device configurations, ADMX, baselines, scripts, app configs, Windows Update, and enrollment.
+                    What takes hours manually — screenshots, copy-pasting, formatting — done in 3 minutes. All 10 configuration types included.
                   </p>
                 </div>
 
@@ -403,9 +486,9 @@ export default function HomePage() {
                   <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center mb-4">
                     <CheckCircle className="w-6 h-6 text-white" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Audit‑Ready PDFs</h3>
+                  <h3 className="font-semibold text-gray-900 mb-2">100% Complete Settings</h3>
                   <p className="text-gray-600 text-sm">
-                    Full settings with ADMX values, assignments, and filters — formatted for reviews and audits.
+                    Every setting, ADMX value, script content, and assignment captured. No manual gaps or missing configurations.
                   </p>
                 </div>
 
@@ -441,12 +524,87 @@ export default function HomePage() {
 
                 <div className="bg-white rounded-xl p-6 shadow-md">
                   <div className="w-12 h-12 bg-gradient-to-br from-sky-500 to-cyan-600 rounded-lg flex items-center justify-center mb-4">
-                    <Download className="w-6 h-6 text-white" />
+                    <Clock className="w-6 h-6 text-white" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Fast Export</h3>
+                  <h3 className="font-semibold text-gray-900 mb-2">Always Current</h3>
                   <p className="text-gray-600 text-sm">
-                    Optimized paging ensures large tenants export reliably beyond default limits.
+                    Generate fresh reports anytime. No outdated wikis or stale documentation — always reflects your latest configuration.
                   </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Why Not Manual Section */}
+        <section className="py-24 bg-gradient-to-b from-white to-gray-50">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-5xl mx-auto">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">
+                Stop Doing Documentation the Hard Way
+              </h2>
+              <p className="text-lg text-gray-600 text-center mb-12 max-w-3xl mx-auto">
+                Manual documentation is time-consuming, error-prone, and always outdated. Here&apos;s what changes:
+              </p>
+              
+              <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4 text-lg">Without This Tool</h3>
+                  <ul className="space-y-3">
+                    <li className="flex items-start gap-3">
+                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-gray-600">10+ hours manually documenting policies</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-gray-600">Screenshots and copy-pasting from portal</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-gray-600">Missing settings and configuration details</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-gray-600">Outdated docs after every change</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-gray-600">Inconsistent formatting across teams</span>
+                    </li>
+                  </ul>
+                </div>
+                
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4 text-lg">With This Tool</h3>
+                  <ul className="space-y-3">
+                    <li className="flex items-start gap-3">
+                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-gray-600">3 minutes to complete documentation</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-gray-600">Automated export via Graph API</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-gray-600">100% complete with all settings captured</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-gray-600">Generate fresh reports anytime</span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-gray-600">Professional, consistent PDF format</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="mt-12 text-center">
+                <div className="inline-flex items-center justify-center px-6 py-3 bg-blue-50 rounded-lg">
+                  <Clock className="w-5 h-5 text-blue-600 mr-2" />
+                  <span className="text-blue-900 font-semibold">Average time saved: 10+ hours per documentation cycle</span>
                 </div>
               </div>
             </div>

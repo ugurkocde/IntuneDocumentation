@@ -50,6 +50,10 @@ export default function HomePage() {
     {
       question: "How much does it cost?",
       answer: "It's completely free. No hidden fees, no premium tiers, no credit card required."
+    },
+    {
+      question: "Why does Defender flag 'Suspicious application consent for offline access'?",
+      answer: "This is a common alert when an app requests the standard 'offline_access' permission from Microsoft identity (used to refresh tokens without repeatedly prompting you). It does NOT grant extra data access beyond your approved read-only scopes, and we use only delegated permissions (no application permissions). Tokens are kept in your browser session, and we do not store tenant data. An admin can pre-consent the app to reduce such alerts."
     }
   ];
 

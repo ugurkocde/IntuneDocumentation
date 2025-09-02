@@ -537,6 +537,22 @@ export function BrandingSettingsModal({
                           className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
                           placeholder="Footer text"
                         />
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="footer-logo"
+                            checked={options.footer?.includeLogo ?? false}
+                            onChange={(e) => setOptions(prev => ({
+                              ...prev,
+                              footer: {
+                                ...prev.footer!,
+                                includeLogo: e.target.checked,
+                              },
+                            }))}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                          />
+                          <label htmlFor="footer-logo" className="text-sm text-slate-700">Show logo in footer</label>
+                        </div>
                         <input
                           type="text"
                           value={options.footer?.confidentialityNotice || ''}

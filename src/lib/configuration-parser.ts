@@ -221,21 +221,53 @@ export function parseAssignments(assignments: any[]): string {
   if (!assignments || assignments.length === 0) {
     return "Not assigned";
   }
-  
-  const targets = assignments.map(assignment => {
-    const target = assignment.target;
-    if (!target) return "Unknown";
-    
-    const type = target["@odata.type"];
-    if (type?.includes("allDevices")) return "All Devices";
-    if (type?.includes("allUsers")) return "All Users";
-    if (type?.includes("group")) return `Group: ${target.groupId || "Unknown"}`;
-    if (type?.includes("exclusionGroup")) return `Excluded: ${target.groupId || "Unknown"}`;
-    
-    return "Custom Assignment";
-  });
-  
-  return targets.join(", ");
+
+  const labels: string[] = [];
+
+  for (const assn of assignments) {
+    const target = assn?.target ?? assn ?? {};
+    const typeRaw = target["@odata.type"] || "";
+    const type = typeof typeRaw === 'string' ? typeRaw.toLowerCase() : '';
+
+    // Common group-based assignments
+    if (target.groupId) {
+      if (type.includes('exclusiongroup')) {
+        labels.push(`Excluded: ${target.groupId}`);
+      } else {
+        labels.push(`Group: ${target.groupId}`);
+      }
+      continue;
+    }
+
+    // All Devices / All Users / All Licensed Users
+    if (type.includes('alldevices')) {
+      labels.push('All Devices');
+      continue;
+    }
+    if (type.includes('alllicensedusers') || type.includes('allusers')) {
+      labels.push('All Users');
+      continue;
+    }
+
+    // Intune assignment filter
+    if (target.deviceAndAppManagementAssignmentFilterId) {
+      const fType = String(target.deviceAndAppManagementAssignmentFilterType || '').toLowerCase();
+      const prefix = fType.includes('include') ? 'Filter (Include)' : fType.includes('exclude') ? 'Filter (Exclude)' : 'Filter';
+      labels.push(`${prefix}: ${target.deviceAndAppManagementAssignmentFilterId}`);
+      continue;
+    }
+
+    // ConfigMgr collections
+    if (type.includes('configurationmanagercollectionassignmenttarget') && target.collectionId) {
+      labels.push(`CM Collection: ${target.collectionId}`);
+      continue;
+    }
+
+    // Fallback
+    labels.push('Custom Assignment');
+  }
+
+  return labels.join(', ');
 }
 
 // Helper functions

@@ -54,6 +54,7 @@ export interface BrandingOptions {
     text?: string;
     confidentialityNotice?: string;
     includeDate?: boolean;
+    includeLogo?: boolean;
   };
   
   // Watermark

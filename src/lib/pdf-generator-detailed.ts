@@ -216,7 +216,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
 
   const addPageNumber = () => {
     // Add header logo if configured
-    if (branding?.logo?.position === 'header' && pageNumber > 1) {
+    if ((branding?.logo?.position === 'header' || branding?.header?.includeLogo) && pageNumber > 1) {
       addLogo('header');
     }
     
@@ -228,7 +228,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     }
     
     // Add footer logo if configured
-    if (branding?.logo?.position === 'footer') {
+    if (branding?.logo?.position === 'footer' || branding?.footer?.includeLogo) {
       addLogo('footer');
     }
     
@@ -366,17 +366,22 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       return doc.splitTextToSize(str, maxWidth);
     };
     
-    // Table header
-    checkPageBreak(15);
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, yPosition, tableWidth, 8, "F");
+    // Helper to draw table header and advance Y
+    const drawHeader = () => {
+      // Ensure space for header
+      checkPageBreak(15);
+      doc.setFillColor(240, 240, 240);
+      doc.rect(margin, yPosition, tableWidth, 8, "F");
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Setting", margin + 2, yPosition + 5);
+      doc.text("Value", margin + (colWidths[0] || 50) + 2, yPosition + 5);
+      doc.text("Description", margin + (colWidths[0] || 50) + (colWidths[1] || 65) + 2, yPosition + 5);
+      yPosition += 8;
+    };
     
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Setting", margin + 2, yPosition + 5);
-    doc.text("Value", margin + (colWidths[0] || 50) + 2, yPosition + 5);
-    doc.text("Description", margin + (colWidths[0] || 50) + (colWidths[1] || 65) + 2, yPosition + 5);
-    yPosition += 8;
+    // Initial header
+    drawHeader();
     
     // Table rows
     doc.setFont("helvetica", "normal");
@@ -395,8 +400,10 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       const maxLines = Math.max(nameLines.length, valueLines.length, descLines.length);
       const rowHeight = Math.max(8, maxLines * 4 + 4); // Dynamic height based on content
       
-      // Check for page break with actual row height
-      checkPageBreak(rowHeight + 5);
+      // Check for page break with actual row height; redraw header on new page
+      if (checkPageBreak(rowHeight + 5)) {
+        drawHeader();
+      }
       
       // Alternate row background
       if (index % 2 === 0) {
@@ -447,6 +454,22 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   };
 
   // Generate PDF content
+
+  // Set PDF metadata with sensible fallbacks
+  try {
+    const metaTitle = branding?.metadata?.title || (branding?.companyName ? `${branding.companyName} - Intune Configuration Report` : 'Intune Configuration Report');
+    const metaAuthor = branding?.metadata?.author || branding?.companyName || branding?.department || 'Intune Documentation Tool';
+    const metaSubject = branding?.metadata?.subject || 'Microsoft Intune Configuration Documentation';
+    const metaKeywords = branding?.metadata?.keywords?.join(', ') || 'Intune, Microsoft, Configuration, Documentation, Report';
+    // Some jsPDF builds expose setProperties; use optional chaining defensively
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).setProperties?.({
+      title: metaTitle,
+      author: metaAuthor,
+      subject: metaSubject,
+      keywords: metaKeywords,
+    });
+  } catch {}
   
   // Helper function to add logo with proper sizing
   const addLogo = (position: 'header' | 'footer' | 'cover' | 'watermark', x?: number, y?: number) => {
@@ -669,7 +692,15 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     doc.setFont("helvetica", "normal");
     doc.setTextColor(80, 80, 80);
-    doc.text(value, valueX, tableY);
+    const maxWidth = metadataX + metadataWidth - valueX - 8;
+    const lines = doc.splitTextToSize(value || '', maxWidth);
+    // Print first line at current Y aligned to valueX
+    doc.text(lines[0] || '', valueX, tableY);
+    // Additional lines below
+    for (let i = 1; i < lines.length; i++) {
+      tableY += tableRowHeight;
+      doc.text(lines[i], valueX, tableY);
+    }
     
     tableY += tableRowHeight;
   };
@@ -1314,6 +1345,17 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   }
   
   // Settings Catalog Section
+  const enhanceAssignmentText = (text: string): string => {
+    if (!text) return text;
+    if (data.groupNames && data.groupNames.size > 0) {
+      data.groupNames.forEach((name, id) => {
+        const reGroup = new RegExp(`(Group: )${id}`, 'g');
+        const reExcl = new RegExp(`(Excluded: )${id}`, 'g');
+        text = text.replace(reGroup, `$1${name}`).replace(reExcl, `$1${name}`);
+      });
+    }
+    return text;
+  };
   if (data.settingsCatalog.length > 0) {
     doc.addPage();
     yPosition = margin;
@@ -1325,7 +1367,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.settingsCatalog.forEach(policy => {
       addConfigHeader(
         policy.displayName || policy.name,
-        parseAssignments(policy.assignments),
+        enhanceAssignmentText(parseAssignments(policy.assignments)),
         policy.createdDateTime,
         policy.lastModifiedDateTime
       );
@@ -1360,7 +1402,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.deviceConfigurations.forEach(config => {
       addConfigHeader(
         config.displayName,
-        parseAssignments(config.assignments),
+        enhanceAssignmentText(parseAssignments(config.assignments)),
         config.createdDateTime,
         config.lastModifiedDateTime
       );
@@ -1396,7 +1438,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.administrativeTemplates.forEach(template => {
       addConfigHeader(
         template.displayName,
-        parseAssignments(template.assignments),
+        enhanceAssignmentText(parseAssignments(template.assignments)),
         template.createdDateTime,
         template.lastModifiedDateTime
       );
@@ -1444,7 +1486,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.compliancePolicies.forEach(policy => {
       addConfigHeader(
         policy.displayName,
-        parseAssignments(policy.assignments),
+        enhanceAssignmentText(parseAssignments(policy.assignments)),
         policy.createdDateTime,
         policy.lastModifiedDateTime
       );
@@ -1483,7 +1525,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.securityBaselines.forEach(baseline => {
       addConfigHeader(
         baseline.displayName,
-        parseAssignments(baseline.assignments),
+        enhanceAssignmentText(parseAssignments(baseline.assignments)),
         baseline.createdDateTime,
         baseline.lastModifiedDateTime
       );
@@ -1529,7 +1571,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       data.scripts.windows.forEach(script => {
         addConfigHeader(
           script.displayName,
-          parseAssignments(script.assignments),
+          enhanceAssignmentText(parseAssignments(script.assignments)),
           script.createdDateTime,
           script.lastModifiedDateTime
         );
@@ -1594,7 +1636,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       data.scripts.macOS.forEach(script => {
         addConfigHeader(
           script.displayName,
-          parseAssignments(script.assignments),
+          enhanceAssignmentText(parseAssignments(script.assignments)),
           script.createdDateTime,
           script.lastModifiedDateTime
         );
@@ -1662,7 +1704,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.appConfigurations.forEach(config => {
       addConfigHeader(
         config.displayName || config.name,
-        parseAssignments(config.assignments),
+        enhanceAssignmentText(parseAssignments(config.assignments)),
         config.createdDateTime,
         config.lastModifiedDateTime
       );
@@ -1865,7 +1907,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.enrollmentConfigurations.forEach(config => {
       addConfigHeader(
         config.displayName || config.name,
-        parseAssignments(config.assignments),
+        enhanceAssignmentText(parseAssignments(config.assignments)),
         config.createdDateTime,
         config.lastModifiedDateTime
       );

@@ -10,6 +10,7 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { ProgressBar } from "~/components/ui/progress-bar";
 import { NavigationHeader } from "~/components/navigation-header";
+// Settings is now an in-dashboard view; no external link needed here
 import { 
   Settings,
   Shield,
@@ -47,6 +48,7 @@ interface IntuneConfigurations {
   appConfigurations: any[];
   windowsUpdatePolicies: any[];
   enrollmentConfigurations: any[];
+  conditionalAccessPolicies: any[];
   summary: {
     totalConfigurations: number;
     byType: {
@@ -59,6 +61,7 @@ interface IntuneConfigurations {
       appConfigurations: number;
       windowsUpdatePolicies: number;
       enrollmentConfigurations: number;
+      conditionalAccessPolicies: number;
     };
   };
 }
@@ -81,6 +84,7 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<string>("overview");
   const [showBrandingModal, setShowBrandingModal] = useState(false);
+  const [includeCA, setIncludeCA] = useState(false);
   const [brandingOptions, setBrandingOptions] = useState<BrandingOptions | undefined>(() => {
     // Load saved branding options from localStorage on mount
     if (typeof window !== 'undefined') {
@@ -95,6 +99,7 @@ export default function DashboardPage() {
     }
     return undefined;
   });
+  const [caConsentStatus, setCaConsentStatus] = useState<'unknown' | 'included' | 'missing'>('unknown');
   const [fetchProgress, setFetchProgress] = useState<{
     steps: { name: string; status: "pending" | "loading" | "completed" | "error" }[];
     currentStep: number;
@@ -109,7 +114,8 @@ export default function DashboardPage() {
       { name: "Fetching Scripts", status: "pending" },
       { name: "Fetching App Configurations", status: "pending" },
       { name: "Fetching Windows Update Policies", status: "pending" },
-      { name: "Fetching Enrollment Configurations", status: "pending" }
+      { name: "Fetching Enrollment Configurations", status: "pending" },
+      { name: "Fetching Conditional Access Policies", status: "pending" }
     ],
     currentStep: 0
   });
@@ -122,19 +128,19 @@ export default function DashboardPage() {
     }
   }, [accounts, router]);
 
-  const getAccessToken = async () => {
+  const getAccessToken = async (extraScopes?: string[]) => {
     if (accounts.length === 0) throw new Error("No authenticated account");
     
     const request = {
-      ...graphScopes,
+      scopes: extraScopes && extraScopes.length > 0 ? [...graphScopes.scopes, ...extraScopes] : [...graphScopes.scopes],
       account: accounts[0],
-    };
+    } as const;
 
     try {
-      const response = await instance.acquireTokenSilent(request);
+      const response = await instance.acquireTokenSilent(request as any);
       return response.accessToken;
     } catch (error) {
-      const response = await instance.acquireTokenPopup(request);
+      const response = await instance.acquireTokenPopup(request as any);
       return response.accessToken;
     }
   };
@@ -149,7 +155,7 @@ export default function DashboardPage() {
     });
   };
 
-  const fetchConfigurations = async () => {
+  const fetchConfigurations = async (caRequested?: boolean) => {
     try {
       setLoading(true);
       setError(null);
@@ -157,13 +163,46 @@ export default function DashboardPage() {
       setSelectedConfigs(new Set());
       setSelectAll(false);
       
-      // Step 1: Connect to Graph API
+      // Build steps dynamically based on whether CA is effectively included
+      const stepsFor = (withCA: boolean) => ([
+        { name: "Connecting to Microsoft Graph API", status: "pending" as const },
+        { name: "Fetching Settings Catalog configurations", status: "pending" as const },
+        { name: "Fetching Device Configurations", status: "pending" as const },
+        { name: "Fetching Administrative Templates", status: "pending" as const },
+        { name: "Fetching Security Baselines", status: "pending" as const },
+        { name: "Fetching Compliance Policies", status: "pending" as const },
+        { name: "Fetching Scripts", status: "pending" as const },
+        { name: "Fetching App Configurations", status: "pending" as const },
+        { name: "Fetching Windows Update Policies", status: "pending" as const },
+        { name: "Fetching Enrollment Configurations", status: "pending" as const },
+        ...(withCA ? [{ name: "Fetching Conditional Access Policies", status: "pending" as const }] : [])
+      ]);
+
+      // Step 1: Connect to Graph API (base scopes)
+      setFetchProgress({ steps: stepsFor(false), currentStep: 0 });
       updateFetchProgress(0, "loading");
-      const accessToken = await getAccessToken();
+      let accessToken = await getAccessToken();
       updateFetchProgress(0, "completed");
-      
-      // Start fetching with progress updates
-      for (let i = 1; i <= 9; i++) {
+
+      // Optionally include Conditional Access if requested AND token can be acquired silently or via prompt
+      let caIncluded = false;
+      const wantCA = caRequested ?? includeCA;
+      if (wantCA) {
+        try {
+          accessToken = await getAccessToken(["Policy.Read.All"]);
+          caIncluded = true;
+        } catch {
+          caIncluded = false; // continue without CA
+        }
+      }
+
+      setCaConsentStatus(wantCA ? (caIncluded ? 'included' : 'missing') : 'unknown');
+
+      // Refresh steps with/without CA and start progress
+      setFetchProgress({ steps: stepsFor(caIncluded), currentStep: 0 });
+      updateFetchProgress(0, "completed");
+      const totalSteps = stepsFor(caIncluded).length;
+      for (let i = 1; i < totalSteps; i++) {
         updateFetchProgress(i, "loading");
       }
       
@@ -180,7 +219,7 @@ export default function DashboardPage() {
       }
       
       // Mark all as completed as data comes in
-      for (let i = 1; i <= 9; i++) {
+      for (let i = 1; i < totalSteps; i++) {
         updateFetchProgress(i, "completed");
         await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for visual effect
       }
@@ -217,6 +256,7 @@ export default function DashboardPage() {
     configurations.appConfigurations?.forEach(c => ids.push(`app-${c.id}`));
     configurations.windowsUpdatePolicies?.forEach(c => ids.push(`update-${c.id}`));
     configurations.enrollmentConfigurations?.forEach(c => ids.push(`enrollment-${c.id}`));
+    configurations.conditionalAccessPolicies?.forEach(c => ids.push(`ca-${c.id}`));
     
     return ids;
   };
@@ -244,6 +284,7 @@ export default function DashboardPage() {
     filterConfigurations(configurations?.appConfigurations || []).forEach(c => filteredIds.push(`app-${c.id}`));
     filterConfigurations(configurations?.windowsUpdatePolicies || []).forEach(c => filteredIds.push(`update-${c.id}`));
     filterConfigurations(configurations?.enrollmentConfigurations || []).forEach(c => filteredIds.push(`enrollment-${c.id}`));
+    filterConfigurations(configurations?.conditionalAccessPolicies || []).forEach(c => filteredIds.push(`ca-${c.id}`));
     
     setSelectedConfigs(new Set(filteredIds));
   };
@@ -261,6 +302,7 @@ export default function DashboardPage() {
       count += filterConfigurations(configurations.appConfigurations || []).length;
       count += filterConfigurations(configurations.windowsUpdatePolicies || []).length;
       count += filterConfigurations(configurations.enrollmentConfigurations || []).length;
+      count += filterConfigurations(configurations.conditionalAccessPolicies || []).length;
     }
     return count;
   };
@@ -327,7 +369,10 @@ export default function DashboardPage() {
         ) ?? [],
         enrollmentConfigurations: configurations?.enrollmentConfigurations?.filter(c =>
           selectedConfigs.has(`enrollment-${c.id}`)
-        ) ?? []
+        ) ?? [],
+        conditionalAccessPolicies: (includeCA && caConsentStatus === 'included')
+          ? (configurations?.conditionalAccessPolicies?.filter(c => selectedConfigs.has(`ca-${c.id}`)) ?? [])
+          : []
       };
 
       // Always use detailed PDF generation
@@ -475,6 +520,8 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gradient-subtle pt-16">
       <NavigationHeader />
 
+      {/* Optional CA toggle removed; managed in Settings page */}
+
       <div className="flex">
         {/* Sidebar */}
         <div className={`${sidebarOpen ? 'w-64' : 'w-16'} transition-all duration-300 bg-white border-r border-slate-200 h-[calc(100vh-64px)] fixed top-16 left-0 z-30 overflow-y-auto`}>
@@ -561,6 +608,25 @@ export default function DashboardPage() {
                   </div>
                 )}
               </button>
+
+              {(includeCA && caConsentStatus === 'included') && (
+                <button
+                  onClick={() => setActiveView("conditionalAccessPolicies")}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                    activeView === "conditionalAccessPolicies" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <Shield className="w-5 h-5 flex-shrink-0" />
+                  {sidebarOpen && (
+                    <div className="flex justify-between items-center w-full">
+                      <span className="text-sm font-medium">Conditional Access</span>
+                      <span className="text-xs font-semibold bg-slate-200 px-2 py-0.5 rounded">
+                        {configurations?.summary.byType.conditionalAccessPolicies || 0}
+                      </span>
+                    </div>
+                  )}
+                </button>
+              )}
               
               <button
                 onClick={() => setActiveView("securityBaselines")}
@@ -664,6 +730,21 @@ export default function DashboardPage() {
                 )}
               </button>
             </nav>
+
+            {/* Sidebar footer */}
+            <div className="mt-6 pt-4 border-t border-slate-200">
+              <button
+                onClick={() => setActiveView("settings")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "settings" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <Settings className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <span className="text-sm font-medium">Settings</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
         
@@ -805,10 +886,54 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Settings Panel (inline view) */}
+        {activeView === "settings" && (
+          <Card className="mb-6">
+            <CardContent className="py-5 px-6">
+              <div className="flex items-center gap-3 mb-2">
+                <Settings className="w-5 h-5 text-slate-600" />
+                <h2 className="text-lg font-semibold text-slate-900">Settings</h2>
+              </div>
+              <p className="text-sm text-slate-600 mb-4">
+                Control optional data that can be included in your dashboard and reports.
+              </p>
+              <label className="inline-flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={includeCA}
+                  onChange={async (e) => {
+                    const next = e.target.checked;
+                    setIncludeCA(next);
+                    localStorage.setItem('include-ca', String(next));
+                    if (!next && activeView === 'conditionalAccessPolicies') {
+                      setActiveView('overview');
+                    }
+                    await fetchConfigurations(next);
+                  }}
+                  className="checkbox-enhanced"
+                />
+                <span className="text-sm text-slate-800">Include Conditional Access (may require admin consent)</span>
+              </label>
 
+              {includeCA && caConsentStatus === 'missing' && (
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                  <Info className="w-5 h-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-amber-800 font-medium">Admin consent required</p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Conditional Access policies could not be loaded because Microsoft Graph permission <code className="px-1 py-0.5 bg-amber-100 rounded">Policy.Read.All</code> is not admin‑consented for this tenant.
+                      Ask a tenant administrator to grant consent in Azure AD &gt; Enterprise applications, or see the
+                      <a href="https://learn.microsoft.com/azure/active-directory/develop/v2-permissions-and-consent" target="_blank" rel="noreferrer" className="ml-1 underline">permissions and consent guide</a>.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Configuration Details */}
-        {configurations && (
+        {activeView !== "settings" && configurations && (
           <div className="space-y-6">
             {(activeView === "overview" || activeView === "settingsCatalog") && filterConfigurations(configurations.settingsCatalog)?.length > 0 && (
               <ConfigurationSection
@@ -974,6 +1099,17 @@ export default function DashboardPage() {
                 onSelectConfig={handleSelectConfig}
                 onBulkSelect={handleBulkSelect}
                 icon={<UserCheck className="w-5 h-5" />}
+              />
+            )}
+            {(includeCA && caConsentStatus === 'included') && (activeView === "overview" || activeView === "conditionalAccessPolicies") && filterConfigurations(configurations.conditionalAccessPolicies || [])?.length > 0 && (
+              <ConfigurationSection
+                title="Conditional Access Policies"
+                items={filterConfigurations(configurations.conditionalAccessPolicies || [])}
+                prefix="ca"
+                selectedConfigs={selectedConfigs}
+                onSelectConfig={handleSelectConfig}
+                onBulkSelect={handleBulkSelect}
+                icon={<Shield className="w-5 h-5" />}
               />
             )}
           </div>

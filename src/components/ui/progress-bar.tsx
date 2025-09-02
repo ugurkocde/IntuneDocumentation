@@ -11,16 +11,16 @@ interface ProgressBarProps {
 
 export function ProgressBar({ steps, currentStep = 0 }: ProgressBarProps) {
   const [progress, setProgress] = useState(0);
-  
+
   useEffect(() => {
-    const completed = steps.filter(s => s.status === "completed").length;
-    const percentage = (completed / steps.length) * 100;
+    const completed = steps.filter((s) => s.status === "completed").length;
+    const percentage = (completed / Math.max(steps.length, 1)) * 100;
     setProgress(percentage);
   }, [steps]);
 
   return (
     <div className="w-full">
-      {/* Progress bar */}
+      {/* Overall Progress bar */}
       <div className="relative mb-6">
         <div className="flex mb-2 items-center justify-between">
           <div>
@@ -91,13 +91,15 @@ export function ProgressBar({ steps, currentStep = 0 }: ProgressBarProps) {
               )}
             </div>
             <div className="flex-1">
-              <p className={cn(
-                "text-sm font-medium",
-                step.status === "loading" && "text-blue-900",
-                step.status === "completed" && "text-green-900",
-                step.status === "error" && "text-red-900",
-                step.status === "pending" && "text-gray-600"
-              )}>
+              <p
+                className={cn(
+                  "text-sm font-medium",
+                  step.status === "loading" && "text-blue-900",
+                  step.status === "completed" && "text-green-900",
+                  step.status === "error" && "text-red-900",
+                  step.status === "pending" && "text-gray-600"
+                )}
+              >
                 {step.name}
               </p>
             </div>

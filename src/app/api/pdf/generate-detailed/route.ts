@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       colors: data.branding?.colors
     });
 
-    // Resolve group names
+    // Resolve group names (assignments and Conditional Access group conditions)
     let groupNames = new Map<string, string>();
     try {
       const groupResolver = new GroupResolver(accessToken);
@@ -72,7 +72,8 @@ export async function POST(request: NextRequest) {
         ...data.compliancePolicies,
         ...data.securityBaselines,
         ...data.scripts.windows,
-        ...data.scripts.macOS
+        ...data.scripts.macOS,
+        ...(data.conditionalAccessPolicies || [])
       ];
       
       allConfigs.forEach(config => {
@@ -82,6 +83,13 @@ export async function POST(request: NextRequest) {
               allGroupIds.add(assignment.target.groupId);
             }
           });
+        }
+        // Extract group IDs from CA policy conditions
+        if (config.conditions && (config.conditions.users || config.conditions.users?.includeGroups || config.conditions.users?.excludeGroups)) {
+          const users = config.conditions.users || {};
+          const add = (arr?: string[]) => Array.isArray(arr) && arr.forEach((id) => allGroupIds.add(id));
+          add(users.includeGroups);
+          add(users.excludeGroups);
         }
       });
       

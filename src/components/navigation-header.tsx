@@ -116,6 +116,7 @@ export function NavigationHeader() {
           Dashboard
         </Link>
       )}
+      {/* Settings link removed from top navbar; available in dashboard sidebar */}
     </nav>
   );
 

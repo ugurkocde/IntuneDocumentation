@@ -905,7 +905,8 @@ export default function DashboardPage() {
                     const next = e.target.checked;
                     setIncludeCA(next);
                     localStorage.setItem('include-ca', String(next));
-                    if (!next && activeView === 'conditionalAccessPolicies') {
+                    // If turning CA off and currently viewing CA, go back to overview
+                    if (!next && (activeView as string) === 'conditionalAccessPolicies') {
                       setActiveView('overview');
                     }
                     await fetchConfigurations(next);

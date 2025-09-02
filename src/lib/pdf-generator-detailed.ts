@@ -1806,7 +1806,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     data.conditionalAccessPolicies.forEach((policy: any) => {
       addConfigHeader(
         policy.displayName,
-        [],
+        "Not assigned",
         policy.createdDateTime,
         policy.modifiedDateTime
       );

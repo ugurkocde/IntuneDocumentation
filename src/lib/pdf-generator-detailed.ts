@@ -23,6 +23,7 @@ interface DetailedPdfData {
   appConfigurations?: any[];
   windowsUpdatePolicies?: any[];
   enrollmentConfigurations?: any[];
+  conditionalAccessPolicies?: any[];
   groupNames?: Map<string, string>;
   deviceCounts?: Record<string, number>;
   branding?: BrandingOptions;
@@ -1787,6 +1788,67 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         addSettingsTable(updateSettings);
       }
       
+      yPosition += 5;
+    });
+  }
+
+  // Conditional Access Policies Section
+  if (data.conditionalAccessPolicies && data.conditionalAccessPolicies.length > 0) {
+    doc.addPage();
+    yPosition = margin;
+    pageNumber++;
+    addPageNumber();
+    tocEntries.push({ title: "Conditional Access Policies", pageNum: pageNumber });
+    addSectionHeader("Conditional Access Policies");
+
+    const groupName = (id: string) => data.groupNames?.get(id) || id;
+
+    data.conditionalAccessPolicies.forEach((policy: any) => {
+      addConfigHeader(
+        policy.displayName,
+        [],
+        policy.createdDateTime,
+        policy.modifiedDateTime
+      );
+
+      if (policy.state) {
+        addText(`State: ${policy.state}`, 9, false, [100, 100, 100]);
+        yPosition += 2;
+      }
+
+      const users = policy?.conditions?.users || {};
+      const includeGroups: string[] = (users.includeGroups || []).map(groupName);
+      const excludeGroups: string[] = (users.excludeGroups || []).map(groupName);
+      const includeUsers: string[] = users.includeUsers || [];
+      const excludeUsers: string[] = users.excludeUsers || [];
+      const platforms: string[] = policy?.conditions?.platforms?.includePlatforms || [];
+      const clientApps: string[] = policy?.conditions?.clientAppTypes || [];
+      const locations = policy?.conditions?.locations || {};
+      const includeLocations: string[] = locations.includeLocations || [];
+      const excludeLocations: string[] = locations.excludeLocations || [];
+      const grants: string[] = policy?.grantControls?.builtInControls || [];
+      const session = policy?.sessionControls || {};
+      const sessionEnabled = Object.keys(session).filter(k => session[k]);
+
+      const info: { name: string; value: string }[] = [];
+      if (includeGroups.length) info.push({ name: "Include Groups", value: includeGroups.join(", ") });
+      if (excludeGroups.length) info.push({ name: "Exclude Groups", value: excludeGroups.join(", ") });
+      if (includeUsers.length) info.push({ name: "Include Users", value: includeUsers.join(", ") });
+      if (excludeUsers.length) info.push({ name: "Exclude Users", value: excludeUsers.join(", ") });
+      if (platforms.length) info.push({ name: "Platforms", value: platforms.join(", ") });
+      if (clientApps.length) info.push({ name: "Client Apps", value: clientApps.join(", ") });
+      if (includeLocations.length) info.push({ name: "Include Locations", value: includeLocations.join(", ") });
+      if (excludeLocations.length) info.push({ name: "Exclude Locations", value: excludeLocations.join(", ") });
+      if (grants.length) info.push({ name: "Grant Controls", value: grants.join(", ") });
+      if (sessionEnabled.length) info.push({ name: "Session Controls", value: sessionEnabled.join(", ") });
+
+      if (info.length > 0) {
+        addSettingsTable(info);
+      } else {
+        addText("No additional conditions configured", 9, false, [150, 150, 150]);
+        yPosition += 5;
+      }
+
       yPosition += 5;
     });
   }

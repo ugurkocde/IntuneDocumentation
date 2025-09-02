@@ -16,6 +16,7 @@ export default function HomePage() {
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showPermissions, setShowPermissions] = useState(false);
 
   const isAuthenticated = accounts.length > 0;
 
@@ -197,24 +198,34 @@ export default function HomePage() {
                         Opening Microsoft sign-in…
                       </div>
                     )}
-                    <div className="flex items-center gap-3 text-xs text-blue-100">
-                      <div className="inline-flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>2–3 minutes</span>
-                      </div>
-                      <span className="hidden sm:inline text-white/30">•</span>
-                      <div className="inline-flex items-center gap-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-blue-100">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
                         <Shield className="w-3.5 h-3.5" />
-                        <span>Azure AD OAuth 2.0 • Read‑only delegated access • No storage</span>
-                        <button
-                          onClick={() => setShowSecurity(true)}
-                          className="ml-1 underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
-                          aria-label="Learn why sign-in is safe and which permissions are used"
-                        >
-                          <HelpCircle className="w-3.5 h-3.5" />
-                          Why it’s safe
-                        </button>
-                      </div>
+                        OAuth 2.0
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
+                        Delegated read‑only
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
+                        No storage
+                      </span>
+                      <span className="hidden sm:inline text-white/30 mx-1">|</span>
+                      <button
+                        onClick={() => setShowSecurity(true)}
+                        className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
+                        aria-label="Learn why sign-in is safe and which permissions are used"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        Why it’s safe
+                      </button>
+                      <span className="hidden sm:inline text-white/30">/</span>
+                      <button
+                        onClick={() => setShowPermissions(true)}
+                        className="underline hover:text-white transition-colors cursor-pointer"
+                        aria-label="See the required permissions and why each is needed"
+                      >
+                        Required permissions
+                      </button>
                     </div>
                     <a
                       href="/api/pdf/sample"
@@ -500,19 +511,37 @@ export default function HomePage() {
                       className="w-[215px] max-w-full h-auto"
                     />
                   </button>
-                  <div className="flex flex-col items-center gap-2 text-xs text-blue-100">
-                    <div className="inline-flex items-center gap-2">
-                      <Shield className="w-3.5 h-3.5" />
-                      <span>Azure AD OAuth 2.0 • Read‑only delegated access • No storage</span>
+                  <div className="flex flex-col items-center gap-3 text-xs text-blue-100">
+                    <div className="mt-1 flex flex-wrap justify-center items-center gap-2">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
+                        <Shield className="w-3.5 h-3.5" />
+                        OAuth 2.0
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
+                        Delegated read‑only
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
+                        No storage
+                      </span>
                     </div>
-                    <button
-                      onClick={() => setShowSecurity(true)}
-                      className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
-                      aria-label="Learn why sign-in is safe and which permissions are used"
-                    >
-                      <HelpCircle className="w-3.5 h-3.5" />
-                      Why it’s safe
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setShowSecurity(true)}
+                        className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
+                        aria-label="Learn why sign-in is safe and which permissions are used"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        Why it’s safe
+                      </button>
+                      <span className="hidden sm:inline text-white/30">/</span>
+                      <button
+                        onClick={() => setShowPermissions(true)}
+                        className="underline hover:text-white transition-colors cursor-pointer"
+                        aria-label="See the required permissions and why each is needed"
+                      >
+                        Required permissions
+                      </button>
+                    </div>
                     <a
                       href="/api/pdf/sample"
                       download="IntuneDocumentation-Sample.pdf"
@@ -578,6 +607,71 @@ export default function HomePage() {
                     Close
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permissions Modal */}
+      {showPermissions && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="permissions-title"
+        >
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowPermissions(false)} />
+          <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl ring-1 ring-black/5 max-h-[85svh] overflow-y-auto">
+            <div className="p-5 sm:p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-5 h-5 text-blue-600" />
+                <h3 id="permissions-title" className="text-lg font-semibold text-slate-900">Required permissions & why</h3>
+              </div>
+              <p className="text-slate-600 text-sm mb-4">
+                We request a small set of delegated, read‑only Microsoft Graph scopes to read your Intune configuration and build your report. No app‑only permissions.
+              </p>
+              <div className="space-y-3">
+                {(loginRequest.scopes || []).map((scope) => {
+                  const descriptions: Record<string, string> = {
+                    "User.Read": "Basic profile and sign‑in; required by Microsoft identity platform.",
+                    "DeviceManagementConfiguration.Read.All": "Read Intune device configuration policies and settings.",
+                    "DeviceManagementApps.Read.All": "Read app configuration and app protection policies.",
+                    "DeviceManagementManagedDevices.Read.All": "Read managed device inventory for counts by platform.",
+                    "DeviceManagementRBAC.Read.All": "Read Intune RBAC roles and assignments if referenced.",
+                    "DeviceManagementServiceConfig.Read.All": "Read Intune service configuration information.",
+                    "Group.Read.All": "Resolve Azure AD group names in policy assignments.",
+                    "Policy.Read.All": "Read Conditional Access policies to include in the report.",
+                  };
+                  const note = scope === "Policy.Read.All" ? "Admin consent required" : "Delegated, read‑only";
+                  return (
+                    <div
+                      key={scope}
+                      className="grid grid-cols-1 sm:grid-cols-[14rem_1fr] md:grid-cols-[16rem_1fr] gap-3 p-3 rounded-lg border border-slate-200"
+                    >
+                      <div className="sm:pr-2">
+                        <code className="block text-xs bg-slate-100 px-2 py-1 rounded break-words w-full mt-0.5">
+                          {scope}
+                        </code>
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-800">
+                          {descriptions[scope] || "Read access used to generate documentation."}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">{note}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-5 flex items-center justify-between">
+                <a href="https://learn.microsoft.com/graph/permissions-reference" target="_blank" rel="noopener noreferrer" className="text-sm text-blue-700 hover:underline">Microsoft Graph permissions reference</a>
+                <button
+                  onClick={() => setShowPermissions(false)}
+                  className="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>

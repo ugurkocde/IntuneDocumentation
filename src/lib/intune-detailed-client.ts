@@ -83,6 +83,31 @@ export class DetailedIntuneService {
     this.client = createGraphClient(accessToken);
   }
 
+  // Conditional Access Policies with details
+  async getConditionalAccessPoliciesDetailed(): Promise<DetailedConfiguration[]> {
+    try {
+      const list = await this.client
+        .api("/identity/conditionalAccess/policies")
+        .version("v1.0")
+        .top(999)
+        .get();
+
+      const all = await collectAllPages<any>(this.client as unknown as Client, list);
+      return (all || []).map((p: any) => ({
+        ...p,
+        configType: "Conditional Access Policy",
+      }));
+    } catch (error: any) {
+      // Often requires admin-consented permissions; fail soft
+      if (error?.statusCode === 403) {
+        console.log("Conditional Access policies skipped - insufficient permissions");
+      } else {
+        console.error("Error fetching conditional access policies:", error);
+      }
+      return [];
+    }
+  }
+
   // 1. Settings Catalog with full settings
   async getConfigurationPoliciesWithSettings(): Promise<DetailedConfiguration[]> {
     try {
@@ -596,7 +621,8 @@ export class DetailedIntuneService {
       scripts,
       appConfigurations,
       windowsUpdatePolicies,
-      enrollmentConfigurations
+      enrollmentConfigurations,
+      conditionalAccessPolicies
     ] = await Promise.all([
       this.getConfigurationPoliciesWithSettings(),
       this.getDeviceConfigurationsDetailed(),
@@ -606,7 +632,8 @@ export class DetailedIntuneService {
       this.getScriptsDetailed(),
       this.getAppConfigurationsDetailed(),
       this.getWindowsUpdatePoliciesDetailed(),
-      this.getEnrollmentConfigurationsDetailed()
+      this.getEnrollmentConfigurationsDetailed(),
+      this.getConditionalAccessPoliciesDetailed()
     ]);
 
     return {
@@ -619,6 +646,7 @@ export class DetailedIntuneService {
       appConfigurations,
       windowsUpdatePolicies,
       enrollmentConfigurations,
+      conditionalAccessPolicies,
       summary: {
         totalConfigurations: 
           settingsCatalog.length + 
@@ -630,7 +658,8 @@ export class DetailedIntuneService {
           scripts.macOS.length +
           appConfigurations.length +
           windowsUpdatePolicies.length +
-          enrollmentConfigurations.length,
+          enrollmentConfigurations.length +
+          conditionalAccessPolicies.length,
         byType: {
           settingsCatalog: settingsCatalog.length,
           deviceConfigurations: deviceConfigurations.length,
@@ -640,7 +669,8 @@ export class DetailedIntuneService {
           scripts: scripts.windows.length + scripts.macOS.length,
           appConfigurations: appConfigurations.length,
           windowsUpdatePolicies: windowsUpdatePolicies.length,
-          enrollmentConfigurations: enrollmentConfigurations.length
+          enrollmentConfigurations: enrollmentConfigurations.length,
+          conditionalAccessPolicies: conditionalAccessPolicies.length
         }
       }
     };

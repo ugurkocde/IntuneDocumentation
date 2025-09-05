@@ -161,6 +161,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     orientation: "portrait",
     unit: "mm",
     format: "a4",
+    compress: true, // Enable compression for smaller file size
   });
 
   let yPosition = 20;
@@ -500,16 +501,16 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         if (position === 'cover') {
           const xPos = x || pageWidth / 2 - maxWidth / 2;
           const yPos = y || 20;
-          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight);
+          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight, undefined, 'FAST');
         } else if (position === 'header') {
           // Logo on the right side of header - ensure it doesn't overflow
           const xPos = x || Math.min(pageWidth - margin - maxWidth, pageWidth - margin - 20);
           const yPos = y || 5;
-          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight);
+          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight, undefined, 'FAST');
         } else if (position === 'footer') {
           const xPos = x || margin;
           const yPos = y || pageHeight - 25;
-          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight);
+          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight, undefined, 'FAST');
         }
       } catch (err) {
         console.error('Error adding logo:', err);
@@ -594,7 +595,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         format = 'JPEG';
       }
       
-      doc.addImage(imgData, format, logoX, logoY, logoWidth, logoHeight);
+      doc.addImage(imgData, format, logoX, logoY, logoWidth, logoHeight, undefined, 'FAST');
       titleStartY = logoY + logoHeight + 15; // Position title below logo
     } catch (err) {
       console.error('Error adding logo to title page:', err);

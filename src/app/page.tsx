@@ -8,6 +8,7 @@ import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpC
 import { useMemo, useState } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
+import { HeroExportCounter } from "~/components/hero-export-counter";
 
 export default function HomePage() {
   const { instance, accounts } = useMsal();
@@ -136,6 +137,11 @@ export default function HomePage() {
             <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center max-w-7xl mx-auto">
               {/* Left Column - Content */}
               <div className="text-left">
+
+                {/* Export Counter Badge */}
+                <div className="mb-6">
+                  <HeroExportCounter />
+                </div>
 
                 {/* Main Headline */}
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-6 tracking-tight leading-[1.05]">

@@ -5,6 +5,7 @@ import { GroupResolver } from "~/lib/group-resolver";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { collectAllPages } from "~/lib/graph-paging";
 import { isTokenExpired, validateToken } from "~/lib/auth-utils";
+import { supabase } from "~/lib/supabase";
 
 export async function POST(request: NextRequest) {
   try {
@@ -147,6 +148,20 @@ export async function POST(request: NextRequest) {
       deviceCounts,
       branding: data.branding
     });
+
+    // Increment export counter in Supabase
+    if (supabase) {
+      try {
+        const { error } = await supabase.rpc("increment_export_count");
+        if (error) {
+          console.error("Failed to increment export count:", error);
+        } else {
+          console.log("Export count incremented successfully");
+        }
+      } catch (err) {
+        console.error("Error calling increment function:", err);
+      }
+    }
 
     // Return PDF as response (convert Uint8Array to Buffer for NextResponse)
     return new NextResponse(Buffer.from(pdfBuffer), {

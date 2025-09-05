@@ -201,5 +201,24 @@
     animation: gradient-shift 8s ease infinite;
   }
 
+  /* Shimmer animation for counter */
+  @keyframes shimmer {
+    0% {
+      opacity: 0;
+      transform: translateX(-100%);
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
+  
+  .animate-shimmer {
+    animation: shimmer 3s ease-in-out infinite;
+  }
+
   /* Removed: custom progress bar animations (reverted to icon list) */
 }

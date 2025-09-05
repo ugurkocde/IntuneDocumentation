@@ -7,8 +7,8 @@ import { collectAllPages } from "~/lib/graph-paging";
 import { isTokenExpired, validateToken } from "~/lib/auth-utils";
 import { supabase } from "~/lib/supabase";
 
-// Increase body size limit for Vercel
-export const maxDuration = 60; // Maximum function duration
+// Increase limits for Vercel
+export const maxDuration = 60; // Maximum function duration (60 seconds)
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {

@@ -375,8 +375,8 @@ export default function DashboardPage() {
           : []
       };
 
-      // Step 1: Prepare the data on server (store in cache)
-      const prepareResponse = await fetch("/api/pdf/prepare", {
+      // Use direct PDF generation with optimized payload
+      const response = await fetch("/api/pdf/generate-detailed", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -388,22 +388,7 @@ export default function DashboardPage() {
         }),
       });
 
-      if (!prepareResponse.ok) {
-        const error = await prepareResponse.json();
-        throw new Error(error.message || "Failed to prepare PDF data");
-      }
-
-      const { sessionId } = await prepareResponse.json();
-
-      // Step 2: Stream the PDF generation using the session ID
-      const response = await fetch(`/api/pdf/generate-stream?sessionId=${sessionId}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      if (!response.ok) {
+      if (!response || !response.ok) {
         // Try to get error details from response
         let errorMessage = "Failed to generate PDF";
         let errorDetails = null;

@@ -389,9 +389,17 @@ export default function DashboardPage() {
         const filename = `pdf-config-${Date.now()}.json`;
         
         // Upload directly from client to Vercel Blob
+        // The authorization header will be passed to the handleUploadUrl endpoint
         const blob = await upload(filename, configBlob, {
           access: 'public',
           handleUploadUrl: '/api/pdf/client-upload',
+          clientPayload: JSON.stringify({ 
+            timestamp: Date.now() 
+          }),
+          // Pass the authorization header for authentication
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+          },
         });
 
         // Step 2: Generate PDF using the blob URL

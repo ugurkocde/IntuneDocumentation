@@ -10,6 +10,7 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { ProgressBar } from "~/components/ui/progress-bar";
 import { NavigationHeader } from "~/components/navigation-header";
+import { upload } from '@vercel/blob/client';
 // Settings is now an in-dashboard view; no external link needed here
 import { 
   Settings,
@@ -375,26 +376,23 @@ export default function DashboardPage() {
           : []
       };
 
-      // Step 1: Upload configuration to Vercel Blob
+      // Try client-side blob upload first, fallback to direct generation
       let response;
       try {
-        const uploadResponse = await fetch("/api/pdf/upload-config", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            ...selectedData,
-            branding: brandingOptions
-          }),
+        // Step 1: Upload configuration directly to Vercel Blob from client
+        const configData = JSON.stringify({
+          ...selectedData,
+          branding: brandingOptions
         });
-
-        if (!uploadResponse.ok) {
-          throw new Error("Failed to upload configuration");
-        }
-
-        const { url: blobUrl } = await uploadResponse.json();
+        
+        const configBlob = new Blob([configData], { type: 'application/json' });
+        const filename = `pdf-config-${Date.now()}.json`;
+        
+        // Upload directly from client to Vercel Blob
+        const blob = await upload(filename, configBlob, {
+          access: 'public',
+          handleUploadUrl: '/api/pdf/client-upload',
+        });
 
         // Step 2: Generate PDF using the blob URL
         response = await fetch("/api/pdf/generate-from-blob", {
@@ -403,10 +401,10 @@ export default function DashboardPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
           },
-          body: JSON.stringify({ blobUrl }),
+          body: JSON.stringify({ blobUrl: blob.url }),
         });
       } catch (uploadError) {
-        console.log("Blob storage not available, falling back to direct generation");
+        console.log("Client-side blob upload failed, falling back to direct generation:", uploadError);
         // Fallback to direct generation if blob storage is not available
         response = await fetch("/api/pdf/generate-detailed", {
           method: "POST",

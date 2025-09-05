@@ -4,54 +4,39 @@ import { generateDetailedPDF } from "~/lib/pdf-generator-detailed";
 import { GroupResolver } from "~/lib/group-resolver";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { collectAllPages } from "~/lib/graph-paging";
-import { isTokenExpired, validateToken } from "~/lib/auth-utils";
 import { supabase } from "~/lib/supabase";
+import { configCache } from "~/lib/pdf-cache";
 
-// Increase body size limit for Vercel
-export const maxDuration = 60; // Maximum function duration
+// Increase function duration for PDF generation
+export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("Authorization");
+    const url = new URL(request.url);
+    const sessionId = url.searchParams.get("sessionId");
     
-    if (!authHeader?.startsWith("Bearer ")) {
+    if (!sessionId) {
       return NextResponse.json(
-        { error: "Unauthorized", message: "Missing or invalid authorization header" },
-        { status: 401 }
+        { error: "Missing session ID" },
+        { status: 400 }
       );
     }
 
-    const accessToken = authHeader.replace("Bearer ", "");
+    // Retrieve the cached configuration data
+    const cachedData = configCache.get(sessionId);
     
-    // Check if token is expired
-    if (isTokenExpired(accessToken)) {
+    if (!cachedData) {
       return NextResponse.json(
-        { 
-          error: "Token expired",
-          message: "Access token has expired. Please refresh your authentication.",
-          code: "TOKEN_EXPIRED"
-        },
-        { status: 401 }
+        { error: "Session expired or invalid" },
+        { status: 404 }
       );
     }
+
+    const { data, token: accessToken } = cachedData;
     
-    // Validate token with a simple API call
-    const tokenValidation = await validateToken(accessToken);
-    if (!tokenValidation.isValid) {
-      return NextResponse.json(
-        {
-          error: tokenValidation.error || "Authentication failed",
-          message: tokenValidation.needsRefresh 
-            ? "Token needs to be refreshed. Please re-authenticate."
-            : "Invalid token or insufficient permissions.",
-          code: tokenValidation.needsRefresh ? "TOKEN_REFRESH_NEEDED" : "AUTH_FAILED"
-        },
-        { status: 401 }
-      );
-    }
-    
-    const data = await request.json();
+    // Remove from cache after retrieval (one-time use)
+    configCache.delete(sessionId);
 
     // Resolve group names (assignments and Conditional Access group conditions)
     let groupNames = new Map<string, string>();
@@ -123,16 +108,7 @@ export async function POST(request: NextRequest) {
       }
     } catch (error: any) {
       console.error("Error fetching device counts:", error);
-      
-      // Check if it's an authentication error
-      if (error?.statusCode === 401) {
-        console.log("Device counts skipped - Token may be expired. Will continue without device counts.");
-      } else if (error?.statusCode === 403) {
-        console.log("Device counts skipped - Insufficient permissions. The app may lack DeviceManagementManagedDevices.Read.All permission.");
-      }
-      
       // Continue without device counts if fetch fails
-      // This is optional data, so we don't fail the entire PDF generation
     }
 
     // Generate detailed PDF with all settings, group names, device counts, and branding
@@ -155,35 +131,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Return PDF as response (convert Uint8Array to Buffer for NextResponse)
+    // Check for empty buffer
     if (!pdfBuffer || pdfBuffer.length === 0) {
       throw new Error("Generated PDF buffer is empty");
     }
     
-    return new NextResponse(Buffer.from(pdfBuffer), {
+    // Stream the PDF as response
+    const headers = new Headers({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="Intune-Configuration-${new Date().toISOString().split("T")[0]}.pdf"`,
+      "Content-Length": pdfBuffer.length.toString(),
+      "Cache-Control": "no-cache, no-store, must-revalidate"
+    });
+
+    return new Response(Buffer.from(pdfBuffer), {
       status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="Intune-Detailed-Configuration-${new Date().toISOString().split("T")[0]}.pdf"`,
-      },
+      headers
     });
   } catch (error: any) {
-    console.error("Error generating detailed PDF:", error);
-    
-    // Check if it's a JSON parse error (might indicate token issues)
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { 
-          error: "Invalid request data",
-          message: "Failed to parse request body"
-        },
-        { status: 400 }
-      );
-    }
-    
+    console.error("Error generating PDF:", error);
     return NextResponse.json(
       { 
-        error: "Failed to generate detailed PDF",
+        error: "Failed to generate PDF",
         message: error?.message || "An unexpected error occurred"
       },
       { status: 500 }

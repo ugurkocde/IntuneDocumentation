@@ -27,9 +27,12 @@ export function HeroExportCounter() {
   }
 
   return (
-    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700">
-      <span className="text-xs text-blue-200/90">Total Documentation Exports:</span>
-      <span className="text-xs font-semibold text-white">{exportCount.toLocaleString()}</span>
+    <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700">
+      <span className="text-[10px] sm:text-xs text-blue-200/90">
+        <span className="hidden sm:inline">Total Documentation </span>
+        Exports:
+      </span>
+      <span className="text-xs sm:text-sm font-semibold text-white">{exportCount.toLocaleString()}</span>
     </div>
   );
 }

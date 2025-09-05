@@ -2064,5 +2064,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   }
   
   // Return PDF
-  return doc.output("arraybuffer");
+  try {
+    const arrayBuffer = doc.output("arraybuffer");
+    console.log("[PDF Generator] Generated arraybuffer size:", arrayBuffer.byteLength);
+    const uint8Array = new Uint8Array(arrayBuffer);
+    console.log("[PDF Generator] Converted to Uint8Array size:", uint8Array.length);
+    return uint8Array;
+  } catch (error) {
+    console.error("[PDF Generator] Error converting PDF to buffer:", error);
+    throw error;
+  }
 }

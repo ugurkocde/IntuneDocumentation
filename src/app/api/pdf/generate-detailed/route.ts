@@ -209,7 +209,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Return PDF as response (convert Uint8Array to Buffer for NextResponse)
-    return new NextResponse(Buffer.from(pdfBuffer), {
+    console.log("[PDF Generation] Converting buffer for response, original size:", pdfBuffer?.length || 0);
+    
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      console.error("[PDF Generation] PDF buffer is empty!");
+      throw new Error("Generated PDF buffer is empty");
+    }
+    
+    const responseBuffer = Buffer.from(pdfBuffer);
+    console.log("[PDF Generation] Response buffer size:", responseBuffer.length);
+    
+    return new NextResponse(responseBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",

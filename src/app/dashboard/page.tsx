@@ -403,8 +403,11 @@ export default function DashboardPage() {
       if (!response.ok) {
         // Try to get error details from response
         let errorMessage = "Failed to generate PDF";
+        let errorDetails = null;
         try {
           const errorData = await response.json();
+          console.error("PDF Generation Error Response:", errorData);
+          
           if (errorData.code === "TOKEN_EXPIRED" || errorData.code === "TOKEN_REFRESH_NEEDED") {
             // Token expired, refresh it
             console.log("Token expired, refreshing...");
@@ -434,13 +437,24 @@ export default function DashboardPage() {
               window.URL.revokeObjectURL(url);
               document.body.removeChild(a);
               return; // Success after retry
+            } else {
+              // Retry failed, get error details
+              const retryError = await retryResponse.json();
+              console.error("PDF Generation Retry Error:", retryError);
+              errorMessage = retryError.message || retryError.error || "Failed to generate PDF after token refresh";
+              errorDetails = retryError.details;
             }
+          } else {
+            errorMessage = errorData.message || errorData.error || errorMessage;
+            errorDetails = errorData.details;
           }
-          errorMessage = errorData.message || errorData.error || errorMessage;
-        } catch {
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
           // Couldn't parse error response, use default message
         }
-        throw new Error(errorMessage);
+        
+        const fullErrorMessage = errorDetails ? `${errorMessage}\n\nDetails: ${errorDetails}` : errorMessage;
+        throw new Error(fullErrorMessage);
       }
 
       const blob = await response.blob();
@@ -454,8 +468,19 @@ export default function DashboardPage() {
       document.body.removeChild(a);
     } catch (err: any) {
       console.error("Error generating PDF:", err);
+      console.error("Error details:", {
+        name: err?.name,
+        message: err?.message,
+        stack: err?.stack
+      });
+      
+      // Show more detailed error to user
       const errorMessage = err?.message || "Failed to generate PDF";
-      alert(`${errorMessage}. Please try again.`);
+      const userMessage = errorMessage.includes("\n") 
+        ? errorMessage 
+        : `${errorMessage}\n\nPlease check the browser console for more details.`;
+      
+      alert(userMessage);
     } finally {
       setGeneratingPdf(false);
     }

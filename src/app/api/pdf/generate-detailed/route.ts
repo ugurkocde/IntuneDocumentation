@@ -8,10 +8,13 @@ import { isTokenExpired, validateToken } from "~/lib/auth-utils";
 import { supabase } from "~/lib/supabase";
 
 export async function POST(request: NextRequest) {
+  console.log("[PDF Generation] Request received");
+  
   try {
     const authHeader = request.headers.get("Authorization");
     
     if (!authHeader?.startsWith("Bearer ")) {
+      console.error("[PDF Generation] Missing or invalid authorization header");
       return NextResponse.json(
         { error: "Unauthorized", message: "Missing or invalid authorization header" },
         { status: 401 }
@@ -22,6 +25,7 @@ export async function POST(request: NextRequest) {
     
     // Check if token is expired
     if (isTokenExpired(accessToken)) {
+      console.error("[PDF Generation] Token expired");
       return NextResponse.json(
         { 
           error: "Token expired",
@@ -35,6 +39,7 @@ export async function POST(request: NextRequest) {
     // Validate token with a simple API call
     const tokenValidation = await validateToken(accessToken);
     if (!tokenValidation.isValid) {
+      console.error("[PDF Generation] Token validation failed:", tokenValidation.error);
       return NextResponse.json(
         {
           error: tokenValidation.error || "Authentication failed",
@@ -47,7 +52,22 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const data = await request.json();
+    console.log("[PDF Generation] Token validated successfully");
+    
+    let data;
+    try {
+      data = await request.json();
+      console.log("[PDF Generation] Request body parsed successfully");
+    } catch (parseError) {
+      console.error("[PDF Generation] Failed to parse request body:", parseError);
+      return NextResponse.json(
+        { 
+          error: "Invalid request data",
+          message: "Failed to parse request body"
+        },
+        { status: 400 }
+      );
+    }
     
     // Debug log the branding data
     console.log('API Route - Branding data received:', {
@@ -142,25 +162,50 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate detailed PDF with all settings, group names, device counts, and branding
-    const pdfBuffer = await generateDetailedPDF({
-      ...data,
-      groupNames,
-      deviceCounts,
-      branding: data.branding
+    console.log("[PDF Generation] Starting PDF generation with data:", {
+      settingsCatalogCount: data.settingsCatalog?.length || 0,
+      deviceConfigCount: data.deviceConfigurations?.length || 0,
+      adminTemplatesCount: data.administrativeTemplates?.length || 0,
+      complianceCount: data.compliancePolicies?.length || 0,
+      securityBaselinesCount: data.securityBaselines?.length || 0,
+      windowsScriptsCount: data.scripts?.windows?.length || 0,
+      macScriptsCount: data.scripts?.macOS?.length || 0,
+      appConfigsCount: data.appConfigurations?.length || 0,
+      windowsUpdateCount: data.windowsUpdatePolicies?.length || 0,
+      enrollmentCount: data.enrollmentConfigurations?.length || 0,
+      conditionalAccessCount: data.conditionalAccessPolicies?.length || 0
     });
+    
+    let pdfBuffer;
+    try {
+      pdfBuffer = await generateDetailedPDF({
+        ...data,
+        groupNames,
+        deviceCounts,
+        branding: data.branding
+      });
+      console.log("[PDF Generation] PDF generated successfully, buffer size:", pdfBuffer?.length || 0);
+    } catch (pdfError) {
+      console.error("[PDF Generation] Failed to generate PDF:", pdfError);
+      console.error("[PDF Generation] Error stack:", pdfError instanceof Error ? pdfError.stack : "No stack trace");
+      throw pdfError;
+    }
 
     // Increment export counter in Supabase
     if (supabase) {
       try {
+        console.log("[PDF Generation] Incrementing export counter in Supabase");
         const { error } = await supabase.rpc("increment_export_count");
         if (error) {
-          console.error("Failed to increment export count:", error);
+          console.error("[PDF Generation] Failed to increment export count:", error);
         } else {
-          console.log("Export count incremented successfully");
+          console.log("[PDF Generation] Export count incremented successfully");
         }
       } catch (err) {
-        console.error("Error calling increment function:", err);
+        console.error("[PDF Generation] Error calling increment function:", err);
       }
+    } else {
+      console.log("[PDF Generation] Supabase client not configured, skipping export count");
     }
 
     // Return PDF as response (convert Uint8Array to Buffer for NextResponse)
@@ -172,25 +217,31 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("Error generating detailed PDF:", error);
+    console.error("[PDF Generation] Fatal error:", error);
+    console.error("[PDF Generation] Error type:", error?.constructor?.name);
+    console.error("[PDF Generation] Error message:", error?.message);
+    console.error("[PDF Generation] Error stack:", error?.stack);
     
     // Check if it's a JSON parse error (might indicate token issues)
     if (error instanceof SyntaxError) {
       return NextResponse.json(
         { 
           error: "Invalid request data",
-          message: "Failed to parse request body"
+          message: "Failed to parse request body",
+          details: error.message
         },
         { status: 400 }
       );
     }
     
-    return NextResponse.json(
-      { 
-        error: "Failed to generate detailed PDF",
-        message: error?.message || "An unexpected error occurred"
-      },
-      { status: 500 }
-    );
+    // More detailed error response
+    const errorResponse = {
+      error: "Failed to generate detailed PDF",
+      message: error?.message || "An unexpected error occurred",
+      type: error?.constructor?.name || "Unknown",
+      details: process.env.NODE_ENV === "development" ? error?.stack : undefined
+    };
+    
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }

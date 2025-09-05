@@ -375,20 +375,8 @@ export default function DashboardPage() {
           : []
       };
 
-      // Always use detailed PDF generation
-      const pdfEndpoint = "/api/pdf/generate-detailed";
-      
-      // Log branding data being sent
-      console.log('Sending branding to PDF generator:', {
-        hasBranding: !!brandingOptions,
-        companyName: brandingOptions?.companyName,
-        department: brandingOptions?.department,
-        hasLogo: !!brandingOptions?.logo?.dataUrl,
-        logoPosition: brandingOptions?.logo?.position,
-        colors: brandingOptions?.colors
-      });
-      
-      const response = await fetch(pdfEndpoint, {
+      // Step 1: Prepare the data on server (store in cache)
+      const prepareResponse = await fetch("/api/pdf/prepare", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -400,21 +388,34 @@ export default function DashboardPage() {
         }),
       });
 
+      if (!prepareResponse.ok) {
+        const error = await prepareResponse.json();
+        throw new Error(error.message || "Failed to prepare PDF data");
+      }
+
+      const { sessionId } = await prepareResponse.json();
+
+      // Step 2: Stream the PDF generation using the session ID
+      const response = await fetch(`/api/pdf/generate-stream?sessionId=${sessionId}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
       if (!response.ok) {
         // Try to get error details from response
         let errorMessage = "Failed to generate PDF";
         let errorDetails = null;
         try {
           const errorData = await response.json();
-          console.error("PDF Generation Error Response:", errorData);
           
           if (errorData.code === "TOKEN_EXPIRED" || errorData.code === "TOKEN_REFRESH_NEEDED") {
             // Token expired, refresh it
-            console.log("Token expired, refreshing...");
             const newToken = await getAccessToken();
             
-            // Retry with new token
-            const retryResponse = await fetch(pdfEndpoint, {
+            // Retry with new token - Step 1: Prepare
+            const retryPrepareResponse = await fetch("/api/pdf/prepare", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -425,6 +426,21 @@ export default function DashboardPage() {
                 branding: brandingOptions
               }),
             });
+            
+            if (!retryPrepareResponse.ok) {
+              const retryError = await retryPrepareResponse.json();
+              errorMessage = retryError.message || "Failed to prepare PDF after token refresh";
+              errorDetails = retryError.details;
+            } else {
+              const { sessionId: retrySessionId } = await retryPrepareResponse.json();
+              
+              // Step 2: Stream the PDF
+              const retryResponse = await fetch(`/api/pdf/generate-stream?sessionId=${retrySessionId}`, {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${newToken}`,
+                },
+              });
             
             if (retryResponse.ok) {
               const blob = await retryResponse.blob();
@@ -437,19 +453,18 @@ export default function DashboardPage() {
               window.URL.revokeObjectURL(url);
               document.body.removeChild(a);
               return; // Success after retry
-            } else {
-              // Retry failed, get error details
-              const retryError = await retryResponse.json();
-              console.error("PDF Generation Retry Error:", retryError);
-              errorMessage = retryError.message || retryError.error || "Failed to generate PDF after token refresh";
-              errorDetails = retryError.details;
+              } else {
+                // Retry failed, get error details
+                const retryError = await retryResponse.json();
+                errorMessage = retryError.message || retryError.error || "Failed to generate PDF after token refresh";
+                errorDetails = retryError.details;
+              }
             }
           } else {
             errorMessage = errorData.message || errorData.error || errorMessage;
             errorDetails = errorData.details;
           }
         } catch (parseError) {
-          console.error("Failed to parse error response:", parseError);
           // Couldn't parse error response, use default message
         }
         
@@ -467,20 +482,9 @@ export default function DashboardPage() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err: any) {
-      console.error("Error generating PDF:", err);
-      console.error("Error details:", {
-        name: err?.name,
-        message: err?.message,
-        stack: err?.stack
-      });
-      
-      // Show more detailed error to user
+      // Show error to user
       const errorMessage = err?.message || "Failed to generate PDF";
-      const userMessage = errorMessage.includes("\n") 
-        ? errorMessage 
-        : `${errorMessage}\n\nPlease check the browser console for more details.`;
-      
-      alert(userMessage);
+      alert(errorMessage);
     } finally {
       setGeneratingPdf(false);
     }

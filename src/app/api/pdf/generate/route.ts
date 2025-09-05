@@ -4,9 +4,11 @@ import { generatePDF } from "~/lib/pdf-generator-jspdf";
 import { extractTenantFromRequest } from "~/lib/auth-middleware";
 import { supabase } from "~/lib/supabase";
 
+// Increase body size limit for Vercel
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
-  console.log("[PDF Generation Basic] Request received");
-  
   try {
     // Log tenant access
     extractTenantFromRequest(request);

@@ -181,13 +181,6 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const accentColor = branding?.colors?.accent || '#00A652';
   const textColor = branding?.colors?.text || '#000000';
   
-  // Debug log colors
-  console.log('PDF Generator - Colors being used:', {
-    primary: primaryColor,
-    secondary: secondaryColor,
-    accent: accentColor,
-    text: textColor
-  });
   
   // Helper function to convert hex to RGB with proper null checking
   const hexToRgb = (hex: string | undefined): [number, number, number] => {
@@ -553,15 +546,6 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   };
   
   // Professional Cover Page Design
-  // Log branding data for debugging
-  console.log('Branding data received:', {
-    hasLogo: !!branding?.logo?.dataUrl,
-    logoPosition: branding?.logo?.position,
-    companyName: branding?.companyName,
-    department: branding?.department,
-    colors: branding?.colors,
-    coverPage: branding?.coverPage
-  });
   
   // Don't add page number on cover
   // addPageNumber();
@@ -2064,14 +2048,5 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   }
   
   // Return PDF
-  try {
-    const arrayBuffer = doc.output("arraybuffer");
-    console.log("[PDF Generator] Generated arraybuffer size:", arrayBuffer.byteLength);
-    const uint8Array = new Uint8Array(arrayBuffer);
-    console.log("[PDF Generator] Converted to Uint8Array size:", uint8Array.length);
-    return uint8Array;
-  } catch (error) {
-    console.error("[PDF Generator] Error converting PDF to buffer:", error);
-    throw error;
-  }
+  return new Uint8Array(doc.output("arraybuffer"));
 }

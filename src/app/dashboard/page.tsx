@@ -375,18 +375,51 @@ export default function DashboardPage() {
           : []
       };
 
-      // Use direct PDF generation with optimized payload
-      const response = await fetch("/api/pdf/generate-detailed", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          ...selectedData,
-          branding: brandingOptions
-        }),
-      });
+      // Step 1: Upload configuration to Vercel Blob
+      let response;
+      try {
+        const uploadResponse = await fetch("/api/pdf/upload-config", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            ...selectedData,
+            branding: brandingOptions
+          }),
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error("Failed to upload configuration");
+        }
+
+        const { url: blobUrl } = await uploadResponse.json();
+
+        // Step 2: Generate PDF using the blob URL
+        response = await fetch("/api/pdf/generate-from-blob", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ blobUrl }),
+        });
+      } catch (uploadError) {
+        console.log("Blob storage not available, falling back to direct generation");
+        // Fallback to direct generation if blob storage is not available
+        response = await fetch("/api/pdf/generate-detailed", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            ...selectedData,
+            branding: brandingOptions
+          }),
+        });
+      }
 
       if (!response || !response.ok) {
         // Try to get error details from response

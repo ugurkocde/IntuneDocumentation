@@ -100,7 +100,7 @@ export function parseDeviceConfiguration(config: any): Array<{
       categories[category].push({
         name: formatKeyName(key),
         value: formatValue(config[key]),
-        description: getPropertyDescription(key, config["@odata.type"])
+        description: getPropertyDescription(key)
       });
     }
   });
@@ -304,7 +304,7 @@ function formatKeyName(key: string): string {
     .trim();
 }
 
-function getPropertyDescription(key: string, odataType: string): string | undefined {
+function getPropertyDescription(key: string): string | undefined {
   // Add common property descriptions
   const descriptions: Record<string, string> = {
     passwordMinimumLength: "Minimum number of characters required for device password",

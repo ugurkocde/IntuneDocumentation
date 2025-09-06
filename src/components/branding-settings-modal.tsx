@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Upload, Palette, FileText, Eye, Save, RotateCcw } from "lucide-react";
+import { X, Upload, Save, RotateCcw } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
 import type { BrandingOptions } from "~/types/branding";

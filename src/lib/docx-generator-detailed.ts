@@ -52,9 +52,7 @@ function enhanceAssignmentText(text: string, groupNames?: Map<string, string>): 
 }
 
 export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint8Array> {
-  const doc = new Document({
-    sections: [],
-  });
+  const sections: Array<{ properties: any; children: Array<Paragraph | Table> }> = [];
 
   const company = data.branding?.companyName || "";
   const titleText = company
@@ -62,31 +60,23 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
     : "Intune Configuration Report";
 
   // Cover / Title section
-  doc.addSection({
+  sections.push({
     properties: {},
     children: [
       new Paragraph({
-        children: [
-          new TextRun({ text: titleText, bold: true }),
-        ],
+        children: [new TextRun({ text: titleText, bold: true })],
         heading: HeadingLevel.TITLE,
       }),
-      new Paragraph({
-        text: new Date().toLocaleString(),
-        alignment: AlignmentType.LEFT,
-      }),
+      new Paragraph({ text: new Date().toLocaleString(), alignment: AlignmentType.LEFT }),
     ],
   });
 
   // Helper to push a section with a heading
   const addSection = (title: string, children: Paragraph[] | (Paragraph | Table)[]) => {
-    doc.addSection({
+    sections.push({
       properties: {},
       children: [
-        new Paragraph({
-          text: title,
-          heading: HeadingLevel.HEADING_1,
-        }),
+        new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }),
         ...children,
       ],
     });
@@ -341,7 +331,7 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
   simpleListSection("Enrollment Configurations", data.enrollmentConfigurations);
   simpleListSection("Conditional Access Policies", data.conditionalAccessPolicies);
 
+  const doc = new Document({ sections });
   const buffer = await Packer.toBuffer(doc);
   return new Uint8Array(buffer);
 }
-

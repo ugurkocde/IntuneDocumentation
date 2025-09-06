@@ -3,7 +3,6 @@
 import { useMsal } from "@azure/msal-react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { User, LogOut, Menu, X, LogIn } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";

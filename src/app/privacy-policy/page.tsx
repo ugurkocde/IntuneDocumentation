@@ -5,7 +5,7 @@ import { SiteFooter } from "~/components/site-footer";
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description:
-    "Learn how Intune Documentation Generator handles authentication data, analytics, and privacy. We request read-only permissions, do not store your configuration data, and process PDFs locally where possible.",
+    "Learn how Intune Documentation Generator handles authentication data, analytics, and privacy. We request read-only permissions, do not persist your configuration data, and for larger exports may use short-lived blob staging due to platform payload limits.",
 };
 
 export default function PrivacyPolicyPage() {
@@ -41,11 +41,10 @@ export default function PrivacyPolicyPage() {
           <h2 className="text-xl font-semibold text-slate-900">How We Process Data</h2>
           <ul className="list-disc pl-6 space-y-2">
             <li>
-              We do not store your Intune configuration data or generated PDFs on our servers. Data is
-              retrieved during your session and used solely to build your report.
+              We do not persist your Intune configuration data or generated PDFs. Data is retrieved during your session and used solely to build your report.
             </li>
             <li>
-              PDFs are generated in-memory and provided directly to you for download.
+              For larger exports, we may temporarily stage a JSON copy of your selected configuration in short‑lived storage (Vercel Blob) to reliably generate your PDF due to request body size limits on serverless platforms (see https://vercel.com/guides/how-to-bypass-vercel-body-size-limit-serverless-functions). The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation.
             </li>
             <li>
               Access tokens are managed by your browser session to call Microsoft Graph; we do not persist

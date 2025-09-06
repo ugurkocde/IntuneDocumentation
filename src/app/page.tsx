@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { HeroExportCounter } from "~/components/hero-export-counter";
@@ -20,6 +20,26 @@ export default function HomePage() {
   const [showPermissions, setShowPermissions] = useState(false);
 
   const isAuthenticated = accounts.length > 0;
+
+  const linkify = (text: string): ReactNode => {
+    const parts = text.split(/(https?:\/\/[^\s]+)/g);
+    return parts.map((part, i) => {
+      if (/^https?:\/\//.test(part)) {
+        return (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-700 underline"
+          >
+            {part}
+          </a>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
 
   const handleSignIn = async () => {
     try {
@@ -46,11 +66,15 @@ export default function HomePage() {
     },
     {
       question: "Is my data secure?",
-      answer: "Yes. We use Microsoft OAuth 2.0 for authentication, only request read-only access, and store absolutely no data. All processing happens in your browser session."
+      answer: "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. We do not persist your Intune data or PDFs. For larger exports, we briefly stage your selected configuration in a short-lived transfer buffer (Vercel Blob) to reliably generate your PDF due to platform payload size limits. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation; it’s never indexed or used for analytics."
     },
     {
       question: "How much does it cost?",
       answer: "It's completely free. No hidden fees, no premium tiers, no credit card required."
+    },
+    {
+      question: "Why do you use temporary blob storage?",
+      answer: "Some exports exceed typical request body limits on serverless platforms. To prevent failures and timeouts, we upload a short-lived JSON copy of your selected configuration to Vercel Blob and immediately delete it after the PDF is generated. More on limits: https://vercel.com/guides/how-to-bypass-vercel-body-size-limit-serverless-functions ."
     },
     {
       question: "Why does Defender flag 'Suspicious application consent for offline access'?",
@@ -172,7 +196,7 @@ export default function HomePage() {
                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                       <Database className="w-5 h-5 text-purple-300" />
                     </div>
-                    <span className="text-xs font-medium">No storage</span>
+                    <span className="text-xs font-medium">No persistent storage</span>
                   </div>
                   <div className="flex items-center gap-2 text-blue-100">
                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
@@ -216,7 +240,7 @@ export default function HomePage() {
                         Delegated read‑only
                       </span>
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        No storage
+                        No persistent storage
                       </span>
                       <span className="hidden sm:inline text-white/30 mx-1">|</span>
                       <button
@@ -644,7 +668,7 @@ export default function HomePage() {
                     </button>
                     {expandedFaq === index && (
                       <div className="px-6 pb-4">
-                        <p className="text-gray-600">{faq.answer}</p>
+                        <p className="text-gray-600">{linkify(faq.answer)}</p>
                       </div>
                     )}
                   </div>
@@ -689,7 +713,7 @@ export default function HomePage() {
                         Delegated read‑only
                       </span>
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        No storage
+                        No persistent storage
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -761,7 +785,7 @@ export default function HomePage() {
                     {(loginRequest.scopes || []).join(', ')}
                   </code>
                 </li>
-                <li><span className="font-medium">No data stored:</span> configuration data is fetched during your session to generate PDFs and is not persisted on our servers.</li>
+                <li><span className="font-medium">No persistent storage:</span> configuration data is fetched during your session to generate PDFs. For larger exports, we may use a short‑lived transfer buffer (Vercel Blob) due to request size limits; it is deleted immediately after generation.</li>
                 <li><span className="font-medium">Tokens stay in your browser:</span> access tokens are kept in session storage by MSAL and are not saved server‑side.</li>
                 <li><span className="font-medium">Revoke anytime:</span> remove access from Entra ID &gt; Enterprise Applications, or simply sign out.</li>
               </ul>

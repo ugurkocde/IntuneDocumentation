@@ -1020,7 +1020,7 @@ export default function DashboardPage() {
                   }
                 >
                   <DropdownMenuItem onClick={handleGeneratePdf}>Export as PDF</DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleGenerateDocx}>Export as Word (.docx)</DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleGenerateDocx}>Export as .docx</DropdownMenuItem>
                 </DropdownMenu>
               </div>
             </div>

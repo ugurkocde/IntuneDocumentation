@@ -7,6 +7,7 @@ import { graphScopes } from "~/lib/msal-config";
 import { useTenantLogging } from "~/hooks/use-tenant-logging";
 import { Card, CardHeader, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
+import { DropdownMenu, DropdownMenuItem } from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { ProgressBar } from "~/components/ui/progress-bar";
 import { NavigationHeader } from "~/components/navigation-header";
@@ -79,6 +80,7 @@ export default function DashboardPage() {
   const [selectedConfigs, setSelectedConfigs] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [generatingDocx, setGeneratingDocx] = useState(false);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showTipBanner, setShowTipBanner] = useState(true);
@@ -146,6 +148,86 @@ export default function DashboardPage() {
     }
   };
 
+  const handleGenerateDocx = async () => {
+    if (selectedConfigs.size === 0) {
+      alert("Please select at least one configuration to export");
+      return;
+    }
+
+    setGeneratingDocx(true);
+    try {
+      const accessToken = await getAccessToken();
+
+      const selectedData = {
+        settingsCatalog: configurations?.settingsCatalog?.filter(c => 
+          selectedConfigs.has(`catalog-${c.id}`)
+        ) ?? [],
+        deviceConfigurations: configurations?.deviceConfigurations?.filter(c =>
+          selectedConfigs.has(`device-${c.id}`)
+        ) ?? [],
+        administrativeTemplates: configurations?.administrativeTemplates?.filter(c =>
+          selectedConfigs.has(`admx-${c.id}`)
+        ) ?? [],
+        securityBaselines: configurations?.securityBaselines?.filter(c =>
+          selectedConfigs.has(`security-${c.id}`)
+        ) ?? [],
+        compliancePolicies: configurations?.compliancePolicies?.filter(c =>
+          selectedConfigs.has(`compliance-${c.id}`)
+        ) ?? [],
+        scripts: {
+          macOS: configurations?.scripts?.macOS?.filter(c =>
+            selectedConfigs.has(`script-mac-${c.id}`)
+          ) ?? [],
+          windows: configurations?.scripts?.windows?.filter(c =>
+            selectedConfigs.has(`script-win-${c.id}`)
+          ) ?? []
+        },
+        appConfigurations: configurations?.appConfigurations?.filter(c =>
+          selectedConfigs.has(`app-${c.id}`)
+        ) ?? [],
+        windowsUpdatePolicies: configurations?.windowsUpdatePolicies?.filter(c =>
+          selectedConfigs.has(`update-${c.id}`)
+        ) ?? [],
+        enrollmentConfigurations: configurations?.enrollmentConfigurations?.filter(c =>
+          selectedConfigs.has(`enrollment-${c.id}`)
+        ) ?? [],
+        conditionalAccessPolicies: (includeCA && caConsentStatus === 'included')
+          ? (configurations?.conditionalAccessPolicies?.filter(c => selectedConfigs.has(`ca-${c.id}`)) ?? [])
+          : []
+      };
+
+      const response = await fetch("/api/docx/generate-detailed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          ...selectedData,
+          branding: brandingOptions,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to generate DOCX" }));
+        throw new Error(errorData.message || "Failed to generate DOCX");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert(err?.message || "Failed to generate DOCX");
+    } finally {
+      setGeneratingDocx(false);
+    }
+  };
   const updateFetchProgress = (stepIndex: number, status: "pending" | "loading" | "completed" | "error") => {
     setFetchProgress(prev => {
       const newSteps = [...prev.steps];
@@ -923,17 +1005,23 @@ export default function DashboardPage() {
                   <Palette className="w-4 h-4 mr-2" />
                   Branding
                 </Button>
-                <Button
-                  onClick={handleGeneratePdf}
-                  disabled={generatingPdf || selectedConfigs.size === 0}
-                  loading={generatingPdf}
-                  variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
-                  size="sm"
-                  className="min-w-[140px]"
+                <DropdownMenu
+                  trigger={
+                    <Button
+                      disabled={(generatingPdf || generatingDocx) || selectedConfigs.size === 0}
+                      loading={generatingPdf || generatingDocx}
+                      variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
+                      size="sm"
+                      className="min-w-[160px]"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}
+                    </Button>
+                  }
                 >
-                  <Download className="w-4 h-4 mr-2" />
-                  {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}
-                </Button>
+                  <DropdownMenuItem onClick={handleGeneratePdf}>Export as PDF</DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleGenerateDocx}>Export as Word (.docx)</DropdownMenuItem>
+                </DropdownMenu>
               </div>
             </div>
           </div>

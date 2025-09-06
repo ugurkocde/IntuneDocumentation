@@ -26,6 +26,7 @@
     "@types/uuid": "^10.0.0",
     "@vercel/blob": "^1.1.1",
     "clsx": "^2.1.1",
+    "docx": "^8.5.0",
     "isomorphic-fetch": "^3.0.0",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^3.0.2",

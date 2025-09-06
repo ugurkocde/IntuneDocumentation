@@ -449,12 +449,14 @@ function parseAssignmentTargets(assignments: any[]): string[] {
   return assignments.map(assignment => {
     const target = assignment.target;
     if (!target) return "Unknown";
-    
-    const type = target["@odata.type"];
-    if (type?.includes("allDevices")) return "All Devices";
-    if (type?.includes("allUsers")) return "All Users";
-    if (type?.includes("group")) return `Group: ${target.groupId}`;
-    
+
+    const typeRaw = target["@odata.type"];
+    const type = typeof typeRaw === 'string' ? typeRaw.toLowerCase() : '';
+
+    if (type.includes("alldevices")) return "All Devices";
+    if (type.includes("alllicensedusers") || type.includes("allusers")) return "All Users";
+    if (type.includes("group")) return `Group: ${target.groupId}`;
+
     return "Custom Assignment";
   });
 }

@@ -1,7 +1,7 @@
 import "~/styles/globals.css";
 
 import { type Metadata } from "next";
-import { Geist } from "next/font/google";
+// Removed Google Fonts to allow offline builds in restricted environments
 import { AuthProvider } from "~/components/auth-provider";
 import PlausibleProvider from "next-plausible";
 
@@ -122,10 +122,7 @@ export const metadata: Metadata = {
   ],
 };
 
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist-sans",
-});
+// Using system fonts; add custom fonts via local files if needed
 
 export default function RootLayout({
   children,
@@ -210,7 +207,7 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en" className={`${geist.variable}`}>
+    <html lang="en">
       <head>
         <script
           type="application/ld+json"

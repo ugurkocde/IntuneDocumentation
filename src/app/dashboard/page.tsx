@@ -159,62 +159,63 @@ export default function DashboardPage() {
       const accessToken = await getAccessToken();
 
       const selectedData = {
-        settingsCatalog: configurations?.settingsCatalog?.filter(c => 
-          selectedConfigs.has(`catalog-${c.id}`)
-        ) ?? [],
-        deviceConfigurations: configurations?.deviceConfigurations?.filter(c =>
-          selectedConfigs.has(`device-${c.id}`)
-        ) ?? [],
-        administrativeTemplates: configurations?.administrativeTemplates?.filter(c =>
-          selectedConfigs.has(`admx-${c.id}`)
-        ) ?? [],
-        securityBaselines: configurations?.securityBaselines?.filter(c =>
-          selectedConfigs.has(`security-${c.id}`)
-        ) ?? [],
-        compliancePolicies: configurations?.compliancePolicies?.filter(c =>
-          selectedConfigs.has(`compliance-${c.id}`)
-        ) ?? [],
+        settingsCatalog: configurations?.settingsCatalog?.filter(c => selectedConfigs.has(`catalog-${c.id}`)) ?? [],
+        deviceConfigurations: configurations?.deviceConfigurations?.filter(c => selectedConfigs.has(`device-${c.id}`)) ?? [],
+        administrativeTemplates: configurations?.administrativeTemplates?.filter(c => selectedConfigs.has(`admx-${c.id}`)) ?? [],
+        securityBaselines: configurations?.securityBaselines?.filter(c => selectedConfigs.has(`security-${c.id}`)) ?? [],
+        compliancePolicies: configurations?.compliancePolicies?.filter(c => selectedConfigs.has(`compliance-${c.id}`)) ?? [],
         scripts: {
-          macOS: configurations?.scripts?.macOS?.filter(c =>
-            selectedConfigs.has(`script-mac-${c.id}`)
-          ) ?? [],
-          windows: configurations?.scripts?.windows?.filter(c =>
-            selectedConfigs.has(`script-win-${c.id}`)
-          ) ?? []
+          macOS: configurations?.scripts?.macOS?.filter(c => selectedConfigs.has(`script-mac-${c.id}`)) ?? [],
+          windows: configurations?.scripts?.windows?.filter(c => selectedConfigs.has(`script-win-${c.id}`)) ?? []
         },
-        appConfigurations: configurations?.appConfigurations?.filter(c =>
-          selectedConfigs.has(`app-${c.id}`)
-        ) ?? [],
-        windowsUpdatePolicies: configurations?.windowsUpdatePolicies?.filter(c =>
-          selectedConfigs.has(`update-${c.id}`)
-        ) ?? [],
-        enrollmentConfigurations: configurations?.enrollmentConfigurations?.filter(c =>
-          selectedConfigs.has(`enrollment-${c.id}`)
-        ) ?? [],
+        appConfigurations: configurations?.appConfigurations?.filter(c => selectedConfigs.has(`app-${c.id}`)) ?? [],
+        windowsUpdatePolicies: configurations?.windowsUpdatePolicies?.filter(c => selectedConfigs.has(`update-${c.id}`)) ?? [],
+        enrollmentConfigurations: configurations?.enrollmentConfigurations?.filter(c => selectedConfigs.has(`enrollment-${c.id}`)) ?? [],
         conditionalAccessPolicies: (includeCA && caConsentStatus === 'included')
           ? (configurations?.conditionalAccessPolicies?.filter(c => selectedConfigs.has(`ca-${c.id}`)) ?? [])
           : []
       };
 
-      const response = await fetch("/api/docx/generate-detailed", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          ...selectedData,
-          branding: brandingOptions,
-        }),
-      });
+      // Try client-side blob upload first, fallback to direct generation
+      let response;
+      try {
+        const configData = JSON.stringify({ ...selectedData, branding: brandingOptions });
+        const configBlob = new Blob([configData], { type: 'application/json' });
+        const filename = `docx-config-${Date.now()}.json`;
+        const blob = await upload(filename, configBlob, {
+          access: 'public',
+          handleUploadUrl: '/api/pdf/client-upload',
+          clientPayload: JSON.stringify({ timestamp: Date.now() }),
+          headers: { authorization: `Bearer ${accessToken}` },
+        });
 
-      if (!response.ok) {
+        response = await fetch("/api/docx/generate-from-blob", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ blobUrl: blob.url }),
+        });
+      } catch (uploadError) {
+        console.log("Client-side blob upload failed, falling back to direct DOCX generation:", uploadError);
+        response = await fetch("/api/docx/generate-detailed", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ ...selectedData, branding: brandingOptions }),
+        });
+      }
+
+      if (!response || !response.ok) {
         const errorData = await response.json().catch(() => ({ message: "Failed to generate DOCX" }));
         throw new Error(errorData.message || "Failed to generate DOCX");
       }
 
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const blobFile = await response.blob();
+      const url = window.URL.createObjectURL(blobFile);
       const a = document.createElement("a");
       a.href = url;
       a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.docx`;

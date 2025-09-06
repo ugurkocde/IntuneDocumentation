@@ -465,8 +465,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     });
   } catch {}
   
-  // Helper function to add logo with proper sizing
-  const addLogo = (position: 'header' | 'footer' | 'cover' | 'watermark', x?: number, y?: number) => {
+  // Helper function to add logo with proper sizing while preserving aspect ratio
+  // Returns the drawn logo height in mm when successful (for layout), otherwise null
+  const addLogo = (
+    position: 'header' | 'footer' | 'cover' | 'watermark',
+    x?: number,
+    y?: number
+  ): number | null => {
     // For header/footer, check if logo should appear there
     // For cover, only show if position is 'cover'
     const shouldShowLogo = branding?.logo?.dataUrl && (
@@ -479,15 +484,42 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     if (shouldShowLogo && branding?.logo?.dataUrl) {
       try {
         const imgData = branding.logo.dataUrl;
+        // Inspect image to preserve aspect ratio
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const props: any = (doc as any).getImageProperties
+          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (doc as any).getImageProperties(imgData)
+          : { width: 1, height: 1 };
+        const naturalW = Math.max(Number(props.width) || 1, 1);
+        const naturalH = Math.max(Number(props.height) || 1, 1);
+        const aspect = naturalW / naturalH;
         
-        // Use fixed maximum dimensions for logos
-        let maxWidth = 40;  // Maximum width in mm
-        let maxHeight = 40; // Maximum height in mm
-        
-        // Smaller sizes for header/footer
+        // Determine target height/width in mm based on position and optional branding sizes
+        let targetHeightMm: number;
+        let maxWidthMm: number;
         if (position === 'header' || position === 'footer') {
-          maxWidth = 15;  // Further reduced to ensure it fits
-          maxHeight = 15;
+          // Default small height for header/footer; allow override via branding.logo.height
+          targetHeightMm = Math.min(branding?.logo?.height || 15, 25);
+          maxWidthMm = 60; // Constrain width to avoid overflow
+        } else {
+          // Cover page default; allow override
+          targetHeightMm = Math.min(branding?.logo?.height || 35, 80);
+          maxWidthMm = Math.min(pageWidth - 2 * margin, 150);
+        }
+        // If width is specified but height is not, derive height from width
+        if (branding?.logo?.width && !branding?.logo?.height) {
+          const derivedHeight = branding.logo.width / aspect;
+          // Respect position-based caps
+          targetHeightMm = Math.min(derivedHeight, position === 'header' || position === 'footer' ? 25 : 80);
+        }
+        
+        // Compute scaled dimensions preserving aspect ratio and respecting max width
+        let drawW = targetHeightMm * aspect;
+        let drawH = targetHeightMm;
+        if (drawW > maxWidthMm) {
+          const scale = maxWidthMm / drawW;
+          drawW = drawW * scale;
+          drawH = drawH * scale;
         }
         
         // Extract the actual base64 data and format
@@ -499,23 +531,27 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         }
         
         if (position === 'cover') {
-          const xPos = x || pageWidth / 2 - maxWidth / 2;
-          const yPos = y || 20;
-          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight, undefined, 'FAST');
+          const xPos = x ?? (pageWidth / 2 - drawW / 2);
+          const yPos = y ?? 20;
+          doc.addImage(imgData, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
+          return drawH;
         } else if (position === 'header') {
-          // Logo on the right side of header - ensure it doesn't overflow
-          const xPos = x || Math.min(pageWidth - margin - maxWidth, pageWidth - margin - 20);
-          const yPos = y || 5;
-          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight, undefined, 'FAST');
+          // Right-aligned in header
+          const xPos = x ?? (pageWidth - margin - drawW);
+          const yPos = y ?? 5;
+          doc.addImage(imgData, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
+          return drawH;
         } else if (position === 'footer') {
-          const xPos = x || margin;
-          const yPos = y || pageHeight - 25;
-          doc.addImage(imgData, format, xPos, yPos, maxWidth, maxHeight, undefined, 'FAST');
+          const xPos = x ?? margin;
+          const yPos = y ?? (pageHeight - 10 - drawH);
+          doc.addImage(imgData, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
+          return drawH;
         }
       } catch (err) {
         console.error('Error adding logo:', err);
       }
     }
+    return null;
   };
   
   // Add watermark function
@@ -582,23 +618,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // === LOGO SECTION: Always show logo on title page if available ===
   if (branding?.logo?.dataUrl) {
-    // Add logo centered above title - adjusted size
+    // Add logo centered above title, preserving aspect ratio
     const logoY = 35;
-    const logoWidth = 35;  // Reduced for better fit
-    const logoHeight = 35; // Reduced for better fit
-    const logoX = (pageWidth / 2) - (logoWidth / 2);
-    
-    try {
-      const imgData = branding.logo.dataUrl;
-      let format = 'PNG';
-      if (typeof imgData === 'string' && (imgData.includes('image/jpeg') || imgData.includes('image/jpg'))) {
-        format = 'JPEG';
-      }
-      
-      doc.addImage(imgData, format, logoX, logoY, logoWidth, logoHeight, undefined, 'FAST');
-      titleStartY = logoY + logoHeight + 15; // Position title below logo
-    } catch (err) {
-      console.error('Error adding logo to title page:', err);
+    const usedH = addLogo('cover', undefined, logoY);
+    if (usedH) {
+      titleStartY = logoY + usedH + 15; // Position title below logo
     }
   }
   

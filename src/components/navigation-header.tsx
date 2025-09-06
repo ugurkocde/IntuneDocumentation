@@ -133,13 +133,13 @@ export function NavigationHeader() {
         <div className="flex justify-between items-center h-16">
           {/* Brand */}
           <Link href="/" className="flex items-center gap-3 group">
-            <Image
+            {/* Use fixed height with auto width to prevent logo skew */}
+            <img
               src="/logo.png"
               alt="Intune Documentation"
-              width={36}
-              height={36}
-              priority
-              className="rounded-md group-hover:scale-105 transition-transform"
+              className="h-9 w-auto rounded-md group-hover:scale-105 transition-transform"
+              loading="eager"
+              decoding="async"
             />
             <div className="leading-tight">
               <span className={`block text-base font-bold transition-colors ${onHome && !scrolled ? 'text-white group-hover:text-white' : 'text-slate-900 group-hover:text-blue-700'}`}>

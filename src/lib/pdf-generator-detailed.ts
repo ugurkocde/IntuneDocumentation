@@ -198,10 +198,10 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
 
   // Helper functions
   const checkPageBreak = (neededSpace = 30) => {
-    // Always leave at least 25mm for footer
-    const minFooterSpace = 25;
+    // Always leave at least 40mm for footer to prevent overlap
+    const minFooterSpace = 40;
     const totalSpaceNeeded = Math.max(neededSpace, minFooterSpace);
-    
+
     if (yPosition > pageHeight - totalSpaceNeeded) {
       doc.addPage();
       yPosition = margin;
@@ -1047,8 +1047,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const inventoryRowHeight = 9;
   const inventoryTotalHeight = inventoryHeaderHeight + (activeInventoryCount * inventoryRowHeight) + 20; // +20 for spacing
   
-  // Check if table would overlap with footer (leave 30mm for footer to be safe)
-  if (yPosition + inventoryTotalHeight > pageHeight - 30) {
+  // Check if table would overlap with footer (leave 40mm for footer to be safe)
+  if (yPosition + inventoryTotalHeight > pageHeight - 40) {
     doc.addPage();
     yPosition = margin;
     pageNumber++;
@@ -1084,8 +1084,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   activeInventory.forEach((item, index) => {
     const rowHeight = 9;
     
-    // Check if we're too close to the bottom of the page (leave 30mm for footer to be safe)
-    if (yPosition + rowHeight > pageHeight - 30) {
+    // Check if we're too close to the bottom of the page (leave 40mm for footer to be safe)
+    if (yPosition + rowHeight > pageHeight - 40) {
       // Start a new page
       doc.addPage();
       yPosition = margin;
@@ -1150,21 +1150,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // === PLATFORM COVERAGE CHART ===
   if (Object.keys(analytics.platformCounts).length > 0 || data.deviceCounts) {
-    checkPageBreak(60);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(0, 0, 0);
-    doc.text("Platform Coverage", margin, yPosition);
-    yPosition += 10;
-    
-    // Combine configuration counts with device counts
+    // Combine configuration counts with device counts first to calculate space needed
     const platformData: Record<string, { configs: number, devices: number }> = {};
-    
+
     // Add configuration counts
     Object.entries(analytics.platformCounts).forEach(([platform, count]) => {
       platformData[platform] = { configs: count, devices: 0 };
     });
-    
+
     // Add device counts (normalize OS names to match configuration platforms)
     if (data.deviceCounts) {
       Object.entries(data.deviceCounts).forEach(([os, count]) => {
@@ -1178,7 +1171,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           if (lower.includes("linux")) return "Linux";
           return os;
         })();
-        
+
         if (platformData[normalizedPlatform]) {
           platformData[normalizedPlatform].devices += count;
         } else {
@@ -1186,11 +1179,25 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         }
       });
     }
-    
+
     // Sort platforms by total activity
     const sortedPlatforms = Object.entries(platformData)
       .sort((a, b) => (b[1].configs + b[1].devices) - (a[1].configs + a[1].devices))
       .slice(0, 5); // Show top 5 platforms
+
+    // Calculate total space needed for Platform Coverage section
+    const barHeight = 14;
+    const barSpacing = 5;
+    const platformChartHeight = 10 + (sortedPlatforms.length * (barHeight + barSpacing)) + 20; // Title + bars + bottom margin
+
+    // Check if entire Platform Coverage section fits
+    checkPageBreak(platformChartHeight);
+
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text("Platform Coverage", margin, yPosition);
+    yPosition += 10;
     
     // Platform colors
     const platformColors: Record<string, [number, number, number]> = {
@@ -1204,9 +1211,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     // Find maximum value for chart scaling
     const maxConfigs = Math.max(...sortedPlatforms.map(([_, data]) => data.configs), 1);
     const chartWidth = 100;  // Reduced from 120 to fit better
-    const barHeight = 14;
-    const barSpacing = 5;
-    
+
     sortedPlatforms.forEach(([platform, data], index) => {
       const barY = yPosition + (index * (barHeight + barSpacing));
       
@@ -1249,8 +1254,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     });
     
     yPosition += (sortedPlatforms.length * (barHeight + barSpacing)) + 15;
+
+    // Check if we're too close to bottom after drawing platform coverage
+    checkPageBreak(10);
   }
-  
+
   // === TOP GROUPS TABLE WITH ENHANCED FORMATTING ===
   if (analytics.topGroups.length > 0) {
     checkPageBreak(80);
@@ -2031,7 +2039,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     tocEntries.forEach((entry, index) => {
       // Check if we need a new page for ToC
-      if (yPosition > pageHeight - 30) {
+      if (yPosition > pageHeight - 40) {
         doc.addPage();
         yPosition = margin;
         doc.setFontSize(11);

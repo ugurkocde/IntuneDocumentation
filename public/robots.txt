@@ -1,16 +1,38 @@
+# Intune Documentation Generator - Robots.txt
+# Last Updated: 2025-09-18
+
+# Allow all search engines
 User-agent: *
 Allow: /
 Allow: /dashboard
 
-# High-value pages for crawling
-Allow: /api/intune/*
+# Disallow API and private routes
+Disallow: /api/
+Disallow: /_next/
+Disallow: /static/
 
-# Block unnecessary API routes from indexing
-Disallow: /api/auth/
-Disallow: /api/pdf/
+# Specific bot instructions
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 0
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+# Block bad bots
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
 
 # Sitemap location
 Sitemap: https://intunedocumentation.com/sitemap.xml
 
-# Crawl delay (optional, can help with server load)
-Crawl-delay: 1
+# Cache control hint for crawlers
+# Helps search engines understand content freshness
+Cache-Control: public, max-age=3600

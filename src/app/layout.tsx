@@ -99,9 +99,8 @@ export const metadata: Metadata = {
     }
   },
   verification: {
-    google: "your-google-verification-code-here", // Replace with actual verification code
-    yandex: "your-yandex-verification-code-here", // Replace with actual verification code if needed
-    yahoo: "your-yahoo-verification-code-here", // Replace with actual verification code if needed
+    // google: "", // Already verified via Google Search Console
+    // bing: "", // Add if using Bing Webmaster Tools
   },
   other: {
     "application-name": "Intune Documentation",
@@ -131,21 +130,27 @@ export default function RootLayout({
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "Intune Documentation",
-    "description": "Generate comprehensive PDF documentation for Microsoft Intune configurations in minutes. Export policies, compliance settings, scripts, and security baselines automatically.",
+    "name": "Intune Documentation Generator",
+    "alternateName": "Free Microsoft Intune PDF Export Tool",
+    "description": "Generate comprehensive PDF documentation for Microsoft Intune configurations in minutes. Export policies, compliance settings, scripts, and security baselines automatically. Save 10+ hours per audit.",
     "url": "https://intunedocumentation.com",
     "applicationCategory": "BusinessApplication",
+    "applicationSubCategory": "IT Management Software",
     "operatingSystem": "Web Browser",
     "offers": {
       "@type": "Offer",
       "price": "0",
       "priceCurrency": "USD",
-      "availability": "https://schema.org/InStock"
+      "availability": "https://schema.org/InStock",
+      "priceValidUntil": "2030-12-31"
     },
     "author": {
       "@type": "Organization",
       "name": "Intune Documentation",
-      "url": "https://intunedocumentation.com"
+      "url": "https://intunedocumentation.com",
+      "sameAs": [
+        "https://github.com/IntuneDocumentation"
+      ]
     },
     "publisher": {
       "@type": "Organization",
@@ -208,6 +213,25 @@ export default function RootLayout({
     ]
   };
 
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://intunedocumentation.com"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Dashboard",
+        "item": "https://intunedocumentation.com/dashboard"
+      }
+    ]
+  };
+
   return (
     <html lang="en">
       <head>
@@ -215,6 +239,12 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(jsonLd),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(breadcrumbSchema),
           }}
         />
       </head>

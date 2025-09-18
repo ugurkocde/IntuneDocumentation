@@ -37,6 +37,12 @@ import {
 import { BrandingSettingsModal } from "~/components/branding-settings-modal";
 import type { BrandingOptions } from "~/types/branding";
 
+interface PermissionError {
+  resource: string;
+  requiredPermission: string;
+  message: string;
+}
+
 interface IntuneConfigurations {
   settingsCatalog: any[];
   deviceConfigurations: any[];
@@ -51,6 +57,7 @@ interface IntuneConfigurations {
   windowsUpdatePolicies: any[];
   enrollmentConfigurations: any[];
   conditionalAccessPolicies: any[];
+  permissionErrors?: PermissionError[];
   summary: {
     totalConfigurations: number;
     byType: {
@@ -905,7 +912,36 @@ export default function DashboardPage() {
             </button>
           </div>
         )}
-        
+
+        {/* Permission Warnings */}
+        {configurations?.permissionErrors && configurations.permissionErrors.length > 0 && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Shield className="w-5 h-5 text-amber-600 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm text-amber-900 font-medium">Limited permissions detected</p>
+                <p className="text-sm text-amber-700 mt-1 mb-2">
+                  Some configuration types could not be retrieved due to missing permissions.
+                  To access all features, ensure your Azure AD app has the following permissions:
+                </p>
+                <ul className="text-sm text-amber-700 space-y-1">
+                  {configurations.permissionErrors.map((error, index) => (
+                    <li key={index} className="flex items-start gap-2">
+                      <span className="text-amber-600">•</span>
+                      <span>
+                        <strong>{error.resource}:</strong> Requires {error.requiredPermission}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-amber-600 mt-3">
+                  Contact your administrator to grant these permissions to the application.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action Bar */}
         <div className="mb-6 space-y-3">
           {/* Main Header Bar */}

@@ -76,8 +76,15 @@ export interface DetailedConfiguration {
   [key: string]: any;
 }
 
+export interface PermissionError {
+  resource: string;
+  requiredPermission: string;
+  message: string;
+}
+
 export class DetailedIntuneService {
   private client: ReturnType<typeof createGraphClient>;
+  private permissionErrors: PermissionError[] = [];
 
   constructor(accessToken: string) {
     this.client = createGraphClient(accessToken);
@@ -453,8 +460,18 @@ export class DetailedIntuneService {
       );
 
       return detailedScripts;
-    } catch (error) {
-      console.error("Error fetching Windows scripts:", error);
+    } catch (error: any) {
+      // Check if it's a permission error
+      if (error?.statusCode === 403 || error?.code === 'Forbidden') {
+        console.log("Windows PowerShell Scripts skipped - insufficient permissions");
+        this.permissionErrors.push({
+          resource: "Windows PowerShell Scripts",
+          requiredPermission: "DeviceManagementScripts.Read.All",
+          message: "Unable to fetch Windows PowerShell Scripts due to missing permissions"
+        });
+      } else {
+        console.error("Error fetching Windows scripts:", error);
+      }
       return [];
     }
   }
@@ -510,8 +527,18 @@ export class DetailedIntuneService {
       );
 
       return detailedScripts;
-    } catch (error) {
-      console.error("Error fetching macOS scripts:", error);
+    } catch (error: any) {
+      // Check if it's a permission error
+      if (error?.statusCode === 403 || error?.code === 'Forbidden') {
+        console.log("macOS Shell Scripts skipped - insufficient permissions");
+        this.permissionErrors.push({
+          resource: "macOS Shell Scripts",
+          requiredPermission: "DeviceManagementScripts.Read.All",
+          message: "Unable to fetch macOS Shell Scripts due to missing permissions"
+        });
+      } else {
+        console.error("Error fetching macOS scripts:", error);
+      }
       return [];
     }
   }
@@ -608,10 +635,16 @@ export class DetailedIntuneService {
     }
   }
 
+  // Get permission errors encountered during fetch
+  getPermissionErrors(): PermissionError[] {
+    return this.permissionErrors;
+  }
+
   // Main method to get all detailed configurations
   async getAllDetailedConfigurations() {
     console.log("Fetching all detailed Intune configurations...");
-    
+    this.permissionErrors = []; // Reset permission errors
+
     const [
       settingsCatalog,
       deviceConfigurations,
@@ -647,6 +680,7 @@ export class DetailedIntuneService {
       windowsUpdatePolicies,
       enrollmentConfigurations,
       conditionalAccessPolicies,
+      permissionErrors: this.permissionErrors,
       summary: {
         totalConfigurations: 
           settingsCatalog.length + 

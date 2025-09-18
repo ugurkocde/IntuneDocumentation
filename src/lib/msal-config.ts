@@ -24,6 +24,7 @@ export const loginRequest: PopupRequest = {
     "DeviceManagementManagedDevices.Read.All",
     "DeviceManagementRBAC.Read.All",
     "DeviceManagementServiceConfig.Read.All",
+    "DeviceManagementScripts.Read.All",
     "Group.Read.All",
   ],
 };

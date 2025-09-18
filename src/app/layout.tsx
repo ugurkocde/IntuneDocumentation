@@ -7,9 +7,10 @@ import PlausibleProvider from "next-plausible";
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://intunedocumentation.com'),
+  applicationName: 'Intune Documentation',
   title: {
     default: "Free Intune Documentation Generator | Microsoft Intune PDF Export Tool",
-    template: "%s | Intune Documentation Generator"
+    template: "%s | Intune Documentation"
   },
   description: "Generate comprehensive PDF documentation for Microsoft Intune configurations in minutes. Export policies, compliance settings, scripts, and security baselines automatically. Free tool trusted by IT administrators and MSPs worldwide.",
   keywords: [
@@ -41,12 +42,12 @@ export const metadata: Metadata = {
     "enterprise mobility documentation",
     "Microsoft 365 Intune reports"
   ],
-  authors: [{ 
-    name: "Intune Documentation Team",
+  authors: [{
+    name: "Intune Documentation",
     url: "https://intunedocumentation.com"
   }],
-  creator: "Intune Documentation Generator",
-  publisher: "Intune Documentation Tools",
+  creator: "Intune Documentation",
+  publisher: "Intune Documentation",
   category: "IT Management Software",
   classification: "Business Software",
   openGraph: {
@@ -54,7 +55,7 @@ export const metadata: Metadata = {
     description: "Transform hours of manual Intune documentation into minutes. Generate professional PDF reports covering all policies, compliance settings, security baselines, and device configurations. Trusted by IT professionals worldwide.",
     type: "website",
     url: "https://intunedocumentation.com",
-    siteName: "Intune Documentation Generator",
+    siteName: "Intune Documentation",
     locale: "en_US",
     images: [
       {
@@ -103,7 +104,7 @@ export const metadata: Metadata = {
     yahoo: "your-yahoo-verification-code-here", // Replace with actual verification code if needed
   },
   other: {
-    "application-name": "Intune Documentation Generator",
+    "application-name": "Intune Documentation",
     "apple-mobile-web-app-title": "Intune Docs",
     "format-detection": "telephone=no",
     "mobile-web-app-capable": "yes",
@@ -130,7 +131,7 @@ export default function RootLayout({
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "Intune Documentation Generator",
+    "name": "Intune Documentation",
     "description": "Generate comprehensive PDF documentation for Microsoft Intune configurations in minutes. Export policies, compliance settings, scripts, and security baselines automatically.",
     "url": "https://intunedocumentation.com",
     "applicationCategory": "BusinessApplication",
@@ -143,12 +144,13 @@ export default function RootLayout({
     },
     "author": {
       "@type": "Organization",
-      "name": "Intune Documentation Team",
+      "name": "Intune Documentation",
       "url": "https://intunedocumentation.com"
     },
     "publisher": {
       "@type": "Organization",
-      "name": "Intune Documentation Tools"
+      "name": "Intune Documentation",
+      "url": "https://intunedocumentation.com"
     },
     "softwareVersion": "1.0",
     "dateCreated": "2024-01-01",

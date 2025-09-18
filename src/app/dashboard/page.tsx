@@ -13,7 +13,7 @@ import { ProgressBar } from "~/components/ui/progress-bar";
 import { NavigationHeader } from "~/components/navigation-header";
 import { upload } from '@vercel/blob/client';
 // Settings is now an in-dashboard view; no external link needed here
-import { 
+import {
   Settings,
   Shield,
   FileText,
@@ -32,7 +32,8 @@ import {
   LayoutGrid,
   ChevronLeft,
   Menu,
-  Palette
+  Palette,
+  FileType
 } from "lucide-react";
 import { BrandingSettingsModal } from "~/components/branding-settings-modal";
 import type { BrandingOptions } from "~/types/branding";
@@ -1056,8 +1057,14 @@ export default function DashboardPage() {
                     </Button>
                   }
                 >
-                  <DropdownMenuItem onClick={handleGeneratePdf}>Export as PDF</DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleGenerateDocx}>Export as .docx</DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleGeneratePdf} className="flex items-center">
+                    <FileText className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span>Export as PDF</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleGenerateDocx} className="flex items-center">
+                    <FileType className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span>Export as .docx</span>
+                  </DropdownMenuItem>
                 </DropdownMenu>
               </div>
             </div>

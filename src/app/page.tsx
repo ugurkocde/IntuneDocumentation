@@ -61,24 +61,36 @@ export default function HomePage() {
 
   const faqs = [
     {
-      question: "What does this tool do?",
-      answer: "It connects to your Microsoft Intune tenant via Graph API, fetches all 10 configuration types (policies, profiles, scripts, etc.), and generates a comprehensive PDF document with complete settings, assignments, and filters."
+      question: "What is the Intune Documentation Generator?",
+      answer: "The Intune Documentation Generator is a free tool that connects to your Microsoft Intune tenant via Graph API, fetches all 10 configuration types (policies, profiles, scripts, etc.), and generates comprehensive PDF or Word documents with complete settings, assignments, and filters. It saves IT teams 10+ hours per audit."
     },
     {
-      question: "Is my data secure?",
-      answer: "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. We do not persist your Intune data or PDFs. For larger exports, we briefly stage your selected configuration in a short-lived transfer buffer (Vercel Blob) to reliably generate your PDF due to platform payload size limits. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation; it’s never indexed or used for analytics."
+      question: "How do I export Intune configurations to PDF?",
+      answer: "Simply sign in with your Microsoft account, select the Intune configurations you want to document, and click Export. The tool automatically generates a professional PDF report with all settings, assignments, and group configurations in minutes."
     },
     {
-      question: "How much does it cost?",
-      answer: "It's completely free. No hidden fees, no premium tiers, no credit card required."
+      question: "Is the Intune Documentation tool really free?",
+      answer: "Yes, it's completely free. No hidden fees, no premium tiers, no credit card required. You can generate unlimited Intune documentation reports at no cost."
     },
     {
-      question: "Why do you use temporary blob storage?",
-      answer: "Some exports exceed typical request body limits on serverless platforms. To prevent failures and timeouts, we upload a short-lived JSON copy of your selected configuration to Vercel Blob and immediately delete it after the PDF is generated. More on limits: https://vercel.com/guides/how-to-bypass-vercel-body-size-limit-serverless-functions ."
+      question: "Is my Intune data secure?",
+      answer: "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. We do not persist your Intune data or PDFs. For larger exports, we briefly stage your selected configuration in a short-lived transfer buffer (Vercel Blob) to reliably generate your PDF due to platform payload size limits. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation."
+    },
+    {
+      question: "What Intune policies can I export?",
+      answer: "You can export all Intune configuration types including: Device Configurations, Compliance Policies, Settings Catalog, Administrative Templates, Security Baselines, PowerShell Scripts, Shell Scripts, App Configurations, Windows Update Policies, Enrollment Configurations, and Conditional Access Policies."
     },
     {
       question: "Why does Defender flag 'Suspicious application consent for offline access'?",
-      answer: "This is a common alert when an app requests the standard 'offline_access' permission from Microsoft identity (used to refresh tokens without repeatedly prompting you). It does NOT grant extra data access beyond your approved read-only scopes, and we use only delegated permissions (no application permissions). Tokens are kept in your browser session, and we do not store tenant data. An admin can pre-consent the app to reduce such alerts."
+      answer: "This is a common alert when an app requests the standard 'offline_access' permission from Microsoft identity (used to refresh tokens without repeatedly prompting you). It does NOT grant extra data access beyond your approved read-only scopes, and we use only delegated permissions (no application permissions). Tokens are kept in your browser session, and we do not store tenant data."
+    },
+    {
+      question: "How long does it take to generate Intune documentation?",
+      answer: "Most Intune documentation reports are generated in under 2 minutes. The exact time depends on the number of configurations in your tenant and which policies you select for export."
+    },
+    {
+      question: "Can I customize the Intune PDF report?",
+      answer: "Yes, you can customize your documentation with branding options including company logo, custom colors, headers, footers, and confidentiality notices. You can also select specific configurations to include or exclude from the report."
     }
   ];
 

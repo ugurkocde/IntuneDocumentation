@@ -484,20 +484,65 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       position === 'footer' ? branding?.logo?.position === 'footer' :
       false
     );
-    
+
     if (shouldShowLogo && branding?.logo?.dataUrl) {
       try {
-        const imgData = branding.logo.dataUrl;
+        let imgData = branding.logo.dataUrl;
+
+        // Detect and extract image format from data URL
+        let format: 'PNG' | 'JPEG' = 'PNG'; // Default to PNG
+        let base64Data = imgData;
+
+        if (typeof imgData === 'string') {
+          // Check if it's a data URL
+          if (imgData.startsWith('data:')) {
+            const matches = imgData.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/i);
+            if (matches) {
+              // Extract format from data URL
+              const detectedFormat = matches[1]?.toLowerCase();
+              if (detectedFormat === 'jpeg' || detectedFormat === 'jpg') {
+                format = 'JPEG';
+              } else if (detectedFormat === 'png') {
+                format = 'PNG';
+              }
+              // Extract base64 data without the header
+              base64Data = matches[2] || imgData;
+            } else {
+              // If the data URL doesn't match expected format, try to use it as-is
+              // but remove the data URL prefix if present
+              const dataIndex = imgData.indexOf(',');
+              if (dataIndex > -1) {
+                base64Data = imgData.substring(dataIndex + 1);
+                // Try to detect format from the prefix
+                if (imgData.toLowerCase().includes('jpeg') || imgData.toLowerCase().includes('jpg')) {
+                  format = 'JPEG';
+                }
+              }
+            }
+          }
+          // If not a data URL, assume it's already base64
+        }
+
+        // Reconstruct the data URL with proper format for jsPDF
+        const properDataUrl = `data:image/${format.toLowerCase()};base64,${base64Data}`;
+
         // Inspect image to preserve aspect ratio
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const props: any = (doc as any).getImageProperties
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (doc as any).getImageProperties(imgData)
-          : { width: 1, height: 1 };
-        const naturalW = Math.max(Number(props.width) || 1, 1);
-        const naturalH = Math.max(Number(props.height) || 1, 1);
+        let props: any = { width: 100, height: 100 }; // Default aspect ratio 1:1
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if ((doc as any).getImageProperties) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            props = (doc as any).getImageProperties(properDataUrl);
+          }
+        } catch (propsError) {
+          console.warn('Could not get image properties, using default aspect ratio:', propsError);
+        }
+
+        const naturalW = Math.max(Number(props.width) || 100, 1);
+        const naturalH = Math.max(Number(props.height) || 100, 1);
         const aspect = naturalW / naturalH;
-        
+
         // Determine target height/width in mm based on position and optional branding sizes
         let targetHeightMm: number;
         let maxWidthMm: number;
@@ -516,7 +561,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           // Respect position-based caps
           targetHeightMm = Math.min(derivedHeight, position === 'header' || position === 'footer' ? 25 : 80);
         }
-        
+
         // Compute scaled dimensions preserving aspect ratio and respecting max width
         let drawW = targetHeightMm * aspect;
         let drawH = targetHeightMm;
@@ -525,30 +570,22 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           drawW = drawW * scale;
           drawH = drawH * scale;
         }
-        
-        // Extract the actual base64 data and format
-        let format = 'PNG';
-        if (typeof imgData === 'string' && (imgData.includes('image/jpeg') || imgData.includes('image/jpg'))) {
-          format = 'JPEG';
-        } else if (typeof imgData === 'string' && imgData.includes('image/png')) {
-          format = 'PNG';
-        }
-        
+
         if (position === 'cover') {
           const xPos = x ?? (pageWidth / 2 - drawW / 2);
           const yPos = y ?? 20;
-          doc.addImage(imgData, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
+          doc.addImage(properDataUrl, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
           return drawH;
         } else if (position === 'header') {
           // Right-aligned in header
           const xPos = x ?? (pageWidth - margin - drawW);
           const yPos = y ?? 5;
-          doc.addImage(imgData, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
+          doc.addImage(properDataUrl, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
           return drawH;
         } else if (position === 'footer') {
           const xPos = x ?? margin;
           const yPos = y ?? (pageHeight - 10 - drawH);
-          doc.addImage(imgData, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
+          doc.addImage(properDataUrl, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
           return drawH;
         }
       } catch (err) {

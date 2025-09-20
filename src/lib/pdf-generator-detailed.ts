@@ -487,7 +487,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
 
     if (shouldShowLogo && branding?.logo?.dataUrl) {
       try {
-        let imgData = branding.logo.dataUrl;
+        const imgData = branding.logo.dataUrl;
 
         // Detect and extract image format from data URL
         let format: 'PNG' | 'JPEG' = 'PNG'; // Default to PNG
@@ -496,7 +496,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         if (typeof imgData === 'string') {
           // Check if it's a data URL
           if (imgData.startsWith('data:')) {
-            const matches = imgData.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/i);
+            const regex = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i;
+            const matches = regex.exec(imgData);
             if (matches) {
               // Extract format from data URL
               const detectedFormat = matches[1]?.toLowerCase();

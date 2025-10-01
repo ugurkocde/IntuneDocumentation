@@ -60,11 +60,17 @@ export default function PrivacyPolicyPage() {
             provider logs as part of normal operations.
           </p>
 
-          <h2 className="text-xl font-semibold text-slate-900">Analytics</h2>
+          <h2 className="text-xl font-semibold text-slate-900">Analytics & Cookies</h2>
           <p>
-            We use privacy-friendly analytics (e.g., Plausible) to understand aggregate usage without cookies or
+            We use privacy-friendly analytics (Plausible) to understand aggregate usage without cookies or
             personal identifiers. Analytics are used to improve stability and usability, not to track individuals.
           </p>
+          <ul className="list-disc pl-6 space-y-2 mt-3">
+            <li>Plausible Analytics is 100% cookieless and does not track personal data or use browser fingerprinting.</li>
+            <li>We collect only aggregated, anonymous metrics such as page views, referrers, and device types.</li>
+            <li>Your consent preference for analytics is stored in localStorage (not a cookie) and remains on your device only.</li>
+            <li>You can change your analytics preference at any time by clearing your browser's local storage or declining via the consent banner.</li>
+          </ul>
 
           <h2 className="text-xl font-semibold text-slate-900">Data Sharing</h2>
           <p>

@@ -172,18 +172,16 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const pageHeight = doc.internal.pageSize.height;
   const pageWidth = doc.internal.pageSize.width;
   const margin = 15;
-  const lineHeight = 6;
   const maxWidth = pageWidth - 2 * margin;
   let pageNumber = 1;
-  
+
   // Analyze configurations for overview
   const analytics = analyzeConfigurations(data);
-  
+
   // Extract branding options with defaults
   const branding = data.branding;
   const primaryColor = branding?.colors?.primary || '#003366';
   const secondaryColor = branding?.colors?.secondary || '#0066CC';
-  const accentColor = branding?.colors?.accent || '#00A652';
   const textColor = branding?.colors?.text || '#000000';
   
   
@@ -460,7 +458,6 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     const metaSubject = branding?.metadata?.subject || 'Microsoft Intune Configuration Documentation';
     const metaKeywords = branding?.metadata?.keywords?.join(', ') || 'Intune, Microsoft, Configuration, Documentation, Report';
     // Some jsPDF builds expose setProperties; use optional chaining defensively
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (doc as any).setProperties?.({
       title: metaTitle,
       author: metaAuthor,
@@ -528,12 +525,9 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         const properDataUrl = `data:image/${format.toLowerCase()};base64,${base64Data}`;
 
         // Inspect image to preserve aspect ratio
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let props: any = { width: 100, height: 100 }; // Default aspect ratio 1:1
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           if ((doc as any).getImageProperties) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             props = (doc as any).getImageProperties(properDataUrl);
           }
         } catch (propsError) {
@@ -608,10 +602,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Add diagonal watermark text
       const watermarkText = branding.watermark.text;
-      const angle = branding.watermark.angle || -45;
-      
+
       // Calculate position for centered diagonal text
-      const radians = angle * Math.PI / 180;
       const xPos = pageWidth / 2;
       const yPos = pageHeight / 2;
       
@@ -628,17 +620,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // Don't add page number on cover
   // addPageNumber();
-  
-  // Calculate total configurations first
-  const totalCount = 
-    data.settingsCatalog.length +
-    data.deviceConfigurations.length +
-    data.administrativeTemplates.length +
-    data.compliancePolicies.length +
-    data.securityBaselines.length +
-    data.scripts.windows.length +
-    data.scripts.macOS.length;
-  
+
   // === TOP SECTION: Company/Department Text ===
   const headerY = 20;
   let titleStartY = 70;
@@ -1656,7 +1638,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
               const decoded = atob(scriptText);
               scriptText = decoded;
             }
-          } catch (e) {
+          } catch {
             // Not base64, use as is
           }
           
@@ -1719,7 +1701,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
               const decoded = atob(scriptText);
               scriptText = decoded;
             }
-          } catch (e) {
+          } catch {
             // Not base64, use as is
           }
           

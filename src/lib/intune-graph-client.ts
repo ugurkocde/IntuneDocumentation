@@ -328,13 +328,13 @@ export class IntuneConfigurationService {
       this.getEnrollmentConfigurations()
     ]);
 
-    // Optionally fetch detailed settings for Settings Catalog policies
-    const configPoliciesWithSettings = await Promise.all(
-      configurationPolicies.slice(0, 10).map(async (policy) => {
-        const details = await this.getConfigurationPolicySettings(policy.id);
-        return details || policy;
-      })
-    );
+    // Optionally fetch detailed settings for Settings Catalog policies (currently disabled)
+    // const configPoliciesWithSettings = await Promise.all(
+    //   configurationPolicies.slice(0, 10).map(async (policy) => {
+    //     const details = await this.getConfigurationPolicySettings(policy.id);
+    //     return details || policy;
+    //   })
+    // );
 
     return {
       settingsCatalog: configurationPolicies,

@@ -174,7 +174,7 @@ async function generateComprehensivePDF(data: ComprehensiveData): Promise<Uint8A
   doc.text(totalConfigs.toString(), pageWidth - margin - 10, yPosition, { align: "right" });
 
   // Add configuration details
-  const addConfigurationDetails = (configs: any[], title: string, type: string) => {
+  const addConfigurationDetails = (configs: any[], title: string, _type: string) => {
     if (configs.length === 0) return;
     
     doc.addPage();

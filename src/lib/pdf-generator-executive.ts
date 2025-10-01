@@ -2,8 +2,6 @@ import jsPDF from "jspdf";
 import {
   generateComplianceSummary,
   SECURITY_CONTROLS,
-  identifySecurityControls,
-  getComplianceMappings
 } from "./compliance-mapper";
 
 interface ExecutiveSummaryData {
@@ -326,8 +324,8 @@ export async function generateExecutiveSummaryPDF(data: ExecutiveSummaryData): P
     
     const groupCoverage = analyzeGroupCoverage(allConfigurations, data.groupNames);
     let groupCount = 0;
-    
-    for (const [groupId, groupData] of groupCoverage.entries()) {
+
+    for (const [, groupData] of groupCoverage.entries()) {
       if (groupCount >= 10) break; // Limit to top 10 groups
       checkPageBreak(8);
       

@@ -69,7 +69,7 @@ export default function PrivacyPolicyPage() {
             <li>Plausible Analytics is 100% cookieless and does not track personal data or use browser fingerprinting.</li>
             <li>We collect only aggregated, anonymous metrics such as page views, referrers, and device types.</li>
             <li>Your consent preference for analytics is stored in localStorage (not a cookie) and remains on your device only.</li>
-            <li>You can change your analytics preference at any time by clearing your browser's local storage or declining via the consent banner.</li>
+            <li>You can change your analytics preference at any time by clearing your browser&apos;s local storage or declining via the consent banner.</li>
           </ul>
 
           <h2 className="text-xl font-semibold text-slate-900">Data Sharing</h2>

@@ -155,13 +155,11 @@ export default function HomePage() {
         {/* FAQ Structured Data */}
         <script
           type="application/ld+json"
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
         />
         {/* HowTo Structured Data */}
         <script
           type="application/ld+json"
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           dangerouslySetInnerHTML={{ __html: JSON.stringify(howToJsonLd) }}
         />
         <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-blue-800 flex items-center">

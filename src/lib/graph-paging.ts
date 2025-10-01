@@ -8,7 +8,6 @@ export async function collectAllPages<T = any>(client: Client, firstResponse: an
   while (nextLink) {
     // The Graph SDK supports passing the absolute nextLink URL
     // Avoid adding .version() or other modifiers when following nextLink
-    // eslint-disable-next-line no-await-in-loop
     const page = await (client as any).api(nextLink).get();
     if (Array.isArray(page?.value)) {
       items.push(...page.value);

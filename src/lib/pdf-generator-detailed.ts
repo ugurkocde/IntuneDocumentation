@@ -183,6 +183,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const primaryColor = branding?.colors?.primary || '#003366';
   const secondaryColor = branding?.colors?.secondary || '#0066CC';
   const textColor = branding?.colors?.text || '#000000';
+
+  // Font settings with defaults
+  const fontFamily = branding?.fonts?.family || 'helvetica';
+  const headerFontSize = branding?.fonts?.headerSize || 14;
+  const bodyFontSize = branding?.fonts?.bodySize || 11;
   
   
   // Helper function to convert hex to RGB with proper null checking
@@ -218,7 +223,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // Add header text if configured
     if (branding?.header?.enabled && branding?.header?.text && pageNumber > 1) {
-      doc.setFontSize(9);
+      doc.setFontSize(Math.max(bodyFontSize - 2, 8));
+      doc.setFont(fontFamily, "normal");
       doc.setTextColor(100, 100, 100);
       doc.text(branding.header.text, pageWidth / 2, 10, { align: "center" });
     }
@@ -228,32 +234,38 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       addLogo('footer');
     }
     
-    doc.setFontSize(9);
+    doc.setFontSize(Math.max(bodyFontSize - 2, 8));
+    doc.setFont(fontFamily, "normal");
     doc.setTextColor(150, 150, 150);
-    
+
     // Add footer text if configured
     if (branding?.footer?.enabled && branding?.footer?.text) {
       doc.text(branding.footer.text, margin, pageHeight - 10);
     }
-    
+
     // Page number
     doc.text(`Page ${pageNumber}`, pageWidth / 2, pageHeight - 10, { align: "center" });
-    
+
     // Add confidentiality notice if configured
     if (branding?.footer?.enabled && branding?.footer?.confidentialityNotice) {
-      doc.setFontSize(8);
+      doc.setFontSize(Math.max(bodyFontSize - 3, 7));
       doc.text(branding.footer.confidentialityNotice, pageWidth - margin, pageHeight - 10, { align: "right" });
     }
     
     doc.setTextColor(0, 0, 0);
     
-    // Add watermark to every page
+    // Add watermark to every page (text or logo)
     addWatermark();
+
+    // Add logo watermark if configured
+    if (branding?.logo?.position === 'watermark') {
+      addLogo('watermark');
+    }
   };
 
-  const addText = (text: string, fontSize = 11, isBold = false, color: [number, number, number] = [0, 0, 0]) => {
+  const addText = (text: string, fontSize = bodyFontSize, isBold = false, color: [number, number, number] = [0, 0, 0]) => {
     doc.setFontSize(fontSize);
-    doc.setFont("helvetica", isBold ? "bold" : "normal");
+    doc.setFont(fontFamily, isBold ? "bold" : "normal");
     doc.setTextColor(...color);
     
     const lines = doc.splitTextToSize(text, maxWidth);
@@ -269,8 +281,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const addSectionHeader = (title: string) => {
     checkPageBreak(20);
     yPosition += 3;
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
+    doc.setFontSize(headerFontSize);
+    doc.setFont(fontFamily, "bold");
     const [r, g, b] = hexToRgb(primaryColor);
     doc.setTextColor(r, g, b);
     doc.text(title, margin, yPosition);
@@ -287,10 +299,10 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
 
   const addConfigHeader = (name: string, assignments: string, createdDate?: string, modifiedDate?: string) => {
     checkPageBreak(25);
-    
+
     // Configuration name with secondary color
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
+    doc.setFontSize(Math.max(bodyFontSize + 1, 12));
+    doc.setFont(fontFamily, "bold");
     const [r, g, b] = hexToRgb(secondaryColor);
     doc.setTextColor(r, g, b);
     const nameLines = doc.splitTextToSize(name, maxWidth);
@@ -475,10 +487,12 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   ): number | null => {
     // For header/footer, check if logo should appear there
     // For cover, only show if position is 'cover'
+    // For watermark, show if position is 'watermark'
     const shouldShowLogo = branding?.logo?.dataUrl && (
       position === 'cover' ? branding?.logo?.position === 'cover' :
       position === 'header' ? branding?.logo?.position === 'header' :
       position === 'footer' ? branding?.logo?.position === 'footer' :
+      position === 'watermark' ? branding?.logo?.position === 'watermark' :
       false
     );
 
@@ -545,6 +559,10 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           // Default small height for header/footer; allow override via branding.logo.height
           targetHeightMm = Math.min(branding?.logo?.height || 15, 25);
           maxWidthMm = 60; // Constrain width to avoid overflow
+        } else if (position === 'watermark') {
+          // Watermark: large, centered, semi-transparent
+          targetHeightMm = Math.min(branding?.logo?.height || 60, 100);
+          maxWidthMm = Math.min(pageWidth - 2 * margin, 120);
         } else {
           // Cover page default; allow override
           targetHeightMm = Math.min(branding?.logo?.height || 35, 80);
@@ -554,7 +572,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         if (branding?.logo?.width && !branding?.logo?.height) {
           const derivedHeight = branding.logo.width / aspect;
           // Respect position-based caps
-          targetHeightMm = Math.min(derivedHeight, position === 'header' || position === 'footer' ? 25 : 80);
+          const maxHeight = position === 'header' || position === 'footer' ? 25 : position === 'watermark' ? 100 : 80;
+          targetHeightMm = Math.min(derivedHeight, maxHeight);
         }
 
         // Compute scaled dimensions preserving aspect ratio and respecting max width
@@ -582,6 +601,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           const yPos = y ?? (pageHeight - 10 - drawH);
           doc.addImage(properDataUrl, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
           return drawH;
+        } else if (position === 'watermark') {
+          // Center on page with reduced opacity
+          const xPos = x ?? (pageWidth / 2 - drawW / 2);
+          const yPos = y ?? (pageHeight / 2 - drawH / 2);
+          // Note: jsPDF doesn't support image opacity directly, but we can use the image itself
+          // The opacity setting in branding.logo.opacity is a suggestion for UI
+          doc.addImage(properDataUrl, format, xPos, yPos, drawW, drawH, undefined, 'FAST');
+          return drawH;
         }
       } catch (err) {
         console.error('Error adding logo:', err);
@@ -593,25 +620,31 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   // Add watermark function
   const addWatermark = () => {
     if (branding?.watermark?.enabled && branding?.watermark?.text) {
-      // Save current state
-      const currentFontSize = 12; // Default font size
-      
       // Set watermark style
-      doc.setFontSize(branding.watermark.fontSize || 50);
-      doc.setTextColor(230, 230, 230); // Light gray for watermark
-      
-      // Add diagonal watermark text
+      const watermarkFontSize = branding.watermark.fontSize || 50;
+      doc.setFontSize(watermarkFontSize);
+      doc.setFont(fontFamily, "bold");
+
+      // Calculate opacity (jsPDF supports alpha via rgba, but setTextColor only takes RGB)
+      // We'll use light gray with opacity simulation via lighter color
+      const opacity = branding.watermark.opacity || 0.1;
+      const grayValue = Math.round(230 - (230 - 200) * (1 - opacity)); // Adjust gray based on opacity
+      doc.setTextColor(grayValue, grayValue, grayValue);
+
       const watermarkText = branding.watermark.text;
+      const angle = branding.watermark.angle || -45;
 
       // Calculate position for centered diagonal text
       const xPos = pageWidth / 2;
       const yPos = pageHeight / 2;
-      
-      // Add rotated text (jsPDF doesn't support rotation directly, so we'll add it as simple centered text)
-      doc.text(watermarkText, xPos, yPos, { align: 'center' });
-      
-      // Restore previous font size
-      doc.setFontSize(currentFontSize);
+
+      // Add rotated text - jsPDF DOES support text rotation!
+      doc.text(watermarkText, xPos, yPos, {
+        align: 'center',
+        angle: angle
+      });
+
+      // Restore to normal
       doc.setTextColor(0, 0, 0);
     }
   };
@@ -627,14 +660,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // Show company/dept as small text in corners (if provided)
   if (branding?.companyName || branding?.department) {
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
+    doc.setFontSize(Math.max(bodyFontSize - 1, 9));
+    doc.setFont(fontFamily, "normal");
     doc.setTextColor(100, 100, 100);
-    
+
     if (branding?.companyName) {
       doc.text(branding.companyName, margin, headerY);
     }
-    
+
     if (branding?.department) {
       doc.text(branding.department, pageWidth - margin, headerY, { align: "right" });
     }
@@ -652,14 +685,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // === COMPLIANCE BADGE (if classification is set) ===
   if (branding?.metadata?.classification) {
-    const badgeText = branding.metadata.classification === 'confidential' ? 'CONFIDENTIAL' : 
-                     branding.metadata.classification === 'restricted' ? 'RESTRICTED' : 
+    const badgeText = branding.metadata.classification === 'confidential' ? 'CONFIDENTIAL' :
+                     branding.metadata.classification === 'restricted' ? 'RESTRICTED' :
                      'AUDIT READY';
-    
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    const badgeColor: [number, number, number] = branding.metadata.classification === 'confidential' || 
-                      branding.metadata.classification === 'restricted' 
+
+    doc.setFontSize(Math.max(bodyFontSize - 2, 8));
+    doc.setFont(fontFamily, "bold");
+    const badgeColor: [number, number, number] = branding.metadata.classification === 'confidential' ||
+                      branding.metadata.classification === 'restricted'
                       ? [220, 38, 38] : [34, 197, 94];
     doc.setTextColor(badgeColor[0], badgeColor[1], badgeColor[2]);
     doc.text(badgeText, pageWidth - margin, headerY + 10, { align: "right" });
@@ -669,25 +702,25 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   let titleY = titleStartY;
   
   // Main title - Microsoft Intune (largest, bold)
-  doc.setFontSize(44);
-  doc.setFont("helvetica", "bold");
+  doc.setFontSize(Math.max(headerFontSize * 3, 36));
+  doc.setFont(fontFamily, "bold");
   const [tr, tg, tb] = hexToRgb(primaryColor);
   doc.setTextColor(tr, tg, tb);
-  
+
   const coverTitle = branding?.coverPage?.title || "Microsoft Intune";
   doc.text(coverTitle, pageWidth / 2, titleY, { align: "center" });
   titleY += 18;
-  
+
   // Subtitle - Configuration Documentation (lighter gray for less emphasis)
-  doc.setFontSize(20);
-  doc.setFont("helvetica", "normal");
+  doc.setFontSize(Math.max(headerFontSize * 1.4, 18));
+  doc.setFont(fontFamily, "normal");
   doc.setTextColor(140, 140, 140); // Lighter gray instead of secondary color
   doc.text("Configuration Documentation", pageWidth / 2, titleY, { align: "center" });
   titleY += 15;
-  
+
   // Tagline - descriptive subtitle
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "normal");
+  doc.setFontSize(bodyFontSize + 1);
+  doc.setFont(fontFamily, "normal");
   doc.setTextColor(120, 120, 120);
   const tagline = branding?.coverPage?.subtitle || "Comprehensive export of Intune policies, profiles, and assignments";
   doc.text(tagline, pageWidth / 2, titleY, { align: "center" });
@@ -695,7 +728,12 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // === METADATA SECTION: Centered Table ===
   // Position the metadata box in the center of remaining space
-  const metadataHeight = 45;
+  // Calculate height based on number of fields
+  const hasContactInfo = branding?.contactEmail || branding?.website;
+  const baseHeight = 37;
+  const rowHeight = 8;
+  const extraRows = (hasContactInfo ? 1 : 0) + (branding?.contactEmail && branding?.website ? 1 : 0);
+  const metadataHeight = baseHeight + (extraRows * rowHeight);
   const metadataWidth = 140; // Narrower for centered look
   const metadataX = (pageWidth - metadataWidth) / 2;
   const metadataY = titleY + 20; // Position it higher, closer to title
@@ -719,11 +757,12 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // Helper function to add table row (labels bold, values normal)
   const addTableRow = (label: string, value: string) => {
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
+    doc.setFontSize(bodyFontSize);
     doc.setTextColor(60, 60, 60);
     doc.text(label, labelX, tableY);
-    
-    doc.setFont("helvetica", "normal");
+
+    doc.setFont(fontFamily, "normal");
     doc.setTextColor(80, 80, 80);
     const maxWidth = metadataX + metadataWidth - valueX - 8;
     const lines = doc.splitTextToSize(value || '', maxWidth);
@@ -734,7 +773,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       tableY += tableRowHeight;
       doc.text(lines[i], valueX, tableY);
     }
-    
+
     tableY += tableRowHeight;
   };
   
@@ -747,7 +786,17 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   // Prepared by row
   const preparedBy = branding?.metadata?.author || branding?.coverPage?.author || 'Intune Documentation Tool';
   addTableRow('Prepared by:', preparedBy);
-  
+
+  // Contact Email row (if provided)
+  if (branding?.contactEmail) {
+    addTableRow('Contact:', branding.contactEmail);
+  }
+
+  // Website row (if provided)
+  if (branding?.website) {
+    addTableRow('Website:', branding.website);
+  }
+
   // Generated on row - Simplified format: "31 Aug 2025 · 15:43"
   const dateTime = new Date();
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -758,7 +807,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const minutes = dateTime.getMinutes().toString().padStart(2, '0');
   const formattedDateTime = `${day} ${month} ${year} · ${hours}:${minutes}`;
   addTableRow('Generated:', formattedDateTime);
-  
+
   // Version row (using date as version)
   const version = `v${year}.${(dateTime.getMonth() + 1).toString().padStart(2, '0')}.${day.toString().padStart(2, '0')}`;
   addTableRow('Version:', version);

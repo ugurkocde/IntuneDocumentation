@@ -391,6 +391,83 @@ export function BrandingSettingsModal({
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Typography Settings */}
+              <Card>
+                <CardHeader>
+                  <h3 className="text-lg font-semibold">Typography</h3>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Font Family
+                    </label>
+                    <select
+                      value={options.fonts?.family || 'helvetica'}
+                      onChange={(e) => setOptions(prev => ({
+                        ...prev,
+                        fonts: {
+                          ...prev.fonts,
+                          family: e.target.value as any,
+                          headerSize: prev.fonts?.headerSize || 14,
+                          bodySize: prev.fonts?.bodySize || 11,
+                          lineHeight: prev.fonts?.lineHeight || 1.5,
+                        },
+                      }))}
+                      className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="helvetica">Helvetica (Sans-serif)</option>
+                      <option value="times">Times (Serif)</option>
+                      <option value="courier">Courier (Monospace)</option>
+                      <option value="arial">Arial (Sans-serif)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Header Font Size: {options.fonts?.headerSize || 14}pt
+                    </label>
+                    <input
+                      type="range"
+                      min="12"
+                      max="20"
+                      value={options.fonts?.headerSize || 14}
+                      onChange={(e) => setOptions(prev => ({
+                        ...prev,
+                        fonts: {
+                          ...prev.fonts,
+                          family: prev.fonts?.family || 'helvetica',
+                          headerSize: parseInt(e.target.value),
+                          bodySize: prev.fonts?.bodySize || 11,
+                          lineHeight: prev.fonts?.lineHeight || 1.5,
+                        },
+                      }))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Body Font Size: {options.fonts?.bodySize || 11}pt
+                    </label>
+                    <input
+                      type="range"
+                      min="9"
+                      max="14"
+                      value={options.fonts?.bodySize || 11}
+                      onChange={(e) => setOptions(prev => ({
+                        ...prev,
+                        fonts: {
+                          ...prev.fonts,
+                          family: prev.fonts?.family || 'helvetica',
+                          headerSize: prev.fonts?.headerSize || 14,
+                          bodySize: parseInt(e.target.value),
+                          lineHeight: prev.fonts?.lineHeight || 1.5,
+                        },
+                      }))}
+                      className="w-full"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 

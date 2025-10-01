@@ -144,7 +144,6 @@ export function NavigationHeader() {
               <span className={`block text-base font-bold transition-colors ${onHome && !scrolled ? 'text-white group-hover:text-white' : 'text-slate-900 group-hover:text-blue-700'}`}>
                 Intune Documentation
               </span>
-              <span className={`block text-[11px] tracking-wide ${onHome && !scrolled ? 'text-white/70' : 'text-slate-500'}`}>PDF Generator</span>
             </div>
           </Link>
 

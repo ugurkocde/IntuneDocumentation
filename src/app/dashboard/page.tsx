@@ -150,7 +150,7 @@ export default function DashboardPage() {
     try {
       const response = await instance.acquireTokenSilent(request as any);
       return response.accessToken;
-    } catch (error) {
+    } catch {
       const response = await instance.acquireTokenPopup(request as any);
       return response.accessToken;
     }
@@ -579,7 +579,7 @@ export default function DashboardPage() {
             errorMessage = errorData.message || errorData.error || errorMessage;
             errorDetails = errorData.details;
           }
-        } catch (parseError) {
+        } catch {
           // Couldn't parse error response, use default message
         }
         

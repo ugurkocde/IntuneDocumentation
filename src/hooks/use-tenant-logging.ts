@@ -22,7 +22,7 @@ export function useTenantLogging(context: string) {
             },
             body: JSON.stringify({ context }),
           });
-        } catch (error) {
+        } catch {
           // Silently fail - logging shouldn't break the app
         }
       };

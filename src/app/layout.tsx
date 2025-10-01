@@ -4,6 +4,7 @@ import { type Metadata } from "next";
 // Removed Google Fonts to allow offline builds in restricted environments
 import { AuthProvider } from "~/components/auth-provider";
 import PlausibleProvider from "next-plausible";
+import { CookieConsentBanner } from "~/components/cookie-consent-banner";
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://intunedocumentation.com'),
@@ -157,9 +158,9 @@ export default function RootLayout({
       "name": "Intune Documentation",
       "url": "https://intunedocumentation.com"
     },
-    "softwareVersion": "1.0",
+    "softwareVersion": "1.0.0",
     "dateCreated": "2024-01-01",
-    "dateModified": "2024-12-01",
+    "dateModified": "2025-10-01",
     "keywords": "Microsoft Intune, Documentation Generator, PDF Export, IT Management, Device Configuration, Compliance Policies, Security Baselines",
     "about": [
       {
@@ -252,6 +253,7 @@ export default function RootLayout({
         <PlausibleProvider domain="intunedocumentation.com">
           <AuthProvider>{children}</AuthProvider>
         </PlausibleProvider>
+        <CookieConsentBanner />
       </body>
     </html>
   );

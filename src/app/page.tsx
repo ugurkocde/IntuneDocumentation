@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { HeroExportCounter } from "~/components/hero-export-counter";
@@ -18,6 +18,25 @@ export default function HomePage() {
   const [signingIn, setSigningIn] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
+  const [videoSrc, setVideoSrc] = useState<string>(
+    "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
+  );
+
+  // Detect screen size and set appropriate video source
+  useEffect(() => {
+    const updateVideoSource = () => {
+      const isMobile = window.innerWidth < 768;
+      setVideoSrc(
+        isMobile
+          ? "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
+          : "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo.mp4"
+      );
+    };
+
+    updateVideoSource();
+    window.addEventListener("resize", updateVideoSource);
+    return () => window.removeEventListener("resize", updateVideoSource);
+  }, []);
 
   const isAuthenticated = accounts.length > 0;
 
@@ -308,54 +327,26 @@ export default function HomePage() {
                 )}
               </div>
               
-              {/* Right Column - Visual Preview */}
+              {/* Right Column - Demo Video */}
               <div className="flex items-center justify-center">
-                <div className="relative w-full max-w-md sm:max-w-lg mx-auto lg:max-w-none animate-float">
+                <div className="relative w-full max-w-md sm:max-w-lg mx-auto lg:max-w-none">
                   {/* Decorative blob */}
                   <div className="absolute -inset-10 bg-gradient-to-tr from-cyan-400/20 via-blue-500/10 to-indigo-500/20 blur-3xl rounded-full" aria-hidden="true"></div>
-                  {/* PDF Preview Mock */}
-                  <div className="relative bg-white rounded-xl shadow-2xl p-6 ring-1 ring-black/5 transform rotate-3 hover:rotate-0 transition-transform duration-300">
-                    {/* Window controls */}
-                    <div className="flex items-center gap-1.5 absolute top-3 left-4" aria-hidden="true">
-                      <span className="w-2.5 h-2.5 rounded-full bg-red-400/90"></span>
-                      <span className="w-2.5 h-2.5 rounded-full bg-yellow-400/90"></span>
-                      <span className="w-2.5 h-2.5 rounded-full bg-green-400/90"></span>
-                    </div>
-                    <div className="flex items-center justify-between mb-5 pt-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
-                          <FileText className="w-4 h-4 text-white" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-gray-900">Intune-Documentation.pdf</div>
-                          <div className="text-xs text-gray-500">Generated just now</div>
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-500">247 pages</div>
-                    </div>
-                    
-                    {/* Sample Content */}
-                    <div className="space-y-2">
-                      <div className="h-2 bg-gray-200 rounded w-full"></div>
-                      <div className="h-2 bg-gray-200 rounded w-4/5"></div>
-                      <div className="h-2 bg-gray-200 rounded w-3/4"></div>
-                      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                        <div className="text-xs font-semibold text-blue-900 mb-1">✓ 10 Configuration Types</div>
-                        <div className="text-xs font-semibold text-blue-900 mb-1">✓ 156 Policies Documented</div>
-                        <div className="text-xs font-semibold text-blue-900">✓ Complete Settings Export</div>
-                      </div>
-                      <div className="h-2 bg-gray-200 rounded w-full mt-4"></div>
-                      <div className="h-2 bg-gray-200 rounded w-3/5"></div>
-                    </div>
-                  </div>
-                  
-                  {/* Floating badges */}
-                  <div className="absolute -top-4 -right-4 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-lg">
-                    Audit Ready
-                  </div>
-                  <div className="absolute -bottom-4 -left-4 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-lg">
-                    Professional Format
-                  </div>
+                  {/* Video */}
+                  <video
+                    key={videoSrc}
+                    className="relative w-full h-auto rounded-lg shadow-2xl"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    controls
+                    poster="https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/poster.jpg"
+                    preload="metadata"
+                  >
+                    <source src={videoSrc} type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
                 </div>
               </div>
             </div>

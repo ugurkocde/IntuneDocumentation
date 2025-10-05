@@ -220,5 +220,20 @@
     animation: shimmer 3s ease-in-out infinite;
   }
 
+  /* Shimmer effect for loading progress bar */
+  @keyframes shimmer-loading {
+    0% {
+      transform: translateX(-150%);
+    }
+    100% {
+      transform: translateX(150%);
+    }
+  }
+
+  .animate-shimmer-loading {
+    animation: shimmer-loading 1.5s ease-in-out infinite;
+    width: 150%;
+  }
+
   /* Removed: custom progress bar animations (reverted to icon list) */
 }

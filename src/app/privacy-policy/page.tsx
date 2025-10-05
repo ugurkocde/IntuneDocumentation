@@ -52,14 +52,6 @@ export default function PrivacyPolicyPage() {
             </li>
           </ul>
 
-          <h2 className="text-xl font-semibold text-slate-900">Operational Logs</h2>
-          <p>
-            For security and troubleshooting, our server logs may record minimal authentication metadata such as
-            tenant ID, user principal name (UPN), IP address, user agent, and timestamps when API routes are
-            called. These logs are not used to build profiles or share data and are retained only in hosting
-            provider logs as part of normal operations.
-          </p>
-
           <h2 className="text-xl font-semibold text-slate-900">Analytics & Cookies</h2>
           <p>
             We use privacy-friendly analytics (Plausible) to understand aggregate usage without cookies or

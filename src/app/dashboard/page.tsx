@@ -89,6 +89,7 @@ export default function DashboardPage() {
   const [selectAll, setSelectAll] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [generatingDocx, setGeneratingDocx] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showTipBanner, setShowTipBanner] = useState(true);
@@ -163,9 +164,15 @@ export default function DashboardPage() {
     }
 
     setGeneratingDocx(true);
+    setExportProgress(0);
     try {
+      // Stage 1: Authentication (0-10%)
+      setExportProgress(5);
       const accessToken = await getAccessToken();
+      setExportProgress(10);
 
+      // Stage 2: Data preparation (10-30%)
+      setExportProgress(15);
       const selectedData = {
         settingsCatalog: configurations?.settingsCatalog?.filter(c => selectedConfigs.has(`catalog-${c.id}`)) ?? [],
         deviceConfigurations: configurations?.deviceConfigurations?.filter(c => selectedConfigs.has(`device-${c.id}`)) ?? [],
@@ -183,20 +190,27 @@ export default function DashboardPage() {
           ? (configurations?.conditionalAccessPolicies?.filter(c => selectedConfigs.has(`ca-${c.id}`)) ?? [])
           : []
       };
+      setExportProgress(30);
 
       // Try client-side blob upload first, fallback to direct generation
       let response;
       try {
+        // Stage 3: Upload to blob storage (30-50%)
+        setExportProgress(35);
         const configData = JSON.stringify({ ...selectedData, branding: brandingOptions });
         const configBlob = new Blob([configData], { type: 'application/json' });
         const filename = `docx-config-${Date.now()}.json`;
+        setExportProgress(40);
         const blob = await upload(filename, configBlob, {
           access: 'public',
           handleUploadUrl: '/api/pdf/client-upload',
           clientPayload: JSON.stringify({ timestamp: Date.now() }),
           headers: { authorization: `Bearer ${accessToken}` },
         });
+        setExportProgress(50);
 
+        // Stage 4: Generate DOCX (50-90%)
+        setExportProgress(55);
         response = await fetch("/api/docx/generate-from-blob", {
           method: "POST",
           headers: {
@@ -205,8 +219,11 @@ export default function DashboardPage() {
           },
           body: JSON.stringify({ blobUrl: blob.url }),
         });
+        setExportProgress(85);
       } catch (uploadError) {
         console.log("Client-side blob upload failed, falling back to direct DOCX generation:", uploadError);
+        // Direct generation (30-90% since we skip upload)
+        setExportProgress(40);
         response = await fetch("/api/docx/generate-detailed", {
           method: "POST",
           headers: {
@@ -215,19 +232,25 @@ export default function DashboardPage() {
           },
           body: JSON.stringify({ ...selectedData, branding: brandingOptions }),
         });
+        setExportProgress(85);
       }
+      setExportProgress(90);
 
       if (!response || !response.ok) {
         const errorData = await response.json().catch(() => ({ message: "Failed to generate DOCX" }));
         throw new Error(errorData.message || "Failed to generate DOCX");
       }
 
+      // Stage 5: Download (90-100%)
+      setExportProgress(95);
       const blobFile = await response.blob();
+      setExportProgress(98);
       const url = window.URL.createObjectURL(blobFile);
       const a = document.createElement("a");
       a.href = url;
       a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.docx`;
       document.body.appendChild(a);
+      setExportProgress(100);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
@@ -235,6 +258,7 @@ export default function DashboardPage() {
       alert(err?.message || "Failed to generate DOCX");
     } finally {
       setGeneratingDocx(false);
+      setExportProgress(0);
     }
   };
   const updateFetchProgress = (stepIndex: number, status: "pending" | "loading" | "completed" | "error") => {
@@ -425,9 +449,15 @@ export default function DashboardPage() {
     }
 
     setGeneratingPdf(true);
+    setExportProgress(0);
     try {
+      // Stage 1: Authentication (0-10%)
+      setExportProgress(5);
       const accessToken = await getAccessToken();
-      
+      setExportProgress(10);
+
+      // Stage 2: Data preparation (10-30%)
+      setExportProgress(15);
       // Build the data to send based on selected configs
       const selectedData = {
         settingsCatalog: configurations?.settingsCatalog?.filter(c => 
@@ -466,21 +496,25 @@ export default function DashboardPage() {
           ? (configurations?.conditionalAccessPolicies?.filter(c => selectedConfigs.has(`ca-${c.id}`)) ?? [])
           : []
       };
+      setExportProgress(30);
 
       // Try client-side blob upload first, fallback to direct generation
       let response;
       try {
+        // Stage 3: Upload to blob storage (30-50%)
+        setExportProgress(35);
         // Step 1: Upload configuration directly to Vercel Blob from client
         const configData = JSON.stringify({
           ...selectedData,
           branding: brandingOptions
         });
-        
+
         const configBlob = new Blob([configData], { type: 'application/json' });
         const filename = `pdf-config-${Date.now()}.json`;
-        
+
         // Upload directly from client to Vercel Blob
         // The authorization header will be passed to the handleUploadUrl endpoint
+        setExportProgress(40);
         const blob = await upload(filename, configBlob, {
           access: 'public',
           handleUploadUrl: '/api/pdf/client-upload',
@@ -492,7 +526,10 @@ export default function DashboardPage() {
             authorization: `Bearer ${accessToken}`,
           },
         });
+        setExportProgress(50);
 
+        // Stage 4: Generate PDF (50-90%)
+        setExportProgress(55);
         // Step 2: Generate PDF using the blob URL
         response = await fetch("/api/pdf/generate-from-blob", {
           method: "POST",
@@ -502,9 +539,12 @@ export default function DashboardPage() {
           },
           body: JSON.stringify({ blobUrl: blob.url }),
         });
+        setExportProgress(85);
       } catch (uploadError) {
         console.log("Client-side blob upload failed, falling back to direct generation:", uploadError);
         // Fallback to direct generation if blob storage is not available
+        // Direct generation (30-90% since we skip upload)
+        setExportProgress(40);
         response = await fetch("/api/pdf/generate-detailed", {
           method: "POST",
           headers: {
@@ -516,7 +556,9 @@ export default function DashboardPage() {
             branding: brandingOptions
           }),
         });
+        setExportProgress(85);
       }
+      setExportProgress(90);
 
       if (!response || !response.ok) {
         // Try to get error details from response
@@ -587,12 +629,16 @@ export default function DashboardPage() {
         throw new Error(fullErrorMessage);
       }
 
+      // Stage 5: Download (90-100%)
+      setExportProgress(95);
       const blob = await response.blob();
+      setExportProgress(98);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
+      setExportProgress(100);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
@@ -602,6 +648,7 @@ export default function DashboardPage() {
       alert(errorMessage);
     } finally {
       setGeneratingPdf(false);
+      setExportProgress(0);
     }
   };
   
@@ -957,7 +1004,7 @@ export default function DashboardPage() {
                     {configurations?.summary.totalConfigurations || 0} Total
                   </Badge>
                 </div>
-                
+
                 {/* Center: Search (more prominent) */}
                 <div className="flex-1 max-w-xl">
                   <div className="relative">
@@ -979,26 +1026,29 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
-                
-                {/* Middle: Last Updated */}
-                {lastFetched && (
-                  <span className="text-xs text-slate-500 flex-shrink-0">
-                    Last updated: {lastFetched.toLocaleTimeString()}
-                  </span>
-                )}
-                
-                {/* Right: Refresh Button */}
-                <Button
-                  onClick={() => fetchConfigurations()}
-                  disabled={loading}
-                  loading={loading}
-                  variant="secondary"
-                  size="sm"
-                  className="flex-shrink-0"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Refresh
-                </Button>
+
+                {/* Spacer to push Refresh to the right */}
+                <div className="flex-1 hidden lg:block" />
+
+                {/* Right: Last Updated and Refresh Button */}
+                <div className="flex items-center gap-4 flex-shrink-0 ml-auto">
+                  {lastFetched && (
+                    <span className="text-xs text-slate-500 whitespace-nowrap">
+                      Last updated: {lastFetched.toLocaleTimeString()}
+                    </span>
+                  )}
+                  <Button
+                    onClick={() => fetchConfigurations()}
+                    disabled={loading}
+                    loading={loading}
+                    variant="secondary"
+                    size="sm"
+                    className="whitespace-nowrap"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Refresh
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1048,9 +1098,10 @@ export default function DashboardPage() {
                     <Button
                       disabled={(generatingPdf || generatingDocx) || selectedConfigs.size === 0}
                       loading={generatingPdf || generatingDocx}
+                      progress={exportProgress}
                       variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
                       size="sm"
-                      className="min-w-[160px]"
+                      className="min-w-[160px] whitespace-nowrap"
                     >
                       <Download className="w-4 h-4 mr-2" />
                       {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}

@@ -411,8 +411,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       // Check for page break with actual row height; redraw header on new page
       if (checkPageBreak(rowHeight + 5)) {
         drawHeader();
+        // Reset font to normal after redrawing header
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
       }
-      
+
       // Alternate row background
       if (index % 2 === 0) {
         doc.setFillColor(250, 250, 250);

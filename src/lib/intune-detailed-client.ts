@@ -23,6 +23,13 @@ export interface ConfigurationSetting {
       value: any;
       "@odata.type": string;
     };
+    simpleSettingCollectionValue?: Array<{
+      value: any;
+      "@odata.type": string;
+    }>;
+    groupSettingValue?: {
+      children: ConfigurationSetting[];
+    };
     groupSettingCollectionValue?: Array<{
       children: ConfigurationSetting[];
     }>;
@@ -546,21 +553,65 @@ export class DetailedIntuneService {
   // Helper function to determine configuration type
   private getConfigurationType(odataType: string): string {
     const typeMap: Record<string, string> = {
+      // Windows configurations
       "#microsoft.graph.windows10GeneralConfiguration": "Windows 10 General Configuration",
       "#microsoft.graph.windows10EndpointProtectionConfiguration": "Windows 10 Endpoint Protection",
       "#microsoft.graph.windows10CustomConfiguration": "Windows 10 Custom Configuration",
+      "#microsoft.graph.windows10SecureAssessmentConfiguration": "Windows 10 Secure Assessment",
+      "#microsoft.graph.windows10EnterpriseModernAppManagementConfiguration": "Windows 10 Enterprise App Management",
+      "#microsoft.graph.windows81GeneralConfiguration": "Windows 8.1 General Configuration",
       "#microsoft.graph.windowsUpdateForBusinessConfiguration": "Windows Update for Business",
+      "#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration": "Windows Defender ATP",
+      "#microsoft.graph.windowsIdentityProtectionConfiguration": "Windows Identity Protection",
+      "#microsoft.graph.editionUpgradeConfiguration": "Windows Edition Upgrade",
+      "#microsoft.graph.windowsKioskConfiguration": "Windows Kiosk Configuration",
+      "#microsoft.graph.windows10TeamGeneralConfiguration": "Surface Hub Configuration",
+
+      // macOS configurations
       "#microsoft.graph.macOSGeneralConfiguration": "macOS General Configuration",
       "#microsoft.graph.macOSEndpointProtectionConfiguration": "macOS Endpoint Protection",
       "#microsoft.graph.macOSCustomConfiguration": "macOS Custom Configuration",
+      "#microsoft.graph.macOSDeviceFeaturesConfiguration": "macOS Device Features",
+      "#microsoft.graph.macOSExtensionsConfiguration": "macOS Extensions",
+      "#microsoft.graph.macOSSoftwareUpdateConfiguration": "macOS Software Update",
+
+      // iOS/iPadOS configurations
       "#microsoft.graph.iosGeneralConfiguration": "iOS General Configuration",
       "#microsoft.graph.iosCustomConfiguration": "iOS Custom Configuration",
+      "#microsoft.graph.iosUpdateConfiguration": "iOS Update Configuration",
+      "#microsoft.graph.iosDeviceFeaturesConfiguration": "iOS Device Features",
+      "#microsoft.graph.iosEndpointProtectionConfiguration": "iOS Endpoint Protection",
+      "#microsoft.graph.iosCertificateProfileConfiguration": "iOS Certificate Profile",
+      "#microsoft.graph.iosEasEmailProfileConfiguration": "iOS Email Profile",
+      "#microsoft.graph.iosWiFiConfiguration": "iOS WiFi Profile",
+      "#microsoft.graph.iosVpnConfiguration": "iOS VPN Profile",
+
+      // Android configurations
       "#microsoft.graph.androidGeneralConfiguration": "Android General Configuration",
       "#microsoft.graph.androidCustomConfiguration": "Android Custom Configuration",
-      "#microsoft.graph.androidWorkProfileGeneralConfiguration": "Android Work Profile Configuration"
+      "#microsoft.graph.androidWorkProfileGeneralConfiguration": "Android Work Profile Configuration",
+      "#microsoft.graph.androidWorkProfileCustomConfiguration": "Android Work Profile Custom",
+      "#microsoft.graph.androidDeviceOwnerGeneralConfiguration": "Android Device Owner Configuration",
+      "#microsoft.graph.androidOMAConfiguration": "Android OMA-DM Configuration",
+      "#microsoft.graph.androidEasEmailProfileConfiguration": "Android Email Profile",
+      "#microsoft.graph.androidWiFiConfiguration": "Android WiFi Profile",
+      "#microsoft.graph.androidVpnConfiguration": "Android VPN Profile",
+
+      // Shared/Common configurations
+      "#microsoft.graph.sharedPCConfiguration": "Shared PC Configuration",
+      "#microsoft.graph.vpnConfiguration": "VPN Configuration",
+      "#microsoft.graph.wiFiConfiguration": "WiFi Configuration",
+      "#microsoft.graph.emailConfiguration": "Email Configuration"
     };
 
-    return typeMap[odataType] || "Device Configuration";
+    // If not in map, try to extract a friendly name from the odataType
+    if (!typeMap[odataType]) {
+      // Remove prefix and format: "#microsoft.graph.iosGeneralConfiguration" -> "Ios General Configuration"
+      const typeName = odataType.replace("#microsoft.graph.", "").replace(/([A-Z])/g, " $1").trim();
+      return typeName.charAt(0).toUpperCase() + typeName.slice(1);
+    }
+
+    return typeMap[odataType];
   }
 
   // Get App Configurations with detailed settings

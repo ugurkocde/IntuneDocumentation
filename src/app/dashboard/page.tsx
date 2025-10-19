@@ -250,15 +250,20 @@ export default function DashboardPage() {
       a.href = url;
       a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.docx`;
       document.body.appendChild(a);
-      setExportProgress(100);
       a.click();
+      setExportProgress(100);
+
+      // Small delay to show download completion before cleanup
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err: any) {
       alert(err?.message || "Failed to generate DOCX");
     } finally {
       setGeneratingDocx(false);
-      setExportProgress(0);
+      // Delay before resetting progress to show completion
+      setTimeout(() => setExportProgress(0), 300);
     }
   };
   const updateFetchProgress = (stepIndex: number, status: "pending" | "loading" | "completed" | "error") => {
@@ -607,6 +612,11 @@ export default function DashboardPage() {
               a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.pdf`;
               document.body.appendChild(a);
               a.click();
+              setExportProgress(100);
+
+              // Small delay to show download completion before cleanup
+              await new Promise(resolve => setTimeout(resolve, 500));
+
               window.URL.revokeObjectURL(url);
               document.body.removeChild(a);
               return; // Success after retry
@@ -638,8 +648,12 @@ export default function DashboardPage() {
       a.href = url;
       a.download = `Intune-Configuration-Documentation-${new Date().toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
-      setExportProgress(100);
       a.click();
+      setExportProgress(100);
+
+      // Small delay to show download completion before cleanup
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err: any) {
@@ -648,7 +662,8 @@ export default function DashboardPage() {
       alert(errorMessage);
     } finally {
       setGeneratingPdf(false);
-      setExportProgress(0);
+      // Delay before resetting progress to show completion
+      setTimeout(() => setExportProgress(0), 300);
     }
   };
   

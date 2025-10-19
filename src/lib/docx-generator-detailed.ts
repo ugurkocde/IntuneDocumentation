@@ -119,7 +119,25 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
             ),
           })
         );
-        const formatted = policy.settings.map((s: any) => extractSettingValue(s));
+
+        // Process each setting and flatten nested settings
+        const formatted: Array<{name: string, value: string, description?: string}> = [];
+        for (const setting of policy.settings) {
+          const extracted = extractSettingValue(setting);
+
+          // Add the main setting
+          formatted.push({
+            name: extracted.name,
+            value: extracted.value,
+            description: extracted.description
+          });
+
+          // Add nested settings if they exist
+          if (extracted.nestedSettings && extracted.nestedSettings.length > 0) {
+            formatted.push(...extracted.nestedSettings);
+          }
+        }
+
         formatted.forEach((s: any) => {
           rows.push(
             new TableRow({

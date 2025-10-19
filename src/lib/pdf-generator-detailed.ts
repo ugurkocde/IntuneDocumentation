@@ -218,7 +218,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
 
     // Check for header text (positioned at y=10, centered)
     if (branding?.header?.enabled && branding?.header?.text) {
-      const headerTextSize = Math.max(bodyFontSize - 2, 8);
+      const headerTextSize = 9; // Match the fixed size used in addPageNumber
       const textHeight = headerTextSize * 0.6; // Text height in mm (rough estimate)
       const textBottom = 10 + textHeight;
       requiredSpace = Math.max(requiredSpace, textBottom + 3); // 3mm spacing after text
@@ -253,10 +253,15 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // Add header text if configured
     if (branding?.header?.enabled && branding?.header?.text && pageNumber > 1) {
-      doc.setFontSize(Math.max(bodyFontSize - 2, 8));
+      const headerTextSize = 9; // Fixed small size for header text
+      doc.setFontSize(headerTextSize);
       doc.setFont(fontFamily, "normal");
       doc.setTextColor(100, 100, 100);
       doc.text(branding.header.text, pageWidth / 2, 10, { align: "center" });
+      // Explicitly reset after rendering header text
+      doc.setFontSize(bodyFontSize);
+      doc.setFont(fontFamily, "normal");
+      doc.setTextColor(0, 0, 0);
     }
     
     // Add footer logo if configured
@@ -283,14 +288,21 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     }
     
     doc.setTextColor(0, 0, 0);
-    
-    // Add watermark to every page (text or logo)
-    addWatermark();
 
-    // Add logo watermark if configured
-    if (branding?.logo?.position === 'watermark') {
-      addLogo('watermark');
+    // Add watermark to every page (text or logo), but skip page 1 (cover page)
+    if (pageNumber > 1) {
+      addWatermark();
+
+      // Add logo watermark if configured
+      if (branding?.logo?.position === 'watermark') {
+        addLogo('watermark');
+      }
     }
+
+    // Reset font to body defaults after all header/footer rendering
+    doc.setFontSize(bodyFontSize);
+    doc.setFont(fontFamily, "normal");
+    doc.setTextColor(0, 0, 0);
   };
 
   const addText = (
@@ -307,6 +319,10 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
 
     for (const line of lines) {
       checkPageBreak();
+      // Re-apply font settings after potential page break (which resets fonts)
+      doc.setFontSize(fontSize);
+      doc.setFont(fontFamily, style);
+      doc.setTextColor(...color);
       doc.text(line, margin, yPosition);
       yPosition += fontSize * 0.45;
     }
@@ -890,9 +906,6 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   doc.setFontSize(9);
   doc.setTextColor(150, 150, 150);
   doc.text("Page 1", pageWidth / 2, pageHeight - 10, { align: "center" });
-  
-  // Add watermark if enabled
-  addWatermark();
   
   // === TABLE OF CONTENTS ===
   // Track sections and their page numbers for ToC
@@ -1616,7 +1629,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (template.description) {
-        addText(template.description, 9, "normal", [100, 100, 100]);
+        addText(template.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       

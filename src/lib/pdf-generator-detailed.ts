@@ -199,17 +199,47 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       : [0, 0, 0];
   };
 
+  // Helper function to calculate header height on subsequent pages
+  const calculateHeaderHeight = (): number => {
+    // On first page (cover), use normal margin
+    if (pageNumber === 1) {
+      return margin;
+    }
+
+    // On subsequent pages, calculate space needed for header elements
+    let requiredSpace = margin; // Start with base margin (15mm)
+
+    // Check for header logo (positioned at y=5)
+    if (branding?.logo?.position === 'header' || branding?.header?.includeLogo) {
+      const logoHeight = Math.min(branding?.logo?.height || 15, 25);
+      const logoBottom = 5 + logoHeight; // Logo top + height
+      requiredSpace = Math.max(requiredSpace, logoBottom + 5); // 5mm spacing after logo
+    }
+
+    // Check for header text (positioned at y=10, centered)
+    if (branding?.header?.enabled && branding?.header?.text) {
+      const headerTextSize = Math.max(bodyFontSize - 2, 8);
+      const textHeight = headerTextSize * 0.6; // Text height in mm (rough estimate)
+      const textBottom = 10 + textHeight;
+      requiredSpace = Math.max(requiredSpace, textBottom + 3); // 3mm spacing after text
+    }
+
+    // Ensure minimum safe distance from top (30mm) to prevent any overlap
+    return Math.max(requiredSpace, 30);
+  };
+
   // Helper functions
   const checkPageBreak = (neededSpace = 30) => {
-    // Always leave at least 40mm for footer to prevent overlap
-    const minFooterSpace = 40;
+    // Always leave at least 35mm for footer to prevent overlap
+    const minFooterSpace = 35;
     const totalSpaceNeeded = Math.max(neededSpace, minFooterSpace);
 
     if (yPosition > pageHeight - totalSpaceNeeded) {
       doc.addPage();
-      yPosition = margin;
       pageNumber++;
       addPageNumber();
+      // Set yPosition to account for header elements on new page
+      yPosition = calculateHeaderHeight();
       return true;
     }
     return false;
@@ -263,13 +293,18 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     }
   };
 
-  const addText = (text: string, fontSize = bodyFontSize, isBold = false, color: [number, number, number] = [0, 0, 0]) => {
+  const addText = (
+    text: string,
+    fontSize = bodyFontSize,
+    style: "normal" | "bold" | "italic" = "normal",
+    color: [number, number, number] = [0, 0, 0]
+  ) => {
     doc.setFontSize(fontSize);
-    doc.setFont(fontFamily, isBold ? "bold" : "normal");
+    doc.setFont(fontFamily, style);
     doc.setTextColor(...color);
-    
+
     const lines = doc.splitTextToSize(text, maxWidth);
-    
+
     for (const line of lines) {
       checkPageBreak();
       doc.text(line, margin, yPosition);
@@ -298,26 +333,35 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   };
 
   const addConfigHeader = (name: string, assignments: string, createdDate?: string, modifiedDate?: string) => {
-    checkPageBreak(25);
+    // Calculate space needed for wrapped name
+    const tempFontSize = Math.max(bodyFontSize + 1, 12);
+    doc.setFontSize(tempFontSize);
+    const nameLines = doc.splitTextToSize(name, maxWidth);
+    const nameHeight = nameLines.length * 6;
+    const totalNeeded = nameHeight + 20; // name + dates + spacing
+
+    checkPageBreak(totalNeeded);
 
     // Configuration name with secondary color
-    doc.setFontSize(Math.max(bodyFontSize + 1, 12));
+    doc.setFontSize(tempFontSize);
     doc.setFont(fontFamily, "bold");
     const [r, g, b] = hexToRgb(secondaryColor);
     doc.setTextColor(r, g, b);
-    const nameLines = doc.splitTextToSize(name, maxWidth);
+
     nameLines.forEach((line: string) => {
       doc.text(line, margin, yPosition);
       yPosition += 6;
     });
+
+    // Reset to normal text color
     const [tr, tg, tb] = hexToRgb(textColor);
     doc.setTextColor(tr, tg, tb);
-    
-    // Dates and assignments
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
+
+    // Dates and assignments with smaller font
+    doc.setFontSize(Math.max(bodyFontSize - 2, 9));
+    doc.setFont(fontFamily, "normal");
     doc.setTextColor(100, 100, 100);
-    
+
     // Show dates if available
     if (createdDate || modifiedDate) {
       if (createdDate) {
@@ -331,9 +375,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         yPosition += 4;
       }
     }
-    
+
     doc.text(`Assigned to: ${assignments}`, margin, yPosition);
     yPosition += 6;
+
+    // Reset font and color to defaults
+    doc.setFontSize(bodyFontSize);
+    doc.setFont(fontFamily, "normal");
     doc.setTextColor(0, 0, 0);
   };
 
@@ -380,20 +428,20 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       checkPageBreak(15);
       doc.setFillColor(240, 240, 240);
       doc.rect(margin, yPosition, tableWidth, 8, "F");
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
+      doc.setFontSize(Math.max(bodyFontSize - 1, 10));
+      doc.setFont(fontFamily, "bold");
       doc.text("Setting", margin + 2, yPosition + 5);
       doc.text("Value", margin + (colWidths[0] || 50) + 2, yPosition + 5);
       doc.text("Description", margin + (colWidths[0] || 50) + (colWidths[1] || 65) + 2, yPosition + 5);
       yPosition += 8;
     };
-    
+
     // Initial header
     drawHeader();
-    
+
     // Table rows
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8); // Slightly smaller font for more content
+    doc.setFont(fontFamily, "normal");
+    doc.setFontSize(Math.max(bodyFontSize - 3, 8));
     
     settings.forEach((setting, index) => {
       // Prepare text for all columns
@@ -425,7 +473,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       if (checkPageBreak(rowHeight + 5)) {
         drawHeader();
         // Reset font to normal after redrawing header
-        doc.setFont("helvetica", "normal");
+        doc.setFont(fontFamily, "normal");
         doc.setFontSize(8);
       }
 
@@ -830,7 +878,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   
   // Classification row if provided
   if (branding?.metadata?.classification) {
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     const classColor: [number, number, number] = branding.metadata.classification === 'confidential' || branding.metadata.classification === 'restricted' 
       ? [220, 38, 38] : [80, 80, 80];
     doc.setTextColor(classColor[0], classColor[1], classColor[2]);
@@ -869,7 +917,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // ToC Title
     doc.setFontSize(20);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     const [tocR, tocG, tocB] = hexToRgb(primaryColor);
     doc.setTextColor(tocR, tocG, tocB);
     doc.text("Table of Contents", pageWidth / 2, yPosition + 10, { align: "center" });
@@ -903,7 +951,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // === KEY METRICS WITH VISUAL INDICATORS ===
     doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     doc.setTextColor(0, 0, 0);
     doc.text("Key Metrics", margin, yPosition);
     yPosition += 10;
@@ -952,13 +1000,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Value - large and prominent
       doc.setFontSize(20);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(fontFamily, "bold");
       doc.setTextColor(metric.color[0], metric.color[1], metric.color[2]);
       doc.text(metric.value, cardX + cardWidth / 2, yPosition + 12, { align: 'center' });
       
       // Label - centered below value
       doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
+      doc.setFont(fontFamily, "normal");
       doc.setTextColor(100, 100, 100);
       doc.text(metric.label, cardX + cardWidth / 2, yPosition + 20, { align: 'center' });
       
@@ -969,7 +1017,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // === ASSIGNMENT RATE VISUALIZATION ===
     doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     doc.setTextColor(0, 0, 0);
     doc.text("Assignment Coverage", margin, yPosition);
     yPosition += 8;
@@ -997,7 +1045,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // Assignment rate text only
     doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     doc.setTextColor(progressColor[0], progressColor[1], progressColor[2]);
     doc.text(`${Math.round(assignmentRate)}%`, margin + progressBarWidth + 5, yPosition + 8);
     
@@ -1006,7 +1054,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     // === POTENTIAL GAPS SECTION ===
     if (analytics.unassignedConfigs > 0 || analytics.staleConfigs > 0) {
       doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(fontFamily, "bold");
       doc.setTextColor(0, 0, 0);
       doc.text("Potential Gaps", margin, yPosition);
       yPosition += 8;
@@ -1051,7 +1099,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         doc.setFillColor(risk.color[0], risk.color[1], risk.color[2]);
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(8);
-        doc.setFont("helvetica", "bold");
+        doc.setFont(fontFamily, "bold");
         const levelText = risk.level.toUpperCase();
         const levelWidth = doc.getTextWidth(levelText) + 4;
         doc.rect(margin + 8, yPosition + 3, levelWidth, 5, 'F');
@@ -1059,13 +1107,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         
         // Risk title
         doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
+        doc.setFont(fontFamily, "bold");
         doc.setTextColor(risk.color[0], risk.color[1], risk.color[2]);
         doc.text(risk.title, margin + 15 + levelWidth, yPosition + 7);
         
         // Risk description
         doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
+        doc.setFont(fontFamily, "normal");
         doc.setTextColor(80, 80, 80);
         doc.text(risk.description, margin + 8, yPosition + 13);
         
@@ -1141,7 +1189,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   }
   
   doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(fontFamily, "bold");
   doc.setTextColor(0, 0, 0);
   doc.text("Configuration Inventory", margin, yPosition);
   yPosition += 10;
@@ -1153,7 +1201,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   doc.rect(margin, yPosition, tableWidth, 10, "F");
   
   doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(fontFamily, "bold");
   doc.setTextColor(255, 255, 255);
   doc.text("Policy Type", margin + 3, yPosition + 7);
   doc.text("Total", margin + 85, yPosition + 7);
@@ -1161,7 +1209,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   doc.text("Unassigned", margin + 140, yPosition + 7);
   yPosition += 10;
   
-  doc.setFont("helvetica", "normal");
+  doc.setFont(fontFamily, "normal");
   doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
   
@@ -1182,7 +1230,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       doc.rect(margin, yPosition, tableWidth, 10, "F");
       
       doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(fontFamily, "bold");
       doc.setTextColor(255, 255, 255);
       doc.text("Policy Type", margin + 3, yPosition + 7);
       doc.text("Total", margin + 85, yPosition + 7);
@@ -1191,7 +1239,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       yPosition += 10;
       
       // Reset text settings
-      doc.setFont("helvetica", "normal");
+      doc.setFont(fontFamily, "normal");
       doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
     }
@@ -1209,11 +1257,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // Policy type
     doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(fontFamily, "normal");
     doc.text(item.type, margin + 3, yPosition + 6);
     
     // Total count
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     doc.setTextColor(52, 152, 219); // Blue
     doc.text(item.count.toString(), margin + 90, yPosition + 6);
     
@@ -1227,7 +1275,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     doc.text(unassigned.toString(), margin + 150, yPosition + 6);
     
     doc.setTextColor(0, 0, 0);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(fontFamily, "normal");
     yPosition += rowHeight;
   });
   
@@ -1279,7 +1327,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     checkPageBreak(platformChartHeight);
 
     doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     doc.setTextColor(0, 0, 0);
     doc.text("Platform Coverage", margin, yPosition);
     yPosition += 10;
@@ -1304,7 +1352,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Platform name - simple text, no colored box
       doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
+      doc.setFont(fontFamily, "normal");
       doc.setTextColor(60, 60, 60);
       doc.text(platform, margin, barY + 9);
       
@@ -1327,7 +1375,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Value labels - positioned to right of bar, showing only configs
       doc.setFontSize(8);
-      doc.setFont("helvetica", "bold");
+      doc.setFont(fontFamily, "bold");
       doc.setTextColor(color[0], color[1], color[2]);
       
       // Show only configuration count
@@ -1348,7 +1396,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   if (analytics.topGroups.length > 0) {
     checkPageBreak(80);
     doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     doc.setTextColor(0, 0, 0);
     doc.text("Top Assigned Groups", margin, yPosition);
     yPosition += 10;
@@ -1360,7 +1408,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     doc.rect(margin, yPosition, groupTableWidth, 9, "F");
     
     doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(fontFamily, "bold");
     doc.setTextColor(255, 255, 255);
     doc.text("Rank", margin + 3, yPosition + 6);
     doc.text("Group Name", margin + 20, yPosition + 6);
@@ -1370,7 +1418,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // Group data rows
     const topGroupsData = analytics.topGroups.slice(0, 5);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(fontFamily, "normal");
     doc.setTextColor(0, 0, 0);
     
     topGroupsData.forEach(([groupId, count], index) => {
@@ -1398,19 +1446,19 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         doc.setFillColor(rankColor[0], rankColor[1], rankColor[2]);
         doc.circle(margin + 6, yPosition + 5, 3, 'F');
         doc.setFontSize(7);
-        doc.setFont("helvetica", "bold");
+        doc.setFont(fontFamily, "bold");
         doc.setTextColor(255, 255, 255);
         doc.text((index + 1).toString(), margin + 6, yPosition + 6.5, { align: 'center' });
       } else {
         doc.setFontSize(8);
-        doc.setFont("helvetica", "normal");
+        doc.setFont(fontFamily, "normal");
         doc.setTextColor(100, 100, 100);
         doc.text(`${index + 1}.`, margin + 3, yPosition + 6);
       }
       
       // Group name (truncate if too long)
       doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
+      doc.setFont(fontFamily, "normal");
       doc.setTextColor(0, 0, 0);
       const groupName = data.groupNames?.get(groupId) || groupId;
       // Calculate max width for group name to avoid overflow
@@ -1432,13 +1480,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       doc.rect(margin + 95, yPosition + 3, barWidth, 4, 'F');
       
       // Count number
-      doc.setFont("helvetica", "bold");
+      doc.setFont(fontFamily, "bold");
       doc.setFontSize(8);
       doc.setTextColor(barColor[0], barColor[1], barColor[2]);
       doc.text(count.toString(), margin + 115, yPosition + 6);
       
       // Platform indicator
-      doc.setFont("helvetica", "normal");
+      doc.setFont(fontFamily, "normal");
       doc.setTextColor(100, 100, 100);
       doc.setFontSize(8);
       doc.text('Multi', margin + 140, yPosition + 6);
@@ -1479,7 +1527,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (policy.description) {
-        addText(policy.description, 9, false, [100, 100, 100]);
+        addText(policy.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -1506,7 +1554,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
 
         addSettingsTable(formattedSettings);
       } else {
-        addText("No settings configured", 9, false, [150, 150, 150]);
+        addText("No settings configured", 9, "normal", [150, 150, 150]);
         yPosition += 5;
       }
       
@@ -1532,7 +1580,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (config.description) {
-        addText(config.description, 9, false, [100, 100, 100]);
+        addText(config.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -1540,7 +1588,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       const categories = parseDeviceConfiguration(config);
       categories.forEach(category => {
         if (category.settings.length > 0) {
-          addText(category.category, 10, true);
+          addText(category.category, 10, "bold");
           yPosition += 2;
           addSettingsTable(category.settings);
         }
@@ -1568,7 +1616,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (template.description) {
-        addText(template.description, 9, false, [100, 100, 100]);
+        addText(template.description, 9, "normal", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -1585,12 +1633,12 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         }, {});
         
         Object.entries(groupedSettings).forEach(([category, categorySettings]: [string, any]) => {
-          addText(category, 10, true);
+          addText(category, 10, "bold");
           yPosition += 2;
           addSettingsTable(categorySettings);
         });
       } else {
-        addText("No settings configured", 9, false, [150, 150, 150]);
+        addText("No settings configured", 9, "normal", [150, 150, 150]);
         yPosition += 5;
       }
       
@@ -1616,7 +1664,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (policy.description) {
-        addText(policy.description, 9, false, [100, 100, 100]);
+        addText(policy.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -1629,7 +1677,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         }));
         addSettingsTable(rulesTable);
       } else {
-        addText("No compliance rules configured", 9, false, [150, 150, 150]);
+        addText("No compliance rules configured", 9, "normal", [150, 150, 150]);
         yPosition += 5;
       }
       
@@ -1655,7 +1703,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (baseline.description) {
-        addText(baseline.description, 9, false, [100, 100, 100]);
+        addText(baseline.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -1664,13 +1712,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         const categories = parseSecurityBaseline(baseline.categories);
         categories.forEach(category => {
           if (category.settings.length > 0) {
-            addText(category.category, 10, true);
+            addText(category.category, 10, "bold");
             yPosition += 2;
             addSettingsTable(category.settings);
           }
         });
       } else {
-        addText("No settings configured", 9, false, [150, 150, 150]);
+        addText("No settings configured", 9, "normal", [150, 150, 150]);
         yPosition += 5;
       }
       
@@ -1689,7 +1737,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // Windows PowerShell Scripts
     if (data.scripts.windows.length > 0) {
-      addText("Windows PowerShell Scripts", 12, true);
+      addText("Windows PowerShell Scripts", 12, "bold");
       yPosition += 5;
       
       data.scripts.windows.forEach(script => {
@@ -1710,7 +1758,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         addSettingsTable(scriptInfo);
         
         if (script.scriptContent) {
-          addText("Script Content:", 9, true);
+          addText("Script Content:", 9, "bold");
           yPosition += 2;
           
           // Decode base64 script content if needed
@@ -1739,12 +1787,12 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
             yPosition += 4;
           });
           
-          doc.setFont("helvetica", "normal");
+          doc.setFont(fontFamily, "normal");
           doc.setTextColor(0, 0, 0);
           yPosition += 3;
           
           // Add script length info
-          addText(`Total script length: ${scriptText.length} characters`, 8, false, [100, 100, 100]);
+          addText(`Total script length: ${scriptText.length} characters`, 8, "normal", [100, 100, 100]);
           yPosition += 2;
         }
         
@@ -1754,7 +1802,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     
     // macOS Shell Scripts
     if (data.scripts.macOS.length > 0) {
-      addText("macOS Shell Scripts", 12, true);
+      addText("macOS Shell Scripts", 12, "bold");
       yPosition += 5;
       
       data.scripts.macOS.forEach(script => {
@@ -1773,7 +1821,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
         addSettingsTable(scriptInfo);
         
         if (script.scriptContent) {
-          addText("Script Content:", 9, true);
+          addText("Script Content:", 9, "bold");
           yPosition += 2;
           
           // Decode base64 script content if needed
@@ -1802,12 +1850,12 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
             yPosition += 4;
           });
           
-          doc.setFont("helvetica", "normal");
+          doc.setFont(fontFamily, "normal");
           doc.setTextColor(0, 0, 0);
           yPosition += 3;
           
           // Add script length info
-          addText(`Total script length: ${scriptText.length} characters`, 8, false, [100, 100, 100]);
+          addText(`Total script length: ${scriptText.length} characters`, 8, "normal", [100, 100, 100]);
           yPosition += 2;
         }
         
@@ -1834,7 +1882,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (config.description) {
-        addText(config.description, 9, false, [100, 100, 100]);
+        addText(config.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -1849,10 +1897,10 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Show targeted apps if available
       if (config.apps && config.apps.length > 0) {
-        addText("Targeted Apps:", 10, true);
+        addText("Targeted Apps:", 10, "bold");
         yPosition += 2;
         config.apps.forEach((app: any) => {
-          addText(`• ${app.mobileAppIdentifier?.packageId || app.bundleId || app.displayName || "Unknown App"}`, 9, false, [100, 100, 100]);
+          addText(`• ${app.mobileAppIdentifier?.packageId || app.bundleId || app.displayName || "Unknown App"}`, 9, "normal", [100, 100, 100]);
           yPosition += 1;
         });
         yPosition += 2;
@@ -1880,7 +1928,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (policy.description) {
-        addText(policy.description, 9, false, [100, 100, 100]);
+        addText(policy.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -1978,7 +2026,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
 
       if (policy.state) {
-        addText(`State: ${policy.state}`, 9, false, [100, 100, 100]);
+        addText(`State: ${policy.state}`, 9, "normal", [100, 100, 100]);
         yPosition += 2;
       }
 
@@ -2011,7 +2059,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       if (info.length > 0) {
         addSettingsTable(info);
       } else {
-        addText("No additional conditions configured", 9, false, [150, 150, 150]);
+        addText("No additional conditions configured", 9, "normal", [150, 150, 150]);
         yPosition += 5;
       }
 
@@ -2037,20 +2085,20 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       );
       
       if (config.description) {
-        addText(config.description, 9, false, [100, 100, 100]);
+        addText(config.description, 9, "italic", [100, 100, 100]);
         yPosition += 2;
       }
       
       // Add enrollment type
       if (config["@odata.type"]) {
         const enrollmentType = config["@odata.type"].split(".").pop()?.replace(/([A-Z])/g, " $1").trim();
-        addText(`Type: ${enrollmentType}`, 9, false, [100, 100, 100]);
+        addText(`Type: ${enrollmentType}`, 9, "normal", [100, 100, 100]);
         yPosition += 2;
       }
       
       // Add priority if available
       if (config.priority !== undefined) {
-        addText(`Priority: ${config.priority}`, 9, false, [100, 100, 100]);
+        addText(`Priority: ${config.priority}`, 9, "normal", [100, 100, 100]);
         yPosition += 2;
       }
       
@@ -2149,13 +2197,13 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       }
       
       // Section number
-      doc.setFont("helvetica", "normal");
+      doc.setFont(fontFamily, "normal");
       doc.setTextColor(60, 60, 60);
       const sectionNum = `${index + 1}.`;
       doc.text(sectionNum, margin, yPosition);
       
       // Section title
-      doc.setFont("helvetica", "normal");
+      doc.setFont(fontFamily, "normal");
       doc.setTextColor(60, 60, 60);
       doc.text(entry.title, margin + 10, yPosition);
       
@@ -2175,7 +2223,7 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       }
       
       // Page number
-      doc.setFont("helvetica", "bold");
+      doc.setFont(fontFamily, "bold");
       const [pnr, png, pnb] = hexToRgb(primaryColor);
       doc.setTextColor(pnr, png, pnb);
       doc.text(pageNumText, pageWidth - margin, yPosition, { align: "right" });

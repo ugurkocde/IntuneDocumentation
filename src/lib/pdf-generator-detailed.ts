@@ -399,11 +399,24 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       // Prepare text for all columns
       const nameLines = doc.splitTextToSize(setting.name, (colWidths[0] || 50) - 4);
       const valueText = setting.value || "Not configured";
-      const valueLines = wrapTechnicalString(valueText, (colWidths[1] || 65) - 4);
-      const descLines = setting.description 
+
+      // Handle newlines in values (e.g., arrays formatted with \n)
+      let valueLines: string[] = [];
+      if (valueText.includes('\n')) {
+        // Split by newline and then wrap each line
+        const valueParts = valueText.split('\n');
+        valueParts.forEach(part => {
+          const wrappedPart = wrapTechnicalString(part, (colWidths[1] || 65) - 4);
+          valueLines = valueLines.concat(wrappedPart);
+        });
+      } else {
+        valueLines = wrapTechnicalString(valueText, (colWidths[1] || 65) - 4);
+      }
+
+      const descLines = setting.description
         ? doc.splitTextToSize(setting.description, (colWidths[2] || 65) - 4)
         : [""];
-      
+
       // Calculate row height based on maximum lines needed
       const maxLines = Math.max(nameLines.length, valueLines.length, descLines.length);
       const rowHeight = Math.max(8, maxLines * 4 + 4); // Dynamic height based on content
@@ -1472,7 +1485,25 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Extract and display settings
       if (policy.settings && policy.settings.length > 0) {
-        const formattedSettings = policy.settings.map((setting: any) => extractSettingValue(setting));
+        const formattedSettings: Array<{name: string, value: string, description?: string}> = [];
+
+        // Process each setting and flatten nested settings
+        for (const setting of policy.settings) {
+          const extracted = extractSettingValue(setting);
+
+          // Add the main setting
+          formattedSettings.push({
+            name: extracted.name,
+            value: extracted.value,
+            description: extracted.description
+          });
+
+          // Add nested settings if they exist
+          if (extracted.nestedSettings && extracted.nestedSettings.length > 0) {
+            formattedSettings.push(...extracted.nestedSettings);
+          }
+        }
+
         addSettingsTable(formattedSettings);
       } else {
         addText("No settings configured", 9, false, [150, 150, 150]);

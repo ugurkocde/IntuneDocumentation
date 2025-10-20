@@ -36,6 +36,8 @@ import {
   FileType
 } from "lucide-react";
 import { BrandingSettingsModal } from "~/components/branding-settings-modal";
+import { ExportModal } from "~/components/export-modal";
+import { useExportHandler } from "~/hooks/use-export-handler";
 import type { BrandingOptions } from "~/types/branding";
 
 interface PermissionError {
@@ -79,7 +81,7 @@ interface IntuneConfigurations {
 export default function DashboardPage() {
   const { instance, accounts } = useMsal();
   const router = useRouter();
-  
+
   // Log tenant access server-side only
   useTenantLogging("Dashboard-Access");
   const [configurations, setConfigurations] = useState<IntuneConfigurations | null>(null);
@@ -130,6 +132,21 @@ export default function DashboardPage() {
       { name: "Fetching Conditional Access Policies", status: "pending" }
     ],
     currentStep: 0
+  });
+
+  // Export handler hook
+  const {
+    showExportModal,
+    setShowExportModal,
+    exportConfig,
+    handleExport: handleExportWithModal,
+  } = useExportHandler({
+    configurations,
+    selectedConfigs,
+    brandingOptions,
+    includeCA,
+    caConsentStatus,
+    getAccessToken,
   });
 
   useEffect(() => {
@@ -1108,30 +1125,16 @@ export default function DashboardPage() {
                   <Palette className="w-4 h-4 mr-2" />
                   Branding
                 </Button>
-                <DropdownMenu
-                  trigger={
-                    <Button
-                      disabled={(generatingPdf || generatingDocx) || selectedConfigs.size === 0}
-                      loading={generatingPdf || generatingDocx}
-                      progress={exportProgress}
-                      variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
-                      size="sm"
-                      className="min-w-[160px] whitespace-nowrap"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}
-                    </Button>
-                  }
+                <Button
+                  onClick={() => setShowExportModal(true)}
+                  disabled={selectedConfigs.size === 0}
+                  variant={selectedConfigs.size === 0 ? "ghost" : "primary"}
+                  size="sm"
+                  className="min-w-[160px] whitespace-nowrap"
                 >
-                  <DropdownMenuItem onClick={handleGeneratePdf} className="flex items-center">
-                    <FileText className="w-4 h-4 mr-2 flex-shrink-0" />
-                    <span>Export as PDF</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleGenerateDocx} className="flex items-center">
-                    <FileType className="w-4 h-4 mr-2 flex-shrink-0" />
-                    <span>Export as .docx</span>
-                  </DropdownMenuItem>
-                </DropdownMenu>
+                  <Download className="w-4 h-4 mr-2" />
+                  {selectedConfigs.size > 0 ? `Export (${selectedConfigs.size})` : 'Export Selected'}
+                </Button>
               </div>
             </div>
           </div>
@@ -1380,6 +1383,14 @@ export default function DashboardPage() {
           setShowBrandingModal(false);
         }}
         currentOptions={brandingOptions}
+      />
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExport={handleExportWithModal}
+        config={exportConfig}
       />
     </div>
   );

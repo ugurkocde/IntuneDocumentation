@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X, Download, FileText, AlertCircle, CheckCircle2, Loader2, File } from "lucide-react";
 import { Button } from "~/components/ui/button";
 
@@ -307,7 +307,8 @@ export function ExportModal({
                   <Button
                     onClick={() => {
                       setExportError(null);
-                      setProgress([]);
+                      setCurrentStage(0);
+                      setOverallProgress(0);
                     }}
                     variant="secondary"
                   >
@@ -330,7 +331,7 @@ export function ExportModal({
 }
 
 function FormatOption({
-  id,
+  id: _id,
   label,
   description,
   icon,

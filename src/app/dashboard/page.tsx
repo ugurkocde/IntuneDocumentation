@@ -7,7 +7,6 @@ import { graphScopes } from "~/lib/msal-config";
 import { useTenantLogging } from "~/hooks/use-tenant-logging";
 import { Card, CardHeader, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
-import { DropdownMenu, DropdownMenuItem } from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { ProgressBar } from "~/components/ui/progress-bar";
 import { NavigationHeader } from "~/components/navigation-header";
@@ -32,8 +31,7 @@ import {
   LayoutGrid,
   ChevronLeft,
   Menu,
-  Palette,
-  FileType
+  Palette
 } from "lucide-react";
 import { BrandingSettingsModal } from "~/components/branding-settings-modal";
 import { ExportModal } from "~/components/export-modal";
@@ -132,21 +130,6 @@ export default function DashboardPage() {
       { name: "Fetching Conditional Access Policies", status: "pending" }
     ],
     currentStep: 0
-  });
-
-  // Export handler hook
-  const {
-    showExportModal,
-    setShowExportModal,
-    exportConfig,
-    handleExport: handleExportWithModal,
-  } = useExportHandler({
-    configurations,
-    selectedConfigs,
-    brandingOptions,
-    includeCA,
-    caConsentStatus,
-    getAccessToken,
   });
 
   useEffect(() => {
@@ -694,7 +677,21 @@ export default function DashboardPage() {
       return name.includes(query) || description.includes(query);
     });
   };
-  
+
+  // Export handler hook
+  const {
+    showExportModal,
+    setShowExportModal,
+    exportConfig,
+    handleExport: handleExportWithModal,
+  } = useExportHandler({
+    configurations,
+    selectedConfigs,
+    brandingOptions,
+    includeCA,
+    caConsentStatus,
+    getAccessToken,
+  });
 
   if (loading) {
     return (

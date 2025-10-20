@@ -462,7 +462,8 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     settings.forEach((setting, index) => {
       // Prepare text for all columns
       const nameLines = doc.splitTextToSize(setting.name, (colWidths[0] || 50) - 4);
-      const valueText = setting.value || "Not configured";
+      // Ensure valueText is always a string to avoid .includes() errors
+      const valueText = setting.value != null ? String(setting.value) : "Not configured";
 
       // Handle newlines in values (e.g., arrays formatted with \n)
       let valueLines: string[] = [];
@@ -1947,25 +1948,25 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       
       // Add Windows Update specific settings
       const updateSettings = [];
-      
+
       if (policy.deliveryOptimizationMode !== undefined) {
         updateSettings.push({
           name: "Delivery Optimization Mode",
-          value: policy.deliveryOptimizationMode
+          value: formatValue(policy.deliveryOptimizationMode)
         });
       }
-      
+
       if (policy.prereleaseFeatures !== undefined) {
         updateSettings.push({
           name: "Prerelease Features",
-          value: policy.prereleaseFeatures
+          value: formatValue(policy.prereleaseFeatures)
         });
       }
-      
+
       if (policy.automaticUpdateMode !== undefined) {
         updateSettings.push({
           name: "Automatic Update Mode",
-          value: policy.automaticUpdateMode
+          value: formatValue(policy.automaticUpdateMode)
         });
       }
       
@@ -1986,14 +1987,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
       if (policy.qualityUpdatesDeferralPeriodInDays !== undefined) {
         updateSettings.push({
           name: "Quality Updates Deferral (days)",
-          value: policy.qualityUpdatesDeferralPeriodInDays
+          value: formatValue(policy.qualityUpdatesDeferralPeriodInDays)
         });
       }
-      
+
       if (policy.featureUpdatesDeferralPeriodInDays !== undefined) {
         updateSettings.push({
           name: "Feature Updates Deferral (days)",
-          value: policy.featureUpdatesDeferralPeriodInDays
+          value: formatValue(policy.featureUpdatesDeferralPeriodInDays)
         });
       }
       

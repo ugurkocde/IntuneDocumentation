@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ExportFormat, ExportConfig } from "~/components/export-modal";
+import type { ExportFormat, ExportConfig, ExportResult, PolicyExportError } from "~/components/export-modal";
 
 interface UseExportHandlerProps {
   configurations: any;
@@ -87,7 +87,7 @@ export function useExportHandler({
     };
   };
 
-  const handleExport = async (format: ExportFormat): Promise<{ success: boolean; error?: string }> => {
+  const handleExport = async (format: ExportFormat): Promise<ExportResult> => {
     try {
       const accessToken = await getAccessToken();
 
@@ -173,6 +173,25 @@ export function useExportHandler({
         };
       }
 
+      // Check for partial success (export errors in headers)
+      const exportErrorsHeader = response.headers.get("X-Export-Errors");
+      const totalPoliciesHeader = response.headers.get("X-Export-Total");
+      const successfulPoliciesHeader = response.headers.get("X-Export-Success");
+
+      let exportErrors: PolicyExportError[] | undefined;
+      let totalPolicies: number | undefined;
+      let successfulPolicies: number | undefined;
+
+      if (exportErrorsHeader) {
+        try {
+          exportErrors = JSON.parse(exportErrorsHeader);
+          totalPolicies = totalPoliciesHeader ? parseInt(totalPoliciesHeader, 10) : undefined;
+          successfulPolicies = successfulPoliciesHeader ? parseInt(successfulPoliciesHeader, 10) : undefined;
+        } catch (e) {
+          console.error("Failed to parse export error headers:", e);
+        }
+      }
+
       // Download the file
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -196,7 +215,12 @@ export function useExportHandler({
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      return { success: true };
+      return {
+        success: true,
+        exportErrors,
+        totalPolicies,
+        successfulPolicies
+      };
     } catch (error: any) {
       console.error('Export failed:', error);
       return {

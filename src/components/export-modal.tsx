@@ -12,15 +12,29 @@ export interface ExportStage {
   progress: number; // 0-100
 }
 
+export interface PolicyExportError {
+  policyType: string;
+  policyName: string;
+  error: string;
+}
+
 export interface ExportConfig {
   selectedCount: number;
   policyTypes: { name: string; count: number }[];
 }
 
+export interface ExportResult {
+  success: boolean;
+  error?: string;
+  exportErrors?: PolicyExportError[];
+  totalPolicies?: number;
+  successfulPolicies?: number;
+}
+
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onExport: (format: ExportFormat) => Promise<{ success: boolean; error?: string }>;
+  onExport: (format: ExportFormat) => Promise<ExportResult>;
   config: ExportConfig;
 }
 
@@ -34,6 +48,8 @@ export function ExportModal({
   const [isExporting, setIsExporting] = useState(false);
   const [exportComplete, setExportComplete] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportErrors, setExportErrors] = useState<PolicyExportError[]>([]);
+  const [exportStats, setExportStats] = useState<{ total: number; successful: number } | null>(null);
   const [currentStage, setCurrentStage] = useState(0);
   const [overallProgress, setOverallProgress] = useState(0);
 
@@ -56,6 +72,8 @@ export function ExportModal({
     setIsExporting(false);
     setExportComplete(false);
     setExportError(null);
+    setExportErrors([]);
+    setExportStats(null);
     setCurrentStage(0);
     setOverallProgress(0);
   };
@@ -64,6 +82,8 @@ export function ExportModal({
     setIsExporting(true);
     setExportComplete(false);
     setExportError(null);
+    setExportErrors([]);
+    setExportStats(null);
     setCurrentStage(0);
     setOverallProgress(0);
 
@@ -83,6 +103,15 @@ export function ExportModal({
       setOverallProgress(85);
 
       if (result.success) {
+        // Capture export errors and stats (partial success)
+        if (result.exportErrors && result.exportErrors.length > 0) {
+          setExportErrors(result.exportErrors);
+          setExportStats({
+            total: result.totalPolicies || 0,
+            successful: result.successfulPolicies || 0
+          });
+        }
+
         // Stage 3: Finalizing (85-95%)
         setCurrentStage(2);
         setOverallProgress(90);
@@ -240,13 +269,53 @@ export function ExportModal({
 
           {exportComplete && (
             <div className="text-center py-8">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-green-600" />
+              <div className={`w-16 h-16 ${exportErrors.length > 0 ? 'bg-yellow-100' : 'bg-green-100'} rounded-full flex items-center justify-center mx-auto mb-4`}>
+                {exportErrors.length > 0 ? (
+                  <AlertCircle className="w-8 h-8 text-yellow-600" />
+                ) : (
+                  <CheckCircle2 className="w-8 h-8 text-green-600" />
+                )}
               </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Export Complete!</h3>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                {exportErrors.length > 0 ? 'Export Completed with Warnings' : 'Export Complete!'}
+              </h3>
               <p className="text-sm text-slate-600 mb-6">
-                Successfully exported {config.selectedCount} policies
+                {exportStats ? (
+                  <>Successfully exported {exportStats.successful} of {exportStats.total} policies</>
+                ) : (
+                  <>Successfully exported {config.selectedCount} policies</>
+                )}
               </p>
+
+              {/* Show warnings if there are partial failures */}
+              {exportErrors.length > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-left max-w-2xl mx-auto">
+                  <div className="flex items-start gap-2 mb-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-semibold text-yellow-900">
+                        {exportErrors.length} {exportErrors.length === 1 ? 'policy' : 'policies'} failed to export
+                      </h4>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        The remaining policies were successfully exported to your PDF.
+                      </p>
+                    </div>
+                  </div>
+                  <details className="mt-3">
+                    <summary className="text-sm font-medium text-yellow-900 cursor-pointer hover:text-yellow-800">
+                      View failed policies
+                    </summary>
+                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                      {exportErrors.map((err, index) => (
+                        <div key={index} className="text-xs bg-white border border-yellow-200 rounded p-2">
+                          <div className="font-medium text-slate-900">{err.policyType}: {err.policyName}</div>
+                          <div className="text-slate-600 mt-1">{err.error}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              )}
 
               {/* Summary Stats */}
               <div className="bg-slate-50 rounded-lg p-4 mb-6 inline-block">

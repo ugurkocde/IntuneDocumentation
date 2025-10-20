@@ -29,6 +29,19 @@ interface DetailedPdfData {
   branding?: BrandingOptions;
 }
 
+export interface PolicyExportError {
+  policyType: string;
+  policyName: string;
+  error: string;
+}
+
+export interface PdfGenerationResult {
+  buffer: Uint8Array;
+  errors: PolicyExportError[];
+  totalPolicies: number;
+  successfulPolicies: number;
+}
+
 // Helper function to analyze configurations
 function analyzeConfigurations(data: DetailedPdfData) {
   const allConfigs = [
@@ -160,7 +173,7 @@ function analyzeConfigurations(data: DetailedPdfData) {
   };
 }
 
-export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8Array> {
+export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGenerationResult> {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -174,6 +187,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
   const margin = 15;
   const maxWidth = pageWidth - 2 * margin;
   let pageNumber = 1;
+
+  // Error tracking for graceful degradation
+  const exportErrors: PolicyExportError[] = [];
+  let totalPolicies = 0;
+  let successfulPolicies = 0;
 
   // Analyze configurations for overview
   const analytics = analyzeConfigurations(data);
@@ -1531,48 +1549,60 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Settings Catalog Policies", pageNum: pageNumber });
     addSectionHeader("Settings Catalog Policies");
-    
+
+    totalPolicies += data.settingsCatalog.length;
+
     data.settingsCatalog.forEach(policy => {
-      addConfigHeader(
-        policy.displayName || policy.name,
-        enhanceAssignmentText(parseAssignments(policy.assignments)),
-        policy.createdDateTime,
-        policy.lastModifiedDateTime
-      );
-      
-      if (policy.description) {
-        addText(policy.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Extract and display settings
-      if (policy.settings && policy.settings.length > 0) {
-        const formattedSettings: Array<{name: string, value: string, description?: string}> = [];
+      try {
+        addConfigHeader(
+          policy.displayName || policy.name,
+          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          policy.createdDateTime,
+          policy.lastModifiedDateTime
+        );
 
-        // Process each setting and flatten nested settings
-        for (const setting of policy.settings) {
-          const extracted = extractSettingValue(setting);
-
-          // Add the main setting
-          formattedSettings.push({
-            name: extracted.name,
-            value: extracted.value,
-            description: extracted.description
-          });
-
-          // Add nested settings if they exist
-          if (extracted.nestedSettings && extracted.nestedSettings.length > 0) {
-            formattedSettings.push(...extracted.nestedSettings);
-          }
+        if (policy.description) {
+          addText(policy.description, 9, "italic", [100, 100, 100]);
+          yPosition += 2;
         }
 
-        addSettingsTable(formattedSettings);
-      } else {
-        addText("No settings configured", 9, "normal", [150, 150, 150]);
+        // Extract and display settings
+        if (policy.settings && policy.settings.length > 0) {
+          const formattedSettings: Array<{name: string, value: string, description?: string}> = [];
+
+          // Process each setting and flatten nested settings
+          for (const setting of policy.settings) {
+            const extracted = extractSettingValue(setting);
+
+            // Add the main setting
+            formattedSettings.push({
+              name: extracted.name,
+              value: extracted.value,
+              description: extracted.description
+            });
+
+            // Add nested settings if they exist
+            if (extracted.nestedSettings && extracted.nestedSettings.length > 0) {
+              formattedSettings.push(...extracted.nestedSettings);
+            }
+          }
+
+          addSettingsTable(formattedSettings);
+        } else {
+          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          yPosition += 5;
+        }
+
         yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Settings Catalog",
+          policyName: policy.displayName || policy.name || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export Settings Catalog policy: ${policy.displayName || policy.name}`, error);
       }
-      
-      yPosition += 5;
     });
   }
   
@@ -1584,31 +1614,43 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Device Configurations", pageNum: pageNumber });
     addSectionHeader("Device Configurations");
-    
+
+    totalPolicies += data.deviceConfigurations.length;
+
     data.deviceConfigurations.forEach(config => {
-      addConfigHeader(
-        config.displayName,
-        enhanceAssignmentText(parseAssignments(config.assignments)),
-        config.createdDateTime,
-        config.lastModifiedDateTime
-      );
-      
-      if (config.description) {
-        addText(config.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Parse and display configuration settings
-      const categories = parseDeviceConfiguration(config);
-      categories.forEach(category => {
-        if (category.settings.length > 0) {
-          addText(category.category, 10, "bold");
+      try {
+        addConfigHeader(
+          config.displayName,
+          enhanceAssignmentText(parseAssignments(config.assignments)),
+          config.createdDateTime,
+          config.lastModifiedDateTime
+        );
+
+        if (config.description) {
+          addText(config.description, 9, "italic", [100, 100, 100]);
           yPosition += 2;
-          addSettingsTable(category.settings);
         }
-      });
-      
-      yPosition += 5;
+
+        // Parse and display configuration settings
+        const categories = parseDeviceConfiguration(config);
+        categories.forEach(category => {
+          if (category.settings.length > 0) {
+            addText(category.category, 10, "bold");
+            yPosition += 2;
+            addSettingsTable(category.settings);
+          }
+        });
+
+        yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Device Configuration",
+          policyName: config.displayName || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export Device Configuration: ${config.displayName}`, error);
+      }
     });
   }
   
@@ -1620,43 +1662,55 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Administrative Templates", pageNum: pageNumber });
     addSectionHeader("Administrative Templates");
-    
+
+    totalPolicies += data.administrativeTemplates.length;
+
     data.administrativeTemplates.forEach(template => {
-      addConfigHeader(
-        template.displayName,
-        enhanceAssignmentText(parseAssignments(template.assignments)),
-        template.createdDateTime,
-        template.lastModifiedDateTime
-      );
-      
-      if (template.description) {
-        addText(template.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Parse and display definition values
-      if (template.definitionValues && template.definitionValues.length > 0) {
-        const settings = parseAdministrativeTemplate(template.definitionValues);
-        const groupedSettings = settings.reduce((acc: any, setting) => {
-          if (!acc[setting.category]) acc[setting.category] = [];
-          acc[setting.category].push({
-            name: setting.name,
-            value: `${setting.state}: ${setting.value}`
-          });
-          return acc;
-        }, {});
-        
-        Object.entries(groupedSettings).forEach(([category, categorySettings]: [string, any]) => {
-          addText(category, 10, "bold");
+      try {
+        addConfigHeader(
+          template.displayName,
+          enhanceAssignmentText(parseAssignments(template.assignments)),
+          template.createdDateTime,
+          template.lastModifiedDateTime
+        );
+
+        if (template.description) {
+          addText(template.description, 9, "italic", [100, 100, 100]);
           yPosition += 2;
-          addSettingsTable(categorySettings);
-        });
-      } else {
-        addText("No settings configured", 9, "normal", [150, 150, 150]);
+        }
+
+        // Parse and display definition values
+        if (template.definitionValues && template.definitionValues.length > 0) {
+          const settings = parseAdministrativeTemplate(template.definitionValues);
+          const groupedSettings = settings.reduce((acc: any, setting) => {
+            if (!acc[setting.category]) acc[setting.category] = [];
+            acc[setting.category].push({
+              name: setting.name,
+              value: `${setting.state}: ${setting.value}`
+            });
+            return acc;
+          }, {});
+
+          Object.entries(groupedSettings).forEach(([category, categorySettings]: [string, any]) => {
+            addText(category, 10, "bold");
+            yPosition += 2;
+            addSettingsTable(categorySettings);
+          });
+        } else {
+          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          yPosition += 5;
+        }
+
         yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Administrative Template",
+          policyName: template.displayName || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export Administrative Template: ${template.displayName}`, error);
       }
-      
-      yPosition += 5;
     });
   }
   
@@ -1668,34 +1722,46 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Compliance Policies", pageNum: pageNumber });
     addSectionHeader("Compliance Policies");
-    
+
+    totalPolicies += data.compliancePolicies.length;
+
     data.compliancePolicies.forEach(policy => {
-      addConfigHeader(
-        policy.displayName,
-        enhanceAssignmentText(parseAssignments(policy.assignments)),
-        policy.createdDateTime,
-        policy.lastModifiedDateTime
-      );
-      
-      if (policy.description) {
-        addText(policy.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Parse and display compliance rules
-      const rules = parseComplianceRules(policy);
-      if (rules.length > 0) {
-        const rulesTable = rules.map(rule => ({
-          name: rule.rule,
-          value: `${rule.value} (Action: ${rule.action})`
-        }));
-        addSettingsTable(rulesTable);
-      } else {
-        addText("No compliance rules configured", 9, "normal", [150, 150, 150]);
+      try {
+        addConfigHeader(
+          policy.displayName,
+          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          policy.createdDateTime,
+          policy.lastModifiedDateTime
+        );
+
+        if (policy.description) {
+          addText(policy.description, 9, "italic", [100, 100, 100]);
+          yPosition += 2;
+        }
+
+        // Parse and display compliance rules
+        const rules = parseComplianceRules(policy);
+        if (rules.length > 0) {
+          const rulesTable = rules.map(rule => ({
+            name: rule.rule,
+            value: `${rule.value} (Action: ${rule.action})`
+          }));
+          addSettingsTable(rulesTable);
+        } else {
+          addText("No compliance rules configured", 9, "normal", [150, 150, 150]);
+          yPosition += 5;
+        }
+
         yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Compliance Policy",
+          policyName: policy.displayName || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export Compliance Policy: ${policy.displayName}`, error);
       }
-      
-      yPosition += 5;
     });
   }
   
@@ -1707,36 +1773,48 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Security Baselines", pageNum: pageNumber });
     addSectionHeader("Security Baselines");
-    
+
+    totalPolicies += data.securityBaselines.length;
+
     data.securityBaselines.forEach(baseline => {
-      addConfigHeader(
-        baseline.displayName,
-        enhanceAssignmentText(parseAssignments(baseline.assignments)),
-        baseline.createdDateTime,
-        baseline.lastModifiedDateTime
-      );
-      
-      if (baseline.description) {
-        addText(baseline.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Parse and display baseline settings
-      if (baseline.categories && baseline.categories.length > 0) {
-        const categories = parseSecurityBaseline(baseline.categories);
-        categories.forEach(category => {
-          if (category.settings.length > 0) {
-            addText(category.category, 10, "bold");
-            yPosition += 2;
-            addSettingsTable(category.settings);
-          }
-        });
-      } else {
-        addText("No settings configured", 9, "normal", [150, 150, 150]);
+      try {
+        addConfigHeader(
+          baseline.displayName,
+          enhanceAssignmentText(parseAssignments(baseline.assignments)),
+          baseline.createdDateTime,
+          baseline.lastModifiedDateTime
+        );
+
+        if (baseline.description) {
+          addText(baseline.description, 9, "italic", [100, 100, 100]);
+          yPosition += 2;
+        }
+
+        // Parse and display baseline settings
+        if (baseline.categories && baseline.categories.length > 0) {
+          const categories = parseSecurityBaseline(baseline.categories);
+          categories.forEach(category => {
+            if (category.settings.length > 0) {
+              addText(category.category, 10, "bold");
+              yPosition += 2;
+              addSettingsTable(category.settings);
+            }
+          });
+        } else {
+          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          yPosition += 5;
+        }
+
         yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Security Baseline",
+          policyName: baseline.displayName || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export Security Baseline: ${baseline.displayName}`, error);
       }
-      
-      yPosition += 5;
     });
   }
   
@@ -1748,13 +1826,16 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Scripts", pageNum: pageNumber });
     addSectionHeader("Scripts");
-    
+
+    totalPolicies += data.scripts.windows.length + data.scripts.macOS.length;
+
     // Windows PowerShell Scripts
     if (data.scripts.windows.length > 0) {
       addText("Windows PowerShell Scripts", 12, "bold");
       yPosition += 5;
-      
+
       data.scripts.windows.forEach(script => {
+        try {
         addConfigHeader(
           script.displayName,
           enhanceAssignmentText(parseAssignments(script.assignments)),
@@ -1809,17 +1890,27 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           addText(`Total script length: ${scriptText.length} characters`, 8, "normal", [100, 100, 100]);
           yPosition += 2;
         }
-        
+
         yPosition += 5;
+        successfulPolicies++;
+        } catch (error: any) {
+          exportErrors.push({
+            policyType: "Windows Script",
+            policyName: script.displayName || "Unknown Script",
+            error: error?.message || "Unknown error occurred"
+          });
+          console.error(`Failed to export Windows Script: ${script.displayName}`, error);
+        }
       });
     }
-    
+
     // macOS Shell Scripts
     if (data.scripts.macOS.length > 0) {
       addText("macOS Shell Scripts", 12, "bold");
       yPosition += 5;
-      
+
       data.scripts.macOS.forEach(script => {
+        try {
         addConfigHeader(
           script.displayName,
           enhanceAssignmentText(parseAssignments(script.assignments)),
@@ -1867,13 +1958,22 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
           doc.setFont(fontFamily, "normal");
           doc.setTextColor(0, 0, 0);
           yPosition += 3;
-          
+
           // Add script length info
           addText(`Total script length: ${scriptText.length} characters`, 8, "normal", [100, 100, 100]);
           yPosition += 2;
         }
-        
+
         yPosition += 5;
+        successfulPolicies++;
+        } catch (error: any) {
+          exportErrors.push({
+            policyType: "macOS Script",
+            policyName: script.displayName || "Unknown Script",
+            error: error?.message || "Unknown error occurred"
+          });
+          console.error(`Failed to export macOS Script: ${script.displayName}`, error);
+        }
       });
     }
   }
@@ -1886,41 +1986,53 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "App Configuration Policies", pageNum: pageNumber });
     addSectionHeader("App Configuration Policies");
-    
+
+    totalPolicies += data.appConfigurations.length;
+
     data.appConfigurations.forEach(config => {
-      addConfigHeader(
-        config.displayName || config.name,
-        enhanceAssignmentText(parseAssignments(config.assignments)),
-        config.createdDateTime,
-        config.lastModifiedDateTime
-      );
-      
-      if (config.description) {
-        addText(config.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Add app configuration settings if available
-      if (config.settings && config.settings.length > 0) {
-        const settings = config.settings.map((setting: any) => ({
-          name: setting.settingName || setting.key || "Setting",
-          value: formatValue(setting.settingValue || setting.value)
-        }));
-        addSettingsTable(settings);
-      }
-      
-      // Show targeted apps if available
-      if (config.apps && config.apps.length > 0) {
-        addText("Targeted Apps:", 10, "bold");
-        yPosition += 2;
-        config.apps.forEach((app: any) => {
-          addText(`• ${app.mobileAppIdentifier?.packageId || app.bundleId || app.displayName || "Unknown App"}`, 9, "normal", [100, 100, 100]);
-          yPosition += 1;
+      try {
+        addConfigHeader(
+          config.displayName || config.name,
+          enhanceAssignmentText(parseAssignments(config.assignments)),
+          config.createdDateTime,
+          config.lastModifiedDateTime
+        );
+
+        if (config.description) {
+          addText(config.description, 9, "italic", [100, 100, 100]);
+          yPosition += 2;
+        }
+
+        // Add app configuration settings if available
+        if (config.settings && config.settings.length > 0) {
+          const settings = config.settings.map((setting: any) => ({
+            name: setting.settingName || setting.key || "Setting",
+            value: formatValue(setting.settingValue || setting.value)
+          }));
+          addSettingsTable(settings);
+        }
+
+        // Show targeted apps if available
+        if (config.apps && config.apps.length > 0) {
+          addText("Targeted Apps:", 10, "bold");
+          yPosition += 2;
+          config.apps.forEach((app: any) => {
+            addText(`• ${app.mobileAppIdentifier?.packageId || app.bundleId || app.displayName || "Unknown App"}`, 9, "normal", [100, 100, 100]);
+            yPosition += 1;
+          });
+          yPosition += 2;
+        }
+
+        yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "App Configuration",
+          policyName: config.displayName || config.name || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
         });
-        yPosition += 2;
+        console.error(`Failed to export App Configuration: ${config.displayName || config.name}`, error);
       }
-      
-      yPosition += 5;
     });
   }
   
@@ -1932,91 +2044,103 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Windows Update Policies", pageNum: pageNumber });
     addSectionHeader("Windows Update Policies");
-    
+
+    totalPolicies += data.windowsUpdatePolicies.length;
+
     data.windowsUpdatePolicies.forEach(policy => {
-      addConfigHeader(
-        policy.displayName || policy.name,
-        parseAssignments(policy.assignments),
-        policy.createdDateTime,
-        policy.lastModifiedDateTime
-      );
-      
-      if (policy.description) {
-        addText(policy.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Add Windows Update specific settings
-      const updateSettings = [];
+      try {
+        addConfigHeader(
+          policy.displayName || policy.name,
+          parseAssignments(policy.assignments),
+          policy.createdDateTime,
+          policy.lastModifiedDateTime
+        );
 
-      if (policy.deliveryOptimizationMode !== undefined) {
-        updateSettings.push({
-          name: "Delivery Optimization Mode",
-          value: formatValue(policy.deliveryOptimizationMode)
-        });
-      }
+        if (policy.description) {
+          addText(policy.description, 9, "italic", [100, 100, 100]);
+          yPosition += 2;
+        }
 
-      if (policy.prereleaseFeatures !== undefined) {
-        updateSettings.push({
-          name: "Prerelease Features",
-          value: formatValue(policy.prereleaseFeatures)
-        });
-      }
+        // Add Windows Update specific settings
+        const updateSettings = [];
 
-      if (policy.automaticUpdateMode !== undefined) {
-        updateSettings.push({
-          name: "Automatic Update Mode",
-          value: formatValue(policy.automaticUpdateMode)
-        });
-      }
-      
-      if (policy.businessReadyUpdatesOnly !== undefined) {
-        updateSettings.push({
-          name: "Business Ready Updates Only",
-          value: formatValue(policy.businessReadyUpdatesOnly)
-        });
-      }
-      
-      if (policy.driversExcluded !== undefined) {
-        updateSettings.push({
-          name: "Drivers Excluded",
-          value: formatValue(policy.driversExcluded)
-        });
-      }
-      
-      if (policy.qualityUpdatesDeferralPeriodInDays !== undefined) {
-        updateSettings.push({
-          name: "Quality Updates Deferral (days)",
-          value: formatValue(policy.qualityUpdatesDeferralPeriodInDays)
-        });
-      }
+        if (policy.deliveryOptimizationMode !== undefined) {
+          updateSettings.push({
+            name: "Delivery Optimization Mode",
+            value: formatValue(policy.deliveryOptimizationMode)
+          });
+        }
 
-      if (policy.featureUpdatesDeferralPeriodInDays !== undefined) {
-        updateSettings.push({
-          name: "Feature Updates Deferral (days)",
-          value: formatValue(policy.featureUpdatesDeferralPeriodInDays)
+        if (policy.prereleaseFeatures !== undefined) {
+          updateSettings.push({
+            name: "Prerelease Features",
+            value: formatValue(policy.prereleaseFeatures)
+          });
+        }
+
+        if (policy.automaticUpdateMode !== undefined) {
+          updateSettings.push({
+            name: "Automatic Update Mode",
+            value: formatValue(policy.automaticUpdateMode)
+          });
+        }
+
+        if (policy.businessReadyUpdatesOnly !== undefined) {
+          updateSettings.push({
+            name: "Business Ready Updates Only",
+            value: formatValue(policy.businessReadyUpdatesOnly)
+          });
+        }
+
+        if (policy.driversExcluded !== undefined) {
+          updateSettings.push({
+            name: "Drivers Excluded",
+            value: formatValue(policy.driversExcluded)
+          });
+        }
+
+        if (policy.qualityUpdatesDeferralPeriodInDays !== undefined) {
+          updateSettings.push({
+            name: "Quality Updates Deferral (days)",
+            value: formatValue(policy.qualityUpdatesDeferralPeriodInDays)
+          });
+        }
+
+        if (policy.featureUpdatesDeferralPeriodInDays !== undefined) {
+          updateSettings.push({
+            name: "Feature Updates Deferral (days)",
+            value: formatValue(policy.featureUpdatesDeferralPeriodInDays)
+          });
+        }
+
+        if (policy.qualityUpdatesPaused !== undefined) {
+          updateSettings.push({
+            name: "Quality Updates Paused",
+            value: formatValue(policy.qualityUpdatesPaused)
+          });
+        }
+
+        if (policy.featureUpdatesPaused !== undefined) {
+          updateSettings.push({
+            name: "Feature Updates Paused",
+            value: formatValue(policy.featureUpdatesPaused)
+          });
+        }
+
+        if (updateSettings.length > 0) {
+          addSettingsTable(updateSettings);
+        }
+
+        yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Windows Update Policy",
+          policyName: policy.displayName || policy.name || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
         });
+        console.error(`Failed to export Windows Update Policy: ${policy.displayName || policy.name}`, error);
       }
-      
-      if (policy.qualityUpdatesPaused !== undefined) {
-        updateSettings.push({
-          name: "Quality Updates Paused",
-          value: formatValue(policy.qualityUpdatesPaused)
-        });
-      }
-      
-      if (policy.featureUpdatesPaused !== undefined) {
-        updateSettings.push({
-          name: "Feature Updates Paused",
-          value: formatValue(policy.featureUpdatesPaused)
-        });
-      }
-      
-      if (updateSettings.length > 0) {
-        addSettingsTable(updateSettings);
-      }
-      
-      yPosition += 5;
     });
   }
 
@@ -2029,55 +2153,67 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     tocEntries.push({ title: "Conditional Access Policies", pageNum: pageNumber });
     addSectionHeader("Conditional Access Policies");
 
+    totalPolicies += data.conditionalAccessPolicies.length;
+
     const groupName = (id: string) => data.groupNames?.get(id) || id;
 
     data.conditionalAccessPolicies.forEach((policy: any) => {
-      addConfigHeader(
-        policy.displayName,
-        "Not assigned",
-        policy.createdDateTime,
-        policy.modifiedDateTime
-      );
+      try {
+        addConfigHeader(
+          policy.displayName,
+          "Not assigned",
+          policy.createdDateTime,
+          policy.modifiedDateTime
+        );
 
-      if (policy.state) {
-        addText(`State: ${policy.state}`, 9, "normal", [100, 100, 100]);
-        yPosition += 2;
-      }
+        if (policy.state) {
+          addText(`State: ${policy.state}`, 9, "normal", [100, 100, 100]);
+          yPosition += 2;
+        }
 
-      const users = policy?.conditions?.users || {};
-      const includeGroups: string[] = (users.includeGroups || []).map(groupName);
-      const excludeGroups: string[] = (users.excludeGroups || []).map(groupName);
-      const includeUsers: string[] = users.includeUsers || [];
-      const excludeUsers: string[] = users.excludeUsers || [];
-      const platforms: string[] = policy?.conditions?.platforms?.includePlatforms || [];
-      const clientApps: string[] = policy?.conditions?.clientAppTypes || [];
-      const locations = policy?.conditions?.locations || {};
-      const includeLocations: string[] = locations.includeLocations || [];
-      const excludeLocations: string[] = locations.excludeLocations || [];
-      const grants: string[] = policy?.grantControls?.builtInControls || [];
-      const session = policy?.sessionControls || {};
-      const sessionEnabled = Object.keys(session).filter(k => session[k]);
+        const users = policy?.conditions?.users || {};
+        const includeGroups: string[] = (users.includeGroups || []).map(groupName);
+        const excludeGroups: string[] = (users.excludeGroups || []).map(groupName);
+        const includeUsers: string[] = users.includeUsers || [];
+        const excludeUsers: string[] = users.excludeUsers || [];
+        const platforms: string[] = policy?.conditions?.platforms?.includePlatforms || [];
+        const clientApps: string[] = policy?.conditions?.clientAppTypes || [];
+        const locations = policy?.conditions?.locations || {};
+        const includeLocations: string[] = locations.includeLocations || [];
+        const excludeLocations: string[] = locations.excludeLocations || [];
+        const grants: string[] = policy?.grantControls?.builtInControls || [];
+        const session = policy?.sessionControls || {};
+        const sessionEnabled = Object.keys(session).filter(k => session[k]);
 
-      const info: { name: string; value: string }[] = [];
-      if (includeGroups.length) info.push({ name: "Include Groups", value: includeGroups.join(", ") });
-      if (excludeGroups.length) info.push({ name: "Exclude Groups", value: excludeGroups.join(", ") });
-      if (includeUsers.length) info.push({ name: "Include Users", value: includeUsers.join(", ") });
-      if (excludeUsers.length) info.push({ name: "Exclude Users", value: excludeUsers.join(", ") });
-      if (platforms.length) info.push({ name: "Platforms", value: platforms.join(", ") });
-      if (clientApps.length) info.push({ name: "Client Apps", value: clientApps.join(", ") });
-      if (includeLocations.length) info.push({ name: "Include Locations", value: includeLocations.join(", ") });
-      if (excludeLocations.length) info.push({ name: "Exclude Locations", value: excludeLocations.join(", ") });
-      if (grants.length) info.push({ name: "Grant Controls", value: grants.join(", ") });
-      if (sessionEnabled.length) info.push({ name: "Session Controls", value: sessionEnabled.join(", ") });
+        const info: { name: string; value: string }[] = [];
+        if (includeGroups.length) info.push({ name: "Include Groups", value: includeGroups.join(", ") });
+        if (excludeGroups.length) info.push({ name: "Exclude Groups", value: excludeGroups.join(", ") });
+        if (includeUsers.length) info.push({ name: "Include Users", value: includeUsers.join(", ") });
+        if (excludeUsers.length) info.push({ name: "Exclude Users", value: excludeUsers.join(", ") });
+        if (platforms.length) info.push({ name: "Platforms", value: platforms.join(", ") });
+        if (clientApps.length) info.push({ name: "Client Apps", value: clientApps.join(", ") });
+        if (includeLocations.length) info.push({ name: "Include Locations", value: includeLocations.join(", ") });
+        if (excludeLocations.length) info.push({ name: "Exclude Locations", value: excludeLocations.join(", ") });
+        if (grants.length) info.push({ name: "Grant Controls", value: grants.join(", ") });
+        if (sessionEnabled.length) info.push({ name: "Session Controls", value: sessionEnabled.join(", ") });
 
-      if (info.length > 0) {
-        addSettingsTable(info);
-      } else {
-        addText("No additional conditions configured", 9, "normal", [150, 150, 150]);
+        if (info.length > 0) {
+          addSettingsTable(info);
+        } else {
+          addText("No additional conditions configured", 9, "normal", [150, 150, 150]);
+          yPosition += 5;
+        }
+
         yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Conditional Access Policy",
+          policyName: policy.displayName || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export Conditional Access Policy: ${policy.displayName}`, error);
       }
-
-      yPosition += 5;
     });
   }
   
@@ -2089,100 +2225,112 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     addPageNumber();
     tocEntries.push({ title: "Enrollment Configurations", pageNum: pageNumber });
     addSectionHeader("Enrollment Configurations");
-    
+
+    totalPolicies += data.enrollmentConfigurations.length;
+
     data.enrollmentConfigurations.forEach(config => {
-      addConfigHeader(
-        config.displayName || config.name,
-        enhanceAssignmentText(parseAssignments(config.assignments)),
-        config.createdDateTime,
-        config.lastModifiedDateTime
-      );
-      
-      if (config.description) {
-        addText(config.description, 9, "italic", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Add enrollment type
-      if (config["@odata.type"]) {
-        const enrollmentType = config["@odata.type"].split(".").pop()?.replace(/([A-Z])/g, " $1").trim();
-        addText(`Type: ${enrollmentType}`, 9, "normal", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Add priority if available
-      if (config.priority !== undefined) {
-        addText(`Priority: ${config.priority}`, 9, "normal", [100, 100, 100]);
-        yPosition += 2;
-      }
-      
-      // Add enrollment-specific settings
-      const enrollmentSettings = [];
-      
-      if (config.limit !== undefined) {
-        enrollmentSettings.push({
-          name: "Device Enrollment Limit",
-          value: config.limit
-        });
-      }
-      
-      if (config.iosRestriction) {
-        enrollmentSettings.push({
-          name: "iOS Restrictions",
-          value: config.iosRestriction.platformBlocked ? "Blocked" : "Allowed"
-        });
-        if (config.iosRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+      try {
+        addConfigHeader(
+          config.displayName || config.name,
+          enhanceAssignmentText(parseAssignments(config.assignments)),
+          config.createdDateTime,
+          config.lastModifiedDateTime
+        );
+
+        if (config.description) {
+          addText(config.description, 9, "italic", [100, 100, 100]);
+          yPosition += 2;
+        }
+
+        // Add enrollment type
+        if (config["@odata.type"]) {
+          const enrollmentType = config["@odata.type"].split(".").pop()?.replace(/([A-Z])/g, " $1").trim();
+          addText(`Type: ${enrollmentType}`, 9, "normal", [100, 100, 100]);
+          yPosition += 2;
+        }
+
+        // Add priority if available
+        if (config.priority !== undefined) {
+          addText(`Priority: ${config.priority}`, 9, "normal", [100, 100, 100]);
+          yPosition += 2;
+        }
+
+        // Add enrollment-specific settings
+        const enrollmentSettings = [];
+
+        if (config.limit !== undefined) {
           enrollmentSettings.push({
-            name: "iOS Personal Devices",
-            value: config.iosRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            name: "Device Enrollment Limit",
+            value: config.limit
           });
         }
-      }
-      
-      if (config.androidRestriction) {
-        enrollmentSettings.push({
-          name: "Android Restrictions",
-          value: config.androidRestriction.platformBlocked ? "Blocked" : "Allowed"
-        });
-        if (config.androidRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+
+        if (config.iosRestriction) {
           enrollmentSettings.push({
-            name: "Android Personal Devices",
-            value: config.androidRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            name: "iOS Restrictions",
+            value: config.iosRestriction.platformBlocked ? "Blocked" : "Allowed"
           });
+          if (config.iosRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+            enrollmentSettings.push({
+              name: "iOS Personal Devices",
+              value: config.iosRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            });
+          }
         }
-      }
-      
-      if (config.windowsRestriction) {
-        enrollmentSettings.push({
-          name: "Windows Restrictions",
-          value: config.windowsRestriction.platformBlocked ? "Blocked" : "Allowed"
-        });
-        if (config.windowsRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+
+        if (config.androidRestriction) {
           enrollmentSettings.push({
-            name: "Windows Personal Devices",
-            value: config.windowsRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            name: "Android Restrictions",
+            value: config.androidRestriction.platformBlocked ? "Blocked" : "Allowed"
           });
+          if (config.androidRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+            enrollmentSettings.push({
+              name: "Android Personal Devices",
+              value: config.androidRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            });
+          }
         }
-      }
-      
-      if (config.macOSRestriction) {
-        enrollmentSettings.push({
-          name: "macOS Restrictions",
-          value: config.macOSRestriction.platformBlocked ? "Blocked" : "Allowed"
-        });
-        if (config.macOSRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+
+        if (config.windowsRestriction) {
           enrollmentSettings.push({
-            name: "macOS Personal Devices",
-            value: config.macOSRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            name: "Windows Restrictions",
+            value: config.windowsRestriction.platformBlocked ? "Blocked" : "Allowed"
           });
+          if (config.windowsRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+            enrollmentSettings.push({
+              name: "Windows Personal Devices",
+              value: config.windowsRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            });
+          }
         }
+
+        if (config.macOSRestriction) {
+          enrollmentSettings.push({
+            name: "macOS Restrictions",
+            value: config.macOSRestriction.platformBlocked ? "Blocked" : "Allowed"
+          });
+          if (config.macOSRestriction.personalDeviceEnrollmentBlocked !== undefined) {
+            enrollmentSettings.push({
+              name: "macOS Personal Devices",
+              value: config.macOSRestriction.personalDeviceEnrollmentBlocked ? "Blocked" : "Allowed"
+            });
+          }
+        }
+
+        if (enrollmentSettings.length > 0) {
+          addSettingsTable(enrollmentSettings);
+        }
+
+        yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "Enrollment Configuration",
+          policyName: config.displayName || config.name || "Unknown Configuration",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export Enrollment Configuration: ${config.displayName || config.name}`, error);
       }
-      
-      if (enrollmentSettings.length > 0) {
-        addSettingsTable(enrollmentSettings);
-      }
-      
-      yPosition += 5;
     });
   }
   
@@ -2249,6 +2397,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<Uint8A
     doc.setPage(currentPage);
   }
   
-  // Return PDF
-  return new Uint8Array(doc.output("arraybuffer"));
+  // Return PDF with error details
+  return {
+    buffer: new Uint8Array(doc.output("arraybuffer")),
+    errors: exportErrors,
+    totalPolicies,
+    successfulPolicies
+  };
 }

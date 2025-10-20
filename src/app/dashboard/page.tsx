@@ -671,8 +671,8 @@ export default function DashboardPage() {
   const filterConfigurations = (items: any[]) => {
     if (!searchQuery) return items;
     return items.filter(item => {
-      const name = (item.displayName || item.name || "").toLowerCase();
-      const description = (item.description || "").toLowerCase();
+      const name = String(item.displayName || item.name || "").toLowerCase();
+      const description = String(item.description || "").toLowerCase();
       const query = searchQuery.toLowerCase();
       return name.includes(query) || description.includes(query);
     });

@@ -143,16 +143,6 @@ export function useExportHandler({
           },
           body: JSON.stringify(selectedData),
         });
-      } else if (format === 'pdf-executive') {
-        // Executive PDF export
-        response = await fetch("/api/pdf/generate-executive", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify(selectedData),
-        });
       } else {
         // Detailed PDF export (default)
         response = await fetch("/api/pdf/generate-detailed", {
@@ -192,34 +182,24 @@ export function useExportHandler({
         }
       }
 
-      // Download the file
+      // Prepare download data (don't trigger download yet)
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
 
       // Set appropriate filename based on format
       const date = new Date().toISOString().split("T")[0];
-      if (format === 'docx') {
-        a.download = `Intune-Configuration-Documentation-${date}.docx`;
-      } else if (format === 'pdf-executive') {
-        a.download = `Intune-Executive-Summary-${date}.pdf`;
-      } else {
-        a.download = `Intune-Configuration-Documentation-${date}.pdf`;
-      }
-
-      document.body.appendChild(a);
-      a.click();
-
-      // Cleanup
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      const filename = format === 'docx'
+        ? `Intune-Configuration-Documentation-${date}.docx`
+        : `Intune-Configuration-Documentation-${date}.pdf`;
 
       return {
         success: true,
         exportErrors,
         totalPolicies,
-        successfulPolicies
+        successfulPolicies,
+        downloadData: {
+          blob,
+          filename
+        }
       };
     } catch (error: any) {
       console.error('Export failed:', error);

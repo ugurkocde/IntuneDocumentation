@@ -4,7 +4,7 @@ import { useState } from "react";
 import { X, Download, FileText, AlertCircle, CheckCircle2, Loader2, File } from "lucide-react";
 import { Button } from "~/components/ui/button";
 
-export type ExportFormat = 'pdf-detailed' | 'pdf-executive' | 'docx';
+export type ExportFormat = 'pdf-detailed' | 'docx';
 
 export interface ExportStage {
   name: string;
@@ -29,29 +29,52 @@ export interface ExportResult {
   exportErrors?: PolicyExportError[];
   totalPolicies?: number;
   successfulPolicies?: number;
+  downloadData?: {
+    blob: Blob;
+    filename: string;
+  };
+}
+
+export interface ExportState {
+  selectedFormat: ExportFormat;
+  isExporting: boolean;
+  exportComplete: boolean;
+  exportError: string | null;
+  exportErrors: PolicyExportError[];
+  exportStats: { total: number; successful: number } | null;
+  currentStage: number;
+  overallProgress: number;
 }
 
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onMinimize?: () => void;
   onExport: (format: ExportFormat) => Promise<ExportResult>;
   config: ExportConfig;
+  state: ExportState;
+  onStateChange: (state: Partial<ExportState>) => void;
 }
 
 export function ExportModal({
   isOpen,
   onClose,
+  onMinimize,
   onExport,
   config,
+  state,
+  onStateChange,
 }: ExportModalProps) {
-  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('pdf-detailed');
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportComplete, setExportComplete] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [exportErrors, setExportErrors] = useState<PolicyExportError[]>([]);
-  const [exportStats, setExportStats] = useState<{ total: number; successful: number } | null>(null);
-  const [currentStage, setCurrentStage] = useState(0);
-  const [overallProgress, setOverallProgress] = useState(0);
+  const {
+    selectedFormat,
+    isExporting,
+    exportComplete,
+    exportError,
+    exportErrors,
+    exportStats,
+    currentStage,
+    overallProgress,
+  } = state;
 
   const stages: ExportStage[] = [
     { name: "Preparing export data...", status: 'pending', progress: 0 },
@@ -61,77 +84,116 @@ export function ExportModal({
   ];
 
   const handleClose = () => {
-    if (!isExporting) {
+    if (isExporting) {
+      // If exporting, minimize instead of close
+      if (onMinimize) {
+        onMinimize();
+      }
+    } else {
       resetState();
       onClose();
     }
   };
 
   const resetState = () => {
-    setSelectedFormat('pdf-detailed');
-    setIsExporting(false);
-    setExportComplete(false);
-    setExportError(null);
-    setExportErrors([]);
-    setExportStats(null);
-    setCurrentStage(0);
-    setOverallProgress(0);
+    onStateChange({
+      selectedFormat: 'pdf-detailed',
+      isExporting: false,
+      exportComplete: false,
+      exportError: null,
+      exportErrors: [],
+      exportStats: null,
+      currentStage: 0,
+      overallProgress: 0,
+    });
   };
 
   const handleExport = async () => {
-    setIsExporting(true);
-    setExportComplete(false);
-    setExportError(null);
-    setExportErrors([]);
-    setExportStats(null);
-    setCurrentStage(0);
-    setOverallProgress(0);
+    onStateChange({
+      isExporting: true,
+      exportComplete: false,
+      exportError: null,
+      exportErrors: [],
+      exportStats: null,
+      currentStage: 0,
+      overallProgress: 0,
+    });
 
     try {
       // Stage 1: Preparing (0-15%)
-      setCurrentStage(0);
-      setOverallProgress(5);
+      onStateChange({ currentStage: 0, overallProgress: 5 });
       await new Promise(resolve => setTimeout(resolve, 300));
-      setOverallProgress(15);
+      onStateChange({ overallProgress: 15 });
 
       // Stage 2: Generating (15-85%) - Real work happens here
-      setCurrentStage(1);
-      setOverallProgress(20);
+      onStateChange({ currentStage: 1, overallProgress: 20 });
 
-      const result = await onExport(selectedFormat);
+      // Simulate smooth progress during API call
+      let currentProgress = 20;
+      const progressInterval = setInterval(() => {
+        if (currentProgress < 80) {
+          currentProgress += Math.random() < 0.5 ? 1 : 2; // Increment by 1-2%
+          onStateChange({ overallProgress: Math.min(currentProgress, 80) });
+        }
+      }, 150);
 
-      setOverallProgress(85);
+      try {
+        const result = await onExport(selectedFormat);
+        clearInterval(progressInterval);
 
-      if (result.success) {
+        onStateChange({ overallProgress: 85 });
+
+        if (!result.success) {
+          onStateChange({ exportError: result.error || 'Export failed' });
+          return;
+        }
+
         // Capture export errors and stats (partial success)
         if (result.exportErrors && result.exportErrors.length > 0) {
-          setExportErrors(result.exportErrors);
-          setExportStats({
-            total: result.totalPolicies || 0,
-            successful: result.successfulPolicies || 0
+          onStateChange({
+            exportErrors: result.exportErrors,
+            exportStats: {
+              total: result.totalPolicies || 0,
+              successful: result.successfulPolicies || 0
+            }
           });
         }
 
         // Stage 3: Finalizing (85-95%)
-        setCurrentStage(2);
-        setOverallProgress(90);
+        onStateChange({ currentStage: 2, overallProgress: 90 });
         await new Promise(resolve => setTimeout(resolve, 200));
 
         // Stage 4: Downloading (95-100%)
-        setCurrentStage(3);
-        setOverallProgress(95);
+        onStateChange({ currentStage: 3, overallProgress: 95 });
         await new Promise(resolve => setTimeout(resolve, 200));
 
-        setOverallProgress(100);
-        setExportComplete(true);
-      } else {
-        setExportError(result.error || 'Export failed');
+        onStateChange({ overallProgress: 100, exportComplete: true });
+
+        // Show success state for 1.5 seconds before downloading
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        // Trigger download after success display
+        if (result.downloadData) {
+          const url = window.URL.createObjectURL(result.downloadData.blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = result.downloadData.filename;
+          document.body.appendChild(a);
+          a.click();
+
+          // Cleanup
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }
+      } catch (apiError: any) {
+        clearInterval(progressInterval);
+        throw apiError;
       }
     } catch (error: any) {
       console.error('Export failed:', error);
-      setExportError(error?.message || 'An unexpected error occurred');
+      onStateChange({ exportError: error?.message || 'An unexpected error occurred' });
     } finally {
-      setIsExporting(false);
+      onStateChange({ isExporting: false });
     }
   };
 
@@ -144,8 +206,14 @@ export function ExportModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={handleClose}
+    >
+      <div
+        className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b">
           <div className="flex-1 min-w-0 pr-4">
@@ -160,8 +228,8 @@ export function ExportModal({
           </div>
           <button
             onClick={handleClose}
-            disabled={isExporting}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"
+            title={isExporting ? "Minimize to notification" : "Close"}
           >
             <X className="w-5 h-5" />
           </button>
@@ -182,15 +250,7 @@ export function ExportModal({
                     description="Comprehensive documentation with all policy details and settings"
                     icon={<FileText className="w-5 h-5" />}
                     selected={selectedFormat === 'pdf-detailed'}
-                    onClick={() => setSelectedFormat('pdf-detailed')}
-                  />
-                  <FormatOption
-                    id="pdf-executive"
-                    label="Executive PDF Summary"
-                    description="High-level overview for stakeholders and management"
-                    icon={<FileText className="w-5 h-5" />}
-                    selected={selectedFormat === 'pdf-executive'}
-                    onClick={() => setSelectedFormat('pdf-executive')}
+                    onClick={() => onStateChange({ selectedFormat: 'pdf-detailed' })}
                   />
                   <FormatOption
                     id="docx"
@@ -198,7 +258,7 @@ export function ExportModal({
                     description="Editable document format for further customization"
                     icon={<File className="w-5 h-5" />}
                     selected={selectedFormat === 'docx'}
-                    onClick={() => setSelectedFormat('docx')}
+                    onClick={() => onStateChange({ selectedFormat: 'docx' })}
                   />
                 </div>
               </div>
@@ -340,65 +400,58 @@ export function ExportModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t p-4 sm:p-6 bg-slate-50">
-          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
-            {!isExporting && !exportComplete && !exportError && (
-              <>
-                <Button
-                  onClick={handleClose}
-                  variant="secondary"
-                  className="w-full sm:w-auto"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleExport}
-                  variant="primary"
-                  disabled={config.selectedCount === 0}
-                  className="w-full sm:w-auto"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Start Export
-                </Button>
-              </>
-            )}
-            {isExporting && (
-              <Button
-                variant="secondary"
-                disabled
-                loading
-                className="w-full sm:w-auto"
-              >
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Exporting...
-              </Button>
-            )}
-            {(exportComplete || exportError) && (
-              <>
-                {exportError && (
+        {!isExporting && (
+          <div className="border-t p-4 sm:p-6 bg-slate-50">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
+              {!exportComplete && !exportError && (
+                <>
                   <Button
-                    onClick={() => {
-                      setExportError(null);
-                      setCurrentStage(0);
-                      setOverallProgress(0);
-                    }}
+                    onClick={handleClose}
                     variant="secondary"
                     className="w-full sm:w-auto"
                   >
-                    Try Again
+                    Cancel
                   </Button>
-                )}
-                <Button
-                  onClick={handleClose}
-                  variant="primary"
-                  className="w-full sm:w-auto"
-                >
-                  {exportComplete ? 'Done' : 'Close'}
-                </Button>
-              </>
-            )}
+                  <Button
+                    onClick={handleExport}
+                    variant="primary"
+                    disabled={config.selectedCount === 0}
+                    className="w-full sm:w-auto"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Start Export
+                  </Button>
+                </>
+              )}
+              {(exportComplete || exportError) && (
+                <>
+                  {exportError && (
+                    <Button
+                      onClick={() => {
+                        onStateChange({
+                          exportError: null,
+                          currentStage: 0,
+                          overallProgress: 0,
+                        });
+                      }}
+                      variant="secondary"
+                      className="w-full sm:w-auto"
+                    >
+                      Try Again
+                    </Button>
+                  )}
+                  <Button
+                    onClick={handleClose}
+                    variant="primary"
+                    className="w-full sm:w-auto"
+                  >
+                    {exportComplete ? 'Done' : 'Close'}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -31,10 +31,12 @@ import {
   LayoutGrid,
   ChevronLeft,
   Menu,
-  Palette
+  Palette,
+  AlertCircle
 } from "lucide-react";
 import { BrandingSettingsModal } from "~/components/branding-settings-modal";
-import { ExportModal } from "~/components/export-modal";
+import { ExportModal, type ExportState } from "~/components/export-modal";
+import { FloatingExportNotification } from "~/components/floating-export-notification";
 import { useExportHandler } from "~/hooks/use-export-handler";
 import type { BrandingOptions } from "~/types/branding";
 
@@ -42,6 +44,15 @@ interface PermissionError {
   resource: string;
   requiredPermission: string;
   message: string;
+}
+
+interface FetchError {
+  policyId: string;
+  policyName: string;
+  policyType: string;
+  error: string;
+  errorCode?: string;
+  statusCode?: number;
 }
 
 interface IntuneConfigurations {
@@ -59,6 +70,7 @@ interface IntuneConfigurations {
   enrollmentConfigurations: any[];
   conditionalAccessPolicies: any[];
   permissionErrors?: PermissionError[];
+  fetchErrors?: FetchError[];
   summary: {
     totalConfigurations: number;
     byType: {
@@ -131,6 +143,23 @@ export default function DashboardPage() {
     ],
     currentStep: 0
   });
+
+  // Export state management
+  const [exportState, setExportState] = useState<ExportState>({
+    selectedFormat: 'pdf-detailed',
+    isExporting: false,
+    exportComplete: false,
+    exportError: null,
+    exportErrors: [],
+    exportStats: null,
+    currentStage: 0,
+    overallProgress: 0,
+  });
+  const [showFloatingNotification, setShowFloatingNotification] = useState(false);
+
+  const updateExportState = (partial: Partial<ExportState>) => {
+    setExportState(prev => ({ ...prev, ...partial }));
+  };
 
   useEffect(() => {
     if (accounts.length === 0) {
@@ -1019,6 +1048,45 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Fetch Errors Warning */}
+        {configurations?.fetchErrors && configurations.fetchErrors.length > 0 && (
+          <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm text-orange-900 font-medium">
+                  {configurations.fetchErrors.length} {configurations.fetchErrors.length === 1 ? 'policy' : 'policies'} could not be fully loaded
+                </p>
+                <p className="text-sm text-orange-700 mt-1 mb-2">
+                  The following policies are visible but their settings could not be retrieved due to Microsoft Graph API errors.
+                  The policies appear correctly in the Intune admin center but have issues when accessed via the API.
+                </p>
+                <details className="mt-2">
+                  <summary className="text-sm font-medium text-orange-900 cursor-pointer hover:text-orange-800">
+                    View affected policies
+                  </summary>
+                  <ul className="text-sm text-orange-700 space-y-1 mt-2">
+                    {configurations.fetchErrors.map((error, index) => (
+                      <li key={index} className="flex items-start gap-2 bg-white border border-orange-200 rounded p-2">
+                        <span className="text-orange-600 mt-0.5">•</span>
+                        <span className="flex-1">
+                          <strong>{error.policyType}:</strong> {error.policyName}
+                          <br />
+                          <span className="text-xs text-orange-600">{error.error}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+                <p className="text-xs text-orange-600 mt-3">
+                  These policies will still appear in the list but may have incomplete settings data in exports.
+                  This is a known Microsoft Graph API issue with certain policies.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action Bar */}
         <div className="mb-6 space-y-3">
           {/* Main Header Bar */}
@@ -1385,9 +1453,54 @@ export default function DashboardPage() {
       {/* Export Modal */}
       <ExportModal
         isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
+        onClose={() => {
+          setShowExportModal(false);
+          setShowFloatingNotification(false);
+        }}
+        onMinimize={() => {
+          setShowExportModal(false);
+          setShowFloatingNotification(true);
+        }}
         onExport={handleExportWithModal}
         config={exportConfig}
+        state={exportState}
+        onStateChange={updateExportState}
+      />
+
+      {/* Floating Export Notification */}
+      <FloatingExportNotification
+        isVisible={showFloatingNotification && !showExportModal}
+        isExporting={exportState.isExporting}
+        exportComplete={exportState.exportComplete}
+        exportError={exportState.exportError}
+        overallProgress={exportState.overallProgress}
+        currentStageName={
+          exportState.currentStage >= 0 && exportState.currentStage < 4
+            ? ['Preparing export data...', 'Generating document...', 'Finalizing...', 'Starting download...'][exportState.currentStage]
+            : 'Processing...'
+        }
+        policyCount={exportConfig.selectedCount}
+        hasWarnings={exportState.exportErrors.length > 0}
+        onClick={() => {
+          setShowExportModal(true);
+          setShowFloatingNotification(false);
+        }}
+        onDismiss={() => {
+          setShowFloatingNotification(false);
+          // Reset export state if completed
+          if (exportState.exportComplete || exportState.exportError) {
+            updateExportState({
+              selectedFormat: 'pdf-detailed',
+              isExporting: false,
+              exportComplete: false,
+              exportError: null,
+              exportErrors: [],
+              exportStats: null,
+              currentStage: 0,
+              overallProgress: 0,
+            });
+          }
+        }}
       />
     </div>
   );
@@ -1506,6 +1619,12 @@ function ConfigItem({
             <p className="text-sm font-semibold text-slate-900 group-hover:text-blue-700 transition-colors">
               {item.displayName || item.name}
             </p>
+            {item.hasFetchError && (
+              <span className="inline-flex items-center gap-1 text-orange-600" title="Settings unavailable due to API error">
+                <AlertCircle className="w-4 h-4" />
+                <span className="text-xs font-medium">Settings unavailable</span>
+              </span>
+            )}
             {badge && (
               <Badge variant={badgeVariant} size="sm">
                 {badge}

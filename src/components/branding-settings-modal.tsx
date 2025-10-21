@@ -743,24 +743,6 @@ export function BrandingSettingsModal({
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        id="summary"
-                        checked={options.documentSettings?.includeExecutiveSummary ?? true}
-                        onChange={(e) => setOptions(prev => ({
-                          ...prev,
-                          documentSettings: {
-                            ...prev.documentSettings!,
-                            includeExecutiveSummary: e.target.checked,
-                          },
-                        }))}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <label htmlFor="summary" className="text-sm font-medium text-slate-700">
-                        Include executive summary
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
                         id="analytics"
                         checked={options.documentSettings?.includeAnalytics ?? true}
                         onChange={(e) => setOptions(prev => ({

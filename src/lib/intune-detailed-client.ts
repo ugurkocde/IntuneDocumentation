@@ -89,9 +89,19 @@ export interface PermissionError {
   message: string;
 }
 
+export interface FetchError {
+  policyId: string;
+  policyName: string;
+  policyType: string;
+  error: string;
+  errorCode?: string;
+  statusCode?: number;
+}
+
 export class DetailedIntuneService {
   private client: ReturnType<typeof createGraphClient>;
   private permissionErrors: PermissionError[] = [];
+  private fetchErrors: FetchError[] = [];
 
   constructor(accessToken: string) {
     this.client = createGraphClient(accessToken);
@@ -162,14 +172,26 @@ export class DetailedIntuneService {
               settings: settings || [],
               assignments: assignments || []
             };
-          } catch (error) {
+          } catch (error: any) {
             console.error(`Error fetching details for policy ${policy.name}:`, error);
+
+            // Track the fetch error
+            this.fetchErrors.push({
+              policyId: policy.id,
+              policyName: policy.name,
+              policyType: "Settings Catalog",
+              error: error?.message || "Failed to fetch policy settings",
+              errorCode: error?.code,
+              statusCode: error?.statusCode
+            });
+
             return {
               ...policy,
               displayName: policy.name,
               configType: "Settings Catalog",
               settings: [],
-              assignments: []
+              assignments: [],
+              hasFetchError: true
             };
           }
         })
@@ -691,10 +713,16 @@ export class DetailedIntuneService {
     return this.permissionErrors;
   }
 
+  // Get fetch errors encountered during fetch
+  getFetchErrors(): FetchError[] {
+    return this.fetchErrors;
+  }
+
   // Main method to get all detailed configurations
   async getAllDetailedConfigurations() {
     console.log("Fetching all detailed Intune configurations...");
     this.permissionErrors = []; // Reset permission errors
+    this.fetchErrors = []; // Reset fetch errors
 
     const [
       settingsCatalog,
@@ -732,12 +760,13 @@ export class DetailedIntuneService {
       enrollmentConfigurations,
       conditionalAccessPolicies,
       permissionErrors: this.permissionErrors,
+      fetchErrors: this.fetchErrors,
       summary: {
-        totalConfigurations: 
-          settingsCatalog.length + 
-          deviceConfigurations.length + 
-          administrativeTemplates.length + 
-          compliancePolicies.length + 
+        totalConfigurations:
+          settingsCatalog.length +
+          deviceConfigurations.length +
+          administrativeTemplates.length +
+          compliancePolicies.length +
           securityBaselines.length +
           scripts.windows.length +
           scripts.macOS.length +

@@ -69,7 +69,6 @@ export interface BrandingOptions {
   // Document Settings
   documentSettings?: {
     includeTableOfContents?: boolean;
-    includeExecutiveSummary?: boolean;
     includeAnalytics?: boolean;
     format: 'detailed' | 'condensed';
   };
@@ -110,7 +109,6 @@ export const DEFAULT_BRANDING: BrandingOptions = {
   },
   documentSettings: {
     includeTableOfContents: true,
-    includeExecutiveSummary: true,
     includeAnalytics: true,
     format: 'detailed',
   },
@@ -180,7 +178,6 @@ export const BRANDING_PRESETS: BrandingPreset[] = [
       },
       documentSettings: {
         includeTableOfContents: false,
-        includeExecutiveSummary: false,
         includeAnalytics: true,
         format: 'condensed',
       },

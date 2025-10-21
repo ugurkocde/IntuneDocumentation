@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate detailed PDF with all settings, group names, device counts, and branding
-    const pdfBuffer = await generateDetailedPDF({
+    const pdfResult = await generateDetailedPDF({
       ...data,
       groupNames,
       deviceCounts,
@@ -155,17 +155,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Return PDF as response (convert Uint8Array to Buffer for NextResponse)
-    if (!pdfBuffer || pdfBuffer.length === 0) {
+    // Return PDF as response with error details in headers
+    if (!pdfResult.buffer || pdfResult.buffer.length === 0) {
       throw new Error("Generated PDF buffer is empty");
     }
-    
-    return new NextResponse(Buffer.from(pdfBuffer), {
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="Intune-Detailed-Configuration-${new Date().toISOString().split("T")[0]}.pdf"`,
+    };
+
+    // Add export stats to headers for client to read
+    if (pdfResult.errors.length > 0) {
+      headers["X-Export-Errors"] = JSON.stringify(pdfResult.errors);
+      headers["X-Export-Total"] = pdfResult.totalPolicies.toString();
+      headers["X-Export-Success"] = pdfResult.successfulPolicies.toString();
+    }
+
+    return new NextResponse(Buffer.from(pdfResult.buffer), {
       status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="Intune-Detailed-Configuration-${new Date().toISOString().split("T")[0]}.pdf"`,
-      },
+      headers,
     });
   } catch (error: any) {
     console.error("Error generating detailed PDF:", error);

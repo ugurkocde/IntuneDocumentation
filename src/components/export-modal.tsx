@@ -147,9 +147,9 @@ export function ExportModal({
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">Export Documentation</h2>
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b">
+          <div className="flex-1 min-w-0 pr-4">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 truncate">Export Documentation</h2>
             <p className="text-sm text-slate-600 mt-1">
               {exportComplete
                 ? 'Export completed successfully'
@@ -161,14 +161,14 @@ export function ExportModal({
           <button
             onClick={handleClose}
             disabled={isExporting}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {!isExporting && !exportComplete && (
             <div className="space-y-4">
               <div>
@@ -243,11 +243,11 @@ export function ExportModal({
               {/* What's Being Exported */}
               <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                 <h4 className="text-xs font-semibold text-slate-700 mb-2">Exporting {config.selectedCount} policies:</h4>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {config.policyTypes.map((type, index) => (
                     <div key={index} className="flex items-center gap-2 text-xs text-slate-600">
-                      <CheckCircle2 className="w-3 h-3 text-green-600" />
-                      <span>{type.name} ({type.count})</span>
+                      <CheckCircle2 className="w-3 h-3 text-green-600 flex-shrink-0" />
+                      <span className="break-words">{type.name} ({type.count})</span>
                     </div>
                   ))}
                 </div>
@@ -308,8 +308,8 @@ export function ExportModal({
                     <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
                       {exportErrors.map((err, index) => (
                         <div key={index} className="text-xs bg-white border border-yellow-200 rounded p-2">
-                          <div className="font-medium text-slate-900">{err.policyType}: {err.policyName}</div>
-                          <div className="text-slate-600 mt-1">{err.error}</div>
+                          <div className="font-medium text-slate-900 break-words">{err.policyType}: {err.policyName}</div>
+                          <div className="text-slate-600 mt-1 break-words">{err.error}</div>
                         </div>
                       ))}
                     </div>
@@ -340,13 +340,14 @@ export function ExportModal({
         </div>
 
         {/* Footer */}
-        <div className="border-t p-6 bg-slate-50">
-          <div className="flex justify-end gap-3">
+        <div className="border-t p-4 sm:p-6 bg-slate-50">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
             {!isExporting && !exportComplete && !exportError && (
               <>
                 <Button
                   onClick={handleClose}
                   variant="secondary"
+                  className="w-full sm:w-auto"
                 >
                   Cancel
                 </Button>
@@ -354,6 +355,7 @@ export function ExportModal({
                   onClick={handleExport}
                   variant="primary"
                   disabled={config.selectedCount === 0}
+                  className="w-full sm:w-auto"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Start Export
@@ -365,6 +367,7 @@ export function ExportModal({
                 variant="secondary"
                 disabled
                 loading
+                className="w-full sm:w-auto"
               >
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Exporting...
@@ -380,6 +383,7 @@ export function ExportModal({
                       setOverallProgress(0);
                     }}
                     variant="secondary"
+                    className="w-full sm:w-auto"
                   >
                     Try Again
                   </Button>
@@ -387,6 +391,7 @@ export function ExportModal({
                 <Button
                   onClick={handleClose}
                   variant="primary"
+                  className="w-full sm:w-auto"
                 >
                   {exportComplete ? 'Done' : 'Close'}
                 </Button>
@@ -417,21 +422,21 @@ function FormatOption({
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+      className={`w-full text-left p-3 sm:p-4 rounded-lg border-2 transition-all touch-manipulation ${
         selected
           ? 'border-blue-500 bg-blue-50'
-          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100'
       }`}
     >
       <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg ${selected ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>
+        <div className={`p-2 rounded-lg flex-shrink-0 ${selected ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>
           {icon}
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="font-medium text-slate-900">{label}</div>
-          <div className="text-sm text-slate-600 mt-1">{description}</div>
+          <div className="text-sm text-slate-600 mt-1 break-words">{description}</div>
         </div>
-        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
           selected ? 'border-blue-500' : 'border-slate-300'
         }`}>
           {selected && <div className="w-3 h-3 rounded-full bg-blue-500" />}

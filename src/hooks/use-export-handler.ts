@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ExportFormat, ExportConfig, ExportResult, PolicyExportError } from "~/components/export-modal";
+import { upload } from "@vercel/blob/client";
 
 interface UseExportHandlerProps {
   configurations: any;
@@ -131,27 +132,35 @@ export function useExportHandler({
         branding: brandingOptions
       };
 
+      // Upload data to Vercel Blob to avoid payload size limits
+      const jsonBlob = new Blob([JSON.stringify(selectedData)], { type: 'application/json' });
+      const uploadResult = await upload(`intune-export-${Date.now()}.json`, jsonBlob, {
+        access: 'public',
+        handleUploadUrl: '/api/pdf/client-upload',
+        clientPayload: JSON.stringify({ accessToken }),
+      });
+
       let response;
 
       if (format === 'docx') {
-        // DOCX export
-        response = await fetch("/api/docx/generate-detailed", {
+        // DOCX export from blob
+        response = await fetch("/api/docx/generate-from-blob", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
           },
-          body: JSON.stringify(selectedData),
+          body: JSON.stringify({ blobUrl: uploadResult.url }),
         });
       } else {
-        // Detailed PDF export (default)
-        response = await fetch("/api/pdf/generate-detailed", {
+        // PDF export from blob
+        response = await fetch("/api/pdf/generate-from-blob", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
           },
-          body: JSON.stringify(selectedData),
+          body: JSON.stringify({ blobUrl: uploadResult.url }),
         });
       }
 

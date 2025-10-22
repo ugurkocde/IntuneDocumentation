@@ -34,6 +34,7 @@ export default function HomePage() {
   const [videoSrc, setVideoSrc] = useState<string>(
     "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
   );
+  const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
 
   // Refs for focus management
   const securityModalRef = useRef<HTMLDivElement>(null);
@@ -56,6 +57,12 @@ export default function HomePage() {
     const debouncedUpdate = debounce(updateVideoSource, 250);
     window.addEventListener("resize", debouncedUpdate);
     return () => window.removeEventListener("resize", debouncedUpdate);
+  }, []);
+
+  // Set autoPlay preference after hydration (client-side only)
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setShouldAutoPlay(!prefersReducedMotion);
   }, []);
 
   const isAuthenticated = accounts.length > 0;
@@ -403,7 +410,7 @@ export default function HomePage() {
                     controls
                     poster="https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/poster.jpg"
                     preload="metadata"
-                    autoPlay={typeof window !== "undefined" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches}
+                    autoPlay={shouldAutoPlay}
                   >
                     <source src={videoSrc} type="video/mp4" />
                     Your browser does not support the video tag.

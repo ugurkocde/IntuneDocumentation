@@ -137,7 +137,6 @@ export function useExportHandler({
       const uploadResult = await upload(`intune-export-${Date.now()}.json`, jsonBlob, {
         access: 'public',
         handleUploadUrl: '/api/pdf/client-upload',
-        clientPayload: JSON.stringify({ accessToken }),
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },

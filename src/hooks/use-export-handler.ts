@@ -138,6 +138,9 @@ export function useExportHandler({
         access: 'public',
         handleUploadUrl: '/api/pdf/client-upload',
         clientPayload: JSON.stringify({ accessToken }),
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       });
 
       let response;

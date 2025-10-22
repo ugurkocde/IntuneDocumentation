@@ -4,11 +4,24 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle } from "lucide-react";
-import { useMemo, useState, useEffect, type ReactNode } from "react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye } from "lucide-react";
+import { useMemo, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { HeroExportCounter } from "~/components/hero-export-counter";
+import { SignInCTA } from "~/components/sign-in-cta";
+
+// Debounce utility
+function debounce<T extends (...args: unknown[]) => void>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+}
 
 export default function HomePage() {
   const { instance, accounts } = useMsal();
@@ -22,7 +35,13 @@ export default function HomePage() {
     "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
   );
 
-  // Detect screen size and set appropriate video source
+  // Refs for focus management
+  const securityModalRef = useRef<HTMLDivElement>(null);
+  const permissionsModalRef = useRef<HTMLDivElement>(null);
+  const securityTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const permissionsTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // Detect screen size and set appropriate video source with debouncing
   useEffect(() => {
     const updateVideoSource = () => {
       const isMobile = window.innerWidth < 768;
@@ -34,13 +53,15 @@ export default function HomePage() {
     };
 
     updateVideoSource();
-    window.addEventListener("resize", updateVideoSource);
-    return () => window.removeEventListener("resize", updateVideoSource);
+    const debouncedUpdate = debounce(updateVideoSource, 250);
+    window.addEventListener("resize", debouncedUpdate);
+    return () => window.removeEventListener("resize", debouncedUpdate);
   }, []);
 
   const isAuthenticated = accounts.length > 0;
 
-  const linkify = (text: string): ReactNode => {
+  // Memoized linkify function
+  const linkify = useCallback((text: string): ReactNode => {
     const parts = text.split(/(https?:\/\/[^\s]+)/g);
     return parts.map((part, i) => {
       if (/^https?:\/\//.test(part)) {
@@ -58,7 +79,7 @@ export default function HomePage() {
       }
       return <span key={i}>{part}</span>;
     });
-  };
+  }, []);
 
   const handleSignIn = async () => {
     try {
@@ -78,7 +99,100 @@ export default function HomePage() {
     });
   };
 
-  const faqs = [
+  // Modal handlers with focus management
+  const handleShowSecurity = useCallback(() => {
+    securityTriggerRef.current = document.activeElement as HTMLButtonElement;
+    setShowSecurity(true);
+  }, []);
+
+  const handleHideSecurity = useCallback(() => {
+    setShowSecurity(false);
+    setTimeout(() => securityTriggerRef.current?.focus(), 0);
+  }, []);
+
+  const handleShowPermissions = useCallback(() => {
+    permissionsTriggerRef.current = document.activeElement as HTMLButtonElement;
+    setShowPermissions(true);
+  }, []);
+
+  const handleHidePermissions = useCallback(() => {
+    setShowPermissions(false);
+    setTimeout(() => permissionsTriggerRef.current?.focus(), 0);
+  }, []);
+
+  // Focus management for modals
+  useEffect(() => {
+    if (showSecurity && securityModalRef.current) {
+      const focusableElements = securityModalRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const firstElement = focusableElements[0] as HTMLElement;
+      firstElement?.focus();
+
+      // Trap focus within modal
+      const handleTabKey = (e: KeyboardEvent) => {
+        if (e.key !== "Tab") return;
+
+        const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+        if (e.shiftKey && document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      };
+
+      document.addEventListener("keydown", handleTabKey);
+      return () => document.removeEventListener("keydown", handleTabKey);
+    }
+  }, [showSecurity]);
+
+  useEffect(() => {
+    if (showPermissions && permissionsModalRef.current) {
+      const focusableElements = permissionsModalRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const firstElement = focusableElements[0] as HTMLElement;
+      firstElement?.focus();
+
+      // Trap focus within modal
+      const handleTabKey = (e: KeyboardEvent) => {
+        if (e.key !== "Tab") return;
+
+        const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+        if (e.shiftKey && document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      };
+
+      document.addEventListener("keydown", handleTabKey);
+      return () => document.removeEventListener("keydown", handleTabKey);
+    }
+  }, [showPermissions]);
+
+  // Handle Escape key for modals
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (showSecurity) handleHideSecurity();
+        if (showPermissions) handleHidePermissions();
+      }
+    };
+
+    if (showSecurity || showPermissions) {
+      document.addEventListener("keydown", handleEscape);
+      return () => document.removeEventListener("keydown", handleEscape);
+    }
+  }, [showSecurity, showPermissions, handleHideSecurity, handleHidePermissions]);
+
+  const faqs = useMemo(() => [
     {
       question: "What is the Intune Documentation Generator?",
       answer: "The Intune Documentation Generator is a free tool that connects to your Microsoft Intune tenant via Graph API, fetches all 10 configuration types (policies, profiles, scripts, etc.), and generates comprehensive PDF or Word documents with complete settings, assignments, and filters. It saves IT teams 10+ hours per audit."
@@ -111,7 +225,7 @@ export default function HomePage() {
       question: "Can I customize the Intune PDF report?",
       answer: "Yes, you can customize your documentation with branding options including company logo, custom colors, headers, footers, and confidentiality notices. You can also select specific configurations to include or exclude from the report."
     }
-  ];
+  ], []);
 
   const faqJsonLd = useMemo(() => ({
     "@context": "https://schema.org",
@@ -237,67 +351,14 @@ export default function HomePage() {
                 
                 {/* CTA Section */}
                 {!isAuthenticated ? (
-                  <div className="flex flex-col items-start gap-3">
-                    <button
-                      onClick={handleSignIn}
-                      className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
-                      aria-label="Sign in with Microsoft to Generate Report"
-                      aria-disabled={signingIn}
-                    >
-                      <img 
-                        src="/sign-in-light-mode.svg" 
-                        alt="Sign in with Microsoft"
-                        width={215}
-                        height={41}
-                        loading="eager"
-                        decoding="async"
-                        fetchPriority="high"
-                        className="w-[215px] max-w-full h-auto"
-                      />
-                    </button>
-                    {signingIn && (
-                      <div className="text-sm text-blue-100" aria-live="polite">
-                        Opening Microsoft sign-in…
-                      </div>
-                    )}
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-blue-100">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        <Shield className="w-3.5 h-3.5" />
-                        OAuth 2.0
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        Delegated read‑only
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        No persistent storage
-                      </span>
-                      <span className="hidden sm:inline text-white/30 mx-1">|</span>
-                      <button
-                        onClick={() => setShowSecurity(true)}
-                        className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
-                        aria-label="Learn why sign-in is safe and which permissions are used"
-                      >
-                        <HelpCircle className="w-3.5 h-3.5" />
-                        Why it’s safe
-                      </button>
-                      <span className="hidden sm:inline text-white/30">/</span>
-                      <button
-                        onClick={() => setShowPermissions(true)}
-                        className="underline hover:text-white transition-colors cursor-pointer"
-                        aria-label="See the required permissions and why each is needed"
-                      >
-                        Required permissions
-                      </button>
-                    </div>
-                    <a
-                      href="/api/pdf/sample"
-                      download="IntuneDocumentation-Sample.pdf"
-                      className="text-sm text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
-                      aria-label="Preview a sample PDF"
-                    >
-                      Preview a sample PDF
-                    </a>
-                  </div>
+                  <SignInCTA
+                    signingIn={signingIn}
+                    onSignIn={handleSignIn}
+                    onShowSecurity={handleShowSecurity}
+                    onShowPermissions={handleShowPermissions}
+                    showSampleLink={true}
+                    variant="hero"
+                  />
                 ) : (
                   <div className="flex flex-col items-start gap-6">
                     <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
@@ -332,17 +393,17 @@ export default function HomePage() {
                 <div className="relative w-full max-w-md sm:max-w-lg mx-auto lg:max-w-none">
                   {/* Decorative blob */}
                   <div className="absolute -inset-10 bg-gradient-to-tr from-cyan-400/20 via-blue-500/10 to-indigo-500/20 blur-3xl rounded-full" aria-hidden="true"></div>
-                  {/* Video */}
+                  {/* Video - respects reduced motion preference */}
                   <video
                     key={videoSrc}
                     className="relative w-full h-auto rounded-lg shadow-2xl"
-                    autoPlay
                     muted
                     loop
                     playsInline
                     controls
                     poster="https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/poster.jpg"
                     preload="metadata"
+                    autoPlay={typeof window !== "undefined" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches}
                   >
                     <source src={videoSrc} type="video/mp4" />
                     Your browser does not support the video tag.
@@ -651,29 +712,46 @@ export default function HomePage() {
               </h2>
               
               <div className="space-y-4">
-                {faqs.map((faq, index) => (
-                  <div
-                    key={index}
-                    className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden"
-                  >
-                    <button
-                      className="w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-100 transition-colors cursor-pointer"
-                      onClick={() => setExpandedFaq(expandedFaq === index ? null : index)}
+                {faqs.map((faq, index) => {
+                  const isExpanded = expandedFaq === index;
+                  const panelId = `faq-panel-${index}`;
+                  const buttonId = `faq-button-${index}`;
+
+                  return (
+                    <div
+                      key={index}
+                      className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden"
                     >
-                      <span className="font-semibold text-gray-900">{faq.question}</span>
-                      <ChevronDown
-                        className={`w-5 h-5 text-gray-500 transition-transform ${
-                          expandedFaq === index ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
-                    {expandedFaq === index && (
-                      <div className="px-6 pb-4">
-                        <p className="text-gray-600">{linkify(faq.answer)}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      <h3>
+                        <button
+                          id={buttonId}
+                          className="w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-100 transition-colors cursor-pointer"
+                          onClick={() => setExpandedFaq(isExpanded ? null : index)}
+                          aria-expanded={isExpanded}
+                          aria-controls={panelId}
+                        >
+                          <span className="font-semibold text-gray-900">{faq.question}</span>
+                          <ChevronDown
+                            className={`w-5 h-5 text-gray-500 transition-transform flex-shrink-0 ml-2 ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </h3>
+                      {isExpanded && (
+                        <div
+                          id={panelId}
+                          role="region"
+                          aria-labelledby={buttonId}
+                          className="px-6 pb-4"
+                        >
+                          <p className="text-gray-600">{linkify(faq.answer)}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -686,64 +764,15 @@ export default function HomePage() {
               <h2 className="text-3xl font-bold text-white mb-4">Ready to document your Intune tenant?</h2>
               <p className="text-blue-100 mb-8">Sign in securely with Microsoft and export your report in minutes.</p>
               {!isAuthenticated ? (
-                <div className="flex flex-col items-center gap-3">
-                  <button
-                    onClick={handleSignIn}
-                    className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
-                    aria-label="Sign in with Microsoft to Generate Report"
-                    aria-disabled={signingIn}
-                  >
-                    <img 
-                      src="/sign-in-light-mode.svg" 
-                      alt="Sign in with Microsoft"
-                      width={215}
-                      height={41}
-                      loading="eager"
-                      decoding="async"
-                      fetchPriority="high"
-                      className="w-[215px] max-w-full h-auto"
-                    />
-                  </button>
-                  <div className="flex flex-col items-center gap-3 text-xs text-blue-100">
-                    <div className="mt-1 flex flex-wrap justify-center items-center gap-2">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        <Shield className="w-3.5 h-3.5" />
-                        OAuth 2.0
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        Delegated read‑only
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        No persistent storage
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setShowSecurity(true)}
-                        className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
-                        aria-label="Learn why sign-in is safe and which permissions are used"
-                      >
-                        <HelpCircle className="w-3.5 h-3.5" />
-                        Why it’s safe
-                      </button>
-                      <span className="hidden sm:inline text-white/30">/</span>
-                      <button
-                        onClick={() => setShowPermissions(true)}
-                        className="underline hover:text-white transition-colors cursor-pointer"
-                        aria-label="See the required permissions and why each is needed"
-                      >
-                        Required permissions
-                      </button>
-                    </div>
-                    <a
-                      href="/api/pdf/sample"
-                      download="IntuneDocumentation-Sample.pdf"
-                      className="text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
-                      aria-label="Preview a sample PDF"
-                    >
-                      Preview a sample PDF
-                    </a>
-                  </div>
+                <div className="flex flex-col items-center">
+                  <SignInCTA
+                    signingIn={signingIn}
+                    onSignIn={handleSignIn}
+                    onShowSecurity={handleShowSecurity}
+                    onShowPermissions={handleShowPermissions}
+                    showSampleLink={true}
+                    variant="bottom"
+                  />
                 </div>
               ) : (
                 <button
@@ -768,8 +797,15 @@ export default function HomePage() {
           aria-modal="true"
           aria-labelledby="security-title"
         >
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowSecurity(false)} />
-          <div className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl ring-1 ring-black/5 max-h-[85svh] overflow-y-auto">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={handleHideSecurity}
+            aria-hidden="true"
+          />
+          <div
+            ref={securityModalRef}
+            className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl ring-1 ring-black/5 max-h-[85svh] overflow-y-auto"
+          >
             <div className="p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-2">
                 <Shield className="w-5 h-5 text-blue-600" />
@@ -794,7 +830,7 @@ export default function HomePage() {
                 <a href="/privacy-policy" className="text-sm text-blue-700 hover:underline">Read the Privacy Policy</a>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setShowSecurity(false)}
+                    onClick={handleHideSecurity}
                     className="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
                   >
                     Close
@@ -814,8 +850,15 @@ export default function HomePage() {
           aria-modal="true"
           aria-labelledby="permissions-title"
         >
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowPermissions(false)} />
-          <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl ring-1 ring-black/5 max-h-[85svh] overflow-y-auto">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={handleHidePermissions}
+            aria-hidden="true"
+          />
+          <div
+            ref={permissionsModalRef}
+            className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl ring-1 ring-black/5 max-h-[85svh] overflow-y-auto"
+          >
             <div className="p-5 sm:p-6">
               <div className="flex items-center gap-2 mb-2">
                 <Shield className="w-5 h-5 text-blue-600" />
@@ -860,7 +903,7 @@ export default function HomePage() {
               <div className="mt-5 flex items-center justify-between">
                 <a href="https://learn.microsoft.com/graph/permissions-reference" target="_blank" rel="noopener noreferrer" className="text-sm text-blue-700 hover:underline">Microsoft Graph permissions reference</a>
                 <button
-                  onClick={() => setShowPermissions(false)}
+                  onClick={handleHidePermissions}
                   className="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
                 >
                   Close

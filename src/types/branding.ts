@@ -25,7 +25,7 @@ export interface BrandingOptions {
   
   // Typography
   fonts?: {
-    family: 'helvetica' | 'times' | 'courier' | 'arial';
+    family: 'helvetica' | 'times' | 'courier';
     headerSize: number;
     bodySize: number;
     lineHeight: number;
@@ -150,7 +150,7 @@ export const BRANDING_PRESETS: BrandingPreset[] = [
         text: '#1f2937',
       },
       fonts: {
-        family: 'arial',
+        family: 'helvetica',
         headerSize: 14,
         bodySize: 11,
         lineHeight: 1.5,

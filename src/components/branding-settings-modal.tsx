@@ -419,7 +419,6 @@ export function BrandingSettingsModal({
                       <option value="helvetica">Helvetica (Sans-serif)</option>
                       <option value="times">Times (Serif)</option>
                       <option value="courier">Courier (Monospace)</option>
-                      <option value="arial">Arial (Sans-serif)</option>
                     </select>
                   </div>
                   <div>

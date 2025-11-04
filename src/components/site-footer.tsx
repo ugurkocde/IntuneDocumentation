@@ -8,7 +8,7 @@ export function SiteFooter() {
   return (
     <footer className="bg-gray-900 text-gray-300 border-t border-white/10">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid gap-10 md:grid-cols-4">
+        <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-5">
           <div>
             <h3 className="text-white font-semibold text-lg">Intune Documentation</h3>
             <p className="mt-3 text-sm text-gray-400">
@@ -67,6 +67,25 @@ export function SiteFooter() {
                 </a>
               </li>
             </ul>
+          </div>
+
+          <div>
+            <h4 className="text-white font-semibold text-sm tracking-wide">Related Products</h4>
+            <ul className="mt-3 space-y-2 text-sm">
+              <li>
+                <a
+                  href="https://entradocumentation.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-white transition-colors"
+                >
+                  EntraDocumentation
+                </a>
+              </li>
+            </ul>
+            <p className="mt-3 text-xs text-gray-500">
+              Complete Microsoft 365 documentation ecosystem
+            </p>
           </div>
         </div>
       </div>

@@ -642,6 +642,99 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Complete Your Microsoft 365 Documentation Section */}
+        <section className="py-24 bg-gradient-to-b from-gray-50 to-white">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-5xl mx-auto">
+              <div className="text-center mb-12">
+                <h2 className="text-3xl font-bold text-gray-900 mb-4">
+                  Complete Your Microsoft 365 Documentation
+                </h2>
+                <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+                  Document your entire Microsoft identity and endpoint management ecosystem with our complementary solution.
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+                <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-6 py-4">
+                  <div className="text-sm font-semibold text-blue-100 uppercase tracking-wider">
+                    Complementary Product
+                  </div>
+                </div>
+
+                <div className="p-8">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-4">
+                    EntraDocumentation
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    Generate comprehensive PDF reports of all your Microsoft Entra ID configurations in under 3 minutes.
+                  </p>
+
+                  <div className="grid md:grid-cols-2 gap-6 mb-8">
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">Identity & Access</h4>
+                        <p className="text-sm text-gray-600">
+                          Users, groups, roles, and administrative units
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">Conditional Access</h4>
+                        <p className="text-sm text-gray-600">
+                          Policies, named locations, and authentication contexts
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">Security & Governance</h4>
+                        <p className="text-sm text-gray-600">
+                          Identity protection, access reviews, and lifecycle workflows
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">Application Management</h4>
+                        <p className="text-sm text-gray-600">
+                          Enterprise applications, app registrations, and consent policies
+                        </p>
+                      </div>
+                      <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                        <div className="grid grid-cols-2 gap-4 text-center">
+                          <div>
+                            <div className="text-2xl font-bold text-blue-600">Audit-Ready</div>
+                            <div className="text-xs text-gray-600 mt-1">Reports</div>
+                          </div>
+                          <div>
+                            <div className="text-2xl font-bold text-blue-600">3-Minute</div>
+                            <div className="text-xs text-gray-600 mt-1">Generation</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <a
+                    href="https://entradocumentation.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg font-semibold cursor-pointer"
+                  >
+                    Visit EntraDocumentation.com
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </a>
+
+                  <p className="text-sm text-gray-500 mt-6 italic">
+                    <strong>Complete coverage:</strong> Use both tools together to document your entire Microsoft identity and endpoint management infrastructure.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* FAQ Section */}
         <section className="py-24 bg-white scroll-mt-24" id="faq">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">

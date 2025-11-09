@@ -98,15 +98,13 @@ export interface FetchError {
   statusCode?: number;
 }
 
-export interface ProgressCallback {
-  (event: {
-    step: string;
-    type: 'policy-type' | 'batch-progress' | 'completed';
-    current?: number;
-    total?: number;
-    message?: string;
-  }): void;
-}
+export type ProgressCallback = (event: {
+  step: string;
+  type: 'policy-type' | 'batch-progress' | 'completed';
+  current?: number;
+  total?: number;
+  message?: string;
+}) => void;
 
 export class DetailedIntuneService {
   private client: ReturnType<typeof createGraphClient>;
@@ -1081,7 +1079,7 @@ export class DetailedIntuneService {
     // Log any failures
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        const policyType = policyTypes[index];
+        const policyType = policyTypes[index] || 'Unknown Policy Type';
         console.error(`Failed to fetch ${policyType}:`, result.reason);
 
         // Track as a fetch error

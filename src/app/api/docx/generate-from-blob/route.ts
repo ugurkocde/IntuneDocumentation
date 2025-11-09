@@ -7,7 +7,7 @@ import { collectAllPages } from "~/lib/graph-paging";
 import { supabase } from "~/lib/supabase";
 import { del } from "@vercel/blob";
 
-export const maxDuration = 60;
+export const maxDuration = 120; // Increased from 60s to 120s for better reliability with large tenants
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
         ...(data.deviceConfigurations || []),
         ...(data.administrativeTemplates || []),
         ...(data.compliancePolicies || []),
+        ...(data.appProtectionPolicies || []),
         ...(data.securityBaselines || []),
         ...(data.scripts?.windows || []),
         ...(data.scripts?.macOS || []),

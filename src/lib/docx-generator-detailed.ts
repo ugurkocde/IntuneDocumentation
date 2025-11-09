@@ -616,7 +616,6 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
           new Table({
             rows,
             width: { size: 100, type: WidthType.PERCENTAGE },
-            borders: tableBorders,
           })
         );
       }
@@ -625,8 +624,7 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
       if (config.targetedMobileApps && config.targetedMobileApps.length > 0) {
         children.push(
           new Paragraph({
-            text: "Targeted Apps:",
-            bold: true,
+            children: [new TextRun({ text: "Targeted Apps:", bold: true })],
             spacing: { before: 100, after: 50 },
           })
         );
@@ -644,15 +642,14 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
       if (config.assignments && config.assignments.length > 0) {
         children.push(
           new Paragraph({
-            text: "Assignments:",
-            bold: true,
+            children: [new TextRun({ text: "Assignments:", bold: true })],
             spacing: { before: 100, after: 50 },
           })
         );
         config.assignments.forEach((a: any) => {
           const groupId = a.target?.groupId;
           const groupName = groupId && data.groupNames ? data.groupNames.get(groupId) : undefined;
-          const displayName = groupName || groupId || getTargetDescription(a.target);
+          const displayName = groupName || groupId || a.target?.["@odata.type"] || "Unknown";
           children.push(new Paragraph({ text: displayName, bullet: { level: 0 } }));
         });
       }

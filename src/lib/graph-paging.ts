@@ -64,7 +64,7 @@ export async function collectAllPages<T = any>(client: Client, firstResponse: an
     try {
       // The Graph SDK supports passing the absolute nextLink URL
       // Avoid adding .version() or other modifiers when following nextLink
-      const page = await retryWithBackoff(
+      const page: any = await retryWithBackoff(
         () => (client as any).api(nextLink).get(),
         5,
         1000

@@ -290,8 +290,9 @@ export default function DashboardPage() {
 
             for (const line of lines) {
               if (line.startsWith("event:")) {
-                const eventMatch = line.match(/event: (\w+)\ndata: (.+)/s);
-                if (eventMatch) {
+                const regex = /event: (\w+)\ndata: (.+)/s;
+                const eventMatch = regex.exec(line);
+                if (eventMatch && eventMatch[2]) {
                   const [, eventType, dataStr] = eventMatch;
                   const data = JSON.parse(dataStr);
 

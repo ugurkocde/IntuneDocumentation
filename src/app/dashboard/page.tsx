@@ -2,7 +2,7 @@
 
 import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { graphScopes } from "~/lib/msal-config";
 import { useTenantLogging } from "~/hooks/use-tenant-logging";
 import { Card, CardHeader, CardContent } from "~/components/ui/card";
@@ -60,6 +60,7 @@ interface IntuneConfigurations {
   administrativeTemplates: any[];
   securityBaselines: any[];
   compliancePolicies: any[];
+  appProtectionPolicies: any[];
   scripts: {
     macOS: any[];
     windows: any[];
@@ -78,6 +79,7 @@ interface IntuneConfigurations {
       administrativeTemplates: number;
       securityBaselines: number;
       compliancePolicies: number;
+      appProtectionPolicies: number;
       scripts: number;
       appConfigurations: number;
       windowsUpdatePolicies: number;
@@ -123,7 +125,7 @@ export default function DashboardPage() {
   const [fetchProgress, setFetchProgress] = useState<{
     steps: { name: string; status: "pending" | "loading" | "completed" | "error" }[];
     currentStep: number;
-  }>({ 
+  }>({
     steps: [
       { name: "Connecting to Microsoft Graph API", status: "pending" },
       { name: "Fetching Settings Catalog configurations", status: "pending" },
@@ -131,6 +133,7 @@ export default function DashboardPage() {
       { name: "Fetching Administrative Templates", status: "pending" },
       { name: "Fetching Security Baselines", status: "pending" },
       { name: "Fetching Compliance Policies", status: "pending" },
+      { name: "Fetching App Protection Policies", status: "pending" },
       { name: "Fetching Scripts", status: "pending" },
       { name: "Fetching App Configurations", status: "pending" },
       { name: "Fetching Windows Update Policies", status: "pending" },
@@ -157,10 +160,15 @@ export default function DashboardPage() {
     setExportState(prev => ({ ...prev, ...partial }));
   };
 
+  // Prevent duplicate fetches on React Strict Mode double-mount
+  const hasFetchedRef = useRef(false);
+  const isFetchingRef = useRef(false);
+
   useEffect(() => {
     if (accounts.length === 0) {
       router.push("/");
-    } else {
+    } else if (!hasFetchedRef.current && !isFetchingRef.current) {
+      hasFetchedRef.current = true;
       void fetchConfigurations();
     }
   }, [accounts, router]);
@@ -193,7 +201,14 @@ export default function DashboardPage() {
   };
 
   const fetchConfigurations = async (caRequested?: boolean) => {
+    // Prevent concurrent fetches
+    if (isFetchingRef.current) {
+      console.log("Fetch already in progress, skipping duplicate request");
+      return;
+    }
+
     try {
+      isFetchingRef.current = true;
       setLoading(true);
       setError(null);
       // Reset selections when refreshing
@@ -208,6 +223,7 @@ export default function DashboardPage() {
         { name: "Fetching Administrative Templates", status: "pending" as const },
         { name: "Fetching Security Baselines", status: "pending" as const },
         { name: "Fetching Compliance Policies", status: "pending" as const },
+        { name: "Fetching App Protection Policies", status: "pending" as const },
         { name: "Fetching Scripts", status: "pending" as const },
         { name: "Fetching App Configurations", status: "pending" as const },
         { name: "Fetching Windows Update Policies", status: "pending" as const },
@@ -238,33 +254,81 @@ export default function DashboardPage() {
       // Refresh steps with/without CA and start progress
       setFetchProgress({ steps: stepsFor(caIncluded), currentStep: 0 });
       updateFetchProgress(0, "completed");
-      const totalSteps = stepsFor(caIncluded).length;
-      for (let i = 1; i < totalSteps; i++) {
-        updateFetchProgress(i, "loading");
-      }
-      
-      // Always fetch detailed configurations
-      const response = await fetch("/api/intune/detailed-configurations", {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+
+      // Use Server-Sent Events for real-time progress
+      // Since EventSource doesn't support Authorization header, we use fetch with streaming
+      await new Promise<void>((resolve, reject) => {
+        fetch("/api/intune/detailed-configurations-stream", {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }).then(async (response) => {
+          if (!response.ok) {
+            throw new Error("Failed to start configuration stream");
+          }
+
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+
+          if (!reader) {
+            throw new Error("No response body");
+          }
+
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+              resolve();
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (line.startsWith("event:")) {
+                const eventMatch = line.match(/event: (\w+)\ndata: (.+)/s);
+                if (eventMatch) {
+                  const [, eventType, dataStr] = eventMatch;
+                  const data = JSON.parse(dataStr);
+
+                  if (eventType === "progress") {
+                    // Update progress based on event
+                    if (data.stepIndex !== undefined) {
+                      updateFetchProgress(data.stepIndex, data.status);
+                    }
+
+                    // Update current step for batch progress
+                    if (data.type === "batch-progress" && data.message) {
+                      const stepIndex = stepsFor(caIncluded).findIndex(s => s.name.includes(data.step));
+                      if (stepIndex !== -1) {
+                        setFetchProgress(prev => ({
+                          ...prev,
+                          steps: prev.steps.map((step, idx) =>
+                            idx === stepIndex
+                              ? { ...step, name: `${data.step} (${data.current}/${data.total})` }
+                              : step
+                          )
+                        }));
+                      }
+                    }
+                  } else if (eventType === "complete") {
+                    // Set the final configuration data
+                    setConfigurations(data.data);
+                    setLastFetched(new Date());
+                    resolve();
+                  } else if (eventType === "error") {
+                    throw new Error(data.error || "Stream error");
+                  }
+                }
+              }
+            }
+          }
+        }).catch(reject);
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.details || "Failed to fetch configurations");
-      }
-      
-      // Mark all as completed as data comes in
-      for (let i = 1; i < totalSteps; i++) {
-        updateFetchProgress(i, "completed");
-        await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for visual effect
-      }
-      
-      // Process the response data
-      const data = await response.json();
-      setConfigurations(data);
-      setLastFetched(new Date());
       
     } catch (err) {
       // Mark current step as error
@@ -274,6 +338,7 @@ export default function DashboardPage() {
       console.error("Error fetching configurations:", err);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   };
 
@@ -281,20 +346,21 @@ export default function DashboardPage() {
   const getAllConfigIds = () => {
     if (!configurations) return [];
     const ids: string[] = [];
-    
+
     // Add all configuration IDs with unique prefixes
     configurations.settingsCatalog?.forEach(c => ids.push(`catalog-${c.id}`));
     configurations.deviceConfigurations?.forEach(c => ids.push(`device-${c.id}`));
     configurations.administrativeTemplates?.forEach(c => ids.push(`admx-${c.id}`));
     configurations.securityBaselines?.forEach(c => ids.push(`security-${c.id}`));
     configurations.compliancePolicies?.forEach(c => ids.push(`compliance-${c.id}`));
+    configurations.appProtectionPolicies?.forEach(c => ids.push(`app-protection-${c.id}`));
     configurations.scripts?.macOS?.forEach(c => ids.push(`script-mac-${c.id}`));
     configurations.scripts?.windows?.forEach(c => ids.push(`script-win-${c.id}`));
     configurations.appConfigurations?.forEach(c => ids.push(`app-${c.id}`));
     configurations.windowsUpdatePolicies?.forEach(c => ids.push(`update-${c.id}`));
     configurations.enrollmentConfigurations?.forEach(c => ids.push(`enrollment-${c.id}`));
     configurations.conditionalAccessPolicies?.forEach(c => ids.push(`ca-${c.id}`));
-    
+
     return ids;
   };
 
@@ -309,20 +375,21 @@ export default function DashboardPage() {
   
   const handleSelectFiltered = () => {
     const filteredIds: string[] = [];
-    
+
     // Get all filtered configuration IDs
     filterConfigurations(configurations?.settingsCatalog || []).forEach(c => filteredIds.push(`catalog-${c.id}`));
     filterConfigurations(configurations?.deviceConfigurations || []).forEach(c => filteredIds.push(`device-${c.id}`));
     filterConfigurations(configurations?.administrativeTemplates || []).forEach(c => filteredIds.push(`admx-${c.id}`));
     filterConfigurations(configurations?.securityBaselines || []).forEach(c => filteredIds.push(`security-${c.id}`));
     filterConfigurations(configurations?.compliancePolicies || []).forEach(c => filteredIds.push(`compliance-${c.id}`));
+    filterConfigurations(configurations?.appProtectionPolicies || []).forEach(c => filteredIds.push(`app-protection-${c.id}`));
     filterConfigurations(configurations?.scripts?.macOS || []).forEach(c => filteredIds.push(`script-mac-${c.id}`));
     filterConfigurations(configurations?.scripts?.windows || []).forEach(c => filteredIds.push(`script-win-${c.id}`));
     filterConfigurations(configurations?.appConfigurations || []).forEach(c => filteredIds.push(`app-${c.id}`));
     filterConfigurations(configurations?.windowsUpdatePolicies || []).forEach(c => filteredIds.push(`update-${c.id}`));
     filterConfigurations(configurations?.enrollmentConfigurations || []).forEach(c => filteredIds.push(`enrollment-${c.id}`));
     filterConfigurations(configurations?.conditionalAccessPolicies || []).forEach(c => filteredIds.push(`ca-${c.id}`));
-    
+
     setSelectedConfigs(new Set(filteredIds));
   };
   
@@ -334,6 +401,7 @@ export default function DashboardPage() {
       count += filterConfigurations(configurations.administrativeTemplates || []).length;
       count += filterConfigurations(configurations.securityBaselines || []).length;
       count += filterConfigurations(configurations.compliancePolicies || []).length;
+      count += filterConfigurations(configurations.appProtectionPolicies || []).length;
       count += filterConfigurations(configurations.scripts?.macOS || []).length;
       count += filterConfigurations(configurations.scripts?.windows || []).length;
       count += filterConfigurations(configurations.appConfigurations || []).length;
@@ -577,7 +645,24 @@ export default function DashboardPage() {
                   </div>
                 )}
               </button>
-              
+
+              <button
+                onClick={() => setActiveView("appProtectionPolicies")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                  activeView === "appProtectionPolicies" ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <Shield className="w-5 h-5 flex-shrink-0" />
+                {sidebarOpen && (
+                  <div className="flex justify-between items-center w-full">
+                    <span className="text-sm font-medium">App Protection</span>
+                    <span className="text-xs font-semibold bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded">
+                      {configurations?.summary.byType.appProtectionPolicies || 0}
+                    </span>
+                  </div>
+                )}
+              </button>
+
               <button
                 onClick={() => setActiveView("scripts")}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
@@ -975,6 +1060,17 @@ export default function DashboardPage() {
                 onSelectConfig={handleSelectConfig}
                 onBulkSelect={handleBulkSelect}
                 icon={<CheckSquare className="w-5 h-5" />}
+              />
+            )}
+            {(activeView === "overview" || activeView === "appProtectionPolicies") && filterConfigurations(configurations.appProtectionPolicies)?.length > 0 && (
+              <ConfigurationSection
+                title="App Protection Policies"
+                items={filterConfigurations(configurations.appProtectionPolicies)}
+                prefix="app-protection"
+                selectedConfigs={selectedConfigs}
+                onSelectConfig={handleSelectConfig}
+                onBulkSelect={handleBulkSelect}
+                icon={<Shield className="w-5 h-5" />}
               />
             )}
             {(activeView === "overview" || activeView === "scripts") && (configurations.scripts?.macOS?.length > 0 || configurations.scripts?.windows?.length > 0) && (

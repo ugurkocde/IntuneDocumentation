@@ -15,6 +15,7 @@ interface DetailedPdfData {
   deviceConfigurations: any[];
   administrativeTemplates: any[];
   compliancePolicies: any[];
+  appProtectionPolicies?: any[];
   securityBaselines: any[];
   scripts: {
     windows: any[];
@@ -49,6 +50,7 @@ function analyzeConfigurations(data: DetailedPdfData) {
     ...data.deviceConfigurations,
     ...data.administrativeTemplates,
     ...data.compliancePolicies,
+    ...(data.appProtectionPolicies || []),
     ...data.securityBaselines,
     ...data.scripts.windows,
     ...data.scripts.macOS
@@ -166,6 +168,7 @@ function analyzeConfigurations(data: DetailedPdfData) {
       deviceConfigurations: data.deviceConfigurations.length,
       administrativeTemplates: data.administrativeTemplates.length,
       compliancePolicies: data.compliancePolicies.length,
+      appProtectionPolicies: (data.appProtectionPolicies || []).length,
       securityBaselines: data.securityBaselines.length,
       scriptsWindows: data.scripts.windows.length,
       scriptsMacOS: data.scripts.macOS.length
@@ -1183,13 +1186,18 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
       count: analytics.byType.administrativeTemplates,
       assigned: data.administrativeTemplates.filter(c => c.assignments?.length > 0).length
     },
-    { 
-      type: "Compliance Policies", 
+    {
+      type: "Compliance Policies",
       count: analytics.byType.compliancePolicies,
       assigned: data.compliancePolicies.filter(c => c.assignments?.length > 0).length
     },
-    { 
-      type: "Security Baselines", 
+    {
+      type: "App Protection Policies",
+      count: analytics.byType.appProtectionPolicies,
+      assigned: (data.appProtectionPolicies || []).filter(c => c.assignments?.length > 0).length
+    },
+    {
+      type: "Security Baselines",
       count: analytics.byType.securityBaselines,
       assigned: data.securityBaselines.filter(c => c.assignments?.length > 0).length
     },
@@ -1764,7 +1772,178 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
       }
     });
   }
-  
+
+  // App Protection Policies Section
+  if (data.appProtectionPolicies && data.appProtectionPolicies.length > 0) {
+    doc.addPage();
+    yPosition = margin;
+    pageNumber++;
+    addPageNumber();
+    tocEntries.push({ title: "App Protection Policies", pageNum: pageNumber });
+    addSectionHeader("App Protection Policies");
+
+    totalPolicies += data.appProtectionPolicies.length;
+
+    data.appProtectionPolicies.forEach(policy => {
+      try {
+        addConfigHeader(
+          policy.displayName,
+          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          policy.createdDateTime,
+          policy.lastModifiedDateTime
+        );
+
+        if (policy.description) {
+          addText(policy.description, 9, "italic", [100, 100, 100]);
+          yPosition += 2;
+        }
+
+        // Display platform type
+        if (policy.platformType) {
+          addText("Platform:", 10, "bold");
+          yPosition += 1;
+          addText(policy.platformType, 9, "normal", [80, 80, 80]);
+          yPosition += 3;
+        }
+
+        // Parse and display MAM settings comprehensively
+        const settings: Array<{name: string; value: string}> = [];
+
+        // Data Transfer Settings
+        if (policy.allowedInboundDataTransferSources !== undefined) {
+          settings.push({ name: "Allowed Inbound Data Transfer Sources", value: String(policy.allowedInboundDataTransferSources) });
+        }
+        if (policy.allowedOutboundDataTransferDestinations !== undefined) {
+          settings.push({ name: "Allowed Outbound Data Transfer Destinations", value: String(policy.allowedOutboundDataTransferDestinations) });
+        }
+        if (policy.allowedOutboundClipboardSharingLevel !== undefined) {
+          settings.push({ name: "Allowed Outbound Clipboard Sharing Level", value: String(policy.allowedOutboundClipboardSharingLevel) });
+        }
+
+        // Data Protection Settings
+        if (policy.dataBackupBlocked !== undefined) {
+          settings.push({ name: "Block Data Backup", value: String(policy.dataBackupBlocked) });
+        }
+        if (policy.saveAsBlocked !== undefined) {
+          settings.push({ name: "Block Save As", value: String(policy.saveAsBlocked) });
+        }
+        if (policy.printBlocked !== undefined) {
+          settings.push({ name: "Block Printing", value: String(policy.printBlocked) });
+        }
+        if (policy.organizationalCredentialsRequired !== undefined) {
+          settings.push({ name: "Organizational Credentials Required", value: String(policy.organizationalCredentialsRequired) });
+        }
+
+        // Compliance & Security
+        if (policy.deviceComplianceRequired !== undefined) {
+          settings.push({ name: "Device Compliance Required", value: String(policy.deviceComplianceRequired) });
+        }
+        if (policy.managedBrowserToOpenLinksRequired !== undefined) {
+          settings.push({ name: "Managed Browser Required", value: String(policy.managedBrowserToOpenLinksRequired) });
+        }
+        if (policy.maximumAllowedDeviceThreatLevel !== undefined) {
+          settings.push({ name: "Maximum Allowed Device Threat Level", value: String(policy.maximumAllowedDeviceThreatLevel) });
+        }
+        if (policy.mobileThreatDefenseRemediationAction !== undefined) {
+          settings.push({ name: "Mobile Threat Defense Remediation Action", value: String(policy.mobileThreatDefenseRemediationAction) });
+        }
+        if (policy.appActionIfUnableToAuthenticateUser !== undefined && policy.appActionIfUnableToAuthenticateUser !== null) {
+          settings.push({ name: "Action If Unable to Authenticate User", value: String(policy.appActionIfUnableToAuthenticateUser) });
+        }
+
+        // Access Requirements
+        if (policy.pinRequired !== undefined) {
+          settings.push({ name: "PIN Required", value: String(policy.pinRequired) });
+        }
+        if (policy.fingerprintBlocked !== undefined) {
+          settings.push({ name: "Block Fingerprint", value: String(policy.fingerprintBlocked) });
+        }
+        if (policy.faceIdBlocked !== undefined) {
+          settings.push({ name: "Block Face ID", value: String(policy.faceIdBlocked) });
+        }
+
+        // Version Requirements - Minimum Required
+        if (policy.minimumRequiredSdkVersion) {
+          settings.push({ name: "Minimum Required SDK Version", value: policy.minimumRequiredSdkVersion });
+        }
+        if (policy.minimumRequiredOsVersion) {
+          settings.push({ name: "Minimum Required OS Version", value: policy.minimumRequiredOsVersion });
+        }
+        if (policy.minimumRequiredAppVersion) {
+          settings.push({ name: "Minimum Required App Version", value: policy.minimumRequiredAppVersion });
+        }
+
+        // Version Requirements - Warning
+        if (policy.minimumWarningOsVersion) {
+          settings.push({ name: "Minimum Warning OS Version", value: policy.minimumWarningOsVersion });
+        }
+        if (policy.minimumWarningAppVersion) {
+          settings.push({ name: "Minimum Warning App Version", value: policy.minimumWarningAppVersion });
+        }
+
+        // Version Requirements - Wipe
+        if (policy.minimumWipeSdkVersion) {
+          settings.push({ name: "Minimum Wipe SDK Version", value: policy.minimumWipeSdkVersion });
+        }
+        if (policy.minimumWipeOsVersion) {
+          settings.push({ name: "Minimum Wipe OS Version", value: policy.minimumWipeOsVersion });
+        }
+        if (policy.minimumWipeAppVersion) {
+          settings.push({ name: "Minimum Wipe App Version", value: policy.minimumWipeAppVersion });
+        }
+
+        // Version Requirements - Maximum
+        if (policy.maximumRequiredOsVersion) {
+          settings.push({ name: "Maximum Required OS Version", value: policy.maximumRequiredOsVersion });
+        }
+        if (policy.maximumWarningOsVersion) {
+          settings.push({ name: "Maximum Warning OS Version", value: policy.maximumWarningOsVersion });
+        }
+        if (policy.maximumWipeOsVersion) {
+          settings.push({ name: "Maximum Wipe OS Version", value: policy.maximumWipeOsVersion });
+        }
+
+        // Offline/Grace Periods
+        if (policy.periodOfflineBeforeWipeIsEnforced) {
+          settings.push({ name: "Period Offline Before Wipe Is Enforced", value: policy.periodOfflineBeforeWipeIsEnforced });
+        }
+        if (policy.periodOfflineBeforeAccessCheck) {
+          settings.push({ name: "Period Offline Before Access Check", value: policy.periodOfflineBeforeAccessCheck });
+        }
+        if (policy.periodOnlineBeforeAccessCheck) {
+          settings.push({ name: "Period Online Before Access Check", value: policy.periodOnlineBeforeAccessCheck });
+        }
+
+        // Additional Settings
+        if (policy.isAssigned !== undefined) {
+          settings.push({ name: "Is Assigned", value: String(policy.isAssigned) });
+        }
+        if (policy.deployedAppCount !== undefined) {
+          settings.push({ name: "Deployed App Count", value: String(policy.deployedAppCount) });
+        }
+
+        if (settings.length > 0) {
+          addText("Protection Settings:", 11, "bold");
+          yPosition += 2;
+          addSettingsTable(settings);
+        } else {
+          addText("No protection settings configured", 9, "normal", [150, 150, 150]);
+          yPosition += 5;
+        }
+
+        yPosition += 5;
+        successfulPolicies++;
+      } catch (error: any) {
+        exportErrors.push({
+          policyType: "App Protection Policy",
+          policyName: policy.displayName || "Unknown Policy",
+          error: error?.message || "Unknown error occurred"
+        });
+        console.error(`Failed to export App Protection Policy: ${policy.displayName}`, error);
+      }
+    });
+  }
+
   // Security Baselines Section
   if (data.securityBaselines.length > 0) {
     doc.addPage();
@@ -2003,21 +2182,95 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
           yPosition += 2;
         }
 
-        // Add app configuration settings if available
-        if (config.settings && config.settings.length > 0) {
-          const settings = config.settings.map((setting: any) => ({
-            name: setting.settingName || setting.key || "Setting",
-            value: formatValue(setting.settingValue || setting.value)
-          }));
-          addSettingsTable(settings);
+        // Display configuration type and platform
+        const configSettings: Array<{name: string; value: string}> = [];
+
+        if (config['@odata.type']) {
+          configSettings.push({
+            name: "Configuration Type",
+            value: config['@odata.type'].replace('#microsoft.graph.', '')
+          });
+        }
+
+        if (config.targetedMobileApps && config.targetedMobileApps.length > 0) {
+          configSettings.push({
+            name: "Number of Targeted Apps",
+            value: config.targetedMobileApps.length.toString()
+          });
+        }
+
+        // Add app configuration settings based on type
+        // For managed app configurations (iOS/Android)
+        if (config.encodedSettingXml) {
+          try {
+            // Try to decode and display XML settings
+            const decodedXml = atob(config.encodedSettingXml);
+            configSettings.push({
+              name: "Configuration Settings (XML)",
+              value: decodedXml.substring(0, 500) + (decodedXml.length > 500 ? '...' : '')
+            });
+          } catch {
+            configSettings.push({
+              name: "Configuration Settings",
+              value: "XML settings present (base64 encoded)"
+            });
+          }
+        }
+
+        // For managed device configurations
+        if (config.payloadJson) {
+          try {
+            const payload = JSON.parse(config.payloadJson);
+            Object.entries(payload).forEach(([key, value]) => {
+              configSettings.push({
+                name: key,
+                value: formatValue(value)
+              });
+            });
+          } catch {
+            configSettings.push({
+              name: "Configuration Payload",
+              value: config.payloadJson.substring(0, 200) + (config.payloadJson.length > 200 ? '...' : '')
+            });
+          }
+        }
+
+        // For settings array (generic configurations)
+        if (config.settings && Array.isArray(config.settings)) {
+          config.settings.forEach((setting: any) => {
+            configSettings.push({
+              name: setting.settingName || setting.name || setting.key || "Setting",
+              value: formatValue(setting.settingValue || setting.value || setting.valueJson)
+            });
+          });
+        }
+
+        // Additional common properties
+        if (config.payload && typeof config.payload === 'string') {
+          configSettings.push({
+            name: "Payload",
+            value: config.payload.substring(0, 200) + (config.payload.length > 200 ? '...' : '')
+          });
+        }
+
+        if (config.permissionActions && config.permissionActions.length > 0) {
+          configSettings.push({
+            name: "Permission Actions",
+            value: config.permissionActions.join(', ')
+          });
+        }
+
+        // Display all collected settings
+        if (configSettings.length > 0) {
+          addSettingsTable(configSettings);
         }
 
         // Show targeted apps if available
-        if (config.apps && config.apps.length > 0) {
+        if (config.targetedMobileApps && config.targetedMobileApps.length > 0) {
           addText("Targeted Apps:", 10, "bold");
           yPosition += 2;
-          config.apps.forEach((app: any) => {
-            addText(`• ${app.mobileAppIdentifier?.packageId || app.bundleId || app.displayName || "Unknown App"}`, 9, "normal", [100, 100, 100]);
+          config.targetedMobileApps.forEach((appId: string) => {
+            addText(`• ${appId}`, 9, "normal", [100, 100, 100]);
             yPosition += 1;
           });
           yPosition += 2;

@@ -50,6 +50,11 @@ export function useExportHandler({
     ).length || 0;
     if (complianceCount > 0) policyTypes.push({ name: "Compliance Policies", count: complianceCount });
 
+    const appProtectionCount = configurations?.appProtectionPolicies?.filter((c: any) =>
+      selectedConfigs.has(`app-protection-${c.id}`)
+    ).length || 0;
+    if (appProtectionCount > 0) policyTypes.push({ name: "App Protection Policies", count: appProtectionCount });
+
     const scriptWinCount = configurations?.scripts?.windows?.filter((c: any) =>
       selectedConfigs.has(`script-win-${c.id}`)
     ).length || 0;
@@ -108,6 +113,9 @@ export function useExportHandler({
         ) ?? [],
         compliancePolicies: configurations?.compliancePolicies?.filter((c: any) =>
           selectedConfigs.has(`compliance-${c.id}`)
+        ) ?? [],
+        appProtectionPolicies: configurations?.appProtectionPolicies?.filter((c: any) =>
+          selectedConfigs.has(`app-protection-${c.id}`)
         ) ?? [],
         scripts: {
           macOS: configurations?.scripts?.macOS?.filter((c: any) =>

@@ -36,6 +36,11 @@ function extractNestedSettings(
 
       const childResult = extractSettingValue(configSetting, depth);
 
+      // Skip unconfigured settings
+      if (!childResult || childResult.value === "Not configured") {
+        continue;
+      }
+
       // Add the main setting with indentation
       results.push({
         name: indent + childResult.name,
@@ -219,23 +224,30 @@ export function parseDeviceConfiguration(config: any): Array<{
     "createdDateTime", "lastModifiedDateTime", "version", "assignments",
     "configType", "roleScopeTagIds", "supportsScopeTags"
   ];
-  
+
   // Group settings by category
   Object.keys(config).forEach(key => {
     if (!ignoredKeys.includes(key) && config[key] !== null && config[key] !== undefined) {
+      const formattedValue = formatValue(config[key]);
+
+      // Skip unconfigured settings
+      if (formattedValue === "Not configured") {
+        return;
+      }
+
       const category = getCategoryFromKey(key);
       if (!categories[category]) {
         categories[category] = [];
       }
-      
+
       categories[category].push({
         name: formatKeyName(key),
-        value: formatValue(config[key]),
+        value: formattedValue,
         description: getPropertyDescription(key)
       });
     }
   });
-  
+
   return Object.keys(categories).map(category => ({
     category,
     settings: categories[category] || []
@@ -298,10 +310,17 @@ export function parseComplianceRules(policy: any): Array<{
   // Enumerate all properties dynamically
   Object.keys(policy).forEach(key => {
     if (!ignoredKeys.includes(key) && policy[key] !== undefined && policy[key] !== null) {
+      const formattedValue = formatValue(policy[key]);
+
+      // Skip unconfigured settings
+      if (formattedValue === "Not configured") {
+        return;
+      }
+
       rules.push({
         category: getCategoryFromKey(key),
         rule: formatKeyName(key),
-        value: formatValue(policy[key]),
+        value: formattedValue,
         action: getComplianceAction(policy.scheduledActionsForRule)
       });
     }
@@ -358,25 +377,27 @@ export function parseSecurityBaseline(categories: any[]): Array<{
   }>;
 }> {
   return categories.map(category => {
-    const settings = (category.settings || []).map((setting: any) => {
-      let value = "Not configured";
+    const settings = (category.settings || [])
+      .map((setting: any) => {
+        let value = "Not configured";
 
-      if (setting.value !== undefined && setting.value !== null) {
-        value = formatValue(setting.value);
-      } else if (setting.stringValue) {
-        value = setting.stringValue;
-      } else if (setting.intValue !== undefined) {
-        value = setting.intValue.toString();
-      } else if (setting.boolValue !== undefined) {
-        value = setting.boolValue ? "Enabled" : "Disabled";
-      }
+        if (setting.value !== undefined && setting.value !== null) {
+          value = formatValue(setting.value);
+        } else if (setting.stringValue) {
+          value = setting.stringValue;
+        } else if (setting.intValue !== undefined) {
+          value = setting.intValue.toString();
+        } else if (setting.boolValue !== undefined) {
+          value = setting.boolValue ? "Enabled" : "Disabled";
+        }
 
-      return {
-        name: parseSecurityBaselineSettingName(setting.definitionId),
-        value,
-        description: setting.description
-      };
-    });
+        return {
+          name: parseSecurityBaselineSettingName(setting.definitionId),
+          value,
+          description: setting.description
+        };
+      })
+      .filter((setting: {name: string; value: string; description?: string}) => setting.value !== "Not configured"); // Filter out unconfigured settings
 
     return {
       category: category.displayName || "General",

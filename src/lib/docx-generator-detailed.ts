@@ -17,6 +17,7 @@ import {
   parseComplianceRules,
   parseDeviceConfiguration,
   parseSecurityBaseline,
+  formatValue,
 } from "./configuration-parser";
 import type { BrandingOptions } from "~/types/branding";
 
@@ -126,6 +127,11 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
         for (const setting of policy.settings) {
           const extracted = extractSettingValue(setting);
 
+          // Skip unconfigured settings
+          if (extracted.value === "Not configured") {
+            continue;
+          }
+
           // Add the main setting
           formatted.push({
             name: extracted.name,
@@ -139,22 +145,26 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
           }
         }
 
-        formatted.forEach((s: any) => {
-          rows.push(
-            new TableRow({
-              children: [s.name, s.value, s.description || ""].map(
-                (t) => new TableCell({ children: [new Paragraph(String(t))] })
-              ),
+        if (formatted.length > 0) {
+          formatted.forEach((s: any) => {
+            rows.push(
+              new TableRow({
+                children: [s.name, s.value, s.description || ""].map(
+                  (t) => new TableCell({ children: [new Paragraph(String(t))] })
+                ),
+              })
+            );
+          });
+          children.push(
+            new Table({
+              columnWidths: [5000, 3000, 5000],
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              rows,
             })
           );
-        });
-        children.push(
-          new Table({
-            columnWidths: [5000, 3000, 5000],
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            rows,
-          })
-        );
+        } else {
+          children.push(new Paragraph({ text: "No settings configured" }));
+        }
       } else {
         children.push(new Paragraph({ text: "No settings configured" }));
       }
@@ -310,118 +320,66 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
       // Add MAM settings comprehensively
       const settings: Array<{name: string; value: string}> = [];
 
+      // Helper function to add setting if configured
+      const addSettingIfConfigured = (name: string, value: any) => {
+        if (value !== undefined && value !== null) {
+          const formattedValue = formatValue(value);
+          if (formattedValue !== "Not configured") {
+            settings.push({ name, value: formattedValue });
+          }
+        }
+      };
+
       // Data Transfer Settings
-      if (policy.allowedInboundDataTransferSources !== undefined) {
-        settings.push({ name: "Allowed Inbound Data Transfer Sources", value: String(policy.allowedInboundDataTransferSources) });
-      }
-      if (policy.allowedOutboundDataTransferDestinations !== undefined) {
-        settings.push({ name: "Allowed Outbound Data Transfer Destinations", value: String(policy.allowedOutboundDataTransferDestinations) });
-      }
-      if (policy.allowedOutboundClipboardSharingLevel !== undefined) {
-        settings.push({ name: "Allowed Outbound Clipboard Sharing Level", value: String(policy.allowedOutboundClipboardSharingLevel) });
-      }
+      addSettingIfConfigured("Allowed Inbound Data Transfer Sources", policy.allowedInboundDataTransferSources);
+      addSettingIfConfigured("Allowed Outbound Data Transfer Destinations", policy.allowedOutboundDataTransferDestinations);
+      addSettingIfConfigured("Allowed Outbound Clipboard Sharing Level", policy.allowedOutboundClipboardSharingLevel);
 
       // Data Protection Settings
-      if (policy.dataBackupBlocked !== undefined) {
-        settings.push({ name: "Block Data Backup", value: String(policy.dataBackupBlocked) });
-      }
-      if (policy.saveAsBlocked !== undefined) {
-        settings.push({ name: "Block Save As", value: String(policy.saveAsBlocked) });
-      }
-      if (policy.printBlocked !== undefined) {
-        settings.push({ name: "Block Printing", value: String(policy.printBlocked) });
-      }
-      if (policy.organizationalCredentialsRequired !== undefined) {
-        settings.push({ name: "Organizational Credentials Required", value: String(policy.organizationalCredentialsRequired) });
-      }
+      addSettingIfConfigured("Block Data Backup", policy.dataBackupBlocked);
+      addSettingIfConfigured("Block Save As", policy.saveAsBlocked);
+      addSettingIfConfigured("Block Printing", policy.printBlocked);
+      addSettingIfConfigured("Organizational Credentials Required", policy.organizationalCredentialsRequired);
 
       // Compliance & Security
-      if (policy.deviceComplianceRequired !== undefined) {
-        settings.push({ name: "Device Compliance Required", value: String(policy.deviceComplianceRequired) });
-      }
-      if (policy.managedBrowserToOpenLinksRequired !== undefined) {
-        settings.push({ name: "Managed Browser Required", value: String(policy.managedBrowserToOpenLinksRequired) });
-      }
-      if (policy.maximumAllowedDeviceThreatLevel !== undefined) {
-        settings.push({ name: "Maximum Allowed Device Threat Level", value: String(policy.maximumAllowedDeviceThreatLevel) });
-      }
-      if (policy.mobileThreatDefenseRemediationAction !== undefined) {
-        settings.push({ name: "Mobile Threat Defense Remediation Action", value: String(policy.mobileThreatDefenseRemediationAction) });
-      }
-      if (policy.appActionIfUnableToAuthenticateUser !== undefined && policy.appActionIfUnableToAuthenticateUser !== null) {
-        settings.push({ name: "Action If Unable to Authenticate User", value: String(policy.appActionIfUnableToAuthenticateUser) });
-      }
+      addSettingIfConfigured("Device Compliance Required", policy.deviceComplianceRequired);
+      addSettingIfConfigured("Managed Browser Required", policy.managedBrowserToOpenLinksRequired);
+      addSettingIfConfigured("Maximum Allowed Device Threat Level", policy.maximumAllowedDeviceThreatLevel);
+      addSettingIfConfigured("Mobile Threat Defense Remediation Action", policy.mobileThreatDefenseRemediationAction);
+      addSettingIfConfigured("Action If Unable to Authenticate User", policy.appActionIfUnableToAuthenticateUser);
 
       // Access Requirements
-      if (policy.pinRequired !== undefined) {
-        settings.push({ name: "PIN Required", value: String(policy.pinRequired) });
-      }
-      if (policy.fingerprintBlocked !== undefined) {
-        settings.push({ name: "Block Fingerprint", value: String(policy.fingerprintBlocked) });
-      }
-      if (policy.faceIdBlocked !== undefined) {
-        settings.push({ name: "Block Face ID", value: String(policy.faceIdBlocked) });
-      }
+      addSettingIfConfigured("PIN Required", policy.pinRequired);
+      addSettingIfConfigured("Block Fingerprint", policy.fingerprintBlocked);
+      addSettingIfConfigured("Block Face ID", policy.faceIdBlocked);
 
       // Version Requirements - Minimum Required
-      if (policy.minimumRequiredSdkVersion) {
-        settings.push({ name: "Minimum Required SDK Version", value: policy.minimumRequiredSdkVersion });
-      }
-      if (policy.minimumRequiredOsVersion) {
-        settings.push({ name: "Minimum Required OS Version", value: policy.minimumRequiredOsVersion });
-      }
-      if (policy.minimumRequiredAppVersion) {
-        settings.push({ name: "Minimum Required App Version", value: policy.minimumRequiredAppVersion });
-      }
+      addSettingIfConfigured("Minimum Required SDK Version", policy.minimumRequiredSdkVersion);
+      addSettingIfConfigured("Minimum Required OS Version", policy.minimumRequiredOsVersion);
+      addSettingIfConfigured("Minimum Required App Version", policy.minimumRequiredAppVersion);
 
       // Version Requirements - Warning
-      if (policy.minimumWarningOsVersion) {
-        settings.push({ name: "Minimum Warning OS Version", value: policy.minimumWarningOsVersion });
-      }
-      if (policy.minimumWarningAppVersion) {
-        settings.push({ name: "Minimum Warning App Version", value: policy.minimumWarningAppVersion });
-      }
+      addSettingIfConfigured("Minimum Warning OS Version", policy.minimumWarningOsVersion);
+      addSettingIfConfigured("Minimum Warning App Version", policy.minimumWarningAppVersion);
 
       // Version Requirements - Wipe
-      if (policy.minimumWipeSdkVersion) {
-        settings.push({ name: "Minimum Wipe SDK Version", value: policy.minimumWipeSdkVersion });
-      }
-      if (policy.minimumWipeOsVersion) {
-        settings.push({ name: "Minimum Wipe OS Version", value: policy.minimumWipeOsVersion });
-      }
-      if (policy.minimumWipeAppVersion) {
-        settings.push({ name: "Minimum Wipe App Version", value: policy.minimumWipeAppVersion });
-      }
+      addSettingIfConfigured("Minimum Wipe SDK Version", policy.minimumWipeSdkVersion);
+      addSettingIfConfigured("Minimum Wipe OS Version", policy.minimumWipeOsVersion);
+      addSettingIfConfigured("Minimum Wipe App Version", policy.minimumWipeAppVersion);
 
       // Version Requirements - Maximum
-      if (policy.maximumRequiredOsVersion) {
-        settings.push({ name: "Maximum Required OS Version", value: policy.maximumRequiredOsVersion });
-      }
-      if (policy.maximumWarningOsVersion) {
-        settings.push({ name: "Maximum Warning OS Version", value: policy.maximumWarningOsVersion });
-      }
-      if (policy.maximumWipeOsVersion) {
-        settings.push({ name: "Maximum Wipe OS Version", value: policy.maximumWipeOsVersion });
-      }
+      addSettingIfConfigured("Maximum Required OS Version", policy.maximumRequiredOsVersion);
+      addSettingIfConfigured("Maximum Warning OS Version", policy.maximumWarningOsVersion);
+      addSettingIfConfigured("Maximum Wipe OS Version", policy.maximumWipeOsVersion);
 
       // Offline/Grace Periods
-      if (policy.periodOfflineBeforeWipeIsEnforced) {
-        settings.push({ name: "Period Offline Before Wipe Is Enforced", value: policy.periodOfflineBeforeWipeIsEnforced });
-      }
-      if (policy.periodOfflineBeforeAccessCheck) {
-        settings.push({ name: "Period Offline Before Access Check", value: policy.periodOfflineBeforeAccessCheck });
-      }
-      if (policy.periodOnlineBeforeAccessCheck) {
-        settings.push({ name: "Period Online Before Access Check", value: policy.periodOnlineBeforeAccessCheck });
-      }
+      addSettingIfConfigured("Period Offline Before Wipe Is Enforced", policy.periodOfflineBeforeWipeIsEnforced);
+      addSettingIfConfigured("Period Offline Before Access Check", policy.periodOfflineBeforeAccessCheck);
+      addSettingIfConfigured("Period Online Before Access Check", policy.periodOnlineBeforeAccessCheck);
 
       // Additional Settings
-      if (policy.isAssigned !== undefined) {
-        settings.push({ name: "Is Assigned", value: String(policy.isAssigned) });
-      }
-      if (policy.deployedAppCount !== undefined) {
-        settings.push({ name: "Deployed App Count", value: String(policy.deployedAppCount) });
-      }
+      addSettingIfConfigured("Is Assigned", policy.isAssigned);
+      addSettingIfConfigured("Deployed App Count", policy.deployedAppCount);
 
       settings.forEach((s) => {
         rows.push(
@@ -555,10 +513,14 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
         try {
           const payload = JSON.parse(config.payloadJson);
           Object.entries(payload).forEach(([key, value]) => {
-            configSettings.push({
-              name: key,
-              value: String(value)
-            });
+            const formattedValue = formatValue(value);
+            // Skip unconfigured settings
+            if (formattedValue !== "Not configured") {
+              configSettings.push({
+                name: key,
+                value: formattedValue
+              });
+            }
           });
         } catch {
           configSettings.push({
@@ -571,10 +533,14 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
       // For settings array (generic configurations)
       if (config.settings && Array.isArray(config.settings)) {
         config.settings.forEach((setting: any) => {
-          configSettings.push({
-            name: setting.settingName || setting.name || setting.key || "Setting",
-            value: String(setting.settingValue || setting.value || setting.valueJson || '')
-          });
+          const formattedValue = formatValue(setting.settingValue || setting.value || setting.valueJson);
+          // Skip unconfigured settings
+          if (formattedValue !== "Not configured") {
+            configSettings.push({
+              name: setting.settingName || setting.name || setting.key || "Setting",
+              value: formattedValue
+            });
+          }
         });
       }
 

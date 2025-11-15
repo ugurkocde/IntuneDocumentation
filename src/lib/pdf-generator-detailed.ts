@@ -1582,6 +1582,11 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
           for (const setting of policy.settings) {
             const extracted = extractSettingValue(setting);
 
+            // Skip unconfigured settings
+            if (extracted.value === "Not configured") {
+              continue;
+            }
+
             // Add the main setting
             formattedSettings.push({
               name: extracted.name,
@@ -1595,7 +1600,12 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
             }
           }
 
-          addSettingsTable(formattedSettings);
+          if (formattedSettings.length > 0) {
+            addSettingsTable(formattedSettings);
+          } else {
+            addText("No settings configured", 9, "normal", [150, 150, 150]);
+            yPosition += 5;
+          }
         } else {
           addText("No settings configured", 9, "normal", [150, 150, 150]);
           yPosition += 5;
@@ -1809,118 +1819,66 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
         // Parse and display MAM settings comprehensively
         const settings: Array<{name: string; value: string}> = [];
 
+        // Helper function to add setting if configured
+        const addSettingIfConfigured = (name: string, value: any) => {
+          if (value !== undefined && value !== null) {
+            const formattedValue = formatValue(value);
+            if (formattedValue !== "Not configured") {
+              settings.push({ name, value: formattedValue });
+            }
+          }
+        };
+
         // Data Transfer Settings
-        if (policy.allowedInboundDataTransferSources !== undefined) {
-          settings.push({ name: "Allowed Inbound Data Transfer Sources", value: String(policy.allowedInboundDataTransferSources) });
-        }
-        if (policy.allowedOutboundDataTransferDestinations !== undefined) {
-          settings.push({ name: "Allowed Outbound Data Transfer Destinations", value: String(policy.allowedOutboundDataTransferDestinations) });
-        }
-        if (policy.allowedOutboundClipboardSharingLevel !== undefined) {
-          settings.push({ name: "Allowed Outbound Clipboard Sharing Level", value: String(policy.allowedOutboundClipboardSharingLevel) });
-        }
+        addSettingIfConfigured("Allowed Inbound Data Transfer Sources", policy.allowedInboundDataTransferSources);
+        addSettingIfConfigured("Allowed Outbound Data Transfer Destinations", policy.allowedOutboundDataTransferDestinations);
+        addSettingIfConfigured("Allowed Outbound Clipboard Sharing Level", policy.allowedOutboundClipboardSharingLevel);
 
         // Data Protection Settings
-        if (policy.dataBackupBlocked !== undefined) {
-          settings.push({ name: "Block Data Backup", value: String(policy.dataBackupBlocked) });
-        }
-        if (policy.saveAsBlocked !== undefined) {
-          settings.push({ name: "Block Save As", value: String(policy.saveAsBlocked) });
-        }
-        if (policy.printBlocked !== undefined) {
-          settings.push({ name: "Block Printing", value: String(policy.printBlocked) });
-        }
-        if (policy.organizationalCredentialsRequired !== undefined) {
-          settings.push({ name: "Organizational Credentials Required", value: String(policy.organizationalCredentialsRequired) });
-        }
+        addSettingIfConfigured("Block Data Backup", policy.dataBackupBlocked);
+        addSettingIfConfigured("Block Save As", policy.saveAsBlocked);
+        addSettingIfConfigured("Block Printing", policy.printBlocked);
+        addSettingIfConfigured("Organizational Credentials Required", policy.organizationalCredentialsRequired);
 
         // Compliance & Security
-        if (policy.deviceComplianceRequired !== undefined) {
-          settings.push({ name: "Device Compliance Required", value: String(policy.deviceComplianceRequired) });
-        }
-        if (policy.managedBrowserToOpenLinksRequired !== undefined) {
-          settings.push({ name: "Managed Browser Required", value: String(policy.managedBrowserToOpenLinksRequired) });
-        }
-        if (policy.maximumAllowedDeviceThreatLevel !== undefined) {
-          settings.push({ name: "Maximum Allowed Device Threat Level", value: String(policy.maximumAllowedDeviceThreatLevel) });
-        }
-        if (policy.mobileThreatDefenseRemediationAction !== undefined) {
-          settings.push({ name: "Mobile Threat Defense Remediation Action", value: String(policy.mobileThreatDefenseRemediationAction) });
-        }
-        if (policy.appActionIfUnableToAuthenticateUser !== undefined && policy.appActionIfUnableToAuthenticateUser !== null) {
-          settings.push({ name: "Action If Unable to Authenticate User", value: String(policy.appActionIfUnableToAuthenticateUser) });
-        }
+        addSettingIfConfigured("Device Compliance Required", policy.deviceComplianceRequired);
+        addSettingIfConfigured("Managed Browser Required", policy.managedBrowserToOpenLinksRequired);
+        addSettingIfConfigured("Maximum Allowed Device Threat Level", policy.maximumAllowedDeviceThreatLevel);
+        addSettingIfConfigured("Mobile Threat Defense Remediation Action", policy.mobileThreatDefenseRemediationAction);
+        addSettingIfConfigured("Action If Unable to Authenticate User", policy.appActionIfUnableToAuthenticateUser);
 
         // Access Requirements
-        if (policy.pinRequired !== undefined) {
-          settings.push({ name: "PIN Required", value: String(policy.pinRequired) });
-        }
-        if (policy.fingerprintBlocked !== undefined) {
-          settings.push({ name: "Block Fingerprint", value: String(policy.fingerprintBlocked) });
-        }
-        if (policy.faceIdBlocked !== undefined) {
-          settings.push({ name: "Block Face ID", value: String(policy.faceIdBlocked) });
-        }
+        addSettingIfConfigured("PIN Required", policy.pinRequired);
+        addSettingIfConfigured("Block Fingerprint", policy.fingerprintBlocked);
+        addSettingIfConfigured("Block Face ID", policy.faceIdBlocked);
 
         // Version Requirements - Minimum Required
-        if (policy.minimumRequiredSdkVersion) {
-          settings.push({ name: "Minimum Required SDK Version", value: policy.minimumRequiredSdkVersion });
-        }
-        if (policy.minimumRequiredOsVersion) {
-          settings.push({ name: "Minimum Required OS Version", value: policy.minimumRequiredOsVersion });
-        }
-        if (policy.minimumRequiredAppVersion) {
-          settings.push({ name: "Minimum Required App Version", value: policy.minimumRequiredAppVersion });
-        }
+        addSettingIfConfigured("Minimum Required SDK Version", policy.minimumRequiredSdkVersion);
+        addSettingIfConfigured("Minimum Required OS Version", policy.minimumRequiredOsVersion);
+        addSettingIfConfigured("Minimum Required App Version", policy.minimumRequiredAppVersion);
 
         // Version Requirements - Warning
-        if (policy.minimumWarningOsVersion) {
-          settings.push({ name: "Minimum Warning OS Version", value: policy.minimumWarningOsVersion });
-        }
-        if (policy.minimumWarningAppVersion) {
-          settings.push({ name: "Minimum Warning App Version", value: policy.minimumWarningAppVersion });
-        }
+        addSettingIfConfigured("Minimum Warning OS Version", policy.minimumWarningOsVersion);
+        addSettingIfConfigured("Minimum Warning App Version", policy.minimumWarningAppVersion);
 
         // Version Requirements - Wipe
-        if (policy.minimumWipeSdkVersion) {
-          settings.push({ name: "Minimum Wipe SDK Version", value: policy.minimumWipeSdkVersion });
-        }
-        if (policy.minimumWipeOsVersion) {
-          settings.push({ name: "Minimum Wipe OS Version", value: policy.minimumWipeOsVersion });
-        }
-        if (policy.minimumWipeAppVersion) {
-          settings.push({ name: "Minimum Wipe App Version", value: policy.minimumWipeAppVersion });
-        }
+        addSettingIfConfigured("Minimum Wipe SDK Version", policy.minimumWipeSdkVersion);
+        addSettingIfConfigured("Minimum Wipe OS Version", policy.minimumWipeOsVersion);
+        addSettingIfConfigured("Minimum Wipe App Version", policy.minimumWipeAppVersion);
 
         // Version Requirements - Maximum
-        if (policy.maximumRequiredOsVersion) {
-          settings.push({ name: "Maximum Required OS Version", value: policy.maximumRequiredOsVersion });
-        }
-        if (policy.maximumWarningOsVersion) {
-          settings.push({ name: "Maximum Warning OS Version", value: policy.maximumWarningOsVersion });
-        }
-        if (policy.maximumWipeOsVersion) {
-          settings.push({ name: "Maximum Wipe OS Version", value: policy.maximumWipeOsVersion });
-        }
+        addSettingIfConfigured("Maximum Required OS Version", policy.maximumRequiredOsVersion);
+        addSettingIfConfigured("Maximum Warning OS Version", policy.maximumWarningOsVersion);
+        addSettingIfConfigured("Maximum Wipe OS Version", policy.maximumWipeOsVersion);
 
         // Offline/Grace Periods
-        if (policy.periodOfflineBeforeWipeIsEnforced) {
-          settings.push({ name: "Period Offline Before Wipe Is Enforced", value: policy.periodOfflineBeforeWipeIsEnforced });
-        }
-        if (policy.periodOfflineBeforeAccessCheck) {
-          settings.push({ name: "Period Offline Before Access Check", value: policy.periodOfflineBeforeAccessCheck });
-        }
-        if (policy.periodOnlineBeforeAccessCheck) {
-          settings.push({ name: "Period Online Before Access Check", value: policy.periodOnlineBeforeAccessCheck });
-        }
+        addSettingIfConfigured("Period Offline Before Wipe Is Enforced", policy.periodOfflineBeforeWipeIsEnforced);
+        addSettingIfConfigured("Period Offline Before Access Check", policy.periodOfflineBeforeAccessCheck);
+        addSettingIfConfigured("Period Online Before Access Check", policy.periodOnlineBeforeAccessCheck);
 
         // Additional Settings
-        if (policy.isAssigned !== undefined) {
-          settings.push({ name: "Is Assigned", value: String(policy.isAssigned) });
-        }
-        if (policy.deployedAppCount !== undefined) {
-          settings.push({ name: "Deployed App Count", value: String(policy.deployedAppCount) });
-        }
+        addSettingIfConfigured("Is Assigned", policy.isAssigned);
+        addSettingIfConfigured("Deployed App Count", policy.deployedAppCount);
 
         if (settings.length > 0) {
           addText("Protection Settings:", 11, "bold");
@@ -2222,10 +2180,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
           try {
             const payload = JSON.parse(config.payloadJson);
             Object.entries(payload).forEach(([key, value]) => {
-              configSettings.push({
-                name: key,
-                value: formatValue(value)
-              });
+              const formattedValue = formatValue(value);
+              // Skip unconfigured settings
+              if (formattedValue !== "Not configured") {
+                configSettings.push({
+                  name: key,
+                  value: formattedValue
+                });
+              }
             });
           } catch {
             configSettings.push({
@@ -2238,10 +2200,14 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
         // For settings array (generic configurations)
         if (config.settings && Array.isArray(config.settings)) {
           config.settings.forEach((setting: any) => {
-            configSettings.push({
-              name: setting.settingName || setting.name || setting.key || "Setting",
-              value: formatValue(setting.settingValue || setting.value || setting.valueJson)
-            });
+            const formattedValue = formatValue(setting.settingValue || setting.value || setting.valueJson);
+            // Skip unconfigured settings
+            if (formattedValue !== "Not configured") {
+              configSettings.push({
+                name: setting.settingName || setting.name || setting.key || "Setting",
+                value: formattedValue
+              });
+            }
           });
         }
 
@@ -2315,73 +2281,33 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
         }
 
         // Add Windows Update specific settings
-        const updateSettings = [];
+        const updateSettings: Array<{name: string; value: string}> = [];
 
-        if (policy.deliveryOptimizationMode !== undefined) {
-          updateSettings.push({
-            name: "Delivery Optimization Mode",
-            value: formatValue(policy.deliveryOptimizationMode)
-          });
-        }
+        // Helper function to add setting if configured
+        const addUpdateSettingIfConfigured = (name: string, value: any) => {
+          if (value !== undefined && value !== null) {
+            const formattedValue = formatValue(value);
+            if (formattedValue !== "Not configured") {
+              updateSettings.push({ name, value: formattedValue });
+            }
+          }
+        };
 
-        if (policy.prereleaseFeatures !== undefined) {
-          updateSettings.push({
-            name: "Prerelease Features",
-            value: formatValue(policy.prereleaseFeatures)
-          });
-        }
-
-        if (policy.automaticUpdateMode !== undefined) {
-          updateSettings.push({
-            name: "Automatic Update Mode",
-            value: formatValue(policy.automaticUpdateMode)
-          });
-        }
-
-        if (policy.businessReadyUpdatesOnly !== undefined) {
-          updateSettings.push({
-            name: "Business Ready Updates Only",
-            value: formatValue(policy.businessReadyUpdatesOnly)
-          });
-        }
-
-        if (policy.driversExcluded !== undefined) {
-          updateSettings.push({
-            name: "Drivers Excluded",
-            value: formatValue(policy.driversExcluded)
-          });
-        }
-
-        if (policy.qualityUpdatesDeferralPeriodInDays !== undefined) {
-          updateSettings.push({
-            name: "Quality Updates Deferral (days)",
-            value: formatValue(policy.qualityUpdatesDeferralPeriodInDays)
-          });
-        }
-
-        if (policy.featureUpdatesDeferralPeriodInDays !== undefined) {
-          updateSettings.push({
-            name: "Feature Updates Deferral (days)",
-            value: formatValue(policy.featureUpdatesDeferralPeriodInDays)
-          });
-        }
-
-        if (policy.qualityUpdatesPaused !== undefined) {
-          updateSettings.push({
-            name: "Quality Updates Paused",
-            value: formatValue(policy.qualityUpdatesPaused)
-          });
-        }
-
-        if (policy.featureUpdatesPaused !== undefined) {
-          updateSettings.push({
-            name: "Feature Updates Paused",
-            value: formatValue(policy.featureUpdatesPaused)
-          });
-        }
+        addUpdateSettingIfConfigured("Delivery Optimization Mode", policy.deliveryOptimizationMode);
+        addUpdateSettingIfConfigured("Prerelease Features", policy.prereleaseFeatures);
+        addUpdateSettingIfConfigured("Automatic Update Mode", policy.automaticUpdateMode);
+        addUpdateSettingIfConfigured("Business Ready Updates Only", policy.businessReadyUpdatesOnly);
+        addUpdateSettingIfConfigured("Drivers Excluded", policy.driversExcluded);
+        addUpdateSettingIfConfigured("Quality Updates Deferral (days)", policy.qualityUpdatesDeferralPeriodInDays);
+        addUpdateSettingIfConfigured("Feature Updates Deferral (days)", policy.featureUpdatesDeferralPeriodInDays);
+        addUpdateSettingIfConfigured("Quality Updates Paused", policy.qualityUpdatesPaused);
+        addUpdateSettingIfConfigured("Feature Updates Paused", policy.featureUpdatesPaused);
 
         if (updateSettings.length > 0) {
           addSettingsTable(updateSettings);
+        } else {
+          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          yPosition += 5;
         }
 
         yPosition += 5;

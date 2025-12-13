@@ -31,7 +31,7 @@
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^3.0.2",
     "lucide-react": "^0.542.0",
-    "next": "15.5.7",
+    "next": "15.5.9",
     "next-plausible": "^3.12.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

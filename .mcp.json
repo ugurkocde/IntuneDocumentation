@@ -1,15 +1,8 @@
 {
-    "mcpServers": {
-      "supabase": {
-        "command": "npx",
-        "args": [
-          "-y",
-          "@supabase/mcp-server-supabase@latest",
-          "--project-ref=xoqayektwalbuxlkocyr"
-        ],
-        "env": {
-          "SUPABASE_ACCESS_TOKEN": "sbp_7ed93a86cdb3d87716d750af0f1cdeae8758fd3e"
-        }
-      }
+  "mcpServers": {
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=xoqayektwalbuxlkocyr"
     }
   }
+}

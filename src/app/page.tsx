@@ -9,6 +9,7 @@ import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { HeroExportCounter } from "~/components/hero-export-counter";
+import { HeroMauCounter } from "~/components/hero-mau-counter";
 
 export default function HomePage() {
   const { instance, accounts } = useMsal();
@@ -191,9 +192,10 @@ export default function HomePage() {
               {/* Left Column - Content */}
               <div className="text-left">
 
-                {/* Export Counter Badge */}
-                <div className="mb-6">
+                {/* Stats Counter Badges */}
+                <div className="mb-6 flex flex-wrap gap-2">
                   <HeroExportCounter />
+                  <HeroMauCounter />
                 </div>
 
                 {/* Main Headline */}

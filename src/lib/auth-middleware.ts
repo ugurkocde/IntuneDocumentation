@@ -12,12 +12,22 @@ interface TokenPayload {
   unique_name?: string;
 }
 
-export function extractTenantFromRequest(request: NextRequest): void {
+export interface ExtractedTenantInfo {
+  tenantId: string;
+  tenantName: string;
+  userPrincipalName: string;
+  userName?: string;
+  timestamp: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export function extractTenantFromRequest(request: NextRequest): ExtractedTenantInfo | null {
   try {
     const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       console.log("[TENANT-TRACKER] No bearer token found in request");
-      return;
+      return null;
     }
 
     const token = authHeader.substring(7);
@@ -27,7 +37,7 @@ export function extractTenantFromRequest(request: NextRequest): void {
     
     if (!decoded) {
       console.log("[TENANT-TRACKER] Failed to decode token");
-      return;
+      return null;
     }
 
     const tenantInfo = {
@@ -57,7 +67,9 @@ TIME: ${tenantInfo.timestamp}
     
     logTenantAccess(tenantInfo, `API-${pathname}`);
 
+    return tenantInfo;
   } catch (error) {
     console.error("[TENANT-TRACKER] Error extracting tenant from request:", error);
+    return null;
   }
 }

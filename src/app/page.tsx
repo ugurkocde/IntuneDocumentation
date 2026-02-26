@@ -227,7 +227,7 @@ export default function HomePage() {
                 </p>
 
                 {/* Trust / Value points */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10 max-w-2xl">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 max-w-2xl">
                   <div className="flex items-center gap-2 text-blue-100">
                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                       <CheckCircle className="w-5 h-5 text-emerald-400" />
@@ -251,6 +251,26 @@ export default function HomePage() {
                       <Shield className="w-5 h-5 text-green-300" />
                     </div>
                     <span className="text-xs font-medium">Secure OAuth</span>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div className="grid grid-cols-4 gap-4 mb-10 max-w-2xl">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">10+</div>
+                    <div className="text-xs text-blue-200/70">Config Types</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">3 min</div>
+                    <div className="text-xs text-blue-200/70">Export Time</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">150+</div>
+                    <div className="text-xs text-blue-200/70">Policies</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-white">100%</div>
+                    <div className="text-xs text-blue-200/70">Free Forever</div>
                   </div>
                 </div>
                 
@@ -386,32 +406,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Social Proof Section */}
-        <section className="py-16 bg-gradient-to-b from-gray-50 to-white">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-5xl mx-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-                <div>
-                  <div className="text-3xl font-bold text-blue-600 mb-1">10+</div>
-                  <div className="text-sm text-gray-600">Configuration Types</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-blue-600 mb-1">3 min</div>
-                  <div className="text-sm text-gray-600">Average Export Time</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-blue-600 mb-1">150+</div>
-                  <div className="text-sm text-gray-600">Policies per Report</div>
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-blue-600 mb-1">100%</div>
-                  <div className="text-sm text-gray-600">Free Forever</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* How It Works Section */}
         <section className="py-24 bg-white scroll-mt-24" id="how-it-works">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -457,64 +451,6 @@ export default function HomePage() {
                   </h3>
                   <p className="text-gray-600 text-sm">
                     Download a professional PDF with full settings, ADMX values, scripts, and group targeting.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Perfect For Section */}
-        <section className="py-24 bg-gray-50 scroll-mt-24" id="perfect-for">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-5xl mx-auto">
-              <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-                Perfect for IT Professionals Who Need
-              </h2>
-              <p className="text-lg text-gray-600 text-center mb-12 max-w-3xl mx-auto">
-                Whether you&apos;re preparing for audits, onboarding team members, or managing multiple tenants, save hours on documentation.
-              </p>
-              
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-blue-600">
-                  <h3 className="font-semibold text-gray-900 mb-2">IT Administrators</h3>
-                  <p className="text-gray-600 text-sm">
-                    Document your Intune environment for audits, compliance reviews, or disaster recovery planning.
-                  </p>
-                </div>
-                
-                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-green-600">
-                  <h3 className="font-semibold text-gray-900 mb-2">MSPs & Consultants</h3>
-                  <p className="text-gray-600 text-sm">
-                    Quickly assess client configurations, create baseline documentation, or prepare handover reports.
-                  </p>
-                </div>
-                
-                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-purple-600">
-                  <h3 className="font-semibold text-gray-900 mb-2">Compliance Teams</h3>
-                  <p className="text-gray-600 text-sm">
-                    Generate audit-ready reports with complete policy details, assignments, and security configurations.
-                  </p>
-                </div>
-                
-                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-orange-600">
-                  <h3 className="font-semibold text-gray-900 mb-2">Security Analysts</h3>
-                  <p className="text-gray-600 text-sm">
-                    Review security baselines, compliance policies, and conditional access settings in a single document.
-                  </p>
-                </div>
-                
-                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-cyan-600">
-                  <h3 className="font-semibold text-gray-900 mb-2">Documentation Teams</h3>
-                  <p className="text-gray-600 text-sm">
-                    Maintain up-to-date configuration documentation without manual screenshots or copy-pasting.
-                  </p>
-                </div>
-                
-                <div className="bg-white rounded-xl p-6 shadow-md border-l-4 border-indigo-600">
-                  <h3 className="font-semibold text-gray-900 mb-2">New Team Members</h3>
-                  <p className="text-gray-600 text-sm">
-                    Understand existing Intune configurations quickly with comprehensive, organized documentation.
                   </p>
                 </div>
               </div>
@@ -591,89 +527,24 @@ export default function HomePage() {
                   </p>
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
 
-        {/* Why Not Manual Section */}
-        <section className="py-24 bg-gradient-to-b from-white to-gray-50">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-5xl mx-auto">
-              <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-                Stop Doing Documentation the Hard Way
-              </h2>
-              <p className="text-lg text-gray-600 text-center mb-12 max-w-3xl mx-auto">
-                Manual documentation is time-consuming, error-prone, and always outdated. Here&apos;s what changes:
-              </p>
-              
-              <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-4 text-lg">Without This Tool</h3>
-                  <ul className="space-y-3">
-                    <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
-                      <span className="sr-only">Disadvantage:</span>
-                      <span className="text-gray-600">10+ hours manually documenting policies</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
-                      <span className="sr-only">Disadvantage:</span>
-                      <span className="text-gray-600">Screenshots and copy-pasting from portal</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
-                      <span className="sr-only">Disadvantage:</span>
-                      <span className="text-gray-600">Missing settings and configuration details</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
-                      <span className="sr-only">Disadvantage:</span>
-                      <span className="text-gray-600">Outdated docs after every change</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
-                      <span className="sr-only">Disadvantage:</span>
-                      <span className="text-gray-600">Inconsistent formatting across teams</span>
-                    </li>
-                  </ul>
+              {/* Before/After Comparison */}
+              <div className="mt-12 bg-blue-50 border border-blue-100 rounded-xl p-6 md:p-8">
+                <div className="grid md:grid-cols-2 gap-6 md:gap-8">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-3 text-sm uppercase tracking-wider">Manual way</h3>
+                    <p className="text-gray-600 text-sm">10+ hours of screenshots, copy-pasting from the Intune portal, missing settings, and docs that are outdated before you finish.</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-3 text-sm uppercase tracking-wider">With this tool</h3>
+                    <p className="text-gray-600 text-sm">3 minutes to a professional PDF with every setting, ADMX value, assignment, and script captured automatically via Graph API.</p>
+                  </div>
                 </div>
-                
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-4 text-lg">With This Tool</h3>
-                  <ul className="space-y-3">
-                    <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
-                      <span className="sr-only">Advantage:</span>
-                      <span className="text-gray-600">3 minutes to complete documentation</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
-                      <span className="sr-only">Advantage:</span>
-                      <span className="text-gray-600">Automated export via Graph API</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
-                      <span className="sr-only">Advantage:</span>
-                      <span className="text-gray-600">100% complete with all settings captured</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
-                      <span className="sr-only">Advantage:</span>
-                      <span className="text-gray-600">Generate fresh reports anytime</span>
-                    </li>
-                    <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
-                      <span className="sr-only">Advantage:</span>
-                      <span className="text-gray-600">Professional, consistent PDF format</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              
-              <div className="mt-12 text-center">
-                <div className="inline-flex items-center justify-center px-6 py-3 bg-blue-50 rounded-lg">
-                  <Clock className="w-5 h-5 text-blue-600 mr-2" />
-                  <span className="text-blue-900 font-semibold">Average time saved: 10+ hours per documentation cycle</span>
+                <div className="mt-6 flex items-center justify-center">
+                  <div className="inline-flex items-center justify-center px-5 py-2 bg-white rounded-lg shadow-sm">
+                    <Clock className="w-4 h-4 text-blue-600 mr-2" />
+                    <span className="text-blue-900 font-semibold text-sm">Average time saved: 10+ hours per documentation cycle</span>
+                  </div>
                 </div>
               </div>
             </div>

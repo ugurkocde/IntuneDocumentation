@@ -1,4 +1,5 @@
 import type { AccountInfo } from "@azure/msal-browser";
+import { createHash } from "crypto";
 
 interface TenantInfo {
   tenantId: string;
@@ -10,21 +11,24 @@ interface TenantInfo {
   userAgent?: string;
 }
 
+function hashPii(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 export function extractTenantInfo(account: AccountInfo | null, request?: Request): TenantInfo | null {
   if (!account) return null;
 
   const tenantInfo: TenantInfo = {
     tenantId: account.tenantId,
-    tenantName: account.tenantId, // Can be replaced with actual tenant name if available
+    tenantName: account.tenantId,
     userPrincipalName: account.username,
     userName: account.name || undefined,
     timestamp: new Date().toISOString(),
   };
 
-  // Add request metadata if available (for API routes)
   if (request) {
-    tenantInfo.ipAddress = request.headers.get('x-forwarded-for') || 
-                           request.headers.get('x-real-ip') || 
+    tenantInfo.ipAddress = request.headers.get('x-forwarded-for') ||
+                           request.headers.get('x-real-ip') ||
                            undefined;
     tenantInfo.userAgent = request.headers.get('user-agent') || undefined;
   }
@@ -38,38 +42,14 @@ export function logTenantAccess(tenantInfo: TenantInfo | null, context: string =
     return;
   }
 
-  // CRITICAL: Log tenant ID and UPN explicitly for Vercel logs
-  console.log(`
-================================================================================
-[TENANT-LOGIN-DETECTED] ${context}
---------------------------------------------------------------------------------
-TENANT_ID: ${tenantInfo.tenantId}
-USER_UPN: ${tenantInfo.userPrincipalName}
-USER_NAME: ${tenantInfo.userName || 'N/A'}
-TIMESTAMP: ${tenantInfo.timestamp}
-IP_ADDRESS: ${tenantInfo.ipAddress || 'N/A'}
-================================================================================
-  `);
-
-  // Main tenant tracking log - This will appear in Vercel logs
   console.log(
     `[TENANT-ACCESS] ${JSON.stringify({
       context,
       tenantId: tenantInfo.tenantId,
-      tenantName: tenantInfo.tenantName,
-      user: tenantInfo.userPrincipalName,
-      userName: tenantInfo.userName,
+      userHash: hashPii(tenantInfo.userPrincipalName),
       timestamp: tenantInfo.timestamp,
-      ip: tenantInfo.ipAddress,
-      userAgent: tenantInfo.userAgent
     })}`
   );
-
-  // Additional formatted log for readability
-  console.log(`[TENANT-ACCESS] Tenant: ${tenantInfo.tenantId} | User: ${tenantInfo.userPrincipalName} | Context: ${context} | Time: ${tenantInfo.timestamp}`);
-  
-  // Extra explicit logging to ensure visibility
-  console.warn(`TENANT_TRACKING: User from tenant ${tenantInfo.tenantId} (${tenantInfo.userPrincipalName}) accessed ${context} at ${tenantInfo.timestamp}`);
 }
 
 // Helper function to get tenant info from ID token claims

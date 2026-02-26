@@ -21,13 +21,16 @@ export function HeroExportCounter() {
   if (exportCount === null) {
     return (
       <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-pulse">
-        <span className="text-xs text-blue-200/80">Loading...</span>
+        <span className="inline-block w-24 h-3 rounded bg-blue-200/20" />
       </div>
     );
   }
 
   return (
-    <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700">
+    <div
+      className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700"
+      aria-live="polite"
+    >
       <span className="text-[10px] sm:text-xs text-blue-200/90">
         <span className="hidden sm:inline">Total Documentation </span>
         Exports:

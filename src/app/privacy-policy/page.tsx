@@ -44,7 +44,7 @@ export default function PrivacyPolicyPage() {
               We do not persist your Intune configuration data or generated PDFs. Data is retrieved during your session and used solely to build your report.
             </li>
             <li>
-              For larger exports, we may temporarily stage a JSON copy of your selected configuration in short‑lived storage (Vercel Blob) to reliably generate your PDF due to request body size limits on serverless platforms (see https://vercel.com/guides/how-to-bypass-vercel-body-size-limit-serverless-functions). The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation.
+              For larger exports, we may temporarily stage a JSON copy of your selected configuration in short‑lived storage (Vercel Blob) to reliably generate your PDF due to <a href="https://vercel.com/guides/how-to-bypass-vercel-body-size-limit-serverless-functions" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">platform payload size limits</a> on serverless platforms. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation.
             </li>
             <li>
               Access tokens are managed by your browser session to call Microsoft Graph; we do not persist
@@ -91,6 +91,20 @@ export default function PrivacyPolicyPage() {
             </li>
           </ul>
 
+          <h2 className="text-xl font-semibold text-slate-900">Your Rights (GDPR & CCPA)</h2>
+          <p>
+            If you are located in the European Economic Area (EEA), United Kingdom, or California, you may have additional rights under the GDPR or CCPA, including:
+          </p>
+          <ul className="list-disc pl-6 space-y-2">
+            <li><strong>Right to access:</strong> Request a copy of any personal data we process about you.</li>
+            <li><strong>Right to deletion:</strong> Request that we delete your personal data.</li>
+            <li><strong>Right to opt-out:</strong> Opt out of any data processing that constitutes a sale or sharing of personal information (we do not sell or share personal data).</li>
+            <li><strong>Right to rectification:</strong> Request correction of inaccurate personal data.</li>
+          </ul>
+          <p>
+            Because we do not persist your Intune configuration data or personal information beyond your browser session, there is typically no stored data to access, correct, or delete. To exercise any of these rights, contact us at the email below.
+          </p>
+
           <h2 className="text-xl font-semibold text-slate-900">Children’s Privacy</h2>
           <p>
             The Service is intended for professional/enterprise use and is not directed to children.
@@ -104,7 +118,7 @@ export default function PrivacyPolicyPage() {
 
           <h2 className="text-xl font-semibold text-slate-900">Contact</h2>
           <p>
-            Questions about this policy? Contact us via LinkedIn: <a href="https://www.linkedin.com/in/ugurkocde/" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">@ugurkocde</a>.
+            Questions about this policy? Contact us at <a href="mailto:support@ugurlabs.com" className="text-blue-700 underline">support@ugurlabs.com</a> or via LinkedIn: <a href="https://www.linkedin.com/in/ugurkocde/" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">@ugurkocde</a>.
           </p>
         </section>
       </div>

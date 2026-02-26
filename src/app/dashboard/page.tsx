@@ -90,7 +90,7 @@ interface IntuneConfigurations {
 }
 
 export default function DashboardPage() {
-  const { instance, accounts } = useMsal();
+  const { instance, accounts, inProgress } = useMsal();
   const router = useRouter();
 
   // Log tenant access server-side only
@@ -457,6 +457,33 @@ export default function DashboardPage() {
     caConsentStatus,
     getAccessToken,
   });
+
+  // Show sign-in prompt instead of loading UI for unauthenticated users
+  // Wait for MSAL to finish initializing before deciding
+  if (inProgress === "none" && accounts.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-subtle pt-16">
+        <NavigationHeader />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Card className="max-w-md w-full">
+            <CardContent className="text-center py-12">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Shield className="w-8 h-8 text-blue-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">Sign in required</h2>
+              <p className="text-sm text-slate-600 mb-6">Please sign in with your Microsoft account to access the dashboard.</p>
+              <Button
+                onClick={() => router.push("/")}
+                variant="primary"
+              >
+                Go to Home
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

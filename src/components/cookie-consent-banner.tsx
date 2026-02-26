@@ -30,6 +30,11 @@ export function CookieConsentBanner() {
     handleClose();
   };
 
+  const handleDismiss = () => {
+    localStorage.setItem("cookie-consent", "dismissed");
+    handleClose();
+  };
+
   const handleClose = () => {
     setIsVisible(false);
     setTimeout(() => setShowBanner(false), 300);
@@ -44,16 +49,16 @@ export function CookieConsentBanner() {
       }`}
     >
       <div className="bg-white border-t border-slate-200 shadow-2xl">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="container mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
             {/* Icon and Message */}
-            <div className="flex items-start gap-3 flex-1">
-              <Cookie className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex items-start gap-2 sm:gap-3 flex-1">
+              <Cookie className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm text-slate-900 font-medium mb-1">
+                <p className="text-xs sm:text-sm text-slate-900 font-medium mb-0.5 sm:mb-1">
                   We value your privacy
                 </p>
-                <p className="text-xs text-slate-600 leading-relaxed">
+                <p className="text-[11px] sm:text-xs text-slate-600 leading-relaxed">
                   We use privacy-friendly analytics (Plausible) to understand how you use our service.
                   No cookies are stored, and no personal data is tracked.
                   <Link href="/privacy-policy" className="text-blue-600 hover:text-blue-700 underline ml-1">
@@ -67,22 +72,22 @@ export function CookieConsentBanner() {
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={handleDecline}
-                className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-colors"
+                className="flex-1 sm:flex-none px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-colors"
               >
                 Decline
               </button>
               <button
                 onClick={handleAccept}
-                className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+                className="flex-1 sm:flex-none px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
               >
                 Accept
               </button>
               <button
-                onClick={handleClose}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-colors"
-                aria-label="Close"
+                onClick={handleDismiss}
+                className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50 transition-colors"
+                aria-label="Dismiss"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
           </div>

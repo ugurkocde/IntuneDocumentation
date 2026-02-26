@@ -237,3 +237,14 @@
 
   /* Removed: custom progress bar animations (reverted to icon list) */
 }
+
+/* High Contrast Mode: replace gradient text with solid color */
+@media (forced-colors: active) {
+  .text-transparent {
+    color: LinkText;
+    background-image: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    -webkit-text-fill-color: unset;
+  }
+}

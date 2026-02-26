@@ -19,6 +19,7 @@ export function NavigationHeader() {
   const [signingIn, setSigningIn] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeSection, setActiveSection] = useState<string>("");
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   const onHome = pathname === "/";
 
@@ -61,12 +62,20 @@ export function NavigationHeader() {
   const handleSignIn = async () => {
     try {
       setSigningIn(true);
+      setSignInError(null);
       const result = await instance.loginPopup(loginRequest);
       if (result?.account) {
         router.push("/dashboard");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Sign-in failed:", e);
+      if (e?.errorCode === "popup_window_error") {
+        setSignInError("Pop-up was blocked. Please allow pop-ups for this site and try again.");
+      } else if (e?.errorCode === "user_cancelled") {
+        setSignInError(null);
+      } else {
+        setSignInError("Sign-in failed. Please try again.");
+      }
     } finally {
       setSigningIn(false);
     }
@@ -168,12 +177,15 @@ export function NavigationHeader() {
                 </Button>
               </>
             ) : (
-              <>
+              <div className="flex items-center gap-3">
                 <Button onClick={handleSignIn} size="sm" loading={signingIn} className={onHome && !scrolled ? 'bg-white text-slate-900 hover:bg-white/90' : ''}>
                   <LogIn className="w-4 h-4" />
                   Sign in
                 </Button>
-              </>
+                {signInError && (
+                  <span className="text-xs text-red-500 max-w-[200px]">{signInError}</span>
+                )}
+              </div>
             )}
           </div>
 
@@ -208,12 +220,15 @@ export function NavigationHeader() {
                   </Button>
                 </>
               ) : (
-                <>
+                <div className="flex flex-col gap-1">
                   <Button onClick={handleSignIn} size="sm" loading={signingIn} className={`flex-shrink-0 ${onHome && !scrolled ? 'bg-white text-slate-900 hover:bg-white/90' : ''}`}>
                     <LogIn className="w-4 h-4" />
                     Sign in
                   </Button>
-                </>
+                  {signInError && (
+                    <span className="text-xs text-red-500">{signInError}</span>
+                  )}
+                </div>
               )}
             </div>
           </div>

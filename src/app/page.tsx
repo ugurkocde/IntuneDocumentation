@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle } from "lucide-react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle, ArrowUp } from "lucide-react";
 import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
@@ -19,6 +19,8 @@ export default function HomePage() {
   const [signingIn, setSigningIn] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const [videoSrc, setVideoSrc] = useState<string>(
     "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
   );
@@ -37,6 +39,13 @@ export default function HomePage() {
     updateVideoSource();
     window.addEventListener("resize", updateVideoSource);
     return () => window.removeEventListener("resize", updateVideoSource);
+  }, []);
+
+  // Show back-to-top button after scrolling past hero
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 600);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   const isAuthenticated = accounts.length > 0;
@@ -64,10 +73,18 @@ export default function HomePage() {
   const handleSignIn = async () => {
     try {
       setSigningIn(true);
+      setSignInError(null);
       await instance.loginPopup(loginRequest);
       router.push("/dashboard");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed:", error);
+      if (error?.errorCode === "popup_window_error") {
+        setSignInError("Pop-up was blocked. Please allow pop-ups for this site and try again.");
+      } else if (error?.errorCode === "user_cancelled") {
+        setSignInError(null);
+      } else {
+        setSignInError("Sign-in failed. Please try again.");
+      }
     } finally {
       setSigningIn(false);
     }
@@ -200,8 +217,8 @@ export default function HomePage() {
 
                 {/* Main Headline */}
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-6 tracking-tight leading-[1.05]">
-                  Stop Spending Hours on
-                  <span className="mx-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">Intune Documentation</span>
+                  Stop Spending Hours on{" "}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">Intune Documentation</span>
                 </h1>
                 
                 {/* Subheadline */}
@@ -259,7 +276,12 @@ export default function HomePage() {
                     </button>
                     {signingIn && (
                       <div className="text-sm text-blue-100" aria-live="polite">
-                        Opening Microsoft sign-in…
+                        Opening Microsoft sign-in...
+                      </div>
+                    )}
+                    {signInError && (
+                      <div className="text-sm text-red-300 bg-red-500/10 border border-red-400/20 rounded-lg px-3 py-2" role="alert">
+                        {signInError}
                       </div>
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-blue-100">
@@ -293,7 +315,8 @@ export default function HomePage() {
                     </div>
                     <a
                       href="/api/pdf/sample"
-                      download="IntuneDocumentation-Sample.pdf"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="text-sm text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
                       aria-label="Preview a sample PDF"
                     >
@@ -349,6 +372,9 @@ export default function HomePage() {
                     <source src={videoSrc} type="video/mp4" />
                     Your browser does not support the video tag.
                   </video>
+                  <p className="relative text-xs text-blue-200/70 mt-3 text-center">
+                    Video: Quick demo showing the sign-in, configuration selection, and PDF export workflow.
+                  </p>
                 </div>
               </div>
             </div>
@@ -585,23 +611,28 @@ export default function HomePage() {
                   <h3 className="font-semibold text-gray-900 mb-4 text-lg">Without This Tool</h3>
                   <ul className="space-y-3">
                     <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
+                      <span className="sr-only">Disadvantage:</span>
                       <span className="text-gray-600">10+ hours manually documenting policies</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
+                      <span className="sr-only">Disadvantage:</span>
                       <span className="text-gray-600">Screenshots and copy-pasting from portal</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
+                      <span className="sr-only">Disadvantage:</span>
                       <span className="text-gray-600">Missing settings and configuration details</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
+                      <span className="sr-only">Disadvantage:</span>
                       <span className="text-gray-600">Outdated docs after every change</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-red-500 mt-1">✗</span>
+                      <span className="text-red-500 mt-1" aria-hidden="true">✗</span>
+                      <span className="sr-only">Disadvantage:</span>
                       <span className="text-gray-600">Inconsistent formatting across teams</span>
                     </li>
                   </ul>
@@ -611,23 +642,28 @@ export default function HomePage() {
                   <h3 className="font-semibold text-gray-900 mb-4 text-lg">With This Tool</h3>
                   <ul className="space-y-3">
                     <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
+                      <span className="sr-only">Advantage:</span>
                       <span className="text-gray-600">3 minutes to complete documentation</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
+                      <span className="sr-only">Advantage:</span>
                       <span className="text-gray-600">Automated export via Graph API</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
+                      <span className="sr-only">Advantage:</span>
                       <span className="text-gray-600">100% complete with all settings captured</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
+                      <span className="sr-only">Advantage:</span>
                       <span className="text-gray-600">Generate fresh reports anytime</span>
                     </li>
                     <li className="flex items-start gap-3">
-                      <span className="text-green-500 mt-1">✓</span>
+                      <span className="text-green-500 mt-1" aria-hidden="true">✓</span>
+                      <span className="sr-only">Advantage:</span>
                       <span className="text-gray-600">Professional, consistent PDF format</span>
                     </li>
                   </ul>
@@ -832,7 +868,8 @@ export default function HomePage() {
                     </div>
                     <a
                       href="/api/pdf/sample"
-                      download="IntuneDocumentation-Sample.pdf"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
                       aria-label="Preview a sample PDF"
                     >
@@ -854,6 +891,17 @@ export default function HomePage() {
 
         <SiteFooter />
       </main>
+
+      {/* Back to top button */}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        className={`fixed bottom-6 right-6 z-40 p-3 bg-slate-900 text-white rounded-full shadow-lg hover:bg-slate-800 transition-all cursor-pointer ${
+          showBackToTop ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
+        }`}
+        aria-label="Back to top"
+      >
+        <ArrowUp className="w-5 h-5" />
+      </button>
 
       {/* Security Modal */}
       {showSecurity && (

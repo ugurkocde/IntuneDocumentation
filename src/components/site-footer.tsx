@@ -41,7 +41,7 @@ export function SiteFooter() {
           </div>
 
           <div>
-            <h4 className="text-white font-semibold text-sm tracking-wide">More</h4>
+            <h4 className="text-white font-semibold text-sm tracking-wide">Legal</h4>
             <ul className="mt-3 space-y-2 text-sm">
               <li>
                 <Link href="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>

@@ -189,29 +189,7 @@ export default function RootLayout({
       "Create audit-ready documentation",
       "Free tool for IT professionals"
     ],
-    "screenshot": "https://intunedocumentation.com/og-image.png",
-    "aggregateRating": {
-      "@type": "AggregateRating",
-      "ratingValue": "4.8",
-      "ratingCount": "150",
-      "bestRating": "5",
-      "worstRating": "1"
-    },
-    "review": [
-      {
-        "@type": "Review",
-        "reviewRating": {
-          "@type": "Rating",
-          "ratingValue": "5",
-          "bestRating": "5"
-        },
-        "author": {
-          "@type": "Person",
-          "name": "IT Administrator"
-        },
-        "reviewBody": "This tool saved me hours of manual documentation work. Perfect for compliance audits."
-      }
-    ]
+    "screenshot": "https://intunedocumentation.com/og-image.png"
   };
 
   const breadcrumbSchema = {

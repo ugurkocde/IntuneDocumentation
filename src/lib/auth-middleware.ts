@@ -52,19 +52,7 @@ export function extractTenantFromRequest(request: NextRequest): ExtractedTenantI
       userAgent: request.headers.get('user-agent') || undefined
     };
 
-    // Log the tenant access with API route context
     const pathname = new URL(request.url).pathname;
-    
-    // CRITICAL: Explicit API access logging
-    console.log(`
-[API-ACCESS-DETECTED] ${pathname}
-TENANT_ID: ${tenantInfo.tenantId}
-USER_UPN: ${tenantInfo.userPrincipalName}
-USER_NAME: ${tenantInfo.userName || 'N/A'}
-IP: ${tenantInfo.ipAddress || 'N/A'}
-TIME: ${tenantInfo.timestamp}
-    `);
-    
     logTenantAccess(tenantInfo, `API-${pathname}`);
 
     return tenantInfo;

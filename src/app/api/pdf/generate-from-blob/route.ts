@@ -36,7 +36,26 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
+    // Validate blob URL to prevent SSRF
+    try {
+      const parsedUrl = new URL(blobUrl);
+      if (
+        parsedUrl.protocol !== 'https:' ||
+        !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com')
+      ) {
+        return NextResponse.json(
+          { error: "Invalid blob URL" },
+          { status: 400 }
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid blob URL" },
+        { status: 400 }
+      );
+    }
+
     // Fetch the configuration data from Vercel Blob
     const response = await fetch(blobUrl);
     if (!response.ok) {

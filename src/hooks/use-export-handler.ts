@@ -142,7 +142,7 @@ export function useExportHandler({
 
       // Upload data to Vercel Blob to avoid payload size limits
       const jsonBlob = new Blob([JSON.stringify(selectedData)], { type: 'application/json' });
-      const uploadResult = await upload(`intune-export-${Date.now()}.json`, jsonBlob, {
+      const uploadResult = await upload(`intune-export-${crypto.randomUUID()}.json`, jsonBlob, {
         access: 'public',
         handleUploadUrl: '/api/pdf/client-upload',
         headers: {

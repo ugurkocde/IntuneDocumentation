@@ -25,6 +25,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing blob URL" }, { status: 400 });
     }
 
+    // Validate blob URL to prevent SSRF
+    try {
+      const parsedUrl = new URL(blobUrl);
+      if (
+        parsedUrl.protocol !== 'https:' ||
+        !parsedUrl.hostname.endsWith('.public.blob.vercel-storage.com')
+      ) {
+        return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: "Invalid blob URL" }, { status: 400 });
+    }
+
     const response = await fetch(blobUrl);
     if (!response.ok) {
       throw new Error("Failed to fetch configuration from blob storage");

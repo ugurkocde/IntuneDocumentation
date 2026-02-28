@@ -456,6 +456,12 @@ export default function DashboardPage() {
     includeCA,
     caConsentStatus,
     getAccessToken,
+    onProgress: (progress) => {
+      updateExportState({
+        currentStage: progress.stage,
+        overallProgress: progress.progress,
+      });
+    },
   });
 
   // Show sign-in prompt instead of loading UI for unauthenticated users
@@ -1266,7 +1272,7 @@ export default function DashboardPage() {
         exportError={exportState.exportError}
         overallProgress={exportState.overallProgress}
         currentStageName={
-          (['Preparing export data...', 'Generating document...', 'Finalizing...', 'Starting download...'][exportState.currentStage]) ?? 'Processing...'
+          (['Preparing export data...', 'Resolving group names...', 'Fetching device counts...', 'Generating document...', 'Starting download...'][exportState.currentStage]) ?? 'Processing...'
         }
         policyCount={exportConfig.selectedCount}
         hasWarnings={exportState.exportErrors.length > 0}

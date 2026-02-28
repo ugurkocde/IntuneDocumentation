@@ -53,7 +53,7 @@ function enhanceAssignmentText(text: string, groupNames?: Map<string, string>): 
   return text;
 }
 
-export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint8Array> {
+export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Blob> {
   const sections: Array<{ properties: any; children: Array<Paragraph | Table> }> = [];
 
   const company = data.branding?.companyName || "";
@@ -637,6 +637,5 @@ export async function generateDetailedDOCX(data: DetailedDocxData): Promise<Uint
   simpleListSection("Conditional Access Policies", data.conditionalAccessPolicies);
 
   const doc = new Document({ sections });
-  const buffer = await Packer.toBuffer(doc);
-  return new Uint8Array(buffer);
+  return Packer.toBlob(doc);
 }

@@ -12,6 +12,7 @@ import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { HeroExportCounter } from "~/components/hero-export-counter";
 import { HeroMauCounter } from "~/components/hero-mau-counter";
+import { DataFlowDiagram } from "~/components/data-flow-diagram";
 
 const faqs = [
   {
@@ -452,6 +453,9 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* Data Flow Architecture Diagram */}
+        <DataFlowDiagram />
 
         {/* Key Features Section */}
         <section className="py-24 bg-white scroll-mt-24" id="features">

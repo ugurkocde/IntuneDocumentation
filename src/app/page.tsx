@@ -28,7 +28,7 @@ const faqs = [
   },
   {
     question: "Is my Intune data secure?",
-    answer: "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. We do not persist your Intune data or PDFs. For larger exports, we briefly stage your selected configuration in a short-lived transfer buffer (Vercel Blob) to reliably generate your PDF due to platform payload size limits. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation."
+    answer: "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. All document generation (PDF and DOCX) happens entirely in your browser -- your Intune data never leaves your device. We do not persist your configuration data or generated documents anywhere."
   },
   {
     question: "What Intune policies can I export?",
@@ -787,7 +787,7 @@ export default function HomePage() {
                     {(loginRequest.scopes || []).join(', ')}
                   </code>
                 </li>
-                <li><span className="font-medium">No persistent storage:</span> configuration data is fetched during your session to generate PDFs. For larger exports, we may use a short‑lived transfer buffer (Vercel Blob) due to request size limits; it is deleted immediately after generation.</li>
+                <li><span className="font-medium">No persistent storage:</span> configuration data is fetched during your session and all document generation (PDF and DOCX) happens entirely in your browser. Your data never leaves your device during export.</li>
                 <li><span className="font-medium">Tokens stay in your browser:</span> access tokens are kept in session storage by MSAL and are not saved server‑side.</li>
                 <li><span className="font-medium">Revoke anytime:</span> remove access from Entra ID &gt; Enterprise Applications, or simply sign out.</li>
               </ul>

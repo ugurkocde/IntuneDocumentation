@@ -8,8 +8,8 @@ export function SiteFooter() {
   return (
     <footer className="bg-gray-900 text-gray-300 border-t border-white/10">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-5">
-          <div>
+        <div className="grid grid-cols-2 gap-8 sm:gap-10 lg:grid-cols-5">
+          <div className="col-span-2 lg:col-span-1">
             <h3 className="text-white font-semibold text-lg">Intune Documentation</h3>
             <p className="mt-3 text-sm text-gray-400">
               Generate clear, audit‑ready PDF documentation for Microsoft Intune configurations — quickly and securely.

@@ -470,22 +470,70 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen bg-gradient-subtle pt-16">
         <NavigationHeader />
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Card className="max-w-md w-full">
-            <CardContent className="text-center py-12">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Shield className="w-8 h-8 text-blue-600" />
-              </div>
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">Sign in required</h2>
-              <p className="text-sm text-slate-600 mb-6">Please sign in with your Microsoft account to access the dashboard.</p>
-              <Button
-                onClick={() => router.push("/")}
-                variant="primary"
-              >
-                Go to Home
-              </Button>
-            </CardContent>
-          </Card>
+        <div className="flex items-center justify-center min-h-[60vh] px-4">
+          <div className="max-w-lg w-full">
+            <Card>
+              <CardContent className="text-center py-10">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Shield className="w-8 h-8 text-blue-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-slate-900 mb-2">Intune Documentation Dashboard</h2>
+                <p className="text-sm text-slate-600 mb-6">
+                  Sign in with your Microsoft account to access your Intune tenant and generate documentation.
+                </p>
+
+                <div className="grid grid-cols-2 gap-3 mb-6 text-left">
+                  <div className="flex items-start gap-2 p-3 bg-slate-50 rounded-lg">
+                    <FileText className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">Export to PDF/DOCX</p>
+                      <p className="text-xs text-slate-500">Professional audit-ready reports</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 p-3 bg-slate-50 rounded-lg">
+                    <LayoutGrid className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">10+ Config Types</p>
+                      <p className="text-xs text-slate-500">Policies, profiles, scripts</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 p-3 bg-slate-50 rounded-lg">
+                    <Search className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">Search & Filter</p>
+                      <p className="text-xs text-slate-500">Find configurations quickly</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 p-3 bg-slate-50 rounded-lg">
+                    <Palette className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">Custom Branding</p>
+                      <p className="text-xs text-slate-500">Logo, colors, headers</p>
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => router.push("/")}
+                  variant="primary"
+                  className="w-full"
+                >
+                  Sign In to Get Started
+                </Button>
+
+                <div className="mt-4 flex items-center justify-center gap-4 text-xs text-slate-400">
+                  <span className="inline-flex items-center gap-1">
+                    <Shield className="w-3 h-3" />
+                    Read-only access
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    3-min exports
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     );

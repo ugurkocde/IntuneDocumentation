@@ -4,23 +4,79 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle, ArrowUp } from "lucide-react";
-import { useMemo, useState, useEffect, type ReactNode } from "react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle } from "lucide-react";
+import { BackToTopButton } from "~/components/back-to-top-button";
+import type { ReactNode } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { HeroExportCounter } from "~/components/hero-export-counter";
 import { HeroMauCounter } from "~/components/hero-mau-counter";
 
+const faqs = [
+  {
+    question: "What is the Intune Documentation Generator?",
+    answer: "The Intune Documentation Generator is a free tool that connects to your Microsoft Intune tenant via Graph API, fetches all 10 configuration types (policies, profiles, scripts, etc.), and generates comprehensive PDF or Word documents with complete settings, assignments, and filters. It saves IT teams 10+ hours per audit."
+  },
+  {
+    question: "How do I export Intune configurations to PDF?",
+    answer: "Simply sign in with your Microsoft account, select the Intune configurations you want to document, and click Export. The tool automatically generates a professional PDF report with all settings, assignments, and group configurations in minutes."
+  },
+  {
+    question: "Is the Intune Documentation tool really free?",
+    answer: "Yes, it's completely free. No hidden fees, no premium tiers, no credit card required. You can generate unlimited Intune documentation reports at no cost."
+  },
+  {
+    question: "Is my Intune data secure?",
+    answer: "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. We do not persist your Intune data or PDFs. For larger exports, we briefly stage your selected configuration in a short-lived transfer buffer (Vercel Blob) to reliably generate your PDF due to platform payload size limits. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation."
+  },
+  {
+    question: "What Intune policies can I export?",
+    answer: "You can export all Intune configuration types including: Device Configurations, Compliance Policies, Settings Catalog, Administrative Templates, Security Baselines, PowerShell Scripts, Shell Scripts, App Configurations, Windows Update Policies, Enrollment Configurations, and Conditional Access Policies."
+  },
+  {
+    question: "Why does Defender flag 'Suspicious application consent for offline access'?",
+    answer: "This is a common alert when an app requests the standard 'offline_access' permission from Microsoft identity (used to refresh tokens without repeatedly prompting you). It does NOT grant extra data access beyond your approved read-only scopes, and we use only delegated permissions (no application permissions). Tokens are kept in your browser session, and we do not store tenant data."
+  },
+  {
+    question: "How long does it take to generate Intune documentation?",
+    answer: "Most Intune documentation reports are generated in under 2 minutes. The exact time depends on the number of configurations in your tenant and which policies you select for export."
+  },
+  {
+    question: "Can I customize the Intune PDF report?",
+    answer: "Yes, you can customize your documentation with branding options including company logo, custom colors, headers, footers, and confidentiality notices. You can also select specific configurations to include or exclude from the report."
+  }
+];
+
+function linkify(text: string): ReactNode {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return parts.map((part, i) => {
+    if (/^https?:\/\//.test(part)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-700 underline"
+        >
+          {part}
+        </a>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 export default function HomePage() {
   const { instance, accounts } = useMsal();
   const router = useRouter();
   const { userProfile } = useUserProfile();
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(0);
   const [signingIn, setSigningIn] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
-  const [showBackToTop, setShowBackToTop] = useState(false);
   const [videoSrc, setVideoSrc] = useState<string>(
     "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
   );
@@ -41,34 +97,7 @@ export default function HomePage() {
     return () => window.removeEventListener("resize", updateVideoSource);
   }, []);
 
-  // Show back-to-top button after scrolling past hero
-  useEffect(() => {
-    const onScroll = () => setShowBackToTop(window.scrollY > 600);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   const isAuthenticated = accounts.length > 0;
-
-  const linkify = (text: string): ReactNode => {
-    const parts = text.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, i) => {
-      if (/^https?:\/\//.test(part)) {
-        return (
-          <a
-            key={i}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-700 underline"
-          >
-            {part}
-          </a>
-        );
-      }
-      return <span key={i}>{part}</span>;
-    });
-  };
 
   const handleSignIn = async () => {
     try {
@@ -96,41 +125,6 @@ export default function HomePage() {
     });
   };
 
-  const faqs = [
-    {
-      question: "What is the Intune Documentation Generator?",
-      answer: "The Intune Documentation Generator is a free tool that connects to your Microsoft Intune tenant via Graph API, fetches all 10 configuration types (policies, profiles, scripts, etc.), and generates comprehensive PDF or Word documents with complete settings, assignments, and filters. It saves IT teams 10+ hours per audit."
-    },
-    {
-      question: "How do I export Intune configurations to PDF?",
-      answer: "Simply sign in with your Microsoft account, select the Intune configurations you want to document, and click Export. The tool automatically generates a professional PDF report with all settings, assignments, and group configurations in minutes."
-    },
-    {
-      question: "Is the Intune Documentation tool really free?",
-      answer: "Yes, it's completely free. No hidden fees, no premium tiers, no credit card required. You can generate unlimited Intune documentation reports at no cost."
-    },
-    {
-      question: "Is my Intune data secure?",
-      answer: "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. We do not persist your Intune data or PDFs. For larger exports, we briefly stage your selected configuration in a short-lived transfer buffer (Vercel Blob) to reliably generate your PDF due to platform payload size limits. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation."
-    },
-    {
-      question: "What Intune policies can I export?",
-      answer: "You can export all Intune configuration types including: Device Configurations, Compliance Policies, Settings Catalog, Administrative Templates, Security Baselines, PowerShell Scripts, Shell Scripts, App Configurations, Windows Update Policies, Enrollment Configurations, and Conditional Access Policies."
-    },
-    {
-      question: "Why does Defender flag 'Suspicious application consent for offline access'?",
-      answer: "This is a common alert when an app requests the standard 'offline_access' permission from Microsoft identity (used to refresh tokens without repeatedly prompting you). It does NOT grant extra data access beyond your approved read-only scopes, and we use only delegated permissions (no application permissions). Tokens are kept in your browser session, and we do not store tenant data."
-    },
-    {
-      question: "How long does it take to generate Intune documentation?",
-      answer: "Most Intune documentation reports are generated in under 2 minutes. The exact time depends on the number of configurations in your tenant and which policies you select for export."
-    },
-    {
-      question: "Can I customize the Intune PDF report?",
-      answer: "Yes, you can customize your documentation with branding options including company logo, custom colors, headers, footers, and confidentiality notices. You can also select specific configurations to include or exclude from the report."
-    }
-  ];
-
   const faqJsonLd = useMemo(() => ({
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -142,7 +136,7 @@ export default function HomePage() {
         "text": f.answer,
       },
     })),
-  }), [faqs]);
+  }), []);
 
   const howToJsonLd = useMemo(() => ({
     "@context": "https://schema.org",
@@ -216,7 +210,7 @@ export default function HomePage() {
                 </div>
 
                 {/* Main Headline */}
-                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-6 tracking-tight leading-[1.05]">
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-extrabold text-white mb-6 tracking-tight leading-[1.05]">
                   Stop Spending Hours on{" "}
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">Intune Documentation</span>
                 </h1>
@@ -337,9 +331,10 @@ export default function HomePage() {
                       href="/api/pdf/sample"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-100 border border-blue-300/30 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
                       aria-label="Preview a sample PDF"
                     >
+                      <Eye className="w-4 h-4" />
                       Preview a sample PDF
                     </a>
                   </div>
@@ -529,21 +524,21 @@ export default function HomePage() {
               </div>
 
               {/* Before/After Comparison */}
-              <div className="mt-12 bg-blue-50 border border-blue-100 rounded-xl p-6 md:p-8">
+              <div className="mt-12 bg-blue-50 border border-blue-100 rounded-xl p-5 sm:p-6 md:p-8">
                 <div className="grid md:grid-cols-2 gap-6 md:gap-8">
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-3 text-sm uppercase tracking-wider">Manual way</h3>
-                    <p className="text-gray-600 text-sm">10+ hours of screenshots, copy-pasting from the Intune portal, missing settings, and docs that are outdated before you finish.</p>
+                    <p className="text-gray-600 text-sm sm:text-base leading-relaxed">10+ hours of screenshots, copy-pasting from the Intune portal, missing settings, and docs that are outdated before you finish.</p>
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-3 text-sm uppercase tracking-wider">With this tool</h3>
-                    <p className="text-gray-600 text-sm">3 minutes to a professional PDF with every setting, ADMX value, assignment, and script captured automatically via Graph API.</p>
+                    <p className="text-gray-600 text-sm sm:text-base leading-relaxed">3 minutes to a professional PDF with every setting, ADMX value, assignment, and script captured automatically via Graph API.</p>
                   </div>
                 </div>
                 <div className="mt-6 flex items-center justify-center">
-                  <div className="inline-flex items-center justify-center px-5 py-2 bg-white rounded-lg shadow-sm">
-                    <Clock className="w-4 h-4 text-blue-600 mr-2" />
-                    <span className="text-blue-900 font-semibold text-sm">Average time saved: 10+ hours per documentation cycle</span>
+                  <div className="inline-flex items-center justify-center px-4 sm:px-5 py-2 bg-white rounded-lg shadow-sm">
+                    <Clock className="w-4 h-4 text-blue-600 mr-2 flex-shrink-0" />
+                    <span className="text-blue-900 font-semibold text-xs sm:text-sm">Average time saved: 10+ hours per documentation cycle</span>
                   </div>
                 </div>
               </div>
@@ -741,9 +736,10 @@ export default function HomePage() {
                       href="/api/pdf/sample"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-100 underline underline-offset-2 hover:text-white transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-100 border border-blue-300/30 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
                       aria-label="Preview a sample PDF"
                     >
+                      <Eye className="w-4 h-4" />
                       Preview a sample PDF
                     </a>
                   </div>
@@ -763,16 +759,7 @@ export default function HomePage() {
         <SiteFooter />
       </main>
 
-      {/* Back to top button */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-        className={`fixed bottom-6 right-6 z-40 p-3 bg-slate-900 text-white rounded-full shadow-lg hover:bg-slate-800 transition-all cursor-pointer ${
-          showBackToTop ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
-        }`}
-        aria-label="Back to top"
-      >
-        <ArrowUp className="w-5 h-5" />
-      </button>
+      <BackToTopButton />
 
       {/* Security Modal */}
       {showSecurity && (

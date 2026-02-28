@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
+
+export const metadata: Metadata = {
+  title: "Page Not Found | Intune Documentation",
+  description:
+    "The page you are looking for does not exist. Return to the Intune Documentation Generator to create audit-ready PDF reports of your Microsoft Intune configurations.",
+};
 
 export default function NotFound() {
   return (

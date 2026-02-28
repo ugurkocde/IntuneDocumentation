@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Cookie } from "lucide-react";
 import Link from "next/link";
+
+const BANNER_SPACER_CLASS = "cookie-banner-spacer";
 
 export function CookieConsentBanner() {
   const [showBanner, setShowBanner] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const bannerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Check if user has already made a choice
@@ -19,6 +22,21 @@ export function CookieConsentBanner() {
       }, 1000);
     }
   }, []);
+
+  // Reserve space at the bottom of the page so the fixed banner doesn't overlap content
+  useEffect(() => {
+    if (!showBanner || !bannerRef.current) return;
+
+    const spacer = document.createElement("div");
+    spacer.className = BANNER_SPACER_CLASS;
+    const bannerHeight = bannerRef.current.getBoundingClientRect().height;
+    spacer.style.height = `${bannerHeight}px`;
+    document.body.appendChild(spacer);
+
+    return () => {
+      spacer.remove();
+    };
+  }, [showBanner]);
 
   const handleAccept = () => {
     localStorage.setItem("cookie-consent", "accepted");
@@ -44,6 +62,7 @@ export function CookieConsentBanner() {
 
   return (
     <div
+      ref={bannerRef}
       className={`fixed bottom-0 left-0 right-0 z-50 transition-all duration-300 ${
         isVisible ? "translate-y-0 opacity-100" : "translate-y-full opacity-0"
       }`}

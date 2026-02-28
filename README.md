@@ -12,7 +12,7 @@ A Next.js application that generates comprehensive PDF documentation for Microso
   - App Protection Policies
   - Conditional Access Policies
   - Enrollment Restrictions
-- **Professional PDF export** - Generates well-formatted PDFs with:
+- **Professional PDF & DOCX export** - Generates well-formatted documents entirely in the browser with:
   - Cover page with summary
   - Table of contents
   - Organized sections for each configuration type
@@ -134,6 +134,7 @@ npm start
 ## Security Notes
 
 - The application uses read-only permissions
+- All PDF and DOCX generation happens entirely in the browser -- no data leaves your device during export
 - No data is stored permanently - everything is session-based
 - Authentication tokens are stored securely in browser session storage
 - All API calls are authenticated and authorized
@@ -163,7 +164,7 @@ npm start
 - **Next.js 15** - React framework
 - **MSAL.js** - Microsoft Authentication Library
 - **Microsoft Graph API** - Intune data access
-- **PDFKit** - PDF generation
+- **jsPDF / docx** - Client-side PDF and DOCX generation
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Styling
 

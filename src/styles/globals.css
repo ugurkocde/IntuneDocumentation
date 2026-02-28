@@ -235,7 +235,16 @@
     width: 150%;
   }
 
-  /* Removed: custom progress bar animations (reverted to icon list) */
+  /* Data flow diagram: traveling dot */
+  @keyframes travel-dot-h {
+    0% { left: 0; }
+    100% { left: 100%; }
+  }
+
+  @keyframes travel-dot-v {
+    0% { top: 0; }
+    100% { top: 100%; }
+  }
 }
 
 /* High Contrast Mode: replace gradient text with solid color */

@@ -77,8 +77,9 @@ export function ExportModal({
 
   const stages: ExportStage[] = [
     { name: "Preparing export data...", status: 'pending', progress: 0 },
+    { name: "Resolving group names...", status: 'pending', progress: 0 },
+    { name: "Fetching device counts...", status: 'pending', progress: 0 },
     { name: "Generating document...", status: 'pending', progress: 0 },
-    { name: "Finalizing...", status: 'pending', progress: 0 },
     { name: "Starting download...", status: 'pending', progress: 0 },
   ];
 
@@ -119,80 +120,45 @@ export function ExportModal({
     });
 
     try {
-      // Stage 1: Preparing (0-15%)
-      onStateChange({ currentStage: 0, overallProgress: 5 });
-      await new Promise(resolve => setTimeout(resolve, 300));
-      onStateChange({ overallProgress: 15 });
+      // The export handler reports real progress via onProgress callback.
+      // Modal state is updated by the dashboard wiring, so we just await the result.
+      const result = await onExport(selectedFormat);
 
-      // Stage 2: Generating (15-85%) - Real work happens here
-      onStateChange({ currentStage: 1, overallProgress: 20 });
+      if (!result.success) {
+        onStateChange({ exportError: result.error || 'Export failed' });
+        return;
+      }
 
-      // Simulate smooth progress during API call
-      let currentProgress = 20;
-      const progressInterval = setInterval(() => {
-        if (currentProgress < 80) {
-          currentProgress += Math.random() < 0.5 ? 1 : 2; // Increment by 1-2%
-          onStateChange({ overallProgress: Math.min(currentProgress, 80) });
-        }
-      }, 150);
+      // Capture export errors and stats (partial success)
+      if (result.exportErrors && result.exportErrors.length > 0) {
+        onStateChange({
+          exportErrors: result.exportErrors,
+          exportStats: {
+            total: result.totalPolicies || 0,
+            successful: result.successfulPolicies || 0
+          }
+        });
+      }
 
-      try {
-        const result = await onExport(selectedFormat);
-        clearInterval(progressInterval);
+      onStateChange({ currentStage: 4, overallProgress: 100, exportComplete: true, isExporting: false });
 
-        onStateChange({ overallProgress: 85 });
+      // Show success state for 1.5 seconds before downloading
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
-        if (!result.success) {
-          onStateChange({ exportError: result.error || 'Export failed' });
-          return;
-        }
-
-        // Capture export errors and stats (partial success)
-        if (result.exportErrors && result.exportErrors.length > 0) {
-          onStateChange({
-            exportErrors: result.exportErrors,
-            exportStats: {
-              total: result.totalPolicies || 0,
-              successful: result.successfulPolicies || 0
-            }
-          });
-        }
-
-        // Stage 3: Finalizing (85-95%)
-        onStateChange({ currentStage: 2, overallProgress: 90 });
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        // Stage 4: Downloading (95-100%)
-        onStateChange({ currentStage: 3, overallProgress: 95 });
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        onStateChange({ overallProgress: 100, exportComplete: true });
-
-        // Show success state for 1.5 seconds before downloading
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // Trigger download after success display
-        if (result.downloadData) {
-          const url = window.URL.createObjectURL(result.downloadData.blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = result.downloadData.filename;
-          document.body.appendChild(a);
-          a.click();
-
-          // Cleanup
-          window.URL.revokeObjectURL(url);
-          document.body.removeChild(a);
-        }
-      } catch (apiError: any) {
-        clearInterval(progressInterval);
-        throw apiError;
+      // Trigger download after success display
+      if (result.downloadData) {
+        const url = window.URL.createObjectURL(result.downloadData.blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = result.downloadData.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => window.URL.revokeObjectURL(url), 100);
       }
     } catch (error: any) {
       console.error('Export failed:', error);
-      onStateChange({ exportError: error?.message || 'An unexpected error occurred' });
-    } finally {
-      onStateChange({ isExporting: false });
+      onStateChange({ exportError: error?.message || 'An unexpected error occurred', isExporting: false });
     }
   };
 

@@ -5,7 +5,7 @@ import { SiteFooter } from "~/components/site-footer";
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description:
-    "Learn how Intune Documentation Generator handles authentication data, analytics, and privacy. We request read-only permissions, do not persist your configuration data, and for larger exports may use short-lived blob staging due to platform payload limits.",
+    "Learn how Intune Documentation Generator handles authentication data, analytics, and privacy. We request read-only permissions and generate all documents entirely in your browser. Your policy data never leaves your device.",
 };
 
 export default function PrivacyPolicyPage() {
@@ -41,10 +41,12 @@ export default function PrivacyPolicyPage() {
           <h2 className="text-xl font-semibold text-slate-900">How We Process Data</h2>
           <ul className="list-disc pl-6 space-y-2">
             <li>
-              We do not persist your Intune configuration data or generated PDFs. Data is retrieved during your session and used solely to build your report.
+              All document generation (PDF and DOCX) happens entirely in your browser. Your Intune
+              configuration data never leaves your device during the export process.
             </li>
             <li>
-              For larger exports, we may temporarily stage a JSON copy of your selected configuration in short‑lived storage (Vercel Blob) to reliably generate your PDF due to <a href="https://vercel.com/guides/how-to-bypass-vercel-body-size-limit-serverless-functions" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">platform payload size limits</a> on serverless platforms. The file is transmitted over TLS, exists for minutes, and is deleted immediately after generation.
+              We do not persist your Intune configuration data or generated documents. Data is retrieved
+              during your session and used solely to build your report on your device.
             </li>
             <li>
               Access tokens are managed by your browser session to call Microsoft Graph; we do not persist

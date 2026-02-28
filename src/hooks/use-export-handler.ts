@@ -1,6 +1,11 @@
 import { useState } from "react";
 import type { ExportFormat, ExportConfig, ExportResult, PolicyExportError } from "~/components/export-modal";
-import { upload } from "@vercel/blob/client";
+
+export interface ExportProgress {
+  stage: number;
+  progress: number;
+  message?: string;
+}
 
 interface UseExportHandlerProps {
   configurations: any;
@@ -9,6 +14,7 @@ interface UseExportHandlerProps {
   includeCA: boolean;
   caConsentStatus: string;
   getAccessToken: () => Promise<string>;
+  onProgress?: (progress: ExportProgress) => void;
 }
 
 export function useExportHandler({
@@ -18,6 +24,7 @@ export function useExportHandler({
   includeCA,
   caConsentStatus,
   getAccessToken,
+  onProgress,
 }: UseExportHandlerProps) {
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -97,7 +104,9 @@ export function useExportHandler({
     try {
       const accessToken = await getAccessToken();
 
-      // Build selected data
+      // Stage 0: Preparing data
+      onProgress?.({ stage: 0, progress: 5, message: "Preparing export data..." });
+
       const selectedData = {
         settingsCatalog: configurations?.settingsCatalog?.filter((c: any) =>
           selectedConfigs.has(`catalog-${c.id}`)
@@ -140,71 +149,64 @@ export function useExportHandler({
         branding: brandingOptions
       };
 
-      // Upload data to Vercel Blob to avoid payload size limits
-      const jsonBlob = new Blob([JSON.stringify(selectedData)], { type: 'application/json' });
-      const uploadResult = await upload(`intune-export-${crypto.randomUUID()}.json`, jsonBlob, {
-        access: 'public',
-        handleUploadUrl: '/api/pdf/client-upload',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      onProgress?.({ stage: 0, progress: 10 });
 
-      let response;
+      // Stage 1: Resolve groups
+      onProgress?.({ stage: 1, progress: 15, message: "Resolving group names..." });
 
-      if (format === 'docx') {
-        // DOCX export from blob
-        response = await fetch("/api/docx/generate-from-blob", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ blobUrl: uploadResult.url }),
-        });
-      } else {
-        // PDF export from blob
-        response = await fetch("/api/pdf/generate-from-blob", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ blobUrl: uploadResult.url }),
-        });
-      }
+      const { resolveExportData } = await import("~/lib/client-export-resolver");
+      const resolvedData = await resolveExportData(
+        selectedData,
+        accessToken,
+        (p) => {
+          if (p.stage === "groups") {
+            onProgress?.({ stage: 1, progress: 25, message: p.message });
+          } else {
+            onProgress?.({ stage: 2, progress: 40, message: p.message });
+          }
+        }
+      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Export failed" }));
-        return {
-          success: false,
-          error: errorData.message || errorData.error || "Failed to generate export",
-        };
-      }
+      // Stage 2: Device counts done (part of resolveExportData)
+      onProgress?.({ stage: 2, progress: 50, message: "Device counts fetched" });
 
-      // Check for partial success (export errors in headers)
-      const exportErrorsHeader = response.headers.get("X-Export-Errors");
-      const totalPoliciesHeader = response.headers.get("X-Export-Total");
-      const successfulPoliciesHeader = response.headers.get("X-Export-Success");
+      // Stage 3: Generate document
+      onProgress?.({ stage: 3, progress: 55, message: "Generating document..." });
 
+      let blob: Blob;
       let exportErrors: PolicyExportError[] | undefined;
       let totalPolicies: number | undefined;
       let successfulPolicies: number | undefined;
 
-      if (exportErrorsHeader) {
-        try {
-          exportErrors = JSON.parse(exportErrorsHeader);
-          totalPolicies = totalPoliciesHeader ? parseInt(totalPoliciesHeader, 10) : undefined;
-          successfulPolicies = successfulPoliciesHeader ? parseInt(successfulPoliciesHeader, 10) : undefined;
-        } catch (e) {
-          console.error("Failed to parse export error headers:", e);
+      if (format === 'docx') {
+        const { generateDetailedDOCX } = await import("~/lib/docx-generator-detailed");
+        blob = await generateDetailedDOCX(resolvedData);
+      } else if (format === 'pdf-detailed') {
+        const { generateDetailedPDF } = await import("~/lib/pdf-generator-detailed");
+        const pdfResult = await generateDetailedPDF(resolvedData);
+        const ab = pdfResult.buffer.buffer.slice(
+          pdfResult.buffer.byteOffset,
+          pdfResult.buffer.byteOffset + pdfResult.buffer.byteLength
+        ) as ArrayBuffer;
+        blob = new Blob([ab], { type: "application/pdf" });
+        if (pdfResult.errors.length > 0) {
+          exportErrors = pdfResult.errors;
+          totalPolicies = pdfResult.totalPolicies;
+          successfulPolicies = pdfResult.successfulPolicies;
         }
+      } else {
+        throw new Error(`Unknown export format: ${String(format)}`);
       }
 
-      // Prepare download data (don't trigger download yet)
-      const blob = await response.blob();
+      onProgress?.({ stage: 3, progress: 90, message: "Document generated" });
 
-      // Set appropriate filename based on format
+      // Stage 4: Download
+      onProgress?.({ stage: 4, progress: 95, message: "Preparing download..." });
+
+      // Fire-and-forget: increment export counter
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      fetch("/api/stats/increment-export", { method: "POST" }).catch(() => {});
+
       const date = new Date().toISOString().split("T")[0];
       const filename = format === 'docx'
         ? `Intune-Configuration-Documentation-${date}.docx`
@@ -215,10 +217,7 @@ export function useExportHandler({
         exportErrors,
         totalPolicies,
         successfulPolicies,
-        downloadData: {
-          blob,
-          filename
-        }
+        downloadData: { blob, filename },
       };
     } catch (error: any) {
       console.error('Export failed:', error);

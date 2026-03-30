@@ -413,8 +413,16 @@ export async function generateDetailedPDF(data: DetailedPdfData): Promise<PdfGen
       }
     }
 
-    doc.text(`Assigned to: ${assignments}`, margin, yPosition);
-    yPosition += 6;
+    const assignmentLines = doc.splitTextToSize(`Assigned to: ${assignments}`, maxWidth);
+    for (const line of assignmentLines) {
+      checkPageBreak();
+      doc.setFontSize(Math.max(bodyFontSize - 2, 9));
+      doc.setFont(fontFamily, "normal");
+      doc.setTextColor(100, 100, 100);
+      doc.text(line, margin, yPosition);
+      yPosition += 4;
+    }
+    yPosition += 2;
 
     // Reset font and color to defaults
     doc.setFontSize(bodyFontSize);

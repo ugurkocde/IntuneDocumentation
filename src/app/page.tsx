@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle, XCircle } from "lucide-react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, XCircle } from "lucide-react";
 import { BackToTopButton } from "~/components/back-to-top-button";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect } from "react";

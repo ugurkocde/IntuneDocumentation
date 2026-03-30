@@ -180,7 +180,17 @@ export function useExportHandler({
 
       if (format === 'docx') {
         const { generateDetailedDOCX } = await import("~/lib/docx-generator-detailed");
-        blob = await generateDetailedDOCX(resolvedData);
+        const docxResult = await generateDetailedDOCX(resolvedData);
+        const ab = docxResult.buffer.buffer.slice(
+          docxResult.buffer.byteOffset,
+          docxResult.buffer.byteOffset + docxResult.buffer.byteLength
+        ) as ArrayBuffer;
+        blob = new Blob([ab], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+        if (docxResult.errors.length > 0) {
+          exportErrors = docxResult.errors;
+          totalPolicies = docxResult.totalPolicies;
+          successfulPolicies = docxResult.successfulPolicies;
+        }
       } else if (format === 'pdf-detailed') {
         const { generateDetailedPDF } = await import("~/lib/pdf-generator-detailed");
         const pdfResult = await generateDetailedPDF(resolvedData);

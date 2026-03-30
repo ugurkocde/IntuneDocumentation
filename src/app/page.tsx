@@ -4,10 +4,11 @@ import { useMsal } from "@azure/msal-react";
 import { useRouter } from "next/navigation";
 import { loginRequest } from "~/lib/msal-config";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle } from "lucide-react";
+import { Shield, FileText, CheckCircle, ChevronDown, Clock, Database, Eye, HelpCircle, XCircle } from "lucide-react";
 import { BackToTopButton } from "~/components/back-to-top-button";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { HeroExportCounter } from "~/components/hero-export-counter";
@@ -79,6 +80,27 @@ export default function HomePage() {
   const [showPermissions, setShowPermissions] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
   const isAuthenticated = accounts.length > 0;
+  const prefersReduced = useReducedMotion();
+
+  const fadeUp = prefersReduced
+    ? { hidden: { opacity: 1, y: 0 }, visible: { opacity: 1, y: 0 } }
+    : { hidden: { opacity: 0, y: 24 }, visible: { opacity: 1, y: 0 } };
+  const staggerContainer = prefersReduced
+    ? { hidden: {}, visible: {} }
+    : { hidden: {}, visible: { transition: { staggerChildren: 0.1 } } };
+
+  // Close modals on Escape key
+  useEffect(() => {
+    if (!showSecurity && !showPermissions) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowSecurity(false);
+        setShowPermissions(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [showSecurity, showPermissions]);
 
   const handleSignIn = async () => {
     try {
@@ -198,7 +220,7 @@ export default function HomePage() {
                 
                 {/* Subheadline */}
                 <p className="text-lg sm:text-xl lg:text-2xl text-blue-100 mb-8 leading-relaxed max-w-2xl">
-                  Export all your Intune policies, settings, and assignments as audit-ready PDFs -- in under 3 minutes.
+                  Export all your Intune policies, settings, and assignments as audit-ready PDFs {"\u2014"} in under 3 minutes.
                 </p>
 
                 {/* Trust / Value points */}
@@ -232,24 +254,27 @@ export default function HomePage() {
                 {/* CTA Section */}
                 {!isAuthenticated ? (
                   <div className="flex flex-col gap-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                      <button
-                        onClick={handleSignIn}
-                        disabled={signingIn}
-                        className={`inline-block rounded-md ring-1 ring-white/25 shadow-lg shadow-blue-500/20 transition-all duration-200 ${signingIn ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:ring-white/50 hover:shadow-blue-500/30 hover:scale-[1.02]"}`}
-                        aria-label="Sign in with Microsoft to generate your report"
-                      >
-                        <img
-                          src="/sign-in-light-mode.svg"
-                          alt="Sign in with Microsoft"
-                          width={215}
-                          height={41}
-                          loading="eager"
-                          decoding="async"
-                          fetchPriority="high"
-                          className="w-[215px] max-w-full h-auto"
-                        />
-                      </button>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
+                      <div className="flex flex-col items-start gap-3">
+                        <span className="text-sm font-semibold text-blue-200 uppercase tracking-wider">Get started free</span>
+                        <button
+                          onClick={handleSignIn}
+                          disabled={signingIn}
+                          className={`inline-block rounded-md ring-1 ring-white/25 shadow-lg shadow-blue-500/20 transition-all duration-200 ${signingIn ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:ring-white/50 hover:shadow-blue-500/30 hover:scale-[1.02]"}`}
+                          aria-label="Sign in with Microsoft to generate your report"
+                        >
+                          <img
+                            src="/sign-in-light-mode.svg"
+                            alt="Sign in with Microsoft"
+                            width={215}
+                            height={41}
+                            loading="eager"
+                            decoding="async"
+                            fetchPriority="high"
+                            className="w-[215px] max-w-full h-auto"
+                          />
+                        </button>
+                      </div>
                       <a
                         href="/api/pdf/sample"
                         target="_blank"
@@ -280,6 +305,7 @@ export default function HomePage() {
                       <button
                         onClick={() => setShowSecurity(true)}
                         className="underline hover:text-white transition-colors cursor-pointer"
+                        type="button"
                         aria-label="Learn why sign-in is safe and which permissions are used"
                       >
                         Why it’s safe
@@ -288,6 +314,7 @@ export default function HomePage() {
                       <button
                         onClick={() => setShowPermissions(true)}
                         className="underline hover:text-white transition-colors cursor-pointer"
+                        type="button"
                         aria-label="See the required permissions and why each is needed"
                       >
                         Required permissions
@@ -328,7 +355,7 @@ export default function HomePage() {
           
           {/* Scroll Indicator */}
           <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-gentle-bob" aria-hidden="true">
-            <ChevronDown className="w-8 h-8 text-white/50" aria-hidden="true" />
+            <ChevronDown className="w-8 h-8 text-white/70" aria-hidden="true" />
           </div>
         </div>
 
@@ -336,50 +363,52 @@ export default function HomePage() {
         <section className="py-24 bg-white scroll-mt-24" id="how-it-works">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-5xl mx-auto">
-              <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">
-                Generate Your Report in 3 Steps
-              </h2>
-              <p className="text-lg text-gray-600 text-center mb-12 max-w-2xl mx-auto">
-                Replace hours of manual documentation with a 3-minute automated process.
-              </p>
+              <motion.div
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={fadeUp}
+                transition={{ duration: 0.5 }}
+                className="text-center mb-12"
+              >
+                <h2 className="text-3xl font-bold text-gray-900 mb-4">
+                  Generate Your Report in 3 Steps
+                </h2>
+                <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                  Replace hours of manual documentation with a 3-minute automated process.
+                </p>
+              </motion.div>
               
-              <div className="grid md:grid-cols-3 gap-8">
-                <div className="text-center card-elevated p-6">
-                  <div className="w-12 h-12 mx-auto bg-blue-600/10 text-blue-700 rounded-lg flex items-center justify-center font-bold text-lg mb-4">
-                    1
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Connect
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    Sign in with Microsoft. We use read‑only Graph permissions and don’t store your data.
-                  </p>
-                </div>
-                
-                <div className="text-center card-elevated p-6">
-                  <div className="w-12 h-12 mx-auto bg-blue-600/10 text-blue-700 rounded-lg flex items-center justify-center font-bold text-lg mb-4">
-                    2
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Select
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    Pick configurations by type, search, or select all. Assignments and filters included.
-                  </p>
-                </div>
-                
-                <div className="text-center card-elevated p-6">
-                  <div className="w-12 h-12 mx-auto bg-green-600/10 text-green-700 rounded-lg flex items-center justify-center font-bold text-lg mb-4">
-                    3
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Export
-                  </h3>
-                  <p className="text-gray-600 text-sm">
-                    Download a professional PDF with full settings, ADMX values, scripts, and group targeting.
-                  </p>
-                </div>
-              </div>
+              <motion.div
+                className="grid md:grid-cols-3 gap-8"
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={staggerContainer}
+              >
+                {[
+                  { num: "1", title: "Connect", desc: "Sign in with Microsoft. We use read\u2011only Graph permissions and don\u2019t store your data." },
+                  { num: "2", title: "Select", desc: "Pick configurations by type, search, or select all. Assignments and filters included." },
+                  { num: "3", title: "Export", desc: "Download a professional PDF with full settings, ADMX values, scripts, and group targeting." },
+                ].map((step, i) => (
+                  <motion.div key={i} variants={fadeUp} transition={{ duration: 0.5 }} className="text-center card-elevated p-6 relative">
+                    {i < 2 && (
+                      <div className="hidden md:block absolute top-1/2 -right-5 -translate-y-1/2 text-gray-300" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </div>
+                    )}
+                    <div className="w-12 h-12 mx-auto bg-blue-600/10 text-blue-700 rounded-lg flex items-center justify-center font-bold text-lg mb-4">
+                      {step.num}
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      {step.title}
+                    </h3>
+                    <p className="text-gray-600 text-sm">
+                      {step.desc}
+                    </p>
+                  </motion.div>
+                ))}
+              </motion.div>
             </div>
           </div>
         </section>
@@ -391,97 +420,136 @@ export default function HomePage() {
         <section className="py-24 bg-white scroll-mt-24" id="features">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-5xl mx-auto">
-              <h2 className="text-3xl font-bold text-gray-900 mb-12 text-center">
+              <motion.h2
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={fadeUp}
+                transition={{ duration: 0.5 }}
+                className="text-3xl font-bold text-gray-900 mb-12 text-center"
+              >
                 Everything You Need for Clear Intune Docs
-              </h2>
-              
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="bg-white rounded-xl p-6 shadow-md">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mb-4">
-                    <FileText className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Save 10+ Hours Per Audit</h3>
-                  <p className="text-gray-600 text-sm">
-                    What takes hours manually — screenshots, copy-pasting, formatting — done in 3 minutes. All 10 configuration types included.
-                  </p>
-                </div>
+              </motion.h2>
 
-                <div className="bg-white rounded-xl p-6 shadow-md">
-                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center mb-4">
-                    <CheckCircle className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">100% Complete Settings</h3>
-                  <p className="text-gray-600 text-sm">
-                    Every setting, ADMX value, script content, and assignment captured. No manual gaps or missing configurations.
-                  </p>
-                </div>
-
-                <div className="bg-white rounded-xl p-6 shadow-md">
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center mb-4">
-                    <Shield className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Zero Data Storage</h3>
-                  <p className="text-gray-600 text-sm">
-                    We don’t store your tenant data; processing happens during your session.
-                  </p>
-                </div>
-
-                <div className="bg-white rounded-xl p-6 shadow-md">
-                  <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center mb-4">
-                    <Eye className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Read‑Only Access</h3>
-                  <p className="text-gray-600 text-sm">
-                    Uses Microsoft OAuth with read‑only scopes for Intune and Graph resources.
-                  </p>
-                </div>
-
-                <div className="bg-white rounded-xl p-6 shadow-md">
-                  <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg flex items-center justify-center mb-4">
-                    <Database className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Assignments & Groups</h3>
-                  <p className="text-gray-600 text-sm">
-                    Group targets and filters resolved for clarity; optional counts by platform.
-                  </p>
-                </div>
-
-                <div className="bg-white rounded-xl p-6 shadow-md">
-                  <div className="w-12 h-12 bg-gradient-to-br from-sky-500 to-cyan-600 rounded-lg flex items-center justify-center mb-4">
-                    <Clock className="w-6 h-6 text-white" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Always Current</h3>
-                  <p className="text-gray-600 text-sm">
-                    Generate fresh reports anytime. No outdated wikis or stale documentation — always reflects your latest configuration.
-                  </p>
-                </div>
-              </div>
+              <motion.div
+                className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6"
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={staggerContainer}
+              >
+                {[
+                  { icon: <FileText className="w-6 h-6 text-white" />, gradient: "from-blue-500 to-blue-600", title: "Save 10+ Hours Per Audit", desc: "What takes hours manually\u2014screenshots, copy-pasting, formatting\u2014done in 3 minutes. All 10 configuration types included." },
+                  { icon: <CheckCircle className="w-6 h-6 text-white" />, gradient: "from-blue-600 to-indigo-600", title: "100% Complete Settings", desc: "Every setting, ADMX value, script content, and assignment captured. No manual gaps or missing configurations." },
+                  { icon: <Shield className="w-6 h-6 text-white" />, gradient: "from-indigo-500 to-indigo-600", title: "Zero Data Storage", desc: "We don\u2019t store your tenant data; all processing happens entirely in your browser during your session." },
+                  { icon: <Eye className="w-6 h-6 text-white" />, gradient: "from-blue-500 to-blue-600", title: "Read\u2011Only Access", desc: "Uses Microsoft OAuth with read\u2011only scopes for Intune and Graph resources." },
+                  { icon: <Database className="w-6 h-6 text-white" />, gradient: "from-indigo-500 to-blue-600", title: "Assignments & Groups", desc: "Group targets and filters resolved for clarity; optional counts by platform." },
+                  { icon: <Clock className="w-6 h-6 text-white" />, gradient: "from-blue-600 to-indigo-600", title: "Always Current", desc: "Generate fresh reports anytime. No outdated wikis or stale documentation\u2014always reflects your latest configuration." },
+                ].map((feat, i) => (
+                  <motion.div key={i} variants={fadeUp} transition={{ duration: 0.5 }} className="bg-white rounded-xl p-6 shadow-md border border-gray-100 flex flex-col">
+                    <div className={`w-12 h-12 bg-gradient-to-br ${feat.gradient} rounded-lg flex items-center justify-center mb-4`}>
+                      {feat.icon}
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-2">{feat.title}</h3>
+                    <p className="text-gray-600 text-sm flex-1">
+                      {feat.desc}
+                    </p>
+                  </motion.div>
+                ))}
+              </motion.div>
 
               {/* Before/After Comparison */}
-              <div className="mt-12 bg-blue-50 border border-blue-100 rounded-xl p-5 sm:p-6 md:p-8">
-                <div className="grid md:grid-cols-2 gap-6 md:gap-8">
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-3 text-sm uppercase tracking-wider">Manual way</h3>
-                    <p className="text-gray-600 text-sm sm:text-base leading-relaxed">10+ hours of screenshots, copy-pasting from the Intune portal, missing settings, and docs that are outdated before you finish.</p>
+              <motion.div
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={fadeUp}
+                transition={{ duration: 0.5 }}
+                className="mt-12 rounded-xl overflow-hidden border border-gray-200"
+              >
+                <div className="grid md:grid-cols-2">
+                  <div className="bg-red-50/60 p-5 sm:p-6 md:p-8 border-b md:border-b-0 md:border-r border-gray-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <XCircle className="w-5 h-5 text-red-500" />
+                      <h3 className="font-semibold text-red-900 text-sm uppercase tracking-wider">Manual way</h3>
+                    </div>
+                    <p className="text-red-800/70 text-sm sm:text-base leading-relaxed">10+ hours of screenshots, copy-pasting from the Intune portal, missing settings, and docs that are outdated before you finish.</p>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-3 text-sm uppercase tracking-wider">With this tool</h3>
-                    <p className="text-gray-600 text-sm sm:text-base leading-relaxed">3 minutes to a professional PDF with every setting, ADMX value, assignment, and script captured automatically via Graph API.</p>
+                  <div className="bg-emerald-50/60 p-5 sm:p-6 md:p-8">
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckCircle className="w-5 h-5 text-emerald-500" />
+                      <h3 className="font-semibold text-emerald-900 text-sm uppercase tracking-wider">With this tool</h3>
+                    </div>
+                    <p className="text-emerald-800/70 text-sm sm:text-base leading-relaxed">3 minutes to a professional PDF with every setting, ADMX value, assignment, and script captured automatically via Graph API.</p>
                   </div>
                 </div>
-                <div className="mt-6 flex items-center justify-center">
-                  <div className="inline-flex items-center justify-center px-4 sm:px-5 py-2 bg-white rounded-lg shadow-sm">
-                    <Clock className="w-4 h-4 text-blue-600 mr-2 flex-shrink-0" />
-                    <span className="text-blue-900 font-semibold text-xs sm:text-sm">Average time saved: 10+ hours per documentation cycle</span>
-                  </div>
+                <div className="bg-white py-3 flex items-center justify-center border-t border-gray-200">
+                  <Clock className="w-4 h-4 text-blue-600 mr-2 flex-shrink-0" />
+                  <span className="text-blue-900 font-semibold text-xs sm:text-sm">Average time saved: 10+ hours per documentation cycle</span>
                 </div>
+              </motion.div>
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ Section */}
+        <section className="py-24 bg-gray-50 scroll-mt-24" id="faq">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-3xl mx-auto">
+              <motion.h2
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={fadeUp}
+                transition={{ duration: 0.5 }}
+                className="text-3xl font-bold text-gray-900 mb-8 text-center"
+              >
+                Frequently Asked Questions
+              </motion.h2>
+
+              <div className="space-y-4">
+                {faqs.map((faq, index) => {
+                  const isOpen = expandedFaq === index;
+                  return (
+                    <div
+                      key={index}
+                      className="bg-white rounded-xl border border-gray-200 overflow-hidden"
+                    >
+                      <button
+                        className="w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => setExpandedFaq(isOpen ? null : index)}
+                        type="button"
+                        aria-expanded={isOpen}
+                        aria-controls={`faq-answer-${index}`}
+                      >
+                        <span className="font-semibold text-gray-900">{faq.question}</span>
+                        <ChevronDown
+                          className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${
+                            isOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                      <div
+                        id={`faq-answer-${index}`}
+                        role="region"
+                        className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                      >
+                        <div className="overflow-hidden">
+                          <div className="px-6 pb-4">
+                            <p className="text-gray-600">{linkify(faq.answer)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
         </section>
 
         {/* Complete Your Microsoft 365 Documentation Section */}
-        <section className="py-24 bg-gradient-to-b from-gray-50 to-white">
+        <section className="py-24 bg-white">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
             <div className="max-w-5xl mx-auto">
               <div className="text-center mb-12">
@@ -573,43 +641,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* FAQ Section */}
-        <section className="py-24 bg-white scroll-mt-24" id="faq">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-3xl mx-auto">
-              <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">
-                Frequently Asked Questions
-              </h2>
-              
-              <div className="space-y-4">
-                {faqs.map((faq, index) => (
-                  <div
-                    key={index}
-                    className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden"
-                  >
-                    <button
-                      className="w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-100 transition-colors cursor-pointer"
-                      onClick={() => setExpandedFaq(expandedFaq === index ? null : index)}
-                    >
-                      <span className="font-semibold text-gray-900">{faq.question}</span>
-                      <ChevronDown
-                        className={`w-5 h-5 text-gray-500 transition-transform ${
-                          expandedFaq === index ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
-                    {expandedFaq === index && (
-                      <div className="px-6 pb-4">
-                        <p className="text-gray-600">{linkify(faq.answer)}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* Bottom CTA */}
         <section className="py-20 bg-gradient-to-br from-blue-700 to-blue-800">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -617,15 +648,15 @@ export default function HomePage() {
               <h2 className="text-3xl font-bold text-white mb-4">Ready to document your Intune tenant?</h2>
               <p className="text-blue-100 mb-8">Sign in securely with Microsoft and export your report in minutes.</p>
               {!isAuthenticated ? (
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-4">
                   <button
                     onClick={handleSignIn}
-                    className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
+                    disabled={signingIn}
+                    className={`inline-block rounded-md ring-1 ring-white/25 shadow-lg shadow-blue-500/20 transition-all duration-200 ${signingIn ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:ring-white/50 hover:shadow-blue-500/30 hover:scale-[1.02]"}`}
                     aria-label="Sign in with Microsoft to Generate Report"
-                    aria-disabled={signingIn}
                   >
-                    <img 
-                      src="/sign-in-light-mode.svg" 
+                    <img
+                      src="/sign-in-light-mode.svg"
                       alt="Sign in with Microsoft"
                       width={215}
                       height={41}
@@ -635,48 +666,9 @@ export default function HomePage() {
                       className="w-[215px] max-w-full h-auto"
                     />
                   </button>
-                  <div className="flex flex-col items-center gap-3 text-xs text-blue-100">
-                    <div className="mt-1 flex flex-wrap justify-center items-center gap-2">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        <Shield className="w-3.5 h-3.5" />
-                        OAuth 2.0
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        Delegated read‑only
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        No persistent storage
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setShowSecurity(true)}
-                        className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
-                        aria-label="Learn why sign-in is safe and which permissions are used"
-                      >
-                        <HelpCircle className="w-3.5 h-3.5" />
-                        Why it’s safe
-                      </button>
-                      <span className="hidden sm:inline text-white/30">/</span>
-                      <button
-                        onClick={() => setShowPermissions(true)}
-                        className="underline hover:text-white transition-colors cursor-pointer"
-                        aria-label="See the required permissions and why each is needed"
-                      >
-                        Required permissions
-                      </button>
-                    </div>
-                    <a
-                      href="/api/pdf/sample"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-100 border border-blue-300/30 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
-                      aria-label="Preview a sample PDF"
-                    >
-                      <Eye className="w-4 h-4" />
-                      Preview a sample PDF
-                    </a>
-                  </div>
+                  <p className="text-sm text-blue-200">
+                    Read-only access. No data stored. 100% free.
+                  </p>
                 </div>
               ) : (
                 <button
@@ -730,6 +722,7 @@ export default function HomePage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setShowSecurity(false)}
+                    type="button"
                     className="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
                   >
                     Close
@@ -796,6 +789,7 @@ export default function HomePage() {
                 <a href="https://learn.microsoft.com/graph/permissions-reference" target="_blank" rel="noopener noreferrer" className="text-sm text-blue-700 hover:underline">Microsoft Graph permissions reference</a>
                 <button
                   onClick={() => setShowPermissions(false)}
+                  type="button"
                   className="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
                 >
                   Close

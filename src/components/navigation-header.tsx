@@ -6,8 +6,62 @@ import Link from "next/link";
 import { User, LogOut, Menu, X, LogIn } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import { loginRequest } from "~/lib/msal-config";
+
+interface NavLinksProps {
+  vertical?: boolean;
+  pathname: string;
+  activeSection: string;
+  activeLink: string;
+  linkBase: string;
+  isAuthenticated: boolean;
+}
+
+const NavLinks = memo(function NavLinks({ vertical = false, pathname, activeSection, activeLink, linkBase, isAuthenticated }: NavLinksProps) {
+  return (
+    <nav className={vertical ? "flex flex-col gap-3" : "flex items-center gap-6"}>
+      <Link
+        href="/"
+        prefetch
+        className={`text-sm font-medium transition-colors ${
+          pathname === "/" ? activeLink : linkBase
+        }`}
+      >
+        Home
+      </Link>
+      <Link
+        href="/#how-it-works"
+        className={`text-sm font-medium transition-colors ${activeSection === "how-it-works" ? activeLink : linkBase}`}
+      >
+        How it works
+      </Link>
+      <Link
+        href="/#features"
+        className={`text-sm font-medium transition-colors ${activeSection === "features" ? activeLink : linkBase}`}
+      >
+        Features
+      </Link>
+      <Link
+        href="/#faq"
+        className={`text-sm font-medium transition-colors ${activeSection === "faq" ? activeLink : linkBase}`}
+      >
+        FAQ
+      </Link>
+      {isAuthenticated && (
+        <Link
+          href="/dashboard"
+          prefetch
+          className={`text-sm font-medium transition-colors ${
+            pathname === "/dashboard" ? activeLink : linkBase
+          }`}
+        >
+          Dashboard
+        </Link>
+      )}
+    </nav>
+  );
+});
 
 export function NavigationHeader() {
   const { instance, accounts } = useMsal();
@@ -84,58 +138,15 @@ export function NavigationHeader() {
   const linkBase = onHome && !scrolled ? "text-white/90 hover:text-white" : "text-slate-600 hover:text-slate-900";
   const activeLink = onHome && !scrolled ? "text-white" : "text-blue-600";
 
-  const NavLinks = () => (
-    <nav className="flex items-center gap-6">
-      <Link
-        href="/"
-        prefetch
-        className={`text-sm font-medium transition-colors ${
-          pathname === "/" ? activeLink : linkBase
-        }`}
-      >
-        Home
-      </Link>
-      <Link
-        href="/#how-it-works"
-        className={`text-sm font-medium transition-colors ${activeSection === "how-it-works" ? activeLink : linkBase}`}
-      >
-        How it works
-      </Link>
-      <Link
-        href="/#features"
-        className={`text-sm font-medium transition-colors ${activeSection === "features" ? activeLink : linkBase}`}
-      >
-        Features
-      </Link>
-      <Link
-        href="/#faq"
-        className={`text-sm font-medium transition-colors ${activeSection === "faq" ? activeLink : linkBase}`}
-      >
-        FAQ
-      </Link>
-      {isAuthenticated && (
-        <Link
-          href="/dashboard"
-          prefetch
-          className={`text-sm font-medium transition-colors ${
-            pathname === "/dashboard" ? activeLink : linkBase
-          }`}
-        >
-          Dashboard
-        </Link>
-      )}
-      {/* Settings link removed from top navbar; available in dashboard sidebar */}
-    </nav>
-  );
+  const navProps = { pathname, activeSection, activeLink, linkBase, isAuthenticated };
 
   return (
     <header
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         onHome && !scrolled
-          ? 'bg-transparent border-transparent opacity-0 -translate-y-2 pointer-events-none'
-          : 'backdrop-blur supports-[backdrop-filter]:bg-white/85 bg-white border-b border-slate-200/80 opacity-100 translate-y-0'
+          ? 'bg-transparent border-transparent'
+          : 'backdrop-blur supports-[backdrop-filter]:bg-white/85 bg-white border-b border-slate-200/80'
       }`}
-      aria-hidden={onHome && !scrolled}
     >
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
@@ -158,7 +169,7 @@ export function NavigationHeader() {
 
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-8">
-            <NavLinks />
+            <NavLinks {...navProps} />
           </div>
 
           {/* Actions */}
@@ -204,7 +215,7 @@ export function NavigationHeader() {
       {mobileOpen && (
         <div className={`md:hidden backdrop-blur ${onHome && !scrolled ? 'bg-slate-900/60 border-white/10' : 'bg-white/95 border-slate-200'} border-t`}>
           <div className="w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4">
-            <NavLinks />
+            <NavLinks vertical {...navProps} />
             <div className="flex items-center gap-3">
               {isAuthenticated ? (
                 <>

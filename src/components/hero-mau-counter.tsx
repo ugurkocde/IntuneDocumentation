@@ -14,7 +14,7 @@ export function HeroMauCounter() {
       })
       .catch((error) => {
         console.error("Failed to fetch MAU count:", error);
-        setMauCount(0);
+        setMauCount(-1);
       });
   }, []);
 
@@ -26,7 +26,6 @@ export function HeroMauCounter() {
     );
   }
 
-  // Don't display if count is below threshold
   if (mauCount < 10) {
     return null;
   }
@@ -34,11 +33,9 @@ export function HeroMauCounter() {
   return (
     <div
       className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700"
-      aria-live="polite"
     >
-      <span className="text-[10px] sm:text-xs text-blue-200/90">
-        <span className="hidden sm:inline">IT Professionals </span>
-        This Month:
+      <span className="text-[11px] sm:text-xs text-blue-200/90">
+        Active<span className="hidden sm:inline"> IT pros</span> this month:
       </span>
       <span className="text-xs sm:text-sm font-semibold text-white">
         {mauCount.toLocaleString()}

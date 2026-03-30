@@ -78,26 +78,6 @@ export default function HomePage() {
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
-  const [videoSrc, setVideoSrc] = useState<string>(
-    "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
-  );
-
-  // Detect screen size and set appropriate video source
-  useEffect(() => {
-    const updateVideoSource = () => {
-      const isMobile = window.innerWidth < 768;
-      setVideoSrc(
-        isMobile
-          ? "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo_mobile.mp4"
-          : "https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/IntuneDocumentation_Demo.mp4"
-      );
-    };
-
-    updateVideoSource();
-    window.addEventListener("resize", updateVideoSource);
-    return () => window.removeEventListener("resize", updateVideoSource);
-  }, []);
-
   const isAuthenticated = accounts.length > 0;
 
   const handleSignIn = async () => {
@@ -196,12 +176,12 @@ export default function HomePage() {
         />
         <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-blue-800 flex items-center">
           {/* Geometric Pattern Overlay */}
-          <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:50px_50px]" />
+          <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:50px_50px]" />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent" />
           
           <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-            <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center max-w-7xl mx-auto">
-              {/* Left Column - Content */}
+            <div className="max-w-3xl mx-auto">
+              {/* Content */}
               <div className="text-left">
 
                 {/* Stats Counter Badges */}
@@ -217,80 +197,76 @@ export default function HomePage() {
                 </h1>
                 
                 {/* Subheadline */}
-                <p className="text-lg sm:text-xl lg:text-2xl text-blue-100/90 mb-8 leading-relaxed max-w-2xl">
-                  Generate comprehensive PDF reports of all your Microsoft Intune configurations in under 3 minutes. Export 150+ policies with complete settings, assignments, and ADMX values — ready for audits, compliance reviews, or knowledge transfer.
+                <p className="text-lg sm:text-xl lg:text-2xl text-blue-100 mb-8 leading-relaxed max-w-2xl">
+                  Export all your Intune policies, settings, and assignments as audit-ready PDFs -- in under 3 minutes.
                 </p>
 
                 {/* Trust / Value points */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 max-w-2xl">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
                   <div className="flex items-center gap-2 text-blue-100">
                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                       <CheckCircle className="w-5 h-5 text-emerald-400" />
                     </div>
-                    <span className="text-xs font-medium">Free</span>
+                    <span className="text-sm font-medium">100% Free</span>
                   </div>
                   <div className="flex items-center gap-2 text-blue-100">
                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                       <Eye className="w-5 h-5 text-blue-300" />
                     </div>
-                    <span className="text-xs font-medium">Read‑only</span>
+                    <span className="text-sm font-medium">Read-only</span>
                   </div>
                   <div className="flex items-center gap-2 text-blue-100">
                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                       <Database className="w-5 h-5 text-purple-300" />
                     </div>
-                    <span className="text-xs font-medium">No persistent storage</span>
+                    <span className="text-sm font-medium">No data stored</span>
                   </div>
                   <div className="flex items-center gap-2 text-blue-100">
                     <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center">
                       <Shield className="w-5 h-5 text-green-300" />
                     </div>
-                    <span className="text-xs font-medium">Secure OAuth</span>
-                  </div>
-                </div>
-
-                {/* Stats */}
-                <div className="grid grid-cols-4 gap-4 mb-10 max-w-2xl">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-white">10+</div>
-                    <div className="text-xs text-blue-200/70">Config Types</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-white">3 min</div>
-                    <div className="text-xs text-blue-200/70">Export Time</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-white">150+</div>
-                    <div className="text-xs text-blue-200/70">Policies</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-white">100%</div>
-                    <div className="text-xs text-blue-200/70">Free Forever</div>
+                    <span className="text-sm font-medium">Secure OAuth</span>
                   </div>
                 </div>
                 
                 {/* CTA Section */}
                 {!isAuthenticated ? (
-                  <div className="flex flex-col items-start gap-3">
-                    <button
-                      onClick={handleSignIn}
-                      className={`inline-block transition-opacity transform hover:scale-105 cursor-pointer ${signingIn ? "opacity-60 pointer-events-none" : "hover:opacity-90"}`}
-                      aria-label="Sign in with Microsoft to Generate Report"
-                      aria-disabled={signingIn}
-                    >
-                      <img 
-                        src="/sign-in-light-mode.svg" 
-                        alt="Sign in with Microsoft"
-                        width={215}
-                        height={41}
-                        loading="eager"
-                        decoding="async"
-                        fetchPriority="high"
-                        className="w-[215px] max-w-full h-auto"
-                      />
-                    </button>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                      <button
+                        onClick={handleSignIn}
+                        disabled={signingIn}
+                        className={`inline-block rounded-md ring-1 ring-white/25 shadow-lg shadow-blue-500/20 transition-all duration-200 ${signingIn ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:ring-white/50 hover:shadow-blue-500/30 hover:scale-[1.02]"}`}
+                        aria-label="Sign in with Microsoft to generate your report"
+                      >
+                        <img
+                          src="/sign-in-light-mode.svg"
+                          alt="Sign in with Microsoft"
+                          width={215}
+                          height={41}
+                          loading="eager"
+                          decoding="async"
+                          fetchPriority="high"
+                          className="w-[215px] max-w-full h-auto"
+                        />
+                      </button>
+                      <a
+                        href="/api/pdf/sample"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-blue-100 border border-blue-300/30 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                        aria-label="Preview a sample PDF report"
+                      >
+                        <Eye className="w-4 h-4" />
+                        Preview sample PDF
+                      </a>
+                    </div>
                     {signingIn && (
-                      <div className="text-sm text-blue-100" aria-live="polite">
+                      <div className="text-sm text-blue-100 flex items-center gap-2" aria-live="polite">
+                        <svg className="animate-spin h-4 w-4 text-blue-200" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
                         Opening Microsoft sign-in...
                       </div>
                     )}
@@ -299,27 +275,16 @@ export default function HomePage() {
                         {signInError}
                       </div>
                     )}
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-blue-100">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        <Shield className="w-3.5 h-3.5" />
-                        OAuth 2.0
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        Delegated read‑only
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/10 border border-white/20">
-                        No persistent storage
-                      </span>
-                      <span className="hidden sm:inline text-white/30 mx-1">|</span>
+                    <p className="text-xs text-blue-200">
+                      Read-only access. Your data never leaves your browser.{" "}
                       <button
                         onClick={() => setShowSecurity(true)}
-                        className="underline hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1"
+                        className="underline hover:text-white transition-colors cursor-pointer"
                         aria-label="Learn why sign-in is safe and which permissions are used"
                       >
-                        <HelpCircle className="w-3.5 h-3.5" />
                         Why it’s safe
                       </button>
-                      <span className="hidden sm:inline text-white/30">/</span>
+                      {" / "}
                       <button
                         onClick={() => setShowPermissions(true)}
                         className="underline hover:text-white transition-colors cursor-pointer"
@@ -327,17 +292,7 @@ export default function HomePage() {
                       >
                         Required permissions
                       </button>
-                    </div>
-                    <a
-                      href="/api/pdf/sample"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-100 border border-blue-300/30 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
-                      aria-label="Preview a sample PDF"
-                    >
-                      <Eye className="w-4 h-4" />
-                      Preview a sample PDF
-                    </a>
+                    </p>
                   </div>
                 ) : (
                   <div className="flex flex-col items-start gap-6">
@@ -368,36 +323,11 @@ export default function HomePage() {
                 )}
               </div>
               
-              {/* Right Column - Demo Video */}
-              <div className="flex items-center justify-center">
-                <div className="relative w-full max-w-md sm:max-w-lg mx-auto lg:max-w-none">
-                  {/* Decorative blob */}
-                  <div className="absolute -inset-10 bg-gradient-to-tr from-cyan-400/20 via-blue-500/10 to-indigo-500/20 blur-3xl rounded-full" aria-hidden="true"></div>
-                  {/* Video */}
-                  <video
-                    key={videoSrc}
-                    className="relative w-full h-auto rounded-lg shadow-2xl"
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    controls
-                    poster="https://ulaenhbynteq7cyt.public.blob.vercel-storage.com/demo/poster.jpg"
-                    preload="metadata"
-                  >
-                    <source src={videoSrc} type="video/mp4" />
-                    Your browser does not support the video tag.
-                  </video>
-                  <p className="relative text-xs text-blue-200/70 mt-3 text-center">
-                    Video: Quick demo showing the sign-in, configuration selection, and PDF export workflow.
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
           
           {/* Scroll Indicator */}
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-bounce" aria-hidden="true">
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-gentle-bob" aria-hidden="true">
             <ChevronDown className="w-8 h-8 text-white/50" aria-hidden="true" />
           </div>
         </div>

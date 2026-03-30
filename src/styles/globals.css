@@ -155,8 +155,8 @@
   
   
   /* Grid pattern background */
-  .bg-grid-white\/\[0\.02\] {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.02)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
+  .bg-grid-white\/\[0\.05\] {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.05)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
   }
   
   /* Animation utilities */
@@ -235,6 +235,22 @@
     width: 150%;
   }
 
+  /* Gentle scroll indicator animation */
+  @keyframes gentle-bob {
+    0%, 100% {
+      transform: translateY(0);
+      opacity: 0.5;
+    }
+    50% {
+      transform: translateY(6px);
+      opacity: 0.3;
+    }
+  }
+
+  .animate-gentle-bob {
+    animation: gentle-bob 3s ease-in-out infinite;
+  }
+
   /* Data flow diagram: traveling dot */
   @keyframes travel-dot-h {
     0% { left: 0; }
@@ -244,6 +260,20 @@
   @keyframes travel-dot-v {
     0% { top: 0; }
     100% { top: 100%; }
+  }
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .animate-bounce,
+  .animate-float,
+  .animate-gradient,
+  .animate-shimmer,
+  .animate-shimmer-loading,
+  .animate-gentle-bob,
+  .animate-spin,
+  [class*="animate-in"] {
+    animation: none !important;
   }
 }
 

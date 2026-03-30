@@ -14,7 +14,7 @@ export function HeroExportCounter() {
       })
       .catch((error) => {
         console.error("Failed to fetch export count:", error);
-        setExportCount(0);
+        setExportCount(-1);
       });
   }, []);
 
@@ -26,14 +26,17 @@ export function HeroExportCounter() {
     );
   }
 
+  if (exportCount <= 0) {
+    return null;
+  }
+
   return (
     <div
       className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700"
-      aria-live="polite"
     >
-      <span className="text-[10px] sm:text-xs text-blue-200/90">
-        <span className="hidden sm:inline">Total Documentation </span>
-        Exports:
+      <span className="text-[11px] sm:text-xs text-blue-200/90">
+        <span className="hidden sm:inline">Total docs</span>
+        <span className="sm:hidden">Docs</span> exported:
       </span>
       <span className="text-xs sm:text-sm font-semibold text-white">{exportCount.toLocaleString()}</span>
     </div>

@@ -35,7 +35,8 @@ export function HeroMauCounter() {
       className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700"
     >
       <span className="text-[11px] sm:text-xs text-blue-200/90">
-        Active<span className="hidden sm:inline"> IT pros</span> this month:
+        <span className="hidden sm:inline">PDFs generated</span>
+        <span className="sm:hidden">PDFs</span> this month:
       </span>
       <span className="text-xs sm:text-sm font-semibold text-white">
         {mauCount.toLocaleString()}

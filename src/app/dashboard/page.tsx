@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { graphScopes } from "~/lib/msal-config";
 import { useTenantLogging } from "~/hooks/use-tenant-logging";
+import { useUserProfile } from "~/hooks/use-user-profile";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { DashboardLoading } from "~/components/dashboard-loading";
@@ -35,6 +36,7 @@ import {
 export default function DashboardPage() {
   const { instance, accounts, inProgress } = useMsal();
   const router = useRouter();
+  const { userProfile } = useUserProfile();
 
   // Log tenant access server-side only
   useTenantLogging("Dashboard-Access");
@@ -134,6 +136,12 @@ export default function DashboardPage() {
       setSidebarOpen(false);
     }
   }, []);
+
+  const handleSignOut = () => {
+    void instance.logoutRedirect({
+      postLogoutRedirectUri: window.location.origin,
+    });
+  };
 
   const getAccessToken = async (extraScopes?: string[]) => {
     if (accounts.length === 0) throw new Error("No authenticated account");
@@ -644,14 +652,13 @@ export default function DashboardPage() {
   const showConditionalAccess = includeCA && caConsentStatus === "included";
 
   return (
-    <div className="bg-mint-50 min-h-screen pt-16">
+    <div className="bg-mint-50 min-h-screen">
       <a
         href="#dashboard-content"
         className="bg-petrol-950 sr-only fixed top-3 left-3 z-[60] rounded-full px-4 py-2 text-sm font-semibold text-white focus:not-sr-only focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
       >
         Skip to dashboard content
       </a>
-      <NavigationHeader />
       <div className="flex">
         <DashboardSidebar
           isOpen={sidebarOpen}
@@ -660,10 +667,12 @@ export default function DashboardPage() {
           totalCount={configurations.summary.totalConfigurations}
           selectedCount={selectedConfigs.size}
           showConditionalAccess={showConditionalAccess}
+          userName={userProfile?.displayName || accounts[0]?.username || "User"}
           onToggle={() => setSidebarOpen((current) => !current)}
           onViewChange={setActiveView}
           onOpenBranding={() => setShowBrandingModal(true)}
           onOpenExport={() => setShowExportModal(true)}
+          onSignOut={handleSignOut}
         />
         <DashboardContent
           configurations={configurations}

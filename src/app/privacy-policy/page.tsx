@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 const sections = [
+  { id: "controller", label: "Data Controller" },
   { id: "what-we-access", label: "What We Access" },
   { id: "how-we-process-data", label: "How We Process Data" },
   { id: "analytics-cookies", label: "Analytics & Cookies" },
@@ -26,7 +27,7 @@ const sections = [
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white pt-16">
       <NavigationHeader />
       <main>
       <div className="container mx-auto px-4 py-16 max-w-3xl">
@@ -42,6 +43,22 @@ export default function PrivacyPolicyPage() {
             This Privacy Policy explains how Intune Documentation Generator (&quot;we&quot;, &quot;our&quot;, or &quot;the Service&quot;)
             handles information when you use the app to generate documentation from Microsoft Intune. We
             designed the Service to minimize data collection and focus on privacy by default.
+          </p>
+
+          <h2 id="controller" className="text-xl font-semibold text-slate-900 scroll-mt-24">Data Controller</h2>
+          <p>
+            The controller responsible for data processing in connection with the Service is:
+          </p>
+          <p>
+            Ugurlabs UG (haftungsbeschränkt)
+            <br />
+            Fährstraße 217
+            <br />
+            40221 Düsseldorf, Germany
+            <br />
+            Managing Director: Ugur Koc
+            <br />
+            Email: <a href="mailto:support@ugurlabs.com" className="text-blue-700 underline">support@ugurlabs.com</a>
           </p>
 
           <h2 id="what-we-access" className="text-xl font-semibold text-slate-900 scroll-mt-24">What We Access</h2>
@@ -139,6 +156,9 @@ export default function PrivacyPolicyPage() {
           <h2 id="contact" className="text-xl font-semibold text-slate-900 scroll-mt-24">Contact</h2>
           <p>
             Questions about this policy? Contact us at <a href="mailto:support@ugurlabs.com" className="text-blue-700 underline">support@ugurlabs.com</a> or via LinkedIn: <a href="https://www.linkedin.com/in/ugurkocde/" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">@ugurkocde</a>.
+          </p>
+          <p>
+            You can also reach us by post: Ugurlabs UG (haftungsbeschränkt), Fährstraße 217, 40221 Düsseldorf, Germany.
           </p>
         </section>
       </div>

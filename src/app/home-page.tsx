@@ -229,6 +229,14 @@ export function HomePage({ stats }: { stats: SiteStats }) {
           },
         ]
       : []),
+    ...(stats.tenantCount >= 10
+      ? [
+          {
+            value: stats.tenantCount.toLocaleString("en-US"),
+            label: "Organizations",
+          },
+        ]
+      : []),
   ];
 
   const impactStats: Array<{ value: string; label: string }> = [

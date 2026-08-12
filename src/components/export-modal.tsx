@@ -1,13 +1,21 @@
 "use client";
 
-import { X, Download, FileText, AlertCircle, CheckCircle2, Loader2, File } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Download,
+  File,
+  FileText,
+  Loader2,
+  X,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 
-export type ExportFormat = 'pdf-detailed' | 'docx';
+export type ExportFormat = "pdf-detailed" | "docx";
 
 export interface ExportStage {
   name: string;
-  status: 'pending' | 'active' | 'completed';
+  status: "pending" | "active" | "completed";
   progress: number; // 0-100
 }
 
@@ -76,11 +84,11 @@ export function ExportModal({
   } = state;
 
   const stages: ExportStage[] = [
-    { name: "Preparing export data...", status: 'pending', progress: 0 },
-    { name: "Resolving group names...", status: 'pending', progress: 0 },
-    { name: "Fetching device counts...", status: 'pending', progress: 0 },
-    { name: "Generating document...", status: 'pending', progress: 0 },
-    { name: "Starting download...", status: 'pending', progress: 0 },
+    { name: "Preparing export data…", status: "pending", progress: 0 },
+    { name: "Resolving group names…", status: "pending", progress: 0 },
+    { name: "Fetching device counts…", status: "pending", progress: 0 },
+    { name: "Generating document…", status: "pending", progress: 0 },
+    { name: "Starting download…", status: "pending", progress: 0 },
   ];
 
   const handleClose = () => {
@@ -97,7 +105,7 @@ export function ExportModal({
 
   const resetState = () => {
     onStateChange({
-      selectedFormat: 'pdf-detailed',
+      selectedFormat: "pdf-detailed",
       isExporting: false,
       exportComplete: false,
       exportError: null,
@@ -125,7 +133,7 @@ export function ExportModal({
       const result = await onExport(selectedFormat);
 
       if (!result.success) {
-        onStateChange({ exportError: result.error || 'Export failed' });
+        onStateChange({ exportError: result.error || "Export failed" });
         return;
       }
 
@@ -135,15 +143,20 @@ export function ExportModal({
           exportErrors: result.exportErrors,
           exportStats: {
             total: result.totalPolicies || 0,
-            successful: result.successfulPolicies || 0
-          }
+            successful: result.successfulPolicies || 0,
+          },
         });
       }
 
-      onStateChange({ currentStage: 4, overallProgress: 100, exportComplete: true, isExporting: false });
+      onStateChange({
+        currentStage: 4,
+        overallProgress: 100,
+        exportComplete: true,
+        isExporting: false,
+      });
 
       // Show success state for 1.5 seconds before downloading
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       // Trigger download after success display
       if (result.downloadData) {
@@ -157,73 +170,90 @@ export function ExportModal({
         setTimeout(() => window.URL.revokeObjectURL(url), 100);
       }
     } catch (error: any) {
-      console.error('Export failed:', error);
-      onStateChange({ exportError: error?.message || 'An unexpected error occurred', isExporting: false });
+      console.error("Export failed:", error);
+      onStateChange({
+        exportError: error?.message || "An unexpected error occurred",
+        isExporting: false,
+      });
     }
   };
 
   if (!isOpen) return null;
 
-  const getStageStatus = (index: number): 'pending' | 'active' | 'completed' => {
-    if (index < currentStage) return 'completed';
-    if (index === currentStage && isExporting) return 'active';
-    return 'pending';
+  const getStageStatus = (
+    index: number,
+  ): "pending" | "active" | "completed" => {
+    if (index < currentStage) return "completed";
+    if (index === currentStage && isExporting) return "active";
+    return "pending";
   };
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      className="bg-petrol-950/70 fixed inset-0 z-50 flex cursor-pointer items-center justify-center p-4 backdrop-blur-sm"
       onClick={handleClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="export-modal-title"
     >
       <div
-        className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="border-petrol-950/8 shadow-soft flex max-h-[90svh] w-full max-w-2xl cursor-default flex-col overflow-hidden rounded-3xl border bg-white"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b">
-          <div className="flex-1 min-w-0 pr-4">
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 truncate">Export Documentation</h2>
-            <p className="text-sm text-slate-600 mt-1">
+        <div className="border-petrol-950/6 flex items-center justify-between border-b p-5 sm:p-7">
+          <div className="min-w-0 flex-1 pr-4">
+            <h2
+              id="export-modal-title"
+              className="text-petrol-950 text-2xl font-semibold tracking-[-0.025em] sm:text-3xl"
+            >
+              Export documentation
+            </h2>
+            <p className="text-petrol-600 mt-1.5 text-sm">
               {exportComplete
-                ? 'Export completed successfully'
+                ? "Export completed successfully"
                 : isExporting
-                ? 'Generating your documentation...'
-                : 'Select export format and start'}
+                  ? "Generating your documentation…"
+                  : "Select export format and start"}
             </p>
           </div>
           <button
+            type="button"
             onClick={handleClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0"
+            className="text-petrol-600 hover:bg-mint-50 hover:text-petrol-950 flex h-11 w-11 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
             title={isExporting ? "Minimize to notification" : "Close"}
+            aria-label={isExporting ? "Minimize export" : "Close export modal"}
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-7">
           {!isExporting && !exportComplete && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-3">
+                <label className="text-petrol-800 mb-3 block text-sm font-semibold">
                   Select export format
                 </label>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <FormatOption
                     id="pdf-detailed"
-                    label="Detailed PDF Report"
+                    label="Detailed PDF report"
                     description="Comprehensive documentation with all policy details and settings"
-                    icon={<FileText className="w-5 h-5" />}
-                    selected={selectedFormat === 'pdf-detailed'}
-                    onClick={() => onStateChange({ selectedFormat: 'pdf-detailed' })}
+                    icon={<FileText className="h-5 w-5" />}
+                    selected={selectedFormat === "pdf-detailed"}
+                    onClick={() =>
+                      onStateChange({ selectedFormat: "pdf-detailed" })
+                    }
                   />
                   <FormatOption
                     id="docx"
-                    label="Word Document (.docx)"
+                    label="Word document (.docx)"
                     description="Editable document format for further customization"
-                    icon={<File className="w-5 h-5" />}
-                    selected={selectedFormat === 'docx'}
-                    onClick={() => onStateChange({ selectedFormat: 'docx' })}
+                    icon={<File className="h-5 w-5" />}
+                    selected={selectedFormat === "docx"}
+                    onClick={() => onStateChange({ selectedFormat: "docx" })}
                   />
                 </div>
               </div>
@@ -231,31 +261,38 @@ export function ExportModal({
           )}
 
           {isExporting && (
-            <div className="space-y-6">
-              {/* Current Stage Message */}
-              <div className="text-center">
-                <div className="inline-flex items-center gap-2 text-blue-700 bg-blue-50 px-4 py-2 rounded-lg">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm font-medium">{stages[currentStage]?.name}</span>
+            <div className="space-y-7">
+              {/* Overall progress */}
+              <div className="text-center" role="status" aria-live="polite">
+                <p className="text-petrol-950 text-6xl font-semibold tracking-[-0.05em] tabular-nums sm:text-7xl">
+                  {overallProgress}
+                  <span className="text-petrol-600 ml-1 align-super text-2xl font-semibold sm:text-3xl">
+                    %
+                  </span>
+                </p>
+                <div className="mt-3 flex items-center justify-center gap-2 text-teal-700">
+                  <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                  <span className="text-petrol-950 text-sm font-semibold sm:text-base">
+                    {stages[currentStage]?.name}
+                  </span>
                 </div>
+                <p className="text-petrol-600 mt-1 text-xs">
+                  Step {Math.min(currentStage + 1, stages.length)} of{" "}
+                  {stages.length}
+                </p>
               </div>
 
-              {/* Overall Progress Bar */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-700">Export Progress</span>
-                  <span className="text-sm text-slate-600">{overallProgress}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-2.5">
+                <div className="bg-mint-100 h-2 w-full overflow-hidden rounded-full">
                   <div
-                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
+                    className="h-2 rounded-full bg-teal-600 transition-[width] duration-500 motion-reduce:transition-none"
                     style={{ width: `${overallProgress}%` }}
                   />
                 </div>
               </div>
 
               {/* Stage Indicators */}
-              <div className="space-y-2">
+              <div className="border-petrol-950/6 bg-surface space-y-1 rounded-2xl border p-3 sm:p-4">
                 {stages.map((stage, index) => (
                   <StageIndicator
                     key={index}
@@ -266,13 +303,20 @@ export function ExportModal({
               </div>
 
               {/* What's Being Exported */}
-              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                <h4 className="text-xs font-semibold text-slate-700 mb-2">Exporting {config.selectedCount} policies:</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="border-petrol-950/6 bg-mint-50 rounded-2xl border p-4 sm:p-5">
+                <h4 className="text-petrol-600 mb-3 text-[10px] font-bold tracking-[0.14em] uppercase">
+                  Exporting {config.selectedCount} policies
+                </h4>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {config.policyTypes.map((type, index) => (
-                    <div key={index} className="flex items-center gap-2 text-xs text-slate-600">
-                      <CheckCircle2 className="w-3 h-3 text-green-600 flex-shrink-0" />
-                      <span className="break-words">{type.name} ({type.count})</span>
+                    <div
+                      key={index}
+                      className="text-petrol-700 flex items-center gap-2 text-xs"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-teal-700" />
+                      <span className="break-words">
+                        {type.name} ({type.count})
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -281,32 +325,47 @@ export function ExportModal({
           )}
 
           {exportError && (
-            <div className="mt-6 bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white text-red-600">
+                  <AlertCircle className="h-5 w-5" />
+                </span>
                 <div>
-                  <h3 className="text-sm font-semibold text-red-900">Export Failed</h3>
-                  <p className="text-sm text-red-700 mt-1">{exportError}</p>
+                  <h3 className="text-sm font-semibold text-red-900">
+                    Export failed
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-red-700">
+                    {exportError}
+                  </p>
                 </div>
               </div>
             </div>
           )}
 
           {exportComplete && (
-            <div className="text-center py-8">
-              <div className={`w-16 h-16 ${exportErrors.length > 0 ? 'bg-yellow-100' : 'bg-green-100'} rounded-full flex items-center justify-center mx-auto mb-4`}>
+            <div className="py-5 text-center sm:py-7">
+              <div
+                className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
+                  exportErrors.length > 0 ? "bg-amber-50" : "bg-teal-50"
+                }`}
+              >
                 {exportErrors.length > 0 ? (
-                  <AlertCircle className="w-8 h-8 text-yellow-600" />
+                  <AlertCircle className="h-8 w-8 text-amber-600" />
                 ) : (
-                  <CheckCircle2 className="w-8 h-8 text-green-600" />
+                  <CheckCircle2 className="h-8 w-8 text-teal-700" />
                 )}
               </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                {exportErrors.length > 0 ? 'Export Completed with Warnings' : 'Export Complete!'}
+              <h3 className="text-petrol-950 mb-2 text-xl font-semibold">
+                {exportErrors.length > 0
+                  ? "Export completed with warnings"
+                  : "Export complete"}
               </h3>
-              <p className="text-sm text-slate-600 mb-6">
+              <p className="text-petrol-600 mb-6 text-sm">
                 {exportStats ? (
-                  <>Successfully exported {exportStats.successful} of {exportStats.total} policies</>
+                  <>
+                    Successfully exported {exportStats.successful} of{" "}
+                    {exportStats.total} policies
+                  </>
                 ) : (
                   <>Successfully exported {config.selectedCount} policies</>
                 )}
@@ -314,27 +373,37 @@ export function ExportModal({
 
               {/* Show warnings if there are partial failures */}
               {exportErrors.length > 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-left max-w-2xl mx-auto">
-                  <div className="flex items-start gap-2 mb-3">
-                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div className="mx-auto mb-6 max-w-2xl rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4 text-left sm:p-5">
+                  <div className="mb-3 flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
                     <div>
-                      <h4 className="text-sm font-semibold text-yellow-900">
-                        {exportErrors.length} {exportErrors.length === 1 ? 'policy' : 'policies'} failed to export
+                      <h4 className="text-sm font-semibold text-amber-950">
+                        {exportErrors.length}{" "}
+                        {exportErrors.length === 1 ? "policy" : "policies"}{" "}
+                        failed to export
                       </h4>
-                      <p className="text-xs text-yellow-700 mt-1">
-                        The remaining policies were successfully exported to your PDF.
+                      <p className="mt-1 text-xs leading-5 text-amber-800">
+                        The remaining policies were successfully exported to
+                        your PDF.
                       </p>
                     </div>
                   </div>
                   <details className="mt-3">
-                    <summary className="text-sm font-medium text-yellow-900 cursor-pointer hover:text-yellow-800">
+                    <summary className="cursor-pointer text-sm font-semibold text-amber-950 hover:text-amber-800 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none">
                       View failed policies
                     </summary>
-                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                    <div className="mt-3 max-h-48 space-y-2 overflow-y-auto overscroll-contain">
                       {exportErrors.map((err, index) => (
-                        <div key={index} className="text-xs bg-white border border-yellow-200 rounded p-2">
-                          <div className="font-medium text-slate-900 break-words">{err.policyType}: {err.policyName}</div>
-                          <div className="text-slate-600 mt-1 break-words">{err.error}</div>
+                        <div
+                          key={index}
+                          className="border-petrol-950/6 rounded-xl border bg-white p-3 text-xs"
+                        >
+                          <div className="text-petrol-950 font-semibold break-words">
+                            {err.policyType}: {err.policyName}
+                          </div>
+                          <div className="text-petrol-600 mt-1 break-words">
+                            {err.error}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -343,22 +412,30 @@ export function ExportModal({
               )}
 
               {/* Summary Stats */}
-              <div className="bg-slate-50 rounded-lg p-4 mb-6 inline-block">
+              <div className="border-petrol-950/6 bg-surface mb-6 inline-block rounded-2xl border p-4 sm:p-5">
                 <div className="text-left">
-                  <div className="text-xs text-slate-600 font-medium mb-2">Exported Policy Types:</div>
-                  <div className="space-y-1">
+                  <div className="text-petrol-600 mb-3 text-[10px] font-bold tracking-[0.14em] uppercase">
+                    Exported policy types
+                  </div>
+                  <div className="space-y-2">
                     {config.policyTypes.map((type, index) => (
-                      <div key={index} className="flex items-center gap-2 text-sm text-slate-700">
-                        <CheckCircle2 className="w-4 h-4 text-green-600" />
-                        <span>{type.name}: <strong>{type.count}</strong></span>
+                      <div
+                        key={index}
+                        className="text-petrol-700 flex items-center gap-2 text-sm"
+                      >
+                        <CheckCircle2 className="h-4 w-4 text-teal-700" />
+                        <span>
+                          {type.name}: <strong>{type.count}</strong>
+                        </span>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500">
-                Your download should start automatically. If not, check your downloads folder.
+              <p className="text-petrol-600 text-xs leading-5">
+                Your download should start automatically. If not, check your
+                downloads folder.
               </p>
             </div>
           )}
@@ -366,14 +443,14 @@ export function ExportModal({
 
         {/* Footer */}
         {!isExporting && (
-          <div className="border-t p-4 sm:p-6 bg-slate-50">
-            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
+          <div className="border-petrol-950/6 bg-surface border-t p-4 sm:px-7 sm:py-5">
+            <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
               {!exportComplete && !exportError && (
                 <>
                   <Button
                     onClick={handleClose}
                     variant="secondary"
-                    className="w-full sm:w-auto"
+                    className="border-petrol-950/12 text-petrol-950 hover:bg-mint-50 hover:border-petrol-950/20 min-h-11 w-full rounded-full border bg-white px-6 shadow-none transition-colors focus-visible:ring-teal-600 sm:w-auto"
                   >
                     Cancel
                   </Button>
@@ -381,10 +458,10 @@ export function ExportModal({
                     onClick={handleExport}
                     variant="primary"
                     disabled={config.selectedCount === 0}
-                    className="w-full sm:w-auto"
+                    className="bg-petrol-950 hover:bg-petrol-800 min-h-11 w-full rounded-xl px-6 text-white shadow-sm transition-[background-color,box-shadow] hover:shadow-md focus-visible:ring-teal-600 disabled:opacity-40 sm:w-auto"
                   >
-                    <Download className="w-4 h-4 mr-2" />
-                    Start Export
+                    <Download className="mr-2 h-4 w-4" />
+                    Start export
                   </Button>
                 </>
               )}
@@ -400,17 +477,17 @@ export function ExportModal({
                         });
                       }}
                       variant="secondary"
-                      className="w-full sm:w-auto"
+                      className="border-petrol-950/12 text-petrol-950 hover:bg-mint-50 hover:border-petrol-950/20 min-h-11 w-full rounded-full border bg-white px-6 shadow-none transition-colors focus-visible:ring-teal-600 sm:w-auto"
                     >
-                      Try Again
+                      Try again
                     </Button>
                   )}
                   <Button
                     onClick={handleClose}
                     variant="primary"
-                    className="w-full sm:w-auto"
+                    className="bg-petrol-950 hover:bg-petrol-800 min-h-11 w-full rounded-xl px-6 text-white shadow-sm transition-[background-color,box-shadow] hover:shadow-md focus-visible:ring-teal-600 sm:w-auto"
                   >
-                    {exportComplete ? 'Done' : 'Close'}
+                    {exportComplete ? "Done" : "Close"}
                   </Button>
                 </>
               )}
@@ -439,25 +516,36 @@ function FormatOption({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full text-left p-3 sm:p-4 rounded-lg border-2 transition-all touch-manipulation ${
+      className={`w-full cursor-pointer touch-manipulation rounded-2xl border p-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none sm:p-5 ${
         selected
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100'
+          ? "border-teal-600 bg-teal-50"
+          : "border-petrol-950/8 hover:border-petrol-950/12 hover:bg-mint-50 active:bg-mint-100 bg-white"
       }`}
     >
-      <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg flex-shrink-0 ${selected ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>
+      <div className="flex items-start gap-3 sm:gap-4">
+        <div
+          className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl ${
+            selected ? "bg-white text-teal-700" : "bg-mint-50 text-petrol-600"
+          }`}
+        >
           {icon}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-slate-900">{label}</div>
-          <div className="text-sm text-slate-600 mt-1 break-words">{description}</div>
+        <div className="min-w-0 flex-1">
+          <div className="text-petrol-950 font-semibold">{label}</div>
+          <div className="text-petrol-600 mt-1 text-sm leading-5 break-words">
+            {description}
+          </div>
         </div>
-        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-          selected ? 'border-blue-500' : 'border-slate-300'
-        }`}>
-          {selected && <div className="w-3 h-3 rounded-full bg-blue-500" />}
+        <div
+          className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+            selected
+              ? "border-teal-600 bg-white"
+              : "border-petrol-950/20 bg-white"
+          }`}
+        >
+          {selected && <div className="h-3 w-3 rounded-full bg-teal-600" />}
         </div>
       </div>
     </button>
@@ -466,35 +554,45 @@ function FormatOption({
 
 function StageIndicator({
   stage,
-  status
+  status,
 }: {
   stage: ExportStage;
-  status: 'pending' | 'active' | 'completed'
+  status: "pending" | "active" | "completed";
 }) {
   const getStatusIcon = () => {
     switch (status) {
-      case 'completed':
-        return <CheckCircle2 className="w-4 h-4 text-green-600" />;
-      case 'active':
-        return <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />;
+      case "completed":
+        return (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-600 text-white">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          </span>
+        );
+      case "active":
+        return (
+          <Loader2 className="h-5 w-5 shrink-0 animate-spin text-teal-700 motion-reduce:animate-none" />
+        );
       default:
-        return <div className="w-4 h-4 rounded-full border-2 border-slate-300" />;
+        return (
+          <div className="border-petrol-950/20 h-4 w-4 shrink-0 rounded-full border-2" />
+        );
     }
   };
 
   const getTextColor = () => {
     switch (status) {
-      case 'completed':
-        return 'text-green-700';
-      case 'active':
-        return 'text-blue-700 font-medium';
+      case "completed":
+        return "text-petrol-700";
+      case "active":
+        return "text-petrol-950 font-semibold";
       default:
-        return 'text-slate-400';
+        return "text-petrol-600/65";
     }
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div
+      className={`flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 ${status === "active" ? "bg-teal-50" : ""}`}
+    >
       {getStatusIcon()}
       <span className={`text-sm ${getTextColor()}`}>{stage.name}</span>
     </div>

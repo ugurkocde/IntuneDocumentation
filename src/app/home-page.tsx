@@ -17,7 +17,7 @@ import {
   Layers,
   Lock,
   Monitor,
-  Palette,
+  RefreshCw,
   ServerOff,
   Settings,
   Shield,
@@ -336,39 +336,6 @@ export function HomePage({ stats }: { stats: SiteStats }) {
     }),
     [],
   );
-
-  const featureCards = [
-    {
-      icon: Palette,
-      title: "Custom branding",
-      desc: "Add your company logo, colors, headers, footers, and confidentiality notices to every report.",
-    },
-    {
-      icon: CheckCircle,
-      title: "100% complete settings",
-      desc: "Every setting, ADMX value, script content, and assignment captured. No manual gaps or missing configurations.",
-    },
-    {
-      icon: Shield,
-      title: "Zero data storage",
-      desc: "We don't store your tenant data. All processing happens entirely in your browser during your session.",
-    },
-    {
-      icon: Eye,
-      title: "Read-only access",
-      desc: "Uses Microsoft OAuth with read-only scopes for Intune and Microsoft Graph resources.",
-    },
-    {
-      icon: Database,
-      title: "Assignments and groups",
-      desc: "Group targets and filters resolved for clarity, with optional counts by platform.",
-    },
-    {
-      icon: Clock,
-      title: "Always current",
-      desc: "Generate fresh reports anytime. No outdated wikis or stale documentation. Your report reflects the latest configuration.",
-    },
-  ];
 
   return (
     <>
@@ -887,28 +854,216 @@ export function HomePage({ stats }: { stats: SiteStats }) {
               whileInView="visible"
               viewport={{ once: true, margin: "-80px" }}
               variants={staggerContainer}
-              className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+              className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-6"
             >
-              {featureCards.map((feature) => {
-                const Icon = feature.icon;
-                return (
-                  <motion.article
-                    key={feature.title}
-                    variants={fadeUp}
-                    className="group border-petrol-950/6 shadow-card hover:shadow-soft rounded-2xl border bg-white p-6 transition duration-200 hover:-translate-y-1 sm:p-7"
-                  >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-50 text-teal-700 transition-colors group-hover:bg-teal-100">
-                      <Icon className="h-5 w-5" strokeWidth={1.8} />
+              <motion.article
+                variants={fadeUp}
+                className="border-petrol-950/6 shadow-card flex flex-col rounded-3xl border bg-white p-6 sm:p-7 lg:col-span-3"
+              >
+                <div
+                  className="bg-surface border-petrol-950/5 mb-6 flex h-56 items-center justify-center overflow-hidden rounded-2xl border"
+                  aria-hidden="true"
+                >
+                  <div className="w-full max-w-sm px-6">
+                    <div className="border-petrol-950/6 rounded-xl border bg-white p-4 shadow-sm">
+                      <p className="text-petrol-600 mb-2.5 text-[10px] font-semibold tracking-[0.14em] uppercase">
+                        Select configurations
+                      </p>
+                      {[
+                        ["Device Configurations", "47"],
+                        ["Compliance Policies", "12"],
+                        ["Settings Catalog", "31"],
+                      ].map(([label, count]) => (
+                        <div
+                          key={label}
+                          className="flex items-center gap-2.5 py-1.5"
+                        >
+                          <span className="flex h-4 w-4 items-center justify-center rounded bg-teal-600 text-white">
+                            <Check className="h-3 w-3" strokeWidth={3} />
+                          </span>
+                          <span className="text-petrol-800 text-xs font-medium">
+                            {label}
+                          </span>
+                          <span className="text-petrol-600 ml-auto text-[10px]">
+                            {count}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-petrol-950/8 shadow-card relative z-10 mx-auto -mt-3 flex w-[90%] items-center justify-between gap-3 rounded-xl border bg-white py-2 pr-2 pl-3">
+                      <span className="text-petrol-600 text-[11px]">
+                        10 of 10 types selected
+                      </span>
+                      <span className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-[11px] font-semibold text-white">
+                        <Download className="h-3 w-3" />
+                        Export
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <h3 className="text-petrol-950 text-lg font-semibold">
+                  100% complete settings
+                </h3>
+                <p className="text-petrol-600 mt-2 text-sm leading-6">
+                  Every setting, ADMX value, script, and assignment captured
+                  across all 10 configuration types. No manual gaps.
+                </p>
+              </motion.article>
+
+              <motion.article
+                variants={fadeUp}
+                className="border-petrol-950/6 shadow-card flex flex-col rounded-3xl border bg-white p-6 sm:p-7 lg:col-span-3"
+              >
+                <div
+                  className="bg-surface border-petrol-950/5 mb-6 flex h-56 items-center justify-center overflow-hidden rounded-2xl border"
+                  aria-hidden="true"
+                >
+                  <div className="relative w-full max-w-sm px-8">
+                    <div className="border-petrol-950/6 absolute inset-x-12 -top-2.5 h-full rotate-2 rounded-xl border bg-white/70" />
+                    <div className="border-petrol-950/6 relative rounded-xl border bg-white p-4 shadow-sm">
+                      <div className="mb-3 flex items-center gap-2.5">
+                        <span className="h-7 w-7 rounded-lg bg-teal-600" />
+                        <div>
+                          <div className="bg-petrol-950/15 h-2 w-24 rounded" />
+                          <div className="bg-petrol-950/8 mt-1.5 h-1.5 w-16 rounded" />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="bg-petrol-950/6 h-1.5 w-full rounded" />
+                        <div className="bg-petrol-950/6 h-1.5 w-4/5 rounded" />
+                        <div className="bg-petrol-950/6 h-1.5 w-3/5 rounded" />
+                      </div>
+                      <div className="mt-4 flex items-center gap-2">
+                        <span className="h-5 w-5 rounded-full bg-teal-600" />
+                        <span className="bg-petrol-950 h-5 w-5 rounded-full" />
+                        <span className="h-5 w-5 rounded-full bg-teal-100" />
+                        <span className="border-petrol-950/10 h-5 w-5 rounded-full border bg-white" />
+                        <span className="ml-auto rounded-full bg-teal-50 px-2 py-0.5 text-[9px] font-bold tracking-wide text-teal-700 uppercase">
+                          Your brand
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <h3 className="text-petrol-950 text-lg font-semibold">
+                  Custom branding
+                </h3>
+                <p className="text-petrol-600 mt-2 text-sm leading-6">
+                  Add your company logo, colors, headers, footers, and
+                  confidentiality notices to every report.
+                </p>
+              </motion.article>
+
+              <motion.article
+                variants={fadeUp}
+                className="border-petrol-950/6 shadow-card flex flex-col rounded-3xl border bg-white p-6 sm:p-7 lg:col-span-2"
+              >
+                <div
+                  className="bg-surface border-petrol-950/5 mb-6 flex h-48 items-center justify-center overflow-hidden rounded-2xl border"
+                  aria-hidden="true"
+                >
+                  <div className="border-petrol-950/6 w-full max-w-[230px] space-y-2 rounded-xl border bg-white p-3 shadow-sm">
+                    {[
+                      ["Sales Devices", "Resolved"],
+                      ["All Users", "Resolved"],
+                      ["Windows only", "Filter"],
+                    ].map(([label, badge]) => (
+                      <div
+                        key={label}
+                        className="bg-surface flex items-center gap-2 rounded-lg px-2.5 py-2"
+                      >
+                        <Users className="h-3.5 w-3.5 shrink-0 text-teal-700" />
+                        <span className="text-petrol-800 text-[11px] font-medium">
+                          {label}
+                        </span>
+                        <span className="ml-auto rounded-full bg-teal-50 px-2 py-0.5 text-[9px] font-bold text-teal-700">
+                          {badge}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <h3 className="text-petrol-950 text-base font-semibold">
+                  Assignments and groups
+                </h3>
+                <p className="text-petrol-600 mt-2 text-sm leading-6">
+                  Group targets and filters resolved for clarity, with optional
+                  counts by platform.
+                </p>
+              </motion.article>
+
+              <motion.article
+                variants={fadeUp}
+                className="border-petrol-950/6 shadow-card flex flex-col rounded-3xl border bg-white p-6 sm:p-7 lg:col-span-2"
+              >
+                <div
+                  className="bg-surface border-petrol-950/5 mb-6 flex h-48 items-center justify-center overflow-hidden rounded-2xl border"
+                  aria-hidden="true"
+                >
+                  <div className="relative flex items-center justify-center pb-3">
+                    <div className="bg-petrol-950 flex h-24 w-20 -rotate-6 flex-col items-center justify-center gap-2 rounded-xl text-white shadow-sm">
+                      <FileText className="h-6 w-6" strokeWidth={1.6} />
+                      <span className="text-[10px] font-bold tracking-wide">
+                        PDF
+                      </span>
+                    </div>
+                    <div className="shadow-card z-10 -ml-4 flex h-24 w-20 rotate-6 flex-col items-center justify-center gap-2 rounded-xl bg-teal-600 text-white">
+                      <FileText className="h-6 w-6" strokeWidth={1.6} />
+                      <span className="text-[10px] font-bold tracking-wide">
+                        DOCX
+                      </span>
+                    </div>
+                    <span className="border-petrol-950/8 absolute -bottom-1 left-1/2 z-20 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border bg-white shadow-sm">
+                      <Download className="h-3.5 w-3.5 text-teal-700" />
                     </span>
-                    <h3 className="text-petrol-950 mt-6 text-base font-semibold">
-                      {feature.title}
-                    </h3>
-                    <p className="text-petrol-600 mt-2 text-sm leading-6">
-                      {feature.desc}
-                    </p>
-                  </motion.article>
-                );
-              })}
+                  </div>
+                </div>
+                <h3 className="text-petrol-950 text-base font-semibold">
+                  PDF and Word exports
+                </h3>
+                <p className="text-petrol-600 mt-2 text-sm leading-6">
+                  Download polished PDF or DOCX documents, ready for audits,
+                  handovers, and archives.
+                </p>
+              </motion.article>
+
+              <motion.article
+                variants={fadeUp}
+                className="border-petrol-950/6 shadow-card flex flex-col rounded-3xl border bg-white p-6 sm:p-7 lg:col-span-2"
+              >
+                <div
+                  className="bg-surface border-petrol-950/5 mb-6 flex h-48 items-center justify-center overflow-hidden rounded-2xl border"
+                  aria-hidden="true"
+                >
+                  <div className="border-petrol-950/6 w-full max-w-[230px] space-y-2 rounded-xl border bg-white p-3.5 shadow-sm">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-50 text-teal-700">
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </span>
+                      <div>
+                        <p className="text-petrol-950 text-[11px] font-semibold">
+                          Report refreshed
+                        </p>
+                        <p className="text-petrol-600 text-[10px]">Just now</p>
+                      </div>
+                      <span className="ml-auto h-2 w-2 rounded-full bg-teal-500" />
+                    </div>
+                    <div className="bg-surface text-petrol-700 rounded-lg px-2.5 py-2 text-[10px]">
+                      + 2 policies since last export
+                    </div>
+                    <div className="bg-surface text-petrol-700 rounded-lg px-2.5 py-2 text-[10px]">
+                      Assignments up to date
+                    </div>
+                  </div>
+                </div>
+                <h3 className="text-petrol-950 text-base font-semibold">
+                  Always current
+                </h3>
+                <p className="text-petrol-600 mt-2 text-sm leading-6">
+                  Generate a fresh report whenever your tenant changes. No
+                  outdated wikis or version drift.
+                </p>
+              </motion.article>
             </motion.div>
 
             <motion.div

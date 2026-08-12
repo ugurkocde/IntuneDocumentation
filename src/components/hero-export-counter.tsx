@@ -20,8 +20,8 @@ export function HeroExportCounter() {
 
   if (exportCount === null) {
     return (
-      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-pulse">
-        <span className="inline-block w-24 h-3 rounded bg-blue-200/20" />
+      <div className="inline-flex min-h-8 animate-pulse items-center gap-1.5 rounded-full border border-teal-100 bg-white px-3 py-1.5 shadow-sm">
+        <span className="inline-block h-3 w-24 rounded bg-teal-100" />
       </div>
     );
   }
@@ -31,14 +31,14 @@ export function HeroExportCounter() {
   }
 
   return (
-    <div
-      className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700"
-    >
-      <span className="text-[11px] sm:text-xs text-blue-200/90">
+    <div className="animate-in fade-in slide-in-from-top-2 inline-flex min-h-8 items-center gap-1.5 rounded-full border border-teal-100 bg-white px-2.5 py-1.5 shadow-sm duration-700 sm:px-3">
+      <span className="text-petrol-600 text-[11px] sm:text-xs">
         <span className="hidden sm:inline">Total docs</span>
         <span className="sm:hidden">Docs</span> exported:
       </span>
-      <span className="text-xs sm:text-sm font-semibold text-white">{exportCount.toLocaleString()}</span>
+      <span className="text-petrol-950 text-xs font-semibold sm:text-sm">
+        {exportCount.toLocaleString()}
+      </span>
     </div>
   );
 }

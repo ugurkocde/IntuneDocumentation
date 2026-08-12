@@ -20,8 +20,8 @@ export function HeroMauCounter() {
 
   if (mauCount === null) {
     return (
-      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-pulse">
-        <span className="inline-block w-20 h-3 rounded bg-blue-200/20" />
+      <div className="inline-flex min-h-8 animate-pulse items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-3 py-1.5">
+        <span className="inline-block h-3 w-20 rounded bg-teal-100" />
       </div>
     );
   }
@@ -31,14 +31,12 @@ export function HeroMauCounter() {
   }
 
   return (
-    <div
-      className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 animate-in fade-in slide-in-from-top-2 duration-700"
-    >
-      <span className="text-[11px] sm:text-xs text-blue-200/90">
+    <div className="animate-in fade-in slide-in-from-top-2 inline-flex min-h-8 items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-2.5 py-1.5 duration-700 sm:px-3">
+      <span className="text-petrol-600 text-[11px] sm:text-xs">
         <span className="hidden sm:inline">PDFs generated</span>
         <span className="sm:hidden">PDFs</span> this month:
       </span>
-      <span className="text-xs sm:text-sm font-semibold text-white">
+      <span className="text-petrol-950 text-xs font-semibold sm:text-sm">
         {mauCount.toLocaleString()}
       </span>
     </div>

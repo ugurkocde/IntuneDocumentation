@@ -106,6 +106,14 @@ export function SiteFooter() {
                   Terms of Use
                 </Link>
               </li>
+              <li>
+                <Link
+                  href="/impressum"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Legal Notice (Impressum)
+                </Link>
+              </li>
             </ul>
           </div>
 
@@ -154,7 +162,7 @@ export function SiteFooter() {
       <div className="border-petrol-950/8 border-t">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-6 sm:px-8 md:flex-row lg:px-10">
           <div className="text-petrol-600 text-xs">
-            © {year} Ugur Creative Labs. All rights reserved.
+            © {year} UgurLabs. All rights reserved.
           </div>
           <a
             href="https://www.linkedin.com/in/ugurkocde/"

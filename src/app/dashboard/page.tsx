@@ -76,6 +76,8 @@ export default function DashboardPage() {
     steps: {
       name: string;
       status: "pending" | "loading" | "completed" | "error";
+      current?: number;
+      total?: number;
     }[];
     currentStep: number;
   }>({
@@ -159,8 +161,16 @@ export default function DashboardPage() {
   ) => {
     setFetchProgress((prev) => {
       const newSteps = [...prev.steps];
-      if (newSteps[stepIndex]) {
-        newSteps[stepIndex] = { name: newSteps[stepIndex].name, status };
+      const step = newSteps[stepIndex];
+      if (step) {
+        newSteps[stepIndex] = {
+          ...step,
+          status,
+          // A completed step counts as fully processed
+          ...(status === "completed" && step.total
+            ? { current: step.total }
+            : {}),
+        };
       }
       return { ...prev, steps: newSteps, currentStep: stepIndex };
     });
@@ -296,12 +306,16 @@ export default function DashboardPage() {
                         updateFetchProgress(data.stepIndex, data.status);
                       }
 
-                      // Update current step for batch progress
-                      if (data.type === "batch-progress" && data.message) {
-                        const stepIndex = stepsFor(caIncluded).findIndex((s) =>
-                          s.name.includes(data.step),
-                        );
-                        if (stepIndex !== -1) {
+                      // Attach live batch counts so the loading screen can
+                      // weight overall progress by real work done
+                      if (data.type === "batch-progress") {
+                        const stepIndex =
+                          data.stepIndex !== undefined
+                            ? data.stepIndex
+                            : stepsFor(caIncluded).findIndex((s) =>
+                                s.name.includes(data.step),
+                              );
+                        if (stepIndex !== -1 && stepIndex !== undefined) {
                           setFetchProgress((prev) => ({
                             ...prev,
                             steps: prev.steps.map((step, idx) =>
@@ -309,6 +323,9 @@ export default function DashboardPage() {
                                 ? {
                                     ...step,
                                     name: `${data.step} (${data.current}/${data.total})`,
+                                    status: "loading",
+                                    current: data.current,
+                                    total: data.total,
                                   }
                                 : step,
                             ),

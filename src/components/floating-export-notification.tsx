@@ -31,16 +31,18 @@ export function FloatingExportNotification({
 
   const getStatusIcon = () => {
     if (exportError) {
-      return <AlertCircle className="w-5 h-5 text-red-600" />;
+      return <AlertCircle className="h-5 w-5 text-red-600" />;
     }
     if (exportComplete) {
       return hasWarnings ? (
-        <AlertCircle className="w-5 h-5 text-yellow-600" />
+        <AlertCircle className="h-5 w-5 text-amber-600" />
       ) : (
-        <CheckCircle2 className="w-5 h-5 text-green-600" />
+        <CheckCircle2 className="h-5 w-5 text-teal-700" />
       );
     }
-    return <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />;
+    return (
+      <Loader2 className="h-5 w-5 animate-spin text-teal-700 motion-reduce:animate-none" />
+    );
   };
 
   const getStatusText = () => {
@@ -51,57 +53,67 @@ export function FloatingExportNotification({
     return currentStageName;
   };
 
-  const getStatusColor = () => {
-    if (exportError) return "bg-red-50 border-red-200";
+  const getIconSurface = () => {
+    if (exportError) return "bg-red-50";
     if (exportComplete) {
-      return hasWarnings ? "bg-yellow-50 border-yellow-200" : "bg-green-50 border-green-200";
+      return hasWarnings ? "bg-amber-50" : "bg-teal-50";
     }
-    return "bg-white border-slate-200";
+    return "bg-teal-50";
   };
 
   return (
     <div
-      className={`fixed bottom-6 right-6 w-80 rounded-lg border-2 shadow-lg transition-all duration-300 ease-in-out transform ${
+      className={`border-petrol-950/8 shadow-soft fixed right-4 bottom-4 left-4 z-50 transform rounded-2xl border bg-white transition-[transform,opacity] duration-300 ease-in-out motion-reduce:transition-none sm:right-6 sm:bottom-6 sm:left-auto sm:w-80 ${
         isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
-      } ${getStatusColor()} z-50`}
+      }`}
     >
       <div
         onClick={onClick}
-        className="cursor-pointer p-4 hover:bg-opacity-80 transition-colors"
+        className="hover:bg-mint-50/70 cursor-pointer rounded-2xl p-4 transition-colors"
       >
         <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 mt-0.5">{getStatusIcon()}</div>
+          <div
+            className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${getIconSurface()}`}
+          >
+            {getStatusIcon()}
+          </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-sm font-semibold text-slate-900 truncate">
+          <div className="min-w-0 flex-1">
+            <div className="-mt-1 flex items-center justify-between gap-2">
+              <p
+                className="text-petrol-950 truncate text-sm font-semibold"
+                aria-live="polite"
+              >
                 {getStatusText()}
               </p>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDismiss();
                 }}
-                className="flex-shrink-0 p-1 hover:bg-slate-200 rounded transition-colors"
+                className="text-petrol-600 hover:bg-mint-100 hover:text-petrol-950 flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
                 aria-label="Dismiss notification"
               >
-                <X className="w-4 h-4 text-slate-600" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 mb-2">
+            <p className="text-petrol-600 mb-3 text-xs">
               {policyCount} {policyCount === 1 ? "policy" : "policies"}
             </p>
 
             {isExporting && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs text-slate-600">
+              <div className="space-y-1.5">
+                <div className="text-petrol-600 flex items-center justify-between text-xs">
                   <span>Progress</span>
-                  <span className="font-medium">{overallProgress}%</span>
+                  <span className="text-petrol-800 font-semibold tabular-nums">
+                    {overallProgress}%
+                  </span>
                 </div>
-                <div className="w-full bg-slate-200 rounded-full h-2">
+                <div className="bg-mint-100 h-1.5 w-full overflow-hidden rounded-full">
                   <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                    className="h-1.5 rounded-full bg-teal-600 transition-[width] duration-500 motion-reduce:transition-none"
                     style={{ width: `${overallProgress}%` }}
                   />
                 </div>
@@ -109,7 +121,7 @@ export function FloatingExportNotification({
             )}
 
             {!isExporting && (
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-petrol-600 mt-1 text-xs">
                 Click to view details
               </p>
             )}

@@ -14,6 +14,8 @@ import type { LucideIcon } from "lucide-react";
 interface FetchStep {
   name: string;
   status: "pending" | "loading" | "completed" | "error";
+  current?: number;
+  total?: number;
 }
 
 interface DashboardLoadingProps {
@@ -53,15 +55,36 @@ const TILE_GROUPS: TileGroup[] = [
   },
 ];
 
+// A step counts fully when done; a step with live batch counts contributes
+// its fraction, so long-running types move the number instead of freezing it.
+function stepCredit(step: FetchStep): number {
+  if (step.status === "completed") return 1;
+  if (step.status === "error") return 1;
+  if (step.status === "loading" && step.total && step.total > 0) {
+    return Math.min((step.current ?? 0) / step.total, 0.95);
+  }
+  return 0;
+}
+
 export function DashboardLoading({
   steps,
   currentStep,
 }: DashboardLoadingProps) {
   const total = Math.max(steps.length, 1);
-  const completed = steps.filter((s) => s.status === "completed").length;
-  const percent = Math.round((completed / total) * 100);
+  const completed = steps.filter(
+    (s) => s.status === "completed" || s.status === "error",
+  ).length;
+  const percent = Math.min(
+    99,
+    Math.round(
+      (steps.reduce((sum, step) => sum + stepCredit(step), 0) / total) * 100,
+    ),
+  );
 
+  // Prefer the step that reports real batch counts, since it carries the
+  // most information; otherwise the first step still in flight.
   const activeStep =
+    steps.find((s) => s.status === "loading" && s.total) ??
     steps.find((s) => s.status === "loading") ??
     steps[Math.min(currentStep, steps.length - 1)];
 
@@ -146,7 +169,7 @@ export function DashboardLoading({
               {activeStep?.name ?? "Connecting to Microsoft Graph"}
             </p>
             <p className="text-petrol-600 mt-1 text-sm">
-              Step {Math.min(currentStep + 1, total)} of {total}
+              {completed} of {total} steps complete
             </p>
           </div>
 
@@ -207,10 +230,25 @@ export function DashboardLoading({
               {steps.map((step) => (
                 <li
                   key={step.name}
-                  className={`flex min-h-9 items-center gap-3 rounded-xl px-3 py-1.5 ${
+                  className={`relative flex min-h-9 items-center gap-3 overflow-hidden rounded-xl px-3 py-1.5 ${
                     step.status === "loading" ? "bg-teal-50" : ""
                   }`}
                 >
+                  {step.status === "loading" &&
+                    typeof step.total === "number" &&
+                    step.total > 0 && (
+                      <span
+                        className="absolute inset-x-0 bottom-0 h-0.5 bg-teal-600/15"
+                        aria-hidden="true"
+                      >
+                        <span
+                          className="block h-full bg-teal-600 transition-[width] duration-500"
+                          style={{
+                            width: `${Math.min(((step.current ?? 0) / step.total) * 100, 100)}%`,
+                          }}
+                        />
+                      </span>
+                    )}
                   {step.status === "completed" ? (
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-600 text-white">
                       <Check className="h-3 w-3" strokeWidth={3} />

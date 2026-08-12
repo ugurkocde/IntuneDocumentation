@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 const sections = [
+  { id: "provider", label: "Service Provider" },
   { id: "access-and-eligibility", label: "Access and Eligibility" },
   { id: "use-of-the-service", label: "Use of the Service" },
   { id: "privacy", label: "Privacy" },
@@ -22,7 +23,7 @@ const sections = [
 
 export default function TermsOfUsePage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white pt-16">
       <NavigationHeader />
       <main>
         <div className="container mx-auto px-4 py-16 max-w-3xl">
@@ -37,6 +38,25 @@ export default function TermsOfUsePage() {
             <p>
               These Terms of Use (&quot;Terms&quot;) govern your access to and use of the Intune Documentation Generator
               (the &quot;Service&quot;). By using the Service, you agree to these Terms.
+            </p>
+
+            <h2 id="provider" className="text-xl font-semibold text-slate-900 scroll-mt-24">Service Provider</h2>
+            <p>
+              The Service is operated by:
+            </p>
+            <p>
+              Ugurlabs UG (haftungsbeschränkt)
+              <br />
+              Fährstraße 217
+              <br />
+              40221 Düsseldorf, Germany
+              <br />
+              Managing Director: Ugur Koc
+              <br />
+              Email: <a href="mailto:support@ugurlabs.com" className="text-blue-700 underline">support@ugurlabs.com</a>
+            </p>
+            <p>
+              References to &quot;we&quot;, &quot;us&quot;, or &quot;our&quot; in these Terms refer to Ugurlabs UG (haftungsbeschränkt).
             </p>
 
             <h2 id="access-and-eligibility" className="text-xl font-semibold text-slate-900 scroll-mt-24">Access and Eligibility</h2>
@@ -80,7 +100,10 @@ export default function TermsOfUsePage() {
 
             <h2 id="contact" className="text-xl font-semibold text-slate-900 scroll-mt-24">Contact</h2>
             <p>
-              Questions about these Terms? Contact us via LinkedIn: <a href="https://www.linkedin.com/in/ugurkocde/" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">@ugurkocde</a>.
+              Questions about these Terms? Contact us at <a href="mailto:support@ugurlabs.com" className="text-blue-700 underline">support@ugurlabs.com</a> or via LinkedIn: <a href="https://www.linkedin.com/in/ugurkocde/" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">@ugurkocde</a>.
+            </p>
+            <p>
+              You can also reach us by post: Ugurlabs UG (haftungsbeschränkt), Fährstraße 217, 40221 Düsseldorf, Germany.
             </p>
           </section>
         </div>

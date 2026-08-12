@@ -197,14 +197,17 @@ button:focus-visible {
     height: 1.25rem;
     border: 2px solid rgb(203 213 225);
     border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
+    transition:
+      background-color var(--transition-fast),
+      border-color var(--transition-fast),
+      box-shadow var(--transition-fast);
     position: relative;
     cursor: pointer;
   }
 
   .checkbox-enhanced:checked {
-    background: rgb(var(--color-secondary));
-    border-color: rgb(var(--color-secondary));
+    background: var(--color-teal-600);
+    border-color: var(--color-teal-600);
   }
 
   .checkbox-enhanced:checked::after {
@@ -220,8 +223,29 @@ button:focus-visible {
   }
 
   .checkbox-enhanced:hover:not(:disabled) {
-    border-color: rgb(var(--color-secondary));
-    box-shadow: 0 0 0 3px rgb(var(--color-secondary) / 0.1);
+    border-color: var(--color-teal-600);
+    box-shadow: 0 0 0 3px rgb(49 137 144 / 0.12);
+  }
+
+  .checkbox-enhanced:focus-visible {
+    outline: 2px solid var(--color-teal-600);
+    outline-offset: 2px;
+  }
+
+  .checkbox-enhanced:indeterminate {
+    background: var(--color-teal-600);
+    border-color: var(--color-teal-600);
+  }
+
+  .checkbox-enhanced:indeterminate::after {
+    content: "";
+    position: absolute;
+    top: 0.5rem;
+    left: 0.25rem;
+    width: 0.5rem;
+    height: 2px;
+    border-radius: 9999px;
+    background: white;
   }
 
   .badge {

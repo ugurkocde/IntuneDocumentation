@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Heart, Linkedin } from "lucide-react";
+import { Linkedin } from "lucide-react";
 
 export function SiteFooter() {
   const year = new Date().getFullYear();
@@ -13,7 +13,7 @@ export function SiteFooter() {
           <div className="col-span-2 lg:col-span-1">
             <div className="flex items-center gap-3">
               <Image
-                src="/logo.png"
+                src="/logo.svg"
                 alt=""
                 width={32}
                 height={32}
@@ -160,21 +160,10 @@ export function SiteFooter() {
       </div>
 
       <div className="border-petrol-950/8 border-t">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-6 sm:px-8 md:flex-row lg:px-10">
+        <div className="mx-auto flex max-w-6xl items-center justify-center px-5 py-6 sm:px-8 lg:px-10">
           <div className="text-petrol-600 text-xs">
             © {year} UgurLabs. All rights reserved.
           </div>
-          <a
-            href="https://www.linkedin.com/in/ugurkocde/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-petrol-600 inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm transition-colors hover:text-teal-700"
-            aria-label="Visit Ugur's LinkedIn profile"
-          >
-            <span>Made with</span>
-            <Heart className="h-4 w-4 fill-red-500 text-red-500" />
-            <span>by Ugur</span>
-          </a>
         </div>
       </div>
     </footer>

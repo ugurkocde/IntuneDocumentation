@@ -3,7 +3,8 @@
 import { useMsal } from "@azure/msal-react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { User, LogOut, Menu, X, LogIn } from "lucide-react";
+import Image from "next/image";
+import { User, LogOut, Menu, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { useEffect, useState, memo } from "react";
@@ -18,13 +19,22 @@ interface NavLinksProps {
   isAuthenticated: boolean;
 }
 
-const NavLinks = memo(function NavLinks({ vertical = false, pathname, activeSection, activeLink, linkBase, isAuthenticated }: NavLinksProps) {
+const NavLinks = memo(function NavLinks({
+  vertical = false,
+  pathname,
+  activeSection,
+  activeLink,
+  linkBase,
+  isAuthenticated,
+}: NavLinksProps) {
   return (
-    <nav className={vertical ? "flex flex-col gap-3" : "flex items-center gap-6"}>
+    <nav
+      className={vertical ? "flex flex-col gap-3" : "flex items-center gap-6"}
+    >
       <Link
         href="/"
         prefetch
-        className={`text-sm font-medium transition-colors ${
+        className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
           pathname === "/" ? activeLink : linkBase
         }`}
       >
@@ -32,19 +42,19 @@ const NavLinks = memo(function NavLinks({ vertical = false, pathname, activeSect
       </Link>
       <Link
         href="/#how-it-works"
-        className={`text-sm font-medium transition-colors ${activeSection === "how-it-works" ? activeLink : linkBase}`}
+        className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${activeSection === "how-it-works" ? activeLink : linkBase}`}
       >
         How it works
       </Link>
       <Link
         href="/#features"
-        className={`text-sm font-medium transition-colors ${activeSection === "features" ? activeLink : linkBase}`}
+        className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${activeSection === "features" ? activeLink : linkBase}`}
       >
         Features
       </Link>
       <Link
         href="/#faq"
-        className={`text-sm font-medium transition-colors ${activeSection === "faq" ? activeLink : linkBase}`}
+        className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${activeSection === "faq" ? activeLink : linkBase}`}
       >
         FAQ
       </Link>
@@ -52,7 +62,7 @@ const NavLinks = memo(function NavLinks({ vertical = false, pathname, activeSect
         <Link
           href="/dashboard"
           prefetch
-          className={`text-sm font-medium transition-colors ${
+          className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
             pathname === "/dashboard" ? activeLink : linkBase
           }`}
         >
@@ -87,7 +97,7 @@ export function NavigationHeader() {
   // Observe sections for active highlighting on home page
   useEffect(() => {
     if (!onHome) return;
-    const ids = ["how-it-works", "features", "faq"]; 
+    const ids = ["how-it-works", "features", "faq"];
     const elements = ids
       .map((id) => document.getElementById(id))
       .filter(Boolean) as HTMLElement[];
@@ -101,7 +111,7 @@ export function NavigationHeader() {
           setActiveSection(visible.target.id);
         }
       },
-      { rootMargin: "-40% 0px -50% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
+      { rootMargin: "-40% 0px -50% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] },
     );
     elements.forEach((el) => io.observe(el));
     return () => io.disconnect();
@@ -124,7 +134,9 @@ export function NavigationHeader() {
     } catch (e: any) {
       console.error("Sign-in failed:", e);
       if (e?.errorCode === "popup_window_error") {
-        setSignInError("Pop-up was blocked. Please allow pop-ups for this site and try again.");
+        setSignInError(
+          "Pop-up was blocked. Please allow pop-ups for this site and try again.",
+        );
       } else if (e?.errorCode === "user_cancelled") {
         setSignInError(null);
       } else {
@@ -135,66 +147,95 @@ export function NavigationHeader() {
     }
   };
 
-  const linkBase = onHome && !scrolled ? "text-white/90 hover:text-white" : "text-slate-600 hover:text-slate-900";
-  const activeLink = onHome && !scrolled ? "text-white" : "text-blue-600";
+  const linkBase = "text-petrol-600 hover:text-petrol-950";
+  const activeLink = "text-teal-700";
 
-  const navProps = { pathname, activeSection, activeLink, linkBase, isAuthenticated };
+  const navProps = {
+    pathname,
+    activeSection,
+    activeLink,
+    linkBase,
+    isAuthenticated,
+  };
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        onHome && !scrolled
-          ? 'bg-transparent border-transparent'
-          : 'backdrop-blur supports-[backdrop-filter]:bg-white/85 bg-white border-b border-slate-200/80'
+      className={`fixed top-0 right-0 left-0 z-50 transition-[background-color,border-color,box-shadow,backdrop-filter] duration-300 ${
+        scrolled
+          ? "border-petrol-950/8 border-b bg-white/85 shadow-[0_8px_30px_-24px_rgba(8,47,54,0.35)] backdrop-blur-xl"
+          : "bg-mint-50/75 border-b border-transparent backdrop-blur-sm"
       }`}
     >
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+        <div className="flex h-16 items-center justify-between">
           {/* Brand */}
-          <Link href="/" className="flex items-center gap-3 group">
+          <Link href="/" className="group flex items-center gap-3">
             {/* Use fixed height with auto width to prevent logo skew */}
-            <img
+            <Image
               src="/logo.png"
               alt="Intune Documentation"
-              className="h-9 w-auto rounded-md group-hover:scale-105 transition-transform"
-              loading="eager"
-              decoding="async"
+              width={36}
+              height={36}
+              className="h-9 w-auto rounded-md transition-transform group-hover:scale-105"
+              priority
             />
             <div className="leading-tight">
-              <span className={`block text-base font-bold transition-colors ${onHome && !scrolled ? 'text-white group-hover:text-white' : 'text-slate-900 group-hover:text-blue-700'}`}>
+              <span className="text-petrol-950 block text-base font-bold transition-colors group-hover:text-teal-700">
                 Intune Documentation
               </span>
             </div>
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden items-center gap-8 md:flex">
             <NavLinks {...navProps} />
           </div>
 
           {/* Actions */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden items-center gap-3 md:flex">
             {isAuthenticated ? (
               <>
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${onHome && !scrolled ? 'bg-white/10' : 'bg-slate-50'}`}>
-                  <User className={`w-4 h-4 ${onHome && !scrolled ? 'text-white/80' : 'text-slate-500'}`} />
-                  <span className={`text-sm font-medium max-w-[220px] truncate ${onHome && !scrolled ? 'text-white' : 'text-slate-700'}`}>
-                    {userProfile?.displayName || accounts[0]?.username || "User"}
+                <div className="flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5">
+                  <User className="h-4 w-4 text-teal-700" />
+                  <span className="text-petrol-800 max-w-[220px] truncate text-sm font-medium">
+                    {userProfile?.displayName ||
+                      accounts[0]?.username ||
+                      "User"}
                   </span>
                 </div>
-                <Button onClick={handleSignOut} variant="ghost" size="sm" className={onHome && !scrolled ? 'text-white hover:bg-white/10 hover:text-white' : ''}>
-                  <LogOut className="w-4 h-4" />
+                <Button
+                  onClick={handleSignOut}
+                  variant="ghost"
+                  size="sm"
+                  className="text-petrol-700 hover:bg-mint-100 rounded-full"
+                >
+                  <LogOut className="h-4 w-4" />
                   Sign Out
                 </Button>
               </>
             ) : (
-              <div className="flex items-center gap-3">
-                <Button onClick={handleSignIn} size="sm" loading={signingIn} className={onHome && !scrolled ? 'bg-white text-slate-900 hover:bg-white/90' : ''}>
-                  <LogIn className="w-4 h-4" />
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleSignIn}
+                  variant="ghost"
+                  size="sm"
+                  disabled={signingIn}
+                  className="text-petrol-800 rounded-full px-4 hover:bg-white"
+                >
                   Sign in
                 </Button>
+                <Button
+                  onClick={handleSignIn}
+                  size="sm"
+                  loading={signingIn}
+                  className="rounded-full bg-teal-600 px-5 text-white shadow-none hover:bg-teal-700 focus:ring-teal-600"
+                >
+                  Get Started
+                </Button>
                 {signInError && (
-                  <span className="text-xs text-red-500 max-w-[200px]">{signInError}</span>
+                  <span className="max-w-[200px] text-xs text-red-500">
+                    {signInError}
+                  </span>
                 )}
               </div>
             )}
@@ -202,40 +243,71 @@ export function NavigationHeader() {
 
           {/* Mobile menu button */}
           <button
-            className={`md:hidden p-2 rounded-lg cursor-pointer ${onHome && !scrolled ? 'text-white hover:bg-white/10' : 'text-slate-700 hover:bg-slate-100'}`}
+            className="text-petrol-800 cursor-pointer rounded-lg p-2 transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none md:hidden"
             onClick={() => setMobileOpen((v) => !v)}
             aria-label="Toggle navigation menu"
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-navigation"
           >
-            {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {mobileOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
           </button>
         </div>
       </div>
 
       {/* Mobile panel */}
       {mobileOpen && (
-        <div className={`md:hidden backdrop-blur ${onHome && !scrolled ? 'bg-slate-900/60 border-white/10' : 'bg-white/95 border-slate-200'} border-t`}>
-          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4">
+        <div
+          id="mobile-navigation"
+          className="border-petrol-950/8 border-t bg-white/95 backdrop-blur-xl md:hidden"
+        >
+          <div className="w-full space-y-4 px-4 py-4 sm:px-6 lg:px-8">
             <NavLinks vertical {...navProps} />
             <div className="flex items-center gap-3">
               {isAuthenticated ? (
                 <>
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg flex-1 ${onHome && !scrolled ? 'bg-white/10' : 'bg-slate-50'}`}>
-                    <User className={`w-4 h-4 ${onHome && !scrolled ? 'text-white/80' : 'text-slate-500'}`} />
-                    <span className={`text-sm font-medium truncate ${onHome && !scrolled ? 'text-white' : 'text-slate-700'}`}>
-                      {userProfile?.displayName || accounts[0]?.username || "User"}
+                  <div className="flex flex-1 items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5">
+                    <User className="h-4 w-4 text-teal-700" />
+                    <span className="text-petrol-800 truncate text-sm font-medium">
+                      {userProfile?.displayName ||
+                        accounts[0]?.username ||
+                        "User"}
                     </span>
                   </div>
-                  <Button onClick={handleSignOut} variant="ghost" size="sm" className={`flex-shrink-0 ${onHome && !scrolled ? 'text-white hover:bg-white/10 hover:text-white' : ''}`}>
-                    <LogOut className="w-4 h-4" />
+                  <Button
+                    onClick={handleSignOut}
+                    variant="ghost"
+                    size="sm"
+                    className="text-petrol-700 flex-shrink-0 rounded-full"
+                  >
+                    <LogOut className="h-4 w-4" />
                     Sign Out
                   </Button>
                 </>
               ) : (
-                <div className="flex flex-col gap-1">
-                  <Button onClick={handleSignIn} size="sm" loading={signingIn} className={`flex-shrink-0 ${onHome && !scrolled ? 'bg-white text-slate-900 hover:bg-white/90' : ''}`}>
-                    <LogIn className="w-4 h-4" />
-                    Sign in
-                  </Button>
+                <div className="flex w-full flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleSignIn}
+                      variant="ghost"
+                      size="sm"
+                      disabled={signingIn}
+                      className="text-petrol-800 flex-1 rounded-full"
+                    >
+                      Sign in
+                    </Button>
+                    <Button
+                      onClick={handleSignIn}
+                      size="sm"
+                      loading={signingIn}
+                      className="flex-1 rounded-full bg-teal-600 text-white hover:bg-teal-700 focus:ring-teal-600"
+                    >
+                      Get Started
+                    </Button>
+                  </div>
                   {signInError && (
                     <span className="text-xs text-red-500">{signInError}</span>
                   )}

@@ -100,7 +100,7 @@ export interface FetchError {
 
 export type ProgressCallback = (event: {
   step: string;
-  type: 'policy-type' | 'batch-progress' | 'completed';
+  type: 'policy-type' | 'batch-progress' | 'completed' | 'error';
   current?: number;
   total?: number;
   message?: string;
@@ -1029,6 +1029,25 @@ export class DetailedIntuneService {
   }
 
   // Main method to get all detailed configurations
+  // Emit a progress event the moment an individual policy-type fetch settles,
+  // so the client can show real per-type completion instead of one big jump.
+  private withCompletionEvent<T>(step: string, promise: Promise<T>): Promise<T> {
+    return promise.then(
+      (value) => {
+        this.progressCallback?.({ step, type: 'completed' });
+        return value;
+      },
+      (error: any) => {
+        this.progressCallback?.({
+          step,
+          type: 'error',
+          message: error?.message || 'Fetch failed'
+        });
+        throw error;
+      }
+    );
+  }
+
   async getAllDetailedConfigurations() {
     console.log("Fetching all detailed Intune configurations...");
     this.permissionErrors = []; // Reset permission errors
@@ -1036,17 +1055,17 @@ export class DetailedIntuneService {
 
     // Use Promise.allSettled instead of Promise.all to prevent one failure from breaking everything
     const results = await Promise.allSettled([
-      this.getConfigurationPoliciesWithSettings(),
-      this.getDeviceConfigurationsDetailed(),
-      this.getGroupPolicyConfigurationsDetailed(),
-      this.getCompliancePoliciesDetailed(),
-      this.getAppProtectionPoliciesDetailed(),
-      this.getSecurityBaselinesDetailed(),
-      this.getScriptsDetailed(),
-      this.getAppConfigurationsDetailed(),
-      this.getWindowsUpdatePoliciesDetailed(),
-      this.getEnrollmentConfigurationsDetailed(),
-      this.getConditionalAccessPoliciesDetailed()
+      this.withCompletionEvent('Settings Catalog', this.getConfigurationPoliciesWithSettings()),
+      this.withCompletionEvent('Device Configurations', this.getDeviceConfigurationsDetailed()),
+      this.withCompletionEvent('Administrative Templates', this.getGroupPolicyConfigurationsDetailed()),
+      this.withCompletionEvent('Compliance Policies', this.getCompliancePoliciesDetailed()),
+      this.withCompletionEvent('App Protection Policies', this.getAppProtectionPoliciesDetailed()),
+      this.withCompletionEvent('Security Baselines', this.getSecurityBaselinesDetailed()),
+      this.withCompletionEvent('Scripts', this.getScriptsDetailed()),
+      this.withCompletionEvent('App Configurations', this.getAppConfigurationsDetailed()),
+      this.withCompletionEvent('Windows Update Policies', this.getWindowsUpdatePoliciesDetailed()),
+      this.withCompletionEvent('Enrollment Configurations', this.getEnrollmentConfigurationsDetailed()),
+      this.withCompletionEvent('Conditional Access Policies', this.getConditionalAccessPoliciesDetailed())
     ]);
 
     // Extract results and track failures

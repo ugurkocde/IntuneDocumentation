@@ -121,13 +121,6 @@ button:focus-visible {
     );
   }
 
-  .chart-grid {
-    background-image:
-      linear-gradient(rgb(8 47 54 / 0.055) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(8 47 54 / 0.055) 1px, transparent 1px);
-    background-size: 32px 24px;
-  }
-
   .card-elevated {
     background: rgb(var(--color-bg-elevated));
     border-radius: var(--radius-lg);
@@ -241,11 +234,6 @@ button:focus-visible {
     transition: all var(--transition-fast);
   }
 
-  /* Grid pattern background */
-  .bg-grid-white\/\[0\.05\] {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.05)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
-  }
-
   /* Animation utilities */
   .animation-delay-2000 {
     animation-delay: 2000ms;
@@ -340,25 +328,6 @@ button:focus-visible {
   .animate-gentle-bob {
     animation: gentle-bob 3s ease-in-out infinite;
   }
-
-  /* Data flow diagram: traveling dot */
-  @keyframes travel-dot-h {
-    0% {
-      left: 0;
-    }
-    100% {
-      left: 100%;
-    }
-  }
-
-  @keyframes travel-dot-v {
-    0% {
-      top: 0;
-    }
-    100% {
-      top: 100%;
-    }
-  }
 }
 
 /* Respect reduced motion preferences */
@@ -387,8 +356,7 @@ button:focus-visible {
 /* High Contrast Mode: replace gradient text with solid color */
 @media (forced-colors: active) {
   .diagonal-stripes,
-  .hero-stripes,
-  .chart-grid {
+  .hero-stripes {
     background-image: none;
   }
 }

@@ -16,7 +16,9 @@ import {
   FileText,
   Layers,
   Lock,
+  Monitor,
   Palette,
+  ServerOff,
   Settings,
   Shield,
   Users,
@@ -26,7 +28,6 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { BackToTopButton } from "~/components/back-to-top-button";
-import { DataFlowDiagram } from "~/components/data-flow-diagram";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { useUserProfile } from "~/hooks/use-user-profile";
@@ -237,22 +238,6 @@ export function HomePage({ stats }: { stats: SiteStats }) {
           },
         ]
       : []),
-  ];
-
-  const impactStats: Array<{ value: string; label: string }> = [
-    stats.exportCount > 0
-      ? {
-          value: stats.exportCount.toLocaleString("en-US"),
-          label: "Docs exported and counting",
-        }
-      : { value: "3 min", label: "Average export time" },
-    stats.mauCount >= 10
-      ? {
-          value: stats.mauCount.toLocaleString("en-US"),
-          label: "Exports this month",
-        }
-      : { value: "10+", label: "Hours saved per audit" },
-    { value: "10", label: "Configuration types covered" },
   ];
 
   const fadeUp = prefersReduced
@@ -661,139 +646,6 @@ export function HomePage({ stats }: { stats: SiteStats }) {
           </motion.div>
         </section>
 
-        <section className="pb-24 sm:pb-28">
-          <div className="mx-auto max-w-6xl px-5 sm:px-8 lg:px-10">
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-80px" }}
-              variants={fadeUp}
-              className="mb-10 text-center"
-            >
-              <Eyebrow>Why us</Eyebrow>
-              <h2 className="text-petrol-950 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
-                Why IT teams use this tool
-              </h2>
-            </motion.div>
-
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-80px" }}
-              variants={staggerContainer}
-              className="grid gap-4 md:grid-cols-2"
-            >
-              <motion.article
-                variants={fadeUp}
-                className="border-petrol-950/6 min-h-64 rounded-3xl border bg-[#eaf1ef] p-7 sm:p-9"
-              >
-                <p className="text-6xl font-semibold tracking-[-0.06em] text-teal-600 tabular-nums sm:text-7xl">
-                  10+
-                </p>
-                <p className="text-petrol-950 mt-10 max-w-xs text-lg leading-snug font-semibold">
-                  Hours saved on every documentation cycle
-                </p>
-                <p className="text-petrol-600 mt-2 text-sm">
-                  From sign-in to finished report in about 3 minutes.
-                </p>
-              </motion.article>
-
-              <motion.article
-                variants={fadeUp}
-                className="border-petrol-950/6 min-h-64 rounded-3xl border bg-[#edf3f1] p-7 sm:p-9"
-              >
-                <h3 className="text-petrol-950 max-w-sm text-xl leading-snug font-semibold">
-                  Export your documentation at any time
-                </h3>
-                <div className="mt-12 flex items-center gap-4 sm:gap-6">
-                  <span className="shadow-card flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-600 text-white">
-                    <Cloud className="h-6 w-6" />
-                  </span>
-                  <div className="flex items-center gap-1 text-teal-700/50">
-                    <ArrowRight className="h-5 w-5" />
-                    <ArrowRight className="-ml-2 h-5 w-5" />
-                  </div>
-                  <span className="bg-petrol-950 shadow-card flex h-14 w-14 items-center justify-center rounded-full text-white">
-                    <FileText className="h-6 w-6" />
-                  </span>
-                </div>
-              </motion.article>
-
-              <motion.article
-                variants={fadeUp}
-                className="border-petrol-950/6 rounded-3xl border bg-[#eaf1ef] p-7 sm:p-9 md:col-span-2"
-              >
-                <div className="grid items-center gap-8 lg:grid-cols-[0.72fr_1.28fr]">
-                  <div>
-                    <h3 className="text-petrol-950 text-xl font-semibold">
-                      Always current, never stale
-                    </h3>
-                    <p className="text-petrol-600 mt-3 max-w-sm text-sm leading-6">
-                      Generate a fresh report whenever your tenant changes. No
-                      outdated wikis, missing assignments, or version drift.
-                    </p>
-                  </div>
-                  <div className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white p-5">
-                    <div className="mb-5 flex items-start justify-between">
-                      <div>
-                        <p className="text-petrol-600 text-[10px] font-semibold tracking-[0.14em] uppercase">
-                          Summary
-                        </p>
-                        <p className="text-petrol-950 mt-1 text-xl font-semibold">
-                          Docs exported
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-teal-50 px-3 py-1 text-[10px] font-semibold text-teal-700">
-                        6 months
-                      </span>
-                    </div>
-                    <div className="chart-grid h-36 rounded-xl px-2 pt-2">
-                      <svg
-                        viewBox="0 0 480 150"
-                        className="h-full w-full"
-                        aria-hidden="true"
-                        preserveAspectRatio="none"
-                      >
-                        <defs>
-                          <linearGradient
-                            id="chartFill"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#45a0a5"
-                              stopOpacity="0.28"
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor="#45a0a5"
-                              stopOpacity="0.02"
-                            />
-                          </linearGradient>
-                        </defs>
-                        <path
-                          d="M0 128 L75 93 L155 78 L240 58 L330 47 L405 20 L480 8 L480 150 L0 150 Z"
-                          fill="url(#chartFill)"
-                        />
-                        <path
-                          d="M0 128 L75 93 L155 78 L240 58 L330 47 L405 20 L480 8"
-                          fill="none"
-                          stroke="#318990"
-                          strokeWidth="3"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-              </motion.article>
-            </motion.div>
-          </div>
-        </section>
-
         <section
           className="bg-petrol-950 scroll-mt-24 py-24 text-white sm:py-28"
           id="how-it-works"
@@ -854,7 +706,159 @@ export function HomePage({ stats }: { stats: SiteStats }) {
           </div>
         </section>
 
-        <DataFlowDiagram />
+        <section className="bg-white py-24 sm:py-28">
+          <div className="mx-auto max-w-6xl px-5 sm:px-8 lg:px-10">
+            <div className="grid gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16">
+              <motion.div
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={staggerContainer}
+              >
+                <motion.div variants={fadeUp}>
+                  <Eyebrow>Security</Eyebrow>
+                  <h2 className="text-petrol-950 max-w-xl text-3xl leading-tight font-semibold tracking-[-0.035em] sm:text-4xl">
+                    Your data never touches our servers.
+                  </h2>
+                  <p className="text-petrol-600 mt-4 max-w-lg text-sm leading-6">
+                    The tool runs entirely between Microsoft&apos;s cloud and
+                    your browser. We cannot see, store, or share your
+                    configurations: by architecture, not by policy.
+                  </p>
+                </motion.div>
+
+                <ul className="mt-8 space-y-4">
+                  {[
+                    {
+                      title: "Delegated, read-only permissions",
+                      desc: "Microsoft Graph scopes that can read your Intune configuration, never change it.",
+                    },
+                    {
+                      title: "Reports generated in your browser",
+                      desc: "PDF and Word documents are built locally on your device, not on a server.",
+                    },
+                    {
+                      title: "Nothing uploaded, nothing stored",
+                      desc: "Configuration data is fetched during your session and discarded when you leave.",
+                    },
+                    {
+                      title: "Revoke access anytime",
+                      desc: "Remove the app from Entra ID enterprise applications, or simply sign out.",
+                    },
+                  ].map(({ title, desc }) => (
+                    <motion.li
+                      key={title}
+                      variants={fadeUp}
+                      className="flex gap-3"
+                    >
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-700">
+                        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                      </span>
+                      <div>
+                        <p className="text-petrol-950 text-sm font-semibold">
+                          {title}
+                        </p>
+                        <p className="text-petrol-600 mt-0.5 text-sm leading-6">
+                          {desc}
+                        </p>
+                      </div>
+                    </motion.li>
+                  ))}
+                </ul>
+
+                <motion.div
+                  variants={fadeUp}
+                  className="mt-8 flex flex-wrap gap-3"
+                >
+                  <button
+                    onClick={() => setShowSecurity(true)}
+                    type="button"
+                    className="border-petrol-950/12 text-petrol-800 hover:bg-mint-50 inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-colors hover:border-teal-600/30 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+                  >
+                    <Shield className="h-4 w-4 text-teal-700" />
+                    How sign-in works
+                  </button>
+                  <button
+                    onClick={() => setShowPermissions(true)}
+                    type="button"
+                    className="border-petrol-950/12 text-petrol-800 hover:bg-mint-50 inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-colors hover:border-teal-600/30 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+                  >
+                    <Lock className="h-4 w-4 text-teal-700" />
+                    Required permissions
+                  </button>
+                </motion.div>
+              </motion.div>
+
+              <motion.div
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-80px" }}
+                variants={fadeUp}
+              >
+                <div className="border-petrol-950/6 shadow-soft bg-mint-50 rounded-3xl border p-6 sm:p-8">
+                  <p className="text-petrol-600 text-[10px] font-semibold tracking-[0.14em] uppercase">
+                    How your data flows
+                  </p>
+                  <div className="mt-6">
+                    {[
+                      {
+                        icon: Cloud,
+                        tile: "bg-white text-teal-700 border-petrol-950/6 border",
+                        title: "Microsoft Graph API",
+                        desc: "Your Intune tenant, delegated read-only access",
+                      },
+                      {
+                        icon: Monitor,
+                        tile: "bg-teal-600 text-white",
+                        title: "Your browser",
+                        desc: "Fetches configurations and builds the report locally",
+                      },
+                      {
+                        icon: FileCheck,
+                        tile: "bg-petrol-950 text-white",
+                        title: "Your PDF or Word file",
+                        desc: "Saved directly to your device",
+                      },
+                    ].map(({ icon: Icon, tile, title, desc }, i) => (
+                      <div key={title}>
+                        {i > 0 && (
+                          <div
+                            className="bg-petrol-950/10 ml-[23px] h-7 w-px"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <div className="flex items-center gap-4">
+                          <span
+                            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tile}`}
+                          >
+                            <Icon className="h-5 w-5" strokeWidth={1.8} />
+                          </span>
+                          <div>
+                            <p className="text-petrol-950 text-sm font-semibold">
+                              {title}
+                            </p>
+                            <p className="text-petrol-600 text-xs leading-5">
+                              {desc}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="border-petrol-950/8 mt-7 flex items-center justify-between gap-3 border-t pt-5">
+                    <span className="text-petrol-600 flex items-center gap-2 text-sm">
+                      <ServerOff className="h-4 w-4" />
+                      External servers
+                    </span>
+                    <span className="rounded-full bg-teal-50 px-3 py-1 text-[10px] font-bold tracking-wide text-teal-700 uppercase">
+                      Never involved
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        </section>
 
         <section
           className="bg-mint-50 scroll-mt-24 py-24 sm:py-28"
@@ -950,40 +954,6 @@ export function HomePage({ stats }: { stats: SiteStats }) {
               </div>
             </motion.div>
           </div>
-        </section>
-
-        <section className="bg-white py-24 sm:py-28">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-80px" }}
-            variants={fadeUp}
-            className="mx-auto max-w-5xl px-5 text-center sm:px-8"
-          >
-            <Eyebrow>Our impact</Eyebrow>
-            <h2 className="text-petrol-950 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
-              Trusted by IT teams worldwide
-            </h2>
-            <p className="text-petrol-600 mx-auto mt-4 max-w-xl text-sm leading-6">
-              From routine reviews to major audits, documentation becomes a
-              repeatable part of tenant management.
-            </p>
-            <motion.div
-              variants={staggerContainer}
-              className="mt-14 grid gap-10 sm:grid-cols-3"
-            >
-              {impactStats.map(({ value, label }) => (
-                <motion.div key={label} variants={fadeUp}>
-                  <p className="text-petrol-950 text-4xl font-semibold tracking-[-0.045em] tabular-nums sm:text-5xl">
-                    {value}
-                  </p>
-                  <p className="text-petrol-600 mt-3 text-xs font-semibold tracking-[0.13em] uppercase">
-                    {label}
-                  </p>
-                </motion.div>
-              ))}
-            </motion.div>
-          </motion.div>
         </section>
 
         <section className="bg-white pb-24 sm:pb-28">

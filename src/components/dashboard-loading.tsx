@@ -67,9 +67,21 @@ function stepCredit(step: FetchStep): number {
 }
 
 export function DashboardLoading({
-  steps,
+  steps: rawSteps,
   currentStep,
 }: DashboardLoadingProps) {
+  // The stream can pause between finishing one type and reporting the next,
+  // which would leave every remaining row "queued" and the screen looking
+  // frozen. Promote the first pending step to in-flight so the UI always
+  // shows something happening.
+  const nothingInFlight = !rawSteps.some((s) => s.status === "loading");
+  const firstPendingIndex = rawSteps.findIndex((s) => s.status === "pending");
+  const steps = rawSteps.map((step, i) =>
+    nothingInFlight && i === firstPendingIndex
+      ? { ...step, status: "loading" as const }
+      : step,
+  );
+
   const total = Math.max(steps.length, 1);
   const completed = steps.filter(
     (s) => s.status === "completed" || s.status === "error",
@@ -173,6 +185,27 @@ export function DashboardLoading({
             </p>
           </div>
 
+          {/* Overall progress bar with a constant shimmer so the screen
+              visibly moves even while a slow step holds the percentage */}
+          <div
+            className="bg-petrol-950/8 relative mt-6 h-2 w-full overflow-hidden rounded-full"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+            aria-label="Overall fetch progress"
+          >
+            <div
+              className="relative h-full overflow-hidden rounded-full bg-teal-600 transition-[width] duration-700 ease-out"
+              style={{ width: `${Math.max(percent, 4)}%` }}
+            >
+              <span
+                className="animate-shimmer-loading absolute inset-y-0 left-0 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+
           {/* Category tiles */}
           <div className="mt-8 grid grid-cols-4 gap-3">
             {groups.map(
@@ -234,21 +267,23 @@ export function DashboardLoading({
                     step.status === "loading" ? "bg-teal-50" : ""
                   }`}
                 >
-                  {step.status === "loading" &&
-                    typeof step.total === "number" &&
-                    step.total > 0 && (
-                      <span
-                        className="absolute inset-x-0 bottom-0 h-0.5 bg-teal-600/15"
-                        aria-hidden="true"
-                      >
+                  {step.status === "loading" && (
+                    <span
+                      className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-teal-600/15"
+                      aria-hidden="true"
+                    >
+                      {typeof step.total === "number" && step.total > 0 ? (
                         <span
                           className="block h-full bg-teal-600 transition-[width] duration-500"
                           style={{
                             width: `${Math.min(((step.current ?? 0) / step.total) * 100, 100)}%`,
                           }}
                         />
-                      </span>
-                    )}
+                      ) : (
+                        <span className="animate-shimmer-loading block h-full bg-gradient-to-r from-transparent via-teal-600/70 to-transparent" />
+                      )}
+                    </span>
+                  )}
                   {step.status === "completed" ? (
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-600 text-white">
                       <Check className="h-3 w-3" strokeWidth={3} />

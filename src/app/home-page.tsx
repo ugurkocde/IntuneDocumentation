@@ -225,7 +225,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
       ? [
           {
             value: stats.mauCount.toLocaleString("en-US"),
-            label: "PDFs this month",
+            label: "Exports this month",
           },
         ]
       : []),
@@ -249,7 +249,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
     stats.mauCount >= 10
       ? {
           value: stats.mauCount.toLocaleString("en-US"),
-          label: "PDFs generated this month",
+          label: "Exports this month",
         }
       : { value: "10+", label: "Hours saved per audit" },
     { value: "10", label: "Configuration types covered" },

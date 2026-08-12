@@ -8,7 +8,7 @@ import { useTenantLogging } from "~/hooks/use-tenant-logging";
 import { Card, CardHeader, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
-import { ProgressBar } from "~/components/ui/progress-bar";
+import { DashboardLoading } from "~/components/dashboard-loading";
 import { NavigationHeader } from "~/components/navigation-header";
 // Settings is now an in-dashboard view; no external link needed here
 import {
@@ -541,20 +541,13 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-subtle pt-16">
+      <>
         <NavigationHeader />
-        <div className="max-w-3xl mx-auto px-6 lg:px-8 py-12">
-          <Card>
-            <CardContent className="py-8">
-              <div className="mb-6">
-                <h2 className="text-lg font-semibold text-slate-900 mb-2">Loading Intune Configurations</h2>
-                <p className="text-sm text-slate-600">Please wait while we fetch all your configuration data with detailed settings...</p>
-              </div>
-              <ProgressBar steps={fetchProgress.steps} currentStep={fetchProgress.currentStep} />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+        <DashboardLoading
+          steps={fetchProgress.steps}
+          currentStep={fetchProgress.currentStep}
+        />
+      </>
     );
   }
 

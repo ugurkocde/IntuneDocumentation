@@ -22,7 +22,6 @@ import {
   Settings,
   Shield,
   Users,
-  XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -1064,49 +1063,6 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                   outdated wikis or version drift.
                 </p>
               </motion.article>
-            </motion.div>
-
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-80px" }}
-              variants={fadeUp}
-              className="border-petrol-950/8 shadow-card mt-10 overflow-hidden rounded-3xl border bg-white"
-            >
-              <div className="grid md:grid-cols-2">
-                <div className="border-b border-red-900/8 bg-red-50/60 p-6 sm:p-8 md:border-r md:border-b-0">
-                  <div className="flex items-center gap-2">
-                    <XCircle className="h-5 w-5 text-red-600" />
-                    <h3 className="text-xs font-bold tracking-[0.16em] text-red-900 uppercase">
-                      Manual way
-                    </h3>
-                  </div>
-                  <p className="mt-4 text-sm leading-6 text-red-950/70">
-                    10+ hours of screenshots, copy-pasting from the Intune
-                    portal, missing settings, and docs that are outdated before
-                    you finish.
-                  </p>
-                </div>
-                <div className="bg-emerald-50/60 p-6 sm:p-8">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-emerald-700" />
-                    <h3 className="text-xs font-bold tracking-[0.16em] text-emerald-900 uppercase">
-                      With this tool
-                    </h3>
-                  </div>
-                  <p className="mt-4 text-sm leading-6 text-emerald-950/70">
-                    3 minutes to a professional PDF with every setting, ADMX
-                    value, assignment, and script captured automatically via
-                    Microsoft Graph.
-                  </p>
-                </div>
-              </div>
-              <div className="border-petrol-950/6 flex items-center justify-center gap-2 border-t bg-white px-4 py-4 text-center">
-                <Clock className="h-4 w-4 shrink-0 text-teal-700" />
-                <span className="text-petrol-800 text-xs font-semibold sm:text-sm">
-                  Average time saved: 10+ hours per documentation cycle
-                </span>
-              </div>
             </motion.div>
           </div>
         </section>

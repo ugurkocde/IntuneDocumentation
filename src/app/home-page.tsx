@@ -7,14 +7,12 @@ import {
   Check,
   CheckCircle,
   ChevronDown,
-  Clock,
   Cloud,
   Database,
   Download,
   Eye,
   FileCheck,
   FileText,
-  Layers,
   Lock,
   Monitor,
   RefreshCw,
@@ -195,6 +193,108 @@ function ProductMockup() {
         </div>
       </div>
     </div>
+  );
+}
+
+function SpotIllustrationClock() {
+  return (
+    <svg viewBox="0 0 200 140" className="h-32 w-auto" aria-hidden="true">
+      <ellipse cx="100" cy="78" rx="78" ry="52" fill="#e7eeec" />
+      <circle
+        cx="100"
+        cy="68"
+        r="32"
+        fill="#ffffff"
+        stroke="#318990"
+        strokeWidth="5"
+      />
+      <path
+        d="M100 50v18l13 9"
+        stroke="#082f36"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <circle
+        cx="40"
+        cy="34"
+        r="9"
+        fill="none"
+        stroke="#45a0a5"
+        strokeWidth="6"
+      />
+      <path d="M156 26l14 22h-28z" fill="#dceff0" />
+      <circle cx="170" cy="92" r="5" fill="#318990" />
+      <circle cx="30" cy="96" r="4" fill="#082f36" />
+    </svg>
+  );
+}
+
+function SpotIllustrationLayers() {
+  return (
+    <svg viewBox="0 0 200 140" className="h-32 w-auto" aria-hidden="true">
+      <ellipse cx="100" cy="76" rx="78" ry="52" fill="#e7eeec" />
+      <path
+        d="M100 96 L142 76 L100 56 L58 76 Z"
+        fill="#dceff0"
+        stroke="#ffffff"
+        strokeWidth="3"
+      />
+      <path
+        d="M100 82 L142 62 L100 42 L58 62 Z"
+        fill="#45a0a5"
+        stroke="#ffffff"
+        strokeWidth="3"
+      />
+      <path
+        d="M100 68 L142 48 L100 28 L58 48 Z"
+        fill="#082f36"
+        stroke="#ffffff"
+        strokeWidth="3"
+      />
+      <circle
+        cx="168"
+        cy="44"
+        r="8"
+        fill="none"
+        stroke="#318990"
+        strokeWidth="5"
+      />
+      <circle cx="34" cy="44" r="5" fill="#318990" />
+      <path d="M34 94l11 17H23z" fill="#dceff0" />
+    </svg>
+  );
+}
+
+function SpotIllustrationShield() {
+  return (
+    <svg viewBox="0 0 200 140" className="h-32 w-auto" aria-hidden="true">
+      <ellipse cx="100" cy="78" rx="78" ry="52" fill="#e7eeec" />
+      <path
+        d="M100 30l32 11v20c0 22-15 34-32 41-17-7-32-19-32-41V41z"
+        fill="#318990"
+      />
+      <path
+        d="M86 70l11 11 19-23"
+        stroke="#ffffff"
+        strokeWidth="6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <circle
+        cx="42"
+        cy="40"
+        r="8"
+        fill="none"
+        stroke="#45a0a5"
+        strokeWidth="5"
+      />
+      <circle cx="164" cy="52" r="5" fill="#082f36" />
+      <path d="M158 90l13 20h-26z" fill="#dceff0" />
+      <circle cx="52" cy="106" r="4" fill="#318990" />
+    </svg>
   );
 }
 
@@ -560,14 +660,12 @@ export function HomePage({ stats }: { stats: SiteStats }) {
             variants={fadeUp}
             className="border-petrol-950/6 shadow-soft mx-auto max-w-6xl rounded-3xl border bg-white px-6 py-10 sm:px-10 sm:py-12 lg:px-14"
           >
-            <div className="grid gap-6 lg:grid-cols-2 lg:items-end">
-              <div>
-                <Eyebrow>Built for IT teams</Eyebrow>
-                <h2 className="text-petrol-950 max-w-xl text-3xl leading-tight font-semibold tracking-[-0.035em] sm:text-4xl">
-                  Documentation that grows with your tenant.
-                </h2>
-              </div>
-              <p className="text-petrol-600 max-w-md text-sm leading-6 lg:justify-self-end">
+            <div className="mx-auto max-w-2xl text-center">
+              <Eyebrow>Built for IT teams</Eyebrow>
+              <h2 className="text-petrol-950 text-3xl leading-tight font-semibold tracking-[-0.035em] sm:text-4xl">
+                Documentation that grows with your tenant.
+              </h2>
+              <p className="text-petrol-600 mt-4 text-sm leading-6">
                 A secure reporting workflow for audits, handovers, and ongoing
                 configuration management.
               </p>
@@ -575,34 +673,35 @@ export function HomePage({ stats }: { stats: SiteStats }) {
 
             <motion.div
               variants={staggerContainer}
-              className="mt-12 grid gap-9 md:grid-cols-3 md:gap-8"
+              className="mt-14 grid gap-12 md:grid-cols-3 md:gap-8"
             >
               {[
                 {
-                  icon: Clock,
+                  art: <SpotIllustrationClock />,
                   title: "From hours to minutes",
                   desc: "Replace screenshots, copy-pasting, and manual formatting with a finished report in minutes.",
                 },
                 {
-                  icon: Layers,
+                  art: <SpotIllustrationLayers />,
                   title: "All 10 configuration types",
                   desc: "Complete settings, ADMX values, scripts, assignments, group targets, and filters.",
                 },
                 {
-                  icon: Shield,
+                  art: <SpotIllustrationShield />,
                   title: "Read-only by design",
                   desc: "Read-only OAuth, in-browser generation, and zero persistent tenant data storage.",
                 },
-              ].map(({ icon: Icon, title, desc }) => (
-                <motion.div key={title} variants={fadeUp}>
-                  <Icon
-                    className="mb-5 h-7 w-7 text-teal-700"
-                    strokeWidth={1.6}
-                  />
-                  <h3 className="text-petrol-950 text-base font-semibold">
+              ].map(({ art, title, desc }) => (
+                <motion.div
+                  key={title}
+                  variants={fadeUp}
+                  className="flex flex-col items-center text-center"
+                >
+                  {art}
+                  <h3 className="text-petrol-950 mt-6 text-base font-semibold">
                     {title}
                   </h3>
-                  <p className="text-petrol-600 mt-2 text-sm leading-6">
+                  <p className="text-petrol-600 mt-2 max-w-xs text-sm leading-6">
                     {desc}
                   </p>
                 </motion.div>

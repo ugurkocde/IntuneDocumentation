@@ -660,20 +660,9 @@ export function HomePage({ stats }: { stats: SiteStats }) {
             variants={fadeUp}
             className="border-petrol-950/6 shadow-soft mx-auto max-w-6xl rounded-3xl border bg-white px-6 py-10 sm:px-10 sm:py-12 lg:px-14"
           >
-            <div className="mx-auto max-w-2xl text-center">
-              <Eyebrow>Built for IT teams</Eyebrow>
-              <h2 className="text-petrol-950 text-3xl leading-tight font-semibold tracking-[-0.035em] sm:text-4xl">
-                Documentation that grows with your tenant.
-              </h2>
-              <p className="text-petrol-600 mt-4 text-sm leading-6">
-                A secure reporting workflow for audits, handovers, and ongoing
-                configuration management.
-              </p>
-            </div>
-
             <motion.div
               variants={staggerContainer}
-              className="mt-14 grid gap-12 md:grid-cols-3 md:gap-8"
+              className="grid gap-12 md:grid-cols-3 md:gap-8"
             >
               {[
                 {

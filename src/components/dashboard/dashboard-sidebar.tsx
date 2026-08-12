@@ -1,13 +1,15 @@
 "use client";
 
+import Link from "next/link";
+import Image from "next/image";
 import {
   CheckSquare,
   Code,
   Download,
   FileText,
-  LayoutDashboard,
   LayoutGrid,
   Laptop,
+  LogOut,
   Package,
   Palette,
   PanelLeftClose,
@@ -15,6 +17,7 @@ import {
   RefreshCw,
   Settings,
   Shield,
+  User,
   UserCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -51,10 +54,12 @@ interface DashboardSidebarProps {
   totalCount: number;
   selectedCount: number;
   showConditionalAccess: boolean;
+  userName: string;
   onToggle: () => void;
   onViewChange: (view: DashboardView) => void;
   onOpenBranding: () => void;
   onOpenExport: () => void;
+  onSignOut: () => void;
 }
 
 interface NavButtonProps {
@@ -119,10 +124,12 @@ export function DashboardSidebar({
   totalCount,
   selectedCount,
   showConditionalAccess,
+  userName,
   onToggle,
   onViewChange,
   onOpenBranding,
   onOpenExport,
+  onSignOut,
 }: DashboardSidebarProps) {
   const visibleItems = CONFIGURATION_ITEMS.filter(
     ({ key }) => key !== "conditionalAccessPolicies" || showConditionalAccess,
@@ -130,35 +137,45 @@ export function DashboardSidebar({
 
   return (
     <aside
-      className={`border-petrol-950/6 fixed top-16 bottom-0 left-0 z-40 flex border-r bg-white transition-[width] duration-300 ${
+      className={`border-petrol-950/6 fixed inset-y-0 left-0 z-40 flex border-r bg-white transition-[width] duration-300 ${
         isOpen ? "shadow-soft w-72 lg:shadow-none" : "w-[4.5rem]"
       }`}
       aria-label="Dashboard navigation"
     >
       <div className="flex min-h-0 w-full flex-col px-3 py-4">
         <div
-          className={`border-petrol-950/6 -mx-3 flex items-center border-b px-4 pb-3.5 ${
-            isOpen ? "justify-between gap-2" : "justify-center"
+          className={`border-petrol-950/6 -mx-3 flex border-b px-4 pb-3.5 ${
+            isOpen
+              ? "items-center justify-between gap-2"
+              : "flex-col items-center gap-2"
           }`}
         >
-          {isOpen && (
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-                <LayoutDashboard
-                  className="h-[18px] w-[18px]"
-                  strokeWidth={1.8}
-                />
-              </span>
-              <div className="min-w-0">
-                <p className="text-petrol-950 truncate text-sm font-semibold">
-                  Workspace
+          <Link
+            href="/"
+            className={`group flex min-w-0 items-center rounded-xl focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
+              isOpen ? "gap-2.5" : "justify-center"
+            }`}
+            title="Intune Documentation home"
+          >
+            <Image
+              src="/logo.svg"
+              alt="Intune Documentation"
+              width={36}
+              height={36}
+              className="h-9 w-auto shrink-0 rounded-md transition-transform group-hover:scale-105"
+              priority
+            />
+            {isOpen && (
+              <div className="min-w-0 leading-tight">
+                <p className="text-petrol-950 truncate text-sm font-bold transition-colors group-hover:text-teal-700">
+                  Intune Documentation
                 </p>
                 <p className="text-petrol-600 truncate text-[11px]">
-                  Intune documentation
+                  Workspace
                 </p>
               </div>
-            </div>
-          )}
+            )}
+          </Link>
           <button
             type="button"
             onClick={onToggle}
@@ -288,6 +305,36 @@ export function DashboardSidebar({
                   {selectedCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {isOpen ? (
+            <div className="mt-3 flex items-center gap-2 px-1">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-700">
+                <User className="h-4 w-4" />
+              </span>
+              <span className="text-petrol-800 min-w-0 flex-1 truncate text-sm font-medium">
+                {userName}
+              </span>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="text-petrol-600 hover:bg-mint-50 hover:text-petrol-950 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="text-petrol-600 hover:bg-mint-50 hover:text-petrol-950 mx-auto mt-3 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+              aria-label={`Sign out ${userName}`}
+              title={`Sign out (${userName})`}
+            >
+              <LogOut className="h-[18px] w-[18px]" />
             </button>
           )}
         </div>

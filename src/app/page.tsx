@@ -16,6 +16,7 @@ import {
   FileText,
   Layers,
   Lock,
+  Palette,
   Settings,
   Shield,
   Users,
@@ -52,12 +53,12 @@ const faqs = [
   {
     question: "Is my Intune data secure?",
     answer:
-      "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. All document generation (PDF and DOCX) happens entirely in your browser -- your Intune data never leaves your device. We do not persist your configuration data or generated documents anywhere.",
+      "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. All document generation (PDF and DOCX) happens entirely in your browser. Your Intune data never leaves your device, and we do not persist your configuration data or generated documents anywhere.",
   },
   {
     question: "What Intune policies can I export?",
     answer:
-      "You can export all Intune configuration types including: Device Configurations, Compliance Policies, Settings Catalog, Administrative Templates, Security Baselines, PowerShell Scripts, Shell Scripts, App Configurations, Windows Update Policies, Enrollment Configurations, and Conditional Access Policies.",
+      "You can export all 10 Intune configuration types: Device Configurations, Compliance Policies, Settings Catalog, Administrative Templates, Security Baselines, PowerShell Scripts, Shell Scripts, App Configurations, Windows Update Policies, and Enrollment Configurations. Conditional Access policies are also included when admin consent for Policy.Read.All is granted.",
   },
   {
     question:
@@ -68,7 +69,7 @@ const faqs = [
   {
     question: "How long does it take to generate Intune documentation?",
     answer:
-      "Most Intune documentation reports are generated in under 2 minutes. The exact time depends on the number of configurations in your tenant and which policies you select for export.",
+      "Most Intune documentation reports are generated in under 3 minutes. The exact time depends on the number of configurations in your tenant and which policies you select for export.",
   },
   {
     question: "Can I customize the Intune PDF report?",
@@ -208,8 +209,41 @@ export default function HomePage() {
   const [showSecurity, setShowSecurity] = useState(false);
   const [showPermissions, setShowPermissions] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [exportTotal, setExportTotal] = useState<number | null>(null);
+  const [mauTotal, setMauTotal] = useState<number | null>(null);
   const isAuthenticated = accounts.length > 0;
   const prefersReduced = useReducedMotion();
+
+  useEffect(() => {
+    fetch("/api/stats/exports")
+      .then((res) => res.json())
+      .then((data) => setExportTotal(data.export_count ?? 0))
+      .catch(() => setExportTotal(-1));
+    fetch("/api/stats/mau")
+      .then((res) => res.json())
+      .then((data) => setMauTotal(data.mau_count ?? 0))
+      .catch(() => setMauTotal(-1));
+  }, []);
+
+  const impactStats: Array<{ value: string | null; label: string }> = [
+    exportTotal === null
+      ? { value: null, label: "Docs exported and counting" }
+      : exportTotal > 0
+        ? {
+            value: exportTotal.toLocaleString(),
+            label: "Docs exported and counting",
+          }
+        : { value: "3 min", label: "Average export time" },
+    mauTotal === null
+      ? { value: null, label: "PDFs generated this month" }
+      : mauTotal >= 10
+        ? {
+            value: mauTotal.toLocaleString(),
+            label: "PDFs generated this month",
+          }
+        : { value: "10+", label: "Hours saved per audit" },
+    { value: "10", label: "Configuration types covered" },
+  ];
 
   const fadeUp = prefersReduced
     ? { hidden: { opacity: 1, y: 0 }, visible: { opacity: 1, y: 0 } }
@@ -310,33 +344,33 @@ export default function HomePage() {
 
   const featureCards = [
     {
-      icon: FileText,
-      title: "Save 10+ Hours Per Audit",
-      desc: "What takes hours manually, screenshots, copy-pasting, and formatting, is done in 3 minutes. All 10 configuration types included.",
+      icon: Palette,
+      title: "Custom branding",
+      desc: "Add your company logo, colors, headers, footers, and confidentiality notices to every report.",
     },
     {
       icon: CheckCircle,
-      title: "100% Complete Settings",
+      title: "100% complete settings",
       desc: "Every setting, ADMX value, script content, and assignment captured. No manual gaps or missing configurations.",
     },
     {
       icon: Shield,
-      title: "Zero Data Storage",
+      title: "Zero data storage",
       desc: "We don't store your tenant data. All processing happens entirely in your browser during your session.",
     },
     {
       icon: Eye,
-      title: "Read-Only Access",
+      title: "Read-only access",
       desc: "Uses Microsoft OAuth with read-only scopes for Intune and Microsoft Graph resources.",
     },
     {
       icon: Database,
-      title: "Assignments & Groups",
+      title: "Assignments and groups",
       desc: "Group targets and filters resolved for clarity, with optional counts by platform.",
     },
     {
       icon: Clock,
-      title: "Always Current",
+      title: "Always current",
       desc: "Generate fresh reports anytime. No outdated wikis or stale documentation. Your report reflects the latest configuration.",
     },
   ];
@@ -520,10 +554,10 @@ export default function HomePage() {
                 className="mt-9 grid grid-cols-2 gap-x-4 gap-y-4 sm:flex sm:flex-wrap sm:gap-6"
               >
                 {[
-                  { icon: CheckCircle, label: "100% Free" },
+                  { icon: CheckCircle, label: "100% free" },
                   { icon: Eye, label: "Read-only access" },
                   { icon: Database, label: "No data stored" },
-                  { icon: Shield, label: "Secure OAuth" },
+                  { icon: Shield, label: "Microsoft OAuth 2.0" },
                 ].map(({ icon: Icon, label }) => (
                   <div
                     key={label}
@@ -576,7 +610,7 @@ export default function HomePage() {
               {[
                 {
                   icon: Clock,
-                  title: "Save 10+ hours per audit",
+                  title: "From hours to minutes",
                   desc: "Replace screenshots, copy-pasting, and manual formatting with a finished report in minutes.",
                 },
                 {
@@ -586,7 +620,7 @@ export default function HomePage() {
                 },
                 {
                   icon: Shield,
-                  title: "Unmatched security",
+                  title: "Read-only by design",
                   desc: "Read-only OAuth, in-browser generation, and zero persistent tenant data storage.",
                 },
               ].map(({ icon: Icon, title, desc }) => (
@@ -618,7 +652,7 @@ export default function HomePage() {
             >
               <Eyebrow>Why us</Eyebrow>
               <h2 className="text-petrol-950 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
-                Why IT teams prefer this tool
+                Why IT teams use this tool
               </h2>
             </motion.div>
 
@@ -640,7 +674,7 @@ export default function HomePage() {
                   Hours saved on every documentation cycle
                 </p>
                 <p className="text-petrol-600 mt-2 text-sm">
-                  From sign-in to audit-ready report in about 3 minutes.
+                  From sign-in to finished report in about 3 minutes.
                 </p>
               </motion.article>
 
@@ -779,7 +813,7 @@ export default function HomePage() {
                 [
                   "3",
                   "Export",
-                  "Download a professional PDF with full settings, ADMX values, scripts, and group targeting.",
+                  "Download a professional PDF or Word document with full settings, ADMX values, scripts, and group targeting.",
                 ],
               ].map(([num, title, desc]) => (
                 <motion.article
@@ -918,15 +952,15 @@ export default function HomePage() {
               variants={staggerContainer}
               className="mt-14 grid gap-10 sm:grid-cols-3"
             >
-              {[
-                ["10+", "Hours saved per audit"],
-                ["10", "Configuration types covered"],
-                ["3 min", "Average export time"],
-              ].map(([value, label]) => (
+              {impactStats.map(({ value, label }) => (
                 <motion.div key={label} variants={fadeUp}>
-                  <p className="text-petrol-950 text-4xl font-semibold tracking-[-0.045em] tabular-nums sm:text-5xl">
-                    {value}
-                  </p>
+                  {value === null ? (
+                    <span className="bg-mint-100 mx-auto block h-10 w-28 animate-pulse rounded-lg sm:h-12" />
+                  ) : (
+                    <p className="text-petrol-950 text-4xl font-semibold tracking-[-0.045em] tabular-nums sm:text-5xl">
+                      {value}
+                    </p>
+                  )}
                   <p className="text-petrol-600 mt-3 text-xs font-semibold tracking-[0.13em] uppercase">
                     {label}
                   </p>
@@ -947,7 +981,7 @@ export default function HomePage() {
             >
               <Eyebrow>The ecosystem</Eyebrow>
               <h2 className="text-petrol-950 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
-                Document every side of Microsoft management
+                Document your endpoints and your identities
               </h2>
             </motion.div>
 

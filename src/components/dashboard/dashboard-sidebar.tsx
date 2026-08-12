@@ -5,6 +5,7 @@ import {
   Code,
   Download,
   FileText,
+  LayoutDashboard,
   LayoutGrid,
   Laptop,
   Package,
@@ -135,11 +136,33 @@ export function DashboardSidebar({
       aria-label="Dashboard navigation"
     >
       <div className="flex min-h-0 w-full flex-col px-3 py-4">
-        <div className={`flex ${isOpen ? "justify-end" : "justify-center"}`}>
+        <div
+          className={`border-petrol-950/6 -mx-3 flex items-center border-b px-4 pb-3.5 ${
+            isOpen ? "justify-between gap-2" : "justify-center"
+          }`}
+        >
+          {isOpen && (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                <LayoutDashboard
+                  className="h-[18px] w-[18px]"
+                  strokeWidth={1.8}
+                />
+              </span>
+              <div className="min-w-0">
+                <p className="text-petrol-950 truncate text-sm font-semibold">
+                  Workspace
+                </p>
+                <p className="text-petrol-600 truncate text-[11px]">
+                  Intune documentation
+                </p>
+              </div>
+            </div>
+          )}
           <button
             type="button"
             onClick={onToggle}
-            className="text-petrol-600 hover:bg-mint-50 hover:text-petrol-950 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+            className="text-petrol-600 hover:bg-mint-50 hover:text-petrol-950 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
             aria-label={isOpen ? "Collapse sidebar" : "Expand sidebar"}
             title={isOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
@@ -151,7 +174,7 @@ export function DashboardSidebar({
           </button>
         </div>
 
-        <nav className="mt-2 min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain pr-0.5">
+        <nav className="mt-4 min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain pr-0.5">
           <section aria-labelledby="sidebar-main-label">
             <p
               id="sidebar-main-label"

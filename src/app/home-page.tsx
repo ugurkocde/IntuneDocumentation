@@ -19,7 +19,6 @@ import {
   Monitor,
   RefreshCw,
   ServerOff,
-  Settings,
   Shield,
   Users,
 } from "lucide-react";
@@ -1064,106 +1063,6 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                 </p>
               </motion.article>
             </motion.div>
-          </div>
-        </section>
-
-        <section className="bg-white pb-24 sm:pb-28">
-          <div className="mx-auto max-w-5xl px-5 sm:px-8">
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-80px" }}
-              variants={fadeUp}
-              className="mb-8 text-center"
-            >
-              <Eyebrow>The ecosystem</Eyebrow>
-              <h2 className="text-petrol-950 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
-                Document your endpoints and your identities
-              </h2>
-            </motion.div>
-
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-80px" }}
-              variants={staggerContainer}
-              className="grid gap-4 md:grid-cols-2"
-            >
-              <motion.article
-                variants={fadeUp}
-                className="border-petrol-950/6 flex min-h-[330px] flex-col rounded-3xl border bg-[#eaf1ef] p-7 sm:p-9"
-              >
-                <div className="flex items-start justify-between gap-5">
-                  <div>
-                    <p className="text-petrol-950 text-2xl font-semibold tracking-[-0.03em]">
-                      IntuneDocumentation
-                    </p>
-                    <p className="mt-2 text-base font-semibold text-teal-700">
-                      Free forever
-                    </p>
-                  </div>
-                  <Settings className="h-7 w-7 text-teal-700" />
-                </div>
-                <ul className="text-petrol-700 mt-8 space-y-3 text-sm">
-                  {[
-                    "Unlimited exports",
-                    "No credit card required",
-                    "PDF and DOCX formats",
-                  ].map((item) => (
-                    <li key={item} className="flex items-center gap-2.5">
-                      <Check
-                        className="h-4 w-4 text-teal-700"
-                        strokeWidth={2.5}
-                      />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  onClick={handleSignIn}
-                  disabled={signingIn}
-                  type="button"
-                  aria-label="Get started with IntuneDocumentation"
-                  className="border-petrol-950/12 text-petrol-950 mt-auto flex h-12 w-12 cursor-pointer items-center justify-center self-end rounded-full border transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <ArrowRight className="h-5 w-5" />
-                </button>
-              </motion.article>
-
-              <motion.article
-                variants={fadeUp}
-                className="diagonal-stripes shadow-card flex min-h-[330px] flex-col rounded-3xl bg-teal-600 p-7 text-white sm:p-9"
-              >
-                <div className="flex items-start justify-between gap-5">
-                  <div>
-                    <p className="text-2xl font-semibold tracking-[-0.03em]">
-                      EntraDocumentation
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-white/72">
-                      Your identity documentation companion
-                    </p>
-                  </div>
-                  <Users className="h-7 w-7 text-white/85" />
-                </div>
-                <p className="mt-9 max-w-sm text-sm leading-6 text-white/78">
-                  Document your Microsoft Entra ID tenant: users, groups,
-                  Conditional Access, and more.
-                </p>
-                <a
-                  href="https://entradocumentation.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Visit EntraDocumentation in a new tab"
-                  className="mt-auto flex h-12 w-12 items-center justify-center self-end rounded-full border border-white/25 text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
-                >
-                  <ArrowRight className="h-5 w-5" />
-                </a>
-              </motion.article>
-            </motion.div>
-            <p className="text-petrol-600 mx-auto mt-6 max-w-3xl text-center text-sm leading-6">
-              Use both tools together to document your entire Microsoft identity
-              and endpoint management infrastructure.
-            </p>
           </div>
         </section>
 

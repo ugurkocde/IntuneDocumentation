@@ -435,7 +435,7 @@ export function DataFlowDiagram() {
           variants={childVariants}
         >
           <h2 className="mb-4 text-3xl font-bold text-white md:text-4xl">
-            Where Does Your Data Go?
+            Where does your data go?
           </h2>
           <p className="text-base text-white/62 md:text-lg">
             Your Intune data flows directly from Microsoft to your browser. No

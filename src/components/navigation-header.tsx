@@ -172,7 +172,7 @@ export function NavigationHeader() {
           <Link href="/" className="group flex items-center gap-3">
             {/* Use fixed height with auto width to prevent logo skew */}
             <Image
-              src="/logo.png"
+              src="/logo.svg"
               alt="Intune Documentation"
               width={36}
               height={36}

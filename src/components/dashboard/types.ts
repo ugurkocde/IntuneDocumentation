@@ -1,3 +1,5 @@
+import type { ConfigurationSectionData } from "~/lib/configuration-sections";
+
 export interface PermissionError {
   resource: string;
   requiredPermission: string;
@@ -8,9 +10,13 @@ export interface FetchError {
   policyId: string;
   policyName: string;
   policyType: string;
+  familyKey?: string;
   error: string;
   errorCode?: string;
   statusCode?: number;
+  endpoint?: string;
+  permissionHint?: string;
+  partial?: boolean;
 }
 
 export interface DashboardConfigurationItem {
@@ -27,19 +33,7 @@ export interface DashboardConfigurationItem {
   [key: string]: any;
 }
 
-export interface ConfigurationTypeCounts {
-  settingsCatalog: number;
-  deviceConfigurations: number;
-  administrativeTemplates: number;
-  securityBaselines: number;
-  compliancePolicies: number;
-  appProtectionPolicies: number;
-  scripts: number;
-  appConfigurations: number;
-  windowsUpdatePolicies: number;
-  enrollmentConfigurations: number;
-  conditionalAccessPolicies: number;
-}
+export type ConfigurationTypeCounts = Record<string, number>;
 
 export interface IntuneConfigurations {
   settingsCatalog: DashboardConfigurationItem[];
@@ -56,6 +50,7 @@ export interface IntuneConfigurations {
   windowsUpdatePolicies: DashboardConfigurationItem[];
   enrollmentConfigurations: DashboardConfigurationItem[];
   conditionalAccessPolicies: DashboardConfigurationItem[];
+  sections: ConfigurationSectionData[];
   permissionErrors?: PermissionError[];
   fetchErrors?: FetchError[];
   summary: {
@@ -64,7 +59,26 @@ export interface IntuneConfigurations {
   };
 }
 
-export type ConfigurationTypeKey = keyof ConfigurationTypeCounts;
+export type ConfigurationTypeKey =
+  | "settingsCatalog"
+  | "deviceConfigurations"
+  | "administrativeTemplates"
+  | "conditionalAccessPolicies"
+  | "securityBaselines"
+  | "compliancePolicies"
+  | "appProtectionPolicies"
+  | "scripts"
+  | "appConfigurations"
+  | "windowsUpdatePolicies"
+  | "enrollmentConfigurations"
+  | "windowsUpdateProfiles"
+  | "scriptsAndRemediations"
+  | "enrollmentAndProvisioning"
+  | "applications"
+  | "assignmentAndRbac"
+  | "tenantAndService"
+  | "connectors"
+  | "specialistPolicies";
 export type DashboardView = "overview" | ConfigurationTypeKey | "settings";
 
 export interface DashboardTypeStat {
@@ -87,6 +101,14 @@ export const DASHBOARD_TYPE_LABELS: Record<ConfigurationTypeKey, string> = {
   appConfigurations: "App Configs",
   windowsUpdatePolicies: "Windows Update",
   enrollmentConfigurations: "Enrollment",
+  windowsUpdateProfiles: "Update profiles",
+  scriptsAndRemediations: "Scripts & remediation",
+  enrollmentAndProvisioning: "Provisioning",
+  applications: "Applications",
+  assignmentAndRbac: "Assignment & RBAC",
+  tenantAndService: "Tenant & service",
+  connectors: "Connectors",
+  specialistPolicies: "Specialist policies",
 };
 
 export const DASHBOARD_VIEW_LABELS: Record<DashboardView, string> = {
@@ -95,144 +117,52 @@ export const DASHBOARD_VIEW_LABELS: Record<DashboardView, string> = {
   settings: "Settings",
 };
 
-function countSelected(
-  items: DashboardConfigurationItem[],
-  prefix: string,
-  selectedConfigs: Set<string>,
-) {
-  return items.filter((item) => selectedConfigs.has(`${prefix}-${item.id}`))
-    .length;
-}
+const FAMILY_ORDER: ConfigurationTypeKey[] = [
+  "settingsCatalog",
+  "deviceConfigurations",
+  "administrativeTemplates",
+  "conditionalAccessPolicies",
+  "securityBaselines",
+  "compliancePolicies",
+  "appProtectionPolicies",
+  "scripts",
+  "appConfigurations",
+  "windowsUpdatePolicies",
+  "enrollmentConfigurations",
+  "windowsUpdateProfiles",
+  "scriptsAndRemediations",
+  "enrollmentAndProvisioning",
+  "applications",
+  "assignmentAndRbac",
+  "tenantAndService",
+  "connectors",
+  "specialistPolicies",
+];
 
 export function buildDashboardTypeStats(
   configurations: IntuneConfigurations,
   selectedConfigs: Set<string>,
 ): DashboardTypeStat[] {
-  const counts = configurations.summary.byType;
-
-  return [
-    {
-      key: "settingsCatalog",
-      label: DASHBOARD_TYPE_LABELS.settingsCatalog,
-      compactLabel: "Catalog",
-      total: counts.settingsCatalog,
-      selected: countSelected(
-        configurations.settingsCatalog,
-        "catalog",
-        selectedConfigs,
+  return FAMILY_ORDER.map((key) => {
+    const sections = configurations.sections.filter(
+      (section) => section.familyKey === key,
+    );
+    return {
+      key,
+      label: DASHBOARD_TYPE_LABELS[key],
+      compactLabel: DASHBOARD_TYPE_LABELS[key],
+      total: sections.reduce(
+        (count, section) => count + section.items.length,
+        0,
       ),
-    },
-    {
-      key: "deviceConfigurations",
-      label: DASHBOARD_TYPE_LABELS.deviceConfigurations,
-      compactLabel: "Devices",
-      total: counts.deviceConfigurations,
-      selected: countSelected(
-        configurations.deviceConfigurations,
-        "device",
-        selectedConfigs,
+      selected: sections.reduce(
+        (count, section) =>
+          count +
+          section.items.filter((item) =>
+            selectedConfigs.has(`${section.selectionPrefix}-${item.id}`),
+          ).length,
+        0,
       ),
-    },
-    {
-      key: "administrativeTemplates",
-      label: DASHBOARD_TYPE_LABELS.administrativeTemplates,
-      compactLabel: "Templates",
-      total: counts.administrativeTemplates,
-      selected: countSelected(
-        configurations.administrativeTemplates,
-        "admx",
-        selectedConfigs,
-      ),
-    },
-    {
-      key: "conditionalAccessPolicies",
-      label: DASHBOARD_TYPE_LABELS.conditionalAccessPolicies,
-      compactLabel: "Access",
-      total: counts.conditionalAccessPolicies,
-      selected: countSelected(
-        configurations.conditionalAccessPolicies,
-        "ca",
-        selectedConfigs,
-      ),
-    },
-    {
-      key: "securityBaselines",
-      label: DASHBOARD_TYPE_LABELS.securityBaselines,
-      compactLabel: "Security",
-      total: counts.securityBaselines,
-      selected: countSelected(
-        configurations.securityBaselines,
-        "security",
-        selectedConfigs,
-      ),
-    },
-    {
-      key: "compliancePolicies",
-      label: DASHBOARD_TYPE_LABELS.compliancePolicies,
-      compactLabel: "Compliance",
-      total: counts.compliancePolicies,
-      selected: countSelected(
-        configurations.compliancePolicies,
-        "compliance",
-        selectedConfigs,
-      ),
-    },
-    {
-      key: "appProtectionPolicies",
-      label: DASHBOARD_TYPE_LABELS.appProtectionPolicies,
-      compactLabel: "Protection",
-      total: counts.appProtectionPolicies,
-      selected: countSelected(
-        configurations.appProtectionPolicies,
-        "app-protection",
-        selectedConfigs,
-      ),
-    },
-    {
-      key: "scripts",
-      label: DASHBOARD_TYPE_LABELS.scripts,
-      compactLabel: "Scripts",
-      total: counts.scripts,
-      selected:
-        countSelected(configurations.scripts.macOS, "script-mac", selectedConfigs) +
-        countSelected(
-          configurations.scripts.windows,
-          "script-win",
-          selectedConfigs,
-        ),
-    },
-    {
-      key: "appConfigurations",
-      label: DASHBOARD_TYPE_LABELS.appConfigurations,
-      compactLabel: "Apps",
-      total: counts.appConfigurations,
-      selected: countSelected(
-        configurations.appConfigurations,
-        "app",
-        selectedConfigs,
-      ),
-    },
-    {
-      key: "windowsUpdatePolicies",
-      label: DASHBOARD_TYPE_LABELS.windowsUpdatePolicies,
-      compactLabel: "Updates",
-      total: counts.windowsUpdatePolicies,
-      selected: countSelected(
-        configurations.windowsUpdatePolicies,
-        "update",
-        selectedConfigs,
-      ),
-    },
-    {
-      key: "enrollmentConfigurations",
-      label: DASHBOARD_TYPE_LABELS.enrollmentConfigurations,
-      compactLabel: "Enrollment",
-      total: counts.enrollmentConfigurations,
-      selected: countSelected(
-        configurations.enrollmentConfigurations,
-        "enrollment",
-        selectedConfigs,
-      ),
-    },
-  ];
+    };
+  });
 }

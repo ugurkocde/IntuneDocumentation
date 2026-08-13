@@ -1,6 +1,7 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import { GroupResolver } from "./group-resolver";
 import { collectAllPages } from "./graph-paging";
+import type { ConfigurationSectionData } from "./configuration-sections";
 
 export interface ExportResolverProgress {
   stage: "groups" | "devices";
@@ -8,6 +9,18 @@ export interface ExportResolverProgress {
 }
 
 interface SelectedData {
+  sections: ConfigurationSectionData[];
+  fetchErrors?: Array<{
+    policyId: string;
+    policyName: string;
+    policyType: string;
+    familyKey?: string;
+    error: string;
+    statusCode?: number;
+    endpoint?: string;
+    permissionHint?: string;
+    partial?: boolean;
+  }>;
   settingsCatalog: any[];
   deviceConfigurations: any[];
   administrativeTemplates: any[];
@@ -34,7 +47,7 @@ export interface ResolvedExportData extends SelectedData {
 export async function resolveExportData(
   data: SelectedData,
   accessToken: string,
-  onProgress?: (progress: ExportResolverProgress) => void
+  onProgress?: (progress: ExportResolverProgress) => void,
 ): Promise<ResolvedExportData> {
   // Resolve group names
   let groupNames = new Map<string, string>();
@@ -44,20 +57,22 @@ export async function resolveExportData(
     const groupResolver = new GroupResolver(accessToken);
     const allGroupIds = new Set<string>();
 
-    const allConfigs = [
-      ...(data.settingsCatalog || []),
-      ...(data.deviceConfigurations || []),
-      ...(data.administrativeTemplates || []),
-      ...(data.compliancePolicies || []),
-      ...(data.appProtectionPolicies || []),
-      ...(data.securityBaselines || []),
-      ...(data.scripts?.windows || []),
-      ...(data.scripts?.macOS || []),
-      ...(data.appConfigurations || []),
-      ...(data.windowsUpdatePolicies || []),
-      ...(data.enrollmentConfigurations || []),
-      ...(data.conditionalAccessPolicies || []),
-    ];
+    const allConfigs = data.sections?.length
+      ? data.sections.flatMap((section) => section.items)
+      : [
+          ...(data.settingsCatalog || []),
+          ...(data.deviceConfigurations || []),
+          ...(data.administrativeTemplates || []),
+          ...(data.compliancePolicies || []),
+          ...(data.appProtectionPolicies || []),
+          ...(data.securityBaselines || []),
+          ...(data.scripts?.windows || []),
+          ...(data.scripts?.macOS || []),
+          ...(data.appConfigurations || []),
+          ...(data.windowsUpdatePolicies || []),
+          ...(data.enrollmentConfigurations || []),
+          ...(data.conditionalAccessPolicies || []),
+        ];
 
     allConfigs.forEach((config) => {
       if (config.assignments) {
@@ -75,12 +90,28 @@ export async function resolveExportData(
         add(users.includeGroups);
         add(users.excludeGroups);
       }
+      if (config.registryKey === "roleAssignments") {
+        [...(config.members || []), ...(config.scopeMembers || [])].forEach(
+          (id: unknown) => {
+            if (typeof id === "string") allGroupIds.add(id);
+          },
+        );
+      }
     });
 
     if (allGroupIds.size > 0) {
-      groupNames = await groupResolver.getGroupNames(
-        Array.from(allGroupIds)
-      );
+      groupNames = await groupResolver.getGroupNames(Array.from(allGroupIds));
+
+      data.sections
+        ?.find((section) => section.key === "roleAssignments")
+        ?.items.forEach((assignment) => {
+          assignment.resolvedMembers = (assignment.members || []).map(
+            (id: string) => groupNames.get(id) || id,
+          );
+          assignment.resolvedScopeMembers = (assignment.scopeMembers || []).map(
+            (id: string) => groupNames.get(id) || id,
+          );
+        });
     }
   } catch (error) {
     console.error("Error resolving group names:", error);
@@ -99,6 +130,7 @@ export async function resolveExportData(
 
     const devicesResponse = await client
       .api("/deviceManagement/managedDevices")
+      .version("beta")
       .select("id,operatingSystem")
       .top(999)
       .get();

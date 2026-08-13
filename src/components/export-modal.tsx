@@ -28,6 +28,7 @@ export interface PolicyExportError {
 export interface ExportConfig {
   selectedCount: number;
   policyTypes: { name: string; count: number }[];
+  collectionWarningCount: number;
 }
 
 export interface ExportResult {
@@ -232,6 +233,22 @@ export function ExportModal({
         <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-7">
           {!isExporting && !exportComplete && (
             <div className="space-y-5">
+              {config.collectionWarningCount > 0 && (
+                <div className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4 text-sm text-amber-900">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                    <p className="leading-6">
+                      This document will include {config.collectionWarningCount}{" "}
+                      collection{" "}
+                      {config.collectionWarningCount === 1
+                        ? "warning"
+                        : "warnings"}
+                      . Partial or unavailable data will be identified in the
+                      export.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-petrol-800 mb-3 block text-sm font-semibold">
                   Select export format

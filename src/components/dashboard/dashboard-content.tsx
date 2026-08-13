@@ -1,21 +1,7 @@
 "use client";
 
-import {
-  CheckSquare,
-  Code,
-  FileText,
-  Info,
-  Laptop,
-  Package,
-  RefreshCw,
-  Settings,
-  Shield,
-  UserCheck,
-} from "lucide-react";
-import {
-  ConfigurationSection,
-  ScriptsSection,
-} from "~/components/dashboard/config-section";
+import { CheckSquare, FileText, Info, Shield } from "lucide-react";
+import { ConfigurationSection } from "~/components/dashboard/config-section";
 import { DashboardBanners } from "~/components/dashboard/dashboard-banners";
 import { DashboardHeader } from "~/components/dashboard/dashboard-header";
 import { KpiCards } from "~/components/dashboard/kpi-cards";
@@ -66,24 +52,12 @@ function filterConfigurations(
 }
 
 function getFilteredCount(
-  configurations: IntuneConfigurations,
+  sections: IntuneConfigurations["sections"],
   searchQuery: string,
 ) {
-  return [
-    configurations.settingsCatalog,
-    configurations.deviceConfigurations,
-    configurations.administrativeTemplates,
-    configurations.securityBaselines,
-    configurations.compliancePolicies,
-    configurations.appProtectionPolicies,
-    configurations.scripts.macOS,
-    configurations.scripts.windows,
-    configurations.appConfigurations,
-    configurations.windowsUpdatePolicies,
-    configurations.enrollmentConfigurations,
-    configurations.conditionalAccessPolicies,
-  ].reduce(
-    (count, items) => count + filterConfigurations(items, searchQuery).length,
+  return sections.reduce(
+    (count, section) =>
+      count + filterConfigurations(section.items, searchQuery).length,
     0,
   );
 }
@@ -235,12 +209,27 @@ export function DashboardContent({
   onBulkSelect,
   onIncludeCAChange,
 }: DashboardContentProps) {
-  const filteredCount = getFilteredCount(configurations, searchQuery);
+  const showConditionalAccess = includeCA && caConsentStatus === "included";
+  const visibleSections = configurations.sections.filter(
+    (section) =>
+      (showConditionalAccess ||
+        section.familyKey !== "conditionalAccessPolicies") &&
+      (activeView === "overview" || section.familyKey === activeView),
+  );
+  const selectableSections = configurations.sections.filter(
+    (section) =>
+      showConditionalAccess ||
+      section.familyKey !== "conditionalAccessPolicies",
+  );
+  const filteredCount = getFilteredCount(selectableSections, searchQuery);
+  const visibleFilteredCount = getFilteredCount(visibleSections, searchQuery);
+  const activeViewHasError = configurations.fetchErrors?.some(
+    (error) => error.familyKey === activeView,
+  );
   const warningCount =
     (configurations.permissionErrors?.length ?? 0) +
     (configurations.fetchErrors?.length ?? 0);
   const populatedTypeCount = typeStats.filter((stat) => stat.total > 0).length;
-  const showConditionalAccess = includeCA && caConsentStatus === "included";
   const filter = (items: DashboardConfigurationItem[]) =>
     filterConfigurations(items, searchQuery);
 
@@ -252,6 +241,11 @@ export function DashboardContent({
       }`}
     >
       <div className="mx-auto max-w-[1500px] space-y-5">
+        <p className="sr-only" aria-live="polite">
+          {!refreshing
+            ? `Configuration loading complete. ${configurations.summary.totalConfigurations.toLocaleString()} resources are available.`
+            : ""}
+        </p>
         <DashboardHeader
           title={DASHBOARD_VIEW_LABELS[activeView]}
           searchQuery={searchQuery}
@@ -307,160 +301,39 @@ export function DashboardContent({
             />
 
             <div className="space-y-4">
-              {(activeView === "overview" ||
-                activeView === "settingsCatalog") &&
-                filter(configurations.settingsCatalog).length > 0 && (
+              {visibleSections.map((section) => {
+                const items = filter(section.items);
+                if (items.length === 0) return null;
+                return (
                   <ConfigurationSection
-                    title="Settings Catalog"
-                    items={filter(configurations.settingsCatalog)}
-                    prefix="catalog"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<Settings className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" ||
-                activeView === "deviceConfigurations") &&
-                filter(configurations.deviceConfigurations).length > 0 && (
-                  <ConfigurationSection
-                    title="Device Configurations (Templates)"
-                    items={filter(configurations.deviceConfigurations)}
-                    prefix="device"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<Laptop className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" ||
-                activeView === "administrativeTemplates") &&
-                filter(configurations.administrativeTemplates).length > 0 && (
-                  <ConfigurationSection
-                    title="Administrative Templates (Group Policy)"
-                    items={filter(configurations.administrativeTemplates)}
-                    prefix="admx"
+                    key={section.key}
+                    title={section.label}
+                    items={items}
+                    prefix={section.selectionPrefix}
                     selectedConfigs={selectedConfigs}
                     onSelectConfig={onSelectConfig}
                     onBulkSelect={onBulkSelect}
                     icon={<FileText className="h-[18px] w-[18px]" />}
                   />
-                )}
-              {(activeView === "overview" ||
-                activeView === "securityBaselines") &&
-                filter(configurations.securityBaselines).length > 0 && (
-                  <ConfigurationSection
-                    title="Security Baselines & Endpoint Security"
-                    items={filter(configurations.securityBaselines)}
-                    prefix="security"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<Shield className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" ||
-                activeView === "compliancePolicies") &&
-                filter(configurations.compliancePolicies).length > 0 && (
-                  <ConfigurationSection
-                    title="Compliance Policies"
-                    items={filter(configurations.compliancePolicies)}
-                    prefix="compliance"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<CheckSquare className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" ||
-                activeView === "appProtectionPolicies") &&
-                filter(configurations.appProtectionPolicies).length > 0 && (
-                  <ConfigurationSection
-                    title="App Protection Policies"
-                    items={filter(configurations.appProtectionPolicies)}
-                    prefix="app-protection"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<Shield className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" || activeView === "scripts") &&
-                (configurations.scripts.macOS.length > 0 ||
-                  configurations.scripts.windows.length > 0) && (
-                  <ScriptsSection
-                    macOSItems={filter(configurations.scripts.macOS)}
-                    windowsItems={filter(configurations.scripts.windows)}
-                    allMacOSItems={configurations.scripts.macOS}
-                    allWindowsItems={configurations.scripts.windows}
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<Code className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" ||
-                activeView === "appConfigurations") &&
-                filter(configurations.appConfigurations).length > 0 && (
-                  <ConfigurationSection
-                    title="App Configuration Policies"
-                    items={filter(configurations.appConfigurations)}
-                    prefix="app"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<Package className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" ||
-                activeView === "windowsUpdatePolicies") &&
-                filter(configurations.windowsUpdatePolicies).length > 0 && (
-                  <ConfigurationSection
-                    title="Windows Update Policies"
-                    items={filter(configurations.windowsUpdatePolicies)}
-                    prefix="update"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<RefreshCw className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {(activeView === "overview" ||
-                activeView === "enrollmentConfigurations") &&
-                filter(configurations.enrollmentConfigurations).length > 0 && (
-                  <ConfigurationSection
-                    title="Enrollment Configurations"
-                    items={filter(configurations.enrollmentConfigurations)}
-                    prefix="enrollment"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<UserCheck className="h-[18px] w-[18px]" />}
-                  />
-                )}
-              {showConditionalAccess &&
-                (activeView === "overview" ||
-                  activeView === "conditionalAccessPolicies") &&
-                filter(configurations.conditionalAccessPolicies).length > 0 && (
-                  <ConfigurationSection
-                    title="Conditional Access Policies"
-                    items={filter(configurations.conditionalAccessPolicies)}
-                    prefix="ca"
-                    selectedConfigs={selectedConfigs}
-                    onSelectConfig={onSelectConfig}
-                    onBulkSelect={onBulkSelect}
-                    icon={<Shield className="h-[18px] w-[18px]" />}
-                  />
-                )}
+                );
+              })}
             </div>
 
-            {filteredCount === 0 && (
+            {visibleFilteredCount === 0 && (
               <div className="border-petrol-950/6 shadow-card rounded-2xl border bg-white px-6 py-12 text-center">
                 <p className="text-petrol-950 text-sm font-semibold">
-                  No configurations match your search
+                  {searchQuery
+                    ? "No configurations match your search"
+                    : activeViewHasError
+                      ? "This configuration family could not be loaded"
+                      : "No configurations are set up in this family"}
                 </p>
                 <p className="text-petrol-600 mt-1 text-xs">
-                  Try a different name or description.
+                  {searchQuery
+                    ? "Try a different name or description."
+                    : activeViewHasError
+                      ? "Review the affected-resource warning above for Microsoft Graph details."
+                      : "Choose another family or return to the overview."}
                 </p>
               </div>
             )}

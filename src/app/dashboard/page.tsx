@@ -12,7 +12,6 @@ import { DashboardLoading } from "~/components/dashboard-loading";
 import { NavigationHeader } from "~/components/navigation-header";
 // Settings is now an in-dashboard view; no external link needed here
 import {
-  Clock,
   FileText,
   LayoutGrid,
   Palette,
@@ -32,6 +31,116 @@ import {
   type DashboardView,
   type IntuneConfigurations,
 } from "~/components/dashboard/types";
+import type { ConfigurationSectionData } from "~/lib/configuration-sections";
+
+const EMPTY_CONFIGURATIONS: IntuneConfigurations = {
+  settingsCatalog: [],
+  deviceConfigurations: [],
+  administrativeTemplates: [],
+  securityBaselines: [],
+  compliancePolicies: [],
+  appProtectionPolicies: [],
+  scripts: { windows: [], macOS: [] },
+  appConfigurations: [],
+  windowsUpdatePolicies: [],
+  enrollmentConfigurations: [],
+  conditionalAccessPolicies: [],
+  sections: [],
+  permissionErrors: [],
+  fetchErrors: [],
+  summary: { totalConfigurations: 0, byType: {} },
+};
+
+function mergeConfigurationSection(
+  current: IntuneConfigurations | null,
+  section: ConfigurationSectionData,
+): IntuneConfigurations {
+  const base = current || EMPTY_CONFIGURATIONS;
+  const sections = [
+    ...base.sections.filter((candidate) => candidate.key !== section.key),
+    section,
+  ];
+  const byType = sections.reduce<Record<string, number>>(
+    (counts, candidate) => {
+      counts[candidate.familyKey] =
+        (counts[candidate.familyKey] || 0) + candidate.items.length;
+      return counts;
+    },
+    {},
+  );
+  const next: IntuneConfigurations = {
+    ...base,
+    sections,
+    fetchErrors: [
+      ...(base.fetchErrors || []).filter(
+        (error) => error.policyId !== section.key,
+      ),
+      ...(section.error
+        ? [
+            {
+              policyId: section.key,
+              policyName: section.label,
+              policyType: section.familyKey,
+              familyKey: section.familyKey,
+              error: section.error.message,
+              errorCode: section.error.errorCode,
+              statusCode: section.error.statusCode,
+              endpoint: section.endpoint,
+              permissionHint: section.permissionHint,
+              partial: section.error.partial,
+            },
+          ]
+        : []),
+    ],
+    summary: {
+      totalConfigurations: sections.reduce(
+        (total, candidate) => total + candidate.items.length,
+        0,
+      ),
+      byType,
+    },
+  };
+
+  switch (section.key) {
+    case "settingsCatalog":
+      next.settingsCatalog = section.items;
+      break;
+    case "deviceConfigurations":
+      next.deviceConfigurations = section.items;
+      break;
+    case "administrativeTemplates":
+      next.administrativeTemplates = section.items;
+      break;
+    case "securityBaselines":
+      next.securityBaselines = section.items;
+      break;
+    case "compliancePolicies":
+      next.compliancePolicies = section.items;
+      break;
+    case "appProtectionPolicies":
+      next.appProtectionPolicies = section.items;
+      break;
+    case "windowsScripts":
+      next.scripts = { ...next.scripts, windows: section.items };
+      break;
+    case "macOSScripts":
+      next.scripts = { ...next.scripts, macOS: section.items };
+      break;
+    case "appConfigurations":
+      next.appConfigurations = section.items;
+      break;
+    case "windowsUpdatePolicies":
+      next.windowsUpdatePolicies = section.items;
+      break;
+    case "enrollmentConfigurations":
+      next.enrollmentConfigurations = section.items;
+      break;
+    case "conditionalAccessPolicies":
+      next.conditionalAccessPolicies = section.items;
+      break;
+  }
+  return next;
+}
 
 export default function DashboardPage() {
   const { instance, accounts, inProgress } = useMsal();
@@ -43,6 +152,7 @@ export default function DashboardPage() {
   const [configurations, setConfigurations] =
     useState<IntuneConfigurations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedConfigs, setSelectedConfigs] = useState<Set<string>>(
     new Set(),
@@ -54,7 +164,11 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<DashboardView>("overview");
   const [showBrandingModal, setShowBrandingModal] = useState(false);
-  const [includeCA, setIncludeCA] = useState(false);
+  const [includeCA, setIncludeCA] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      localStorage.getItem("include-ca") === "true",
+  );
   const [brandingOptions, setBrandingOptions] = useState<
     BrandingOptions | undefined
   >(() => {
@@ -191,6 +305,8 @@ export default function DashboardPage() {
       return;
     }
 
+    let receivedAnySection = false;
+
     try {
       isFetchingRef.current = true;
       setLoading(true);
@@ -228,6 +344,10 @@ export default function DashboardPage() {
         },
         {
           name: "Fetching Enrollment Configurations",
+          status: "pending" as const,
+        },
+        {
+          name: "Fetching extended Intune coverage",
           status: "pending" as const,
         },
         ...(withCA
@@ -272,6 +392,7 @@ export default function DashboardPage() {
         fetch("/api/intune/detailed-configurations-stream", {
           headers: {
             Authorization: `Bearer ${accessToken}`,
+            "X-Include-Conditional-Access": String(caIncluded),
           },
         })
           .then(async (response) => {
@@ -287,12 +408,21 @@ export default function DashboardPage() {
             }
 
             let buffer = "";
+            let receivedComplete = false;
 
             while (true) {
               const { done, value } = await reader.read();
 
               if (done) {
-                resolve();
+                if (receivedComplete) {
+                  resolve();
+                } else {
+                  reject(
+                    new Error(
+                      "The configuration stream closed before all collections finished. The dashboard contains partial data.",
+                    ),
+                  );
+                }
                 break;
               }
 
@@ -340,9 +470,23 @@ export default function DashboardPage() {
                           }));
                         }
                       }
+                    } else if (eventType === "section" && data.section) {
+                      receivedAnySection = true;
+                      setConfigurations((current) =>
+                        mergeConfigurationSection(current, data.section),
+                      );
                     } else if (eventType === "complete") {
-                      // Set the final configuration data
-                      setConfigurations(data.data);
+                      receivedComplete = true;
+                      setHasCompletedInitialLoad(true);
+                      setConfigurations((current) => ({
+                        ...(current || EMPTY_CONFIGURATIONS),
+                        permissionErrors: data.data.permissionErrors || [],
+                        fetchErrors: data.data.fetchErrors || [],
+                        summary:
+                          data.data.summary ||
+                          current?.summary ||
+                          EMPTY_CONFIGURATIONS.summary,
+                      }));
                       setLastFetched(new Date());
                       resolve();
                     } else if (eventType === "error") {
@@ -359,7 +503,29 @@ export default function DashboardPage() {
       // Mark current step as error
       const currentStep = fetchProgress.currentStep;
       updateFetchProgress(currentStep, "error");
-      setError(err instanceof Error ? err.message : "An error occurred");
+      const message = err instanceof Error ? err.message : "An error occurred";
+      setError(message);
+      if (configurations || receivedAnySection) {
+        setHasCompletedInitialLoad(true);
+      }
+      setConfigurations((current) =>
+        current
+          ? {
+              ...current,
+              fetchErrors: [
+                ...(current.fetchErrors || []),
+                {
+                  policyId: "stream",
+                  policyName: "Configuration stream",
+                  policyType: "Streaming",
+                  familyKey: "overview",
+                  error: message,
+                  partial: true,
+                },
+              ],
+            }
+          : current,
+      );
       console.error("Error fetching configurations:", err);
     } finally {
       setLoading(false);
@@ -369,43 +535,15 @@ export default function DashboardPage() {
 
   const getAllConfigIds = () => {
     if (!configurations) return [];
-    const ids: string[] = [];
-
-    // Add all configuration IDs with unique prefixes
-    configurations.settingsCatalog?.forEach((c) => ids.push(`catalog-${c.id}`));
-    configurations.deviceConfigurations?.forEach((c) =>
-      ids.push(`device-${c.id}`),
-    );
-    configurations.administrativeTemplates?.forEach((c) =>
-      ids.push(`admx-${c.id}`),
-    );
-    configurations.securityBaselines?.forEach((c) =>
-      ids.push(`security-${c.id}`),
-    );
-    configurations.compliancePolicies?.forEach((c) =>
-      ids.push(`compliance-${c.id}`),
-    );
-    configurations.appProtectionPolicies?.forEach((c) =>
-      ids.push(`app-protection-${c.id}`),
-    );
-    configurations.scripts?.macOS?.forEach((c) =>
-      ids.push(`script-mac-${c.id}`),
-    );
-    configurations.scripts?.windows?.forEach((c) =>
-      ids.push(`script-win-${c.id}`),
-    );
-    configurations.appConfigurations?.forEach((c) => ids.push(`app-${c.id}`));
-    configurations.windowsUpdatePolicies?.forEach((c) =>
-      ids.push(`update-${c.id}`),
-    );
-    configurations.enrollmentConfigurations?.forEach((c) =>
-      ids.push(`enrollment-${c.id}`),
-    );
-    configurations.conditionalAccessPolicies?.forEach((c) =>
-      ids.push(`ca-${c.id}`),
-    );
-
-    return ids;
+    return configurations.sections
+      .filter(
+        (section) =>
+          section.familyKey !== "conditionalAccessPolicies" ||
+          (includeCA && caConsentStatus === "included"),
+      )
+      .flatMap((section) =>
+        section.items.map((item) => `${section.selectionPrefix}-${item.id}`),
+      );
   };
 
   const handleSelectAll = () => {
@@ -418,45 +556,17 @@ export default function DashboardPage() {
   };
 
   const handleSelectFiltered = () => {
-    const filteredIds: string[] = [];
-
-    // Get all filtered configuration IDs
-    filterConfigurations(configurations?.settingsCatalog || []).forEach((c) =>
-      filteredIds.push(`catalog-${c.id}`),
-    );
-    filterConfigurations(configurations?.deviceConfigurations || []).forEach(
-      (c) => filteredIds.push(`device-${c.id}`),
-    );
-    filterConfigurations(configurations?.administrativeTemplates || []).forEach(
-      (c) => filteredIds.push(`admx-${c.id}`),
-    );
-    filterConfigurations(configurations?.securityBaselines || []).forEach((c) =>
-      filteredIds.push(`security-${c.id}`),
-    );
-    filterConfigurations(configurations?.compliancePolicies || []).forEach(
-      (c) => filteredIds.push(`compliance-${c.id}`),
-    );
-    filterConfigurations(configurations?.appProtectionPolicies || []).forEach(
-      (c) => filteredIds.push(`app-protection-${c.id}`),
-    );
-    filterConfigurations(configurations?.scripts?.macOS || []).forEach((c) =>
-      filteredIds.push(`script-mac-${c.id}`),
-    );
-    filterConfigurations(configurations?.scripts?.windows || []).forEach((c) =>
-      filteredIds.push(`script-win-${c.id}`),
-    );
-    filterConfigurations(configurations?.appConfigurations || []).forEach((c) =>
-      filteredIds.push(`app-${c.id}`),
-    );
-    filterConfigurations(configurations?.windowsUpdatePolicies || []).forEach(
-      (c) => filteredIds.push(`update-${c.id}`),
-    );
-    filterConfigurations(
-      configurations?.enrollmentConfigurations || [],
-    ).forEach((c) => filteredIds.push(`enrollment-${c.id}`));
-    filterConfigurations(
-      configurations?.conditionalAccessPolicies || [],
-    ).forEach((c) => filteredIds.push(`ca-${c.id}`));
+    const filteredIds = (configurations?.sections || [])
+      .filter(
+        (section) =>
+          section.familyKey !== "conditionalAccessPolicies" ||
+          (includeCA && caConsentStatus === "included"),
+      )
+      .flatMap((section) =>
+        filterConfigurations(section.items).map(
+          (item) => `${section.selectionPrefix}-${item.id}`,
+        ),
+      );
 
     setSelectedConfigs(new Set(filteredIds));
   };
@@ -594,8 +704,8 @@ export default function DashboardPage() {
                     Read-only access
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    3-min exports
+                    <FileText className="h-3 w-3" />
+                    PDF + Word
                   </span>
                 </div>
               </CardContent>
@@ -606,7 +716,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (loading) {
+  if (loading && !hasCompletedInitialLoad) {
     return (
       <>
         <NavigationHeader />
@@ -618,7 +728,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (error) {
+  if (error && !configurations) {
     return (
       <div className="bg-mint-50 flex min-h-screen items-center justify-center px-4">
         <Card className="border-petrol-950/6 shadow-soft w-full max-w-md rounded-3xl">
@@ -666,6 +776,9 @@ export default function DashboardPage() {
           counts={configurations.summary.byType}
           totalCount={configurations.summary.totalConfigurations}
           selectedCount={selectedConfigs.size}
+          affectedFamilyKeys={(configurations.fetchErrors || []).map(
+            (fetchError) => fetchError.familyKey || fetchError.policyType,
+          )}
           showConditionalAccess={showConditionalAccess}
           userName={userProfile?.displayName || accounts[0]?.username || "User"}
           onToggle={() => setSidebarOpen((current) => !current)}

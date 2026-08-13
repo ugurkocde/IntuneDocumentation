@@ -34,7 +34,7 @@ const faqs = [
   {
     question: "What is the Intune Documentation Generator?",
     answer:
-      "The Intune Documentation Generator is a free tool that connects to your Microsoft Intune tenant via Graph API, fetches all 10 configuration types (policies, profiles, scripts, etc.), and generates comprehensive PDF or Word documents with complete settings, assignments, and filters. It saves IT teams 10+ hours per audit.",
+      "The Intune Documentation Generator is a free, read-only tool that collects your Microsoft Intune configuration through Microsoft Graph and turns it into a PDF or Word report. It covers the original policy areas plus 36 additional resource collections across updates, scripts and remediations, enrollment and provisioning, apps, assignments and RBAC, tenant settings, connectors, and specialist policies. The exact resources returned depend on your tenant, licensing, and permissions.",
   },
   {
     question: "How do I export Intune configurations to PDF?",
@@ -49,12 +49,27 @@ const faqs = [
   {
     question: "Is my Intune data secure?",
     answer:
-      "Yes. We use Microsoft OAuth 2.0 with delegated read-only access. All document generation (PDF and DOCX) happens entirely in your browser. Your Intune data never leaves your device, and we do not persist your configuration data or generated documents anywhere.",
+      "We use Microsoft OAuth 2.0 with delegated, read-only access. The application server processes Graph responses transiently to collect, normalize, and redact sensitive values, but it does not persist your tenant configuration or access token. PDF and DOCX generation happens in your browser, and generated documents are not uploaded or stored by us.",
   },
   {
     question: "What Intune policies can I export?",
     answer:
-      "You can export all 10 Intune configuration types: Device Configurations, Compliance Policies, Settings Catalog, Administrative Templates, Security Baselines, PowerShell Scripts, Shell Scripts, App Configurations, Windows Update Policies, and Enrollment Configurations. Conditional Access policies are also included when admin consent for Policy.Read.All is granted.",
+      "Coverage includes device configurations, Settings Catalog, compliance, security baselines, administrative templates, scripts and remediations, app protection and configuration, managed apps, Windows updates, enrollment and Autopilot, assignment filters, RBAC, tenant and service settings, connectors, and specialist policies. Conditional Access is optional and requested separately with Policy.Read.All.",
+  },
+  {
+    question: "What happens if Microsoft Graph cannot return a collection?",
+    answer:
+      "The dashboard keeps any successfully collected sections and clearly marks partial or failed collections. Warnings include the affected section, endpoint, status code, and a permission hint when available, so a failed request is not presented as a confirmed empty result.",
+  },
+  {
+    question: "Are secrets or script bodies included in the report?",
+    answer:
+      "No. Sensitive values such as script bodies, passwords, tokens, pre-shared keys, QR-code payloads, encoded configuration files, and large app icons are replaced with [Redacted] before data reaches the dashboard or an export. The report retains useful metadata so reviewers can still identify the resource.",
+  },
+  {
+    question: "Why does the tool use Microsoft Graph beta endpoints?",
+    answer:
+      "A number of Intune administration resources needed for complete documentation are currently exposed through Microsoft Graph beta. The tool uses those endpoints only for delegated, read-only collection and isolates failures by resource so one unavailable endpoint does not hide the rest of the report.",
   },
   {
     question:
@@ -65,7 +80,7 @@ const faqs = [
   {
     question: "How long does it take to generate Intune documentation?",
     answer:
-      "Most Intune documentation reports are generated in under 3 minutes. The exact time depends on the number of configurations in your tenant and which policies you select for export.",
+      "Collection time depends on tenant size, Graph throttling, and the resources available in your environment. The dashboard streams sections as they finish and shows live progress, then lets you export the successfully collected data even when another section reports a warning.",
   },
   {
     question: "Can I customize the Intune PDF report?",
@@ -180,16 +195,16 @@ function ProductMockup() {
               PDF ready
             </p>
             <p className="mt-1 text-lg font-semibold tracking-tight">
-              100% complete
+              Coverage checked
             </p>
           </div>
           <FileCheck className="h-6 w-6 text-white/90" />
         </div>
         <div className="border-t border-white/20 pt-3">
           <p className="text-[9px] tracking-[0.14em] text-white/65 uppercase">
-            Generated in
+            Collection status
           </p>
-          <p className="mt-1 text-sm font-semibold">2m 14s</p>
+          <p className="mt-1 text-sm font-semibold">Complete</p>
         </div>
       </div>
     </div>
@@ -407,15 +422,14 @@ export function HomePage({ stats }: { stats: SiteStats }) {
       "@type": "HowTo",
       name: "Generate Microsoft Intune Documentation",
       description:
-        "Connect with Microsoft, select configurations, and export a professional PDF.",
-      totalTime: "PT3M",
+        "Connect with Microsoft, select configurations, and export a professional PDF or Word document.",
       supply: [],
       tool: [],
       step: [
         {
           "@type": "HowToStep",
           name: "Connect",
-          text: "Sign in with your Microsoft account. We request read-only Graph permissions and do not store data.",
+          text: "Sign in with your Microsoft account. We request delegated, read-only Graph permissions and do not persist tenant configuration data.",
           url: "https://intunedocumentation.com/#how-it-works",
         },
         {
@@ -427,7 +441,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
         {
           "@type": "HowToStep",
           name: "Export",
-          text: "Generate and download an audit-ready PDF including settings, ADMX values, scripts, and group targets.",
+          text: "Generate and download an audit-ready PDF or Word document including settings, ADMX values, script metadata, and group targets. Sensitive values are redacted.",
           url: "https://intunedocumentation.com/#how-it-works",
         },
       ],
@@ -476,7 +490,8 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                 className="text-petrol-600 mt-6 max-w-xl text-base leading-7 sm:text-lg"
               >
                 Export policies, settings, and assignments as audit-ready PDFs
-                in under 3 minutes.
+                or Word documents, with broad coverage and clear collection
+                status.
               </motion.p>
 
               <motion.div variants={fadeUp} className="mt-8">
@@ -549,7 +564,8 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                       </div>
                     )}
                     <p className="text-petrol-600 text-xs leading-5">
-                      Read-only access. Your data never leaves your browser.{" "}
+                      Read-only access. Tenant data is processed transiently and
+                      never persisted.{" "}
                       <button
                         onClick={() => setShowSecurity(true)}
                         className="hover:text-petrol-950 cursor-pointer font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
@@ -672,13 +688,13 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                 },
                 {
                   art: <SpotIllustrationLayers />,
-                  title: "All 10 configuration types",
-                  desc: "Complete settings, ADMX values, scripts, assignments, group targets, and filters.",
+                  title: "Expanded Intune coverage",
+                  desc: "Policies, apps, updates, enrollment, RBAC, tenant settings, connectors, and specialist resources.",
                 },
                 {
                   art: <SpotIllustrationShield />,
                   title: "Read-only by design",
-                  desc: "Read-only OAuth, in-browser generation, and zero persistent tenant data storage.",
+                  desc: "Delegated OAuth, sensitive-value redaction, in-browser document generation, and no persistent tenant data storage.",
                 },
               ].map(({ art, title, desc }) => (
                 <motion.div
@@ -713,7 +729,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
             >
               <Eyebrow inverted>How it works</Eyebrow>
               <h2 className="text-3xl leading-tight font-semibold tracking-[-0.035em] text-white sm:text-4xl lg:text-5xl">
-                From tenant to audit-ready PDF in three steps.
+                From tenant to audit-ready documentation in three steps.
               </h2>
             </motion.div>
 
@@ -728,7 +744,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                 [
                   "1",
                   "Connect",
-                  "Sign in with Microsoft. We use read-only Graph permissions and don't store your data.",
+                  "Sign in with Microsoft. We use delegated, read-only Graph permissions and never persist tenant configuration data.",
                 ],
                 [
                   "2",
@@ -738,7 +754,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                 [
                   "3",
                   "Export",
-                  "Download a professional PDF or Word document with full settings, ADMX values, scripts, and group targeting.",
+                  "Download a professional PDF or Word document with settings, ADMX values, script metadata, and group targeting. Sensitive values stay redacted.",
                 ],
               ].map(([num, title, desc]) => (
                 <motion.article
@@ -771,12 +787,12 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                 <motion.div variants={fadeUp}>
                   <Eyebrow>Security</Eyebrow>
                   <h2 className="text-petrol-950 max-w-xl text-3xl leading-tight font-semibold tracking-[-0.035em] sm:text-4xl">
-                    Your data never touches our servers.
+                    Read-only access without persistent tenant storage.
                   </h2>
                   <p className="text-petrol-600 mt-4 max-w-lg text-sm leading-6">
-                    The tool runs entirely between Microsoft&apos;s cloud and
-                    your browser. We cannot see, store, or share your
-                    configurations: by architecture, not by policy.
+                    Our application server transiently collects, normalizes, and
+                    redacts Microsoft Graph responses. It does not persist your
+                    tenant configuration, access token, or generated documents.
                   </p>
                 </motion.div>
 
@@ -785,6 +801,10 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                     {
                       title: "Delegated, read-only permissions",
                       desc: "Microsoft Graph scopes that can read your Intune configuration, never change it.",
+                    },
+                    {
+                      title: "Sensitive values redacted",
+                      desc: "Script bodies, passwords, tokens, payloads, QR codes, and configuration-file contents are removed before dashboard display or export.",
                     },
                     {
                       title: "Reports generated in your browser",
@@ -861,10 +881,16 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                         desc: "Your Intune tenant, delegated read-only access",
                       },
                       {
+                        icon: Database,
+                        tile: "bg-white text-teal-700 border-petrol-950/6 border",
+                        title: "Transient application processing",
+                        desc: "Collects, normalizes, and redacts responses without persistent tenant storage",
+                      },
+                      {
                         icon: Monitor,
                         tile: "bg-teal-600 text-white",
                         title: "Your browser",
-                        desc: "Fetches configurations and builds the report locally",
+                        desc: "Shows collected sections and builds the report locally",
                       },
                       {
                         icon: FileCheck,
@@ -901,10 +927,10 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                   <div className="border-petrol-950/8 mt-7 flex items-center justify-between gap-3 border-t pt-5">
                     <span className="text-petrol-600 flex items-center gap-2 text-sm">
                       <ServerOff className="h-4 w-4" />
-                      External servers
+                      Intune configuration storage
                     </span>
                     <span className="rounded-full bg-teal-50 px-3 py-1 text-[10px] font-bold tracking-wide text-teal-700 uppercase">
-                      Never involved
+                      Not used
                     </span>
                   </div>
                 </div>
@@ -957,8 +983,8 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                       </p>
                       {[
                         ["Device Configurations", "47"],
-                        ["Compliance Policies", "12"],
-                        ["Settings Catalog", "31"],
+                        ["Apps & Protection", "24"],
+                        ["Enrollment & Updates", "18"],
                       ].map(([label, count]) => (
                         <div
                           key={label}
@@ -978,7 +1004,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                     </div>
                     <div className="border-petrol-950/8 shadow-card relative z-10 mx-auto -mt-3 flex w-[90%] items-center justify-between gap-3 rounded-xl border bg-white py-2 pr-2 pl-3">
                       <span className="text-petrol-600 text-[11px]">
-                        10 of 10 types selected
+                        All available sections selected
                       </span>
                       <span className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-[11px] font-semibold text-white">
                         <Download className="h-3 w-3" />
@@ -988,11 +1014,12 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                   </div>
                 </div>
                 <h3 className="text-petrol-950 text-lg font-semibold">
-                  100% complete settings
+                  Broad Intune coverage
                 </h3>
                 <p className="text-petrol-600 mt-2 text-sm leading-6">
-                  Every setting, ADMX value, script, and assignment captured
-                  across all 10 configuration types. No manual gaps.
+                  Core policies plus 36 additional Graph resource collections
+                  spanning apps, updates, enrollment, RBAC, tenant settings,
+                  connectors, and more.
                 </p>
               </motion.article>
 
@@ -1128,26 +1155,27 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                       </span>
                       <div>
                         <p className="text-petrol-950 text-[11px] font-semibold">
-                          Report refreshed
+                          Collection complete
                         </p>
                         <p className="text-petrol-600 text-[10px]">Just now</p>
                       </div>
                       <span className="ml-auto h-2 w-2 rounded-full bg-teal-500" />
                     </div>
                     <div className="bg-surface text-petrol-700 rounded-lg px-2.5 py-2 text-[10px]">
-                      + 2 policies since last export
+                      Successful sections retained
                     </div>
                     <div className="bg-surface text-petrol-700 rounded-lg px-2.5 py-2 text-[10px]">
-                      Assignments up to date
+                      Warnings shown by section
                     </div>
                   </div>
                 </div>
                 <h3 className="text-petrol-950 text-base font-semibold">
-                  Always current
+                  Transparent collection status
                 </h3>
                 <p className="text-petrol-600 mt-2 text-sm leading-6">
-                  Generate a fresh report whenever your tenant changes. No
-                  outdated wikis or version drift.
+                  Partial and failed Graph collections stay visible with their
+                  endpoint, status, and permission hint instead of looking
+                  empty.
                 </p>
               </motion.article>
             </motion.div>
@@ -1345,10 +1373,21 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                   </code>
                 </li>
                 <li>
-                  <span className="font-medium">No persistent storage:</span>{" "}
-                  configuration data is fetched during your session and all
-                  document generation (PDF and DOCX) happens entirely in your
-                  browser. Your data never leaves your device during export.
+                  <span className="font-medium">
+                    No persistent configuration storage:
+                  </span>{" "}
+                  our application server processes Graph responses transiently
+                  for collection, normalization, and redaction, then discards
+                  them. PDF and DOCX generation happens in your browser, and
+                  generated files are not uploaded to us.
+                </li>
+                <li>
+                  <span className="font-medium">
+                    Sensitive-value redaction:
+                  </span>{" "}
+                  script bodies, passwords, tokens, payloads, QR codes, and
+                  encoded configuration files are replaced with [Redacted]
+                  before dashboard display or export.
                 </li>
                 <li>
                   <span className="font-medium">
@@ -1415,7 +1454,9 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                 No app‑only permissions.
               </p>
               <div className="space-y-3">
-                {(loginRequest.scopes || []).map((scope) => {
+                {Array.from(
+                  new Set([...(loginRequest.scopes || []), "Policy.Read.All"]),
+                ).map((scope) => {
                   const descriptions: Record<string, string> = {
                     "User.Read":
                       "Basic profile and sign‑in; required by Microsoft identity platform.",
@@ -1429,6 +1470,8 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                       "Read Intune RBAC roles and assignments if referenced.",
                     "DeviceManagementServiceConfig.Read.All":
                       "Read Intune service configuration information.",
+                    "DeviceManagementScripts.Read.All":
+                      "Read script and remediation metadata. Script bodies are redacted before display or export.",
                     "Group.Read.All":
                       "Resolve Azure AD group names in policy assignments.",
                     "Policy.Read.All":
@@ -1436,7 +1479,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                   };
                   const note =
                     scope === "Policy.Read.All"
-                      ? "Admin consent required"
+                      ? "Optional; requested separately for Conditional Access and may require admin consent"
                       : "Delegated, read‑only";
                   return (
                     <div

@@ -1,17 +1,26 @@
 # Intune Documentation Website
 
-s
-A Next.js application that generates comprehensive PDF documentation for Microsoft Intune configurations. Sign in with your Microsoft account to fetch and export your Intune policies and settings.
+A Next.js application that generates comprehensive PDF and DOCX documentation for Microsoft Intune configurations. Sign in with your Microsoft account to fetch and export your Intune policies and settings.
 
 ## Features
 
 - **Multi-tenant Azure AD authentication** - Works with any Microsoft 365 tenant
-- **Comprehensive Intune coverage** - Fetches all major configuration types:
-  - Device Configuration Profiles
-  - Compliance Policies
-  - App Protection Policies
-  - Conditional Access Policies
-  - Enrollment Restrictions
+- **Comprehensive Intune coverage** - Documents Settings Catalog, device
+  configuration templates, Administrative Templates, compliance, app
+  protection/configuration, security baselines, scripts, update rings,
+  enrollment configuration, and optional Conditional Access.
+- **Extended policy and settings inventory** - Registry-driven Microsoft Graph
+  beta coverage for Windows feature/quality/driver updates, remediations,
+  compliance and custom-attribute scripts, Autopilot and platform enrollment,
+  mobile apps, assignment filters, reusable settings, scope tags and RBAC,
+  tenant/service settings, connectors, policy sets, notifications, terms,
+  Microsoft Tunnel, and specialist configurations.
+- **Honest partial results** - Collections stream into the dashboard as they
+  finish. Paging or endpoint failures are shown as scoped warnings rather than
+  being presented as an empty tenant.
+- **Sensitive-field redaction** - Enrollment tokens, QR content, scripts,
+  provisioning payloads, icons, and configuration-file content are redacted
+  before configuration data reaches the browser.
 - **Professional PDF & DOCX export** - Generates well-formatted documents entirely in the browser with:
   - Cover page with summary
   - Table of contents
@@ -61,6 +70,12 @@ Go to "API permissions" and add the following Microsoft Graph delegated permissi
 - `DeviceManagementManagedDevices.Read.All` - Read managed devices
 - `DeviceManagementRBAC.Read.All` - Read RBAC settings
 - `DeviceManagementServiceConfig.Read.All` - Read service configuration
+- `DeviceManagementScripts.Read.All` - Read scripts and remediations
+- `Group.Read.All` - Resolve assignment group names
+
+Optional delegated permission:
+
+- `Policy.Read.All` - Include Conditional Access policies
 
 Click "Grant admin consent" if you're an admin, or users will need to consent on first sign-in.
 
@@ -128,14 +143,19 @@ npm start
 2. **Authenticate**: Sign in with your organizational account
 3. **Grant Permissions**: Accept the permission request (first time only)
 4. **View Configurations**: Browse all your Intune configurations in the dashboard
-5. **Select Items**: Choose which configurations to include in the PDF
-6. **Generate PDF**: Click "Download as PDF" to generate and download documentation
+5. **Select Items**: Choose which configurations to include in the document
+6. **Generate a document**: Download the selection as PDF or DOCX
 
 ## Security Notes
 
 - The application uses read-only permissions
 - All PDF and DOCX generation happens entirely in the browser -- no data leaves your device during export
-- No data is stored permanently - everything is session-based
+- Microsoft Graph data is streamed through the application server for
+  normalization and redaction, but is not persisted
+- Intune configuration data and generated documents are not persisted
+- Pseudonymous usage records (hashed user and tenant identifiers), operational
+  access logs, and an aggregate export counter may be retained for service
+  measurement
 - Authentication tokens are stored securely in browser session storage
 - All API calls are authenticated and authorized
 
@@ -166,6 +186,7 @@ npm start
 - **Microsoft Graph API** - Intune data access
 - **jsPDF / docx** - Client-side PDF and DOCX generation
 - **TypeScript** - Type safety
+- **Vitest** - Parser and redaction regression tests
 - **Tailwind CSS** - Styling
 
 ## License

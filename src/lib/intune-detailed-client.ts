@@ -1,6 +1,17 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import "isomorphic-fetch";
-import { collectAllPages } from "./graph-paging";
+import {
+  collectAllPages,
+  collectAllPagesWithStatus,
+  GraphPaginationError,
+} from "./graph-paging";
+import type { ConfigurationSectionData } from "./configuration-sections";
+import { getItemLabel, getStableItemId } from "./configuration-sections";
+import {
+  INTUNE_POLICY_REGISTRY,
+  mapWithConcurrency,
+  sanitizeGraphData,
+} from "./intune-policy-registry";
 
 export function createGraphClient(accessToken: string) {
   return Client.init({
@@ -51,6 +62,7 @@ export interface ConfigurationSetting {
     }>;
     options?: Array<{
       name: string;
+      itemId?: string;
       displayName: string;
       description?: string;
     }>;
@@ -93,17 +105,65 @@ export interface FetchError {
   policyId: string;
   policyName: string;
   policyType: string;
+  familyKey?: string;
   error: string;
   errorCode?: string;
   statusCode?: number;
+  endpoint?: string;
+  permissionHint?: string;
+  partial?: boolean;
 }
+
+const FETCH_ERROR_FAMILY_KEYS: Record<string, string> = {
+  "Settings Catalog": "settingsCatalog",
+  "Device Configurations": "deviceConfigurations",
+  "Administrative Templates": "administrativeTemplates",
+  "Administrative Template": "administrativeTemplates",
+  "Compliance Policies": "compliancePolicies",
+  "App Protection Policies": "appProtectionPolicies",
+  "iOS App Protection Policies": "appProtectionPolicies",
+  "Android App Protection Policies": "appProtectionPolicies",
+  "Windows App Protection Policies": "appProtectionPolicies",
+  "Security Baselines": "securityBaselines",
+  Scripts: "scripts",
+  "Windows PowerShell Scripts": "scripts",
+  "macOS Shell Scripts": "scripts",
+  "App Configurations": "appConfigurations",
+  "Windows Update Policies": "windowsUpdatePolicies",
+  "Enrollment Configurations": "enrollmentConfigurations",
+  "Conditional Access Policies": "conditionalAccessPolicies",
+};
+
+const FETCH_ERROR_ENDPOINTS: Record<string, string> = {
+  "Settings Catalog": "/deviceManagement/configurationPolicies",
+  "Device Configurations": "/deviceManagement/deviceConfigurations",
+  "Administrative Templates": "/deviceManagement/groupPolicyConfigurations",
+  "Administrative Template": "/deviceManagement/groupPolicyConfigurations",
+  "Compliance Policies": "/deviceManagement/deviceCompliancePolicies",
+  "App Protection Policies": "/deviceAppManagement/managedAppProtections",
+  "iOS App Protection Policies":
+    "/deviceAppManagement/iosManagedAppProtections",
+  "Android App Protection Policies":
+    "/deviceAppManagement/androidManagedAppProtections",
+  "Windows App Protection Policies":
+    "/deviceAppManagement/windowsManagedAppProtections",
+  "Security Baselines": "/deviceManagement/intents",
+  "Windows PowerShell Scripts": "/deviceManagement/deviceManagementScripts",
+  "macOS Shell Scripts": "/deviceManagement/deviceShellScripts",
+  "App Configurations": "/deviceAppManagement/mobileAppConfigurations",
+  "Windows Update Policies": "/deviceManagement/deviceConfigurations",
+  "Enrollment Configurations":
+    "/deviceManagement/deviceEnrollmentConfigurations",
+  "Conditional Access Policies": "/identity/conditionalAccess/policies",
+};
 
 export type ProgressCallback = (event: {
   step: string;
-  type: 'policy-type' | 'batch-progress' | 'completed' | 'error';
+  type: "policy-type" | "batch-progress" | "completed" | "error" | "section";
   current?: number;
   total?: number;
   message?: string;
+  section?: ConfigurationSectionData;
 }) => void;
 
 export class DetailedIntuneService {
@@ -118,15 +178,20 @@ export class DetailedIntuneService {
   }
 
   // Conditional Access Policies with details
-  async getConditionalAccessPoliciesDetailed(): Promise<DetailedConfiguration[]> {
+  async getConditionalAccessPoliciesDetailed(): Promise<
+    DetailedConfiguration[]
+  > {
     try {
       const list = await this.client
         .api("/identity/conditionalAccess/policies")
-        .version("v1.0")
+        .version("beta")
         .top(999)
         .get();
 
-      const all = await collectAllPages<any>(this.client as unknown as Client, list);
+      const all = await collectAllPages<any>(
+        this.client as unknown as Client,
+        list,
+      );
       return (all || []).map((p: any) => ({
         ...p,
         configType: "Conditional Access Policy",
@@ -134,24 +199,208 @@ export class DetailedIntuneService {
     } catch (error: any) {
       // Often requires admin-consented permissions; fail soft
       if (error?.statusCode === 403) {
-        console.log("Conditional Access policies skipped - insufficient permissions");
+        console.log(
+          "Conditional Access policies skipped - insufficient permissions",
+        );
       } else {
         console.error("Error fetching conditional access policies:", error);
       }
-      return [];
+      this.recordCollectionError(
+        "Conditional Access Policies",
+        error,
+        "Policy.Read.All",
+      );
+      return this.partialCollectionItems(error, "Conditional Access Policy");
     }
+  }
+
+  private graphError(error: any) {
+    return {
+      message: error?.message || "Microsoft Graph request failed",
+      errorCode: error?.code || error?.error?.code,
+      statusCode: error?.statusCode || error?.response?.status,
+    };
+  }
+
+  private recordCollectionError(
+    policyType: string,
+    error: any,
+    permissionHint?: string,
+  ) {
+    const details = this.graphError(error);
+    this.fetchErrors.push({
+      policyId: `collection-${policyType}`,
+      policyName: policyType,
+      policyType,
+      familyKey: FETCH_ERROR_FAMILY_KEYS[policyType],
+      error: details.message,
+      errorCode: details.errorCode,
+      statusCode: details.statusCode,
+      endpoint: FETCH_ERROR_ENDPOINTS[policyType],
+      permissionHint,
+      partial: error instanceof GraphPaginationError,
+    });
+  }
+
+  private partialCollectionItems(error: unknown, configType: string) {
+    if (!(error instanceof GraphPaginationError)) return [];
+    const message = this.graphError(error).message;
+    return error.items.map((item: any) => ({
+      ...item,
+      displayName: item.displayName || item.name || configType,
+      configType,
+      hasFetchError: true,
+      fetchErrorMessage: message,
+      assignments: item.assignments || [],
+    }));
+  }
+
+  private async fetchRegistrySection(
+    entry: (typeof INTUNE_POLICY_REGISTRY)[number],
+  ): Promise<ConfigurationSectionData> {
+    const base: ConfigurationSectionData = {
+      key: entry.key,
+      familyKey: entry.family,
+      label: entry.label,
+      endpoint: entry.path,
+      permissionHint: entry.permissionHint,
+      selectionPrefix: `additional-${entry.key}`,
+      items: [],
+      legacy: entry.legacy,
+    };
+
+    try {
+      let request = this.client.api(entry.path).version("beta");
+      if (entry.select?.length)
+        request = request.select(entry.select.join(","));
+      if (entry.shape !== "singleton") request = request.top(999);
+      const response = await this.retryWithBackoff(() => request.get(), 3, 500);
+
+      let rawItems: any[];
+      let pagingError: any;
+      if (entry.shape === "singleton") {
+        rawItems = response ? [response] : [];
+      } else {
+        const paged = await collectAllPagesWithStatus<any>(
+          this.client as unknown as Client,
+          response,
+        );
+        rawItems = paged.items;
+        pagingError = paged.complete ? undefined : paged.error;
+      }
+
+      if (entry.childCollections?.length && rawItems.length > 0) {
+        rawItems = await mapWithConcurrency(rawItems, 4, async (item: any) => {
+          if (!item?.id) return item;
+          const enriched = { ...item };
+          const enrichmentWarnings: string[] = [];
+          for (const child of entry.childCollections || []) {
+            try {
+              let childRequest = this.client
+                .api(`${entry.path}('${item.id}')/${child.path}`)
+                .version("beta");
+              if (child.expand)
+                childRequest = childRequest.expand(child.expand);
+              if (child.shape !== "singleton")
+                childRequest = childRequest.top(999);
+              const childResponse = await this.retryWithBackoff(
+                () => childRequest.get(),
+                2,
+                300,
+              );
+              if (child.shape === "singleton") {
+                enriched[child.property] = childResponse;
+              } else {
+                const childPages = await collectAllPagesWithStatus<any>(
+                  this.client as unknown as Client,
+                  childResponse,
+                );
+                enriched[child.property] = childPages.items;
+                if (!childPages.complete) {
+                  enrichmentWarnings.push(
+                    `${child.property}: ${this.graphError(childPages.error).message}`,
+                  );
+                }
+              }
+            } catch (error: any) {
+              enrichmentWarnings.push(
+                `${child.property}: ${this.graphError(error).message}`,
+              );
+            }
+          }
+          if (enrichmentWarnings.length) {
+            enriched.enrichmentWarnings = enrichmentWarnings;
+          }
+          return enriched;
+        });
+      }
+
+      base.items = rawItems.map((item, index) => {
+        const sanitized = sanitizeGraphData(
+          item,
+          entry.sensitiveFields,
+        ) as Record<string, any>;
+        return {
+          ...sanitized,
+          id: getStableItemId(base, sanitized, index),
+          displayName: getItemLabel(base, sanitized),
+          configType: entry.label,
+          sourceEndpoint: entry.path,
+          registryKey: entry.key,
+        };
+      });
+
+      const enrichmentWarnings = rawItems.flatMap((item: any) =>
+        Array.isArray(item.enrichmentWarnings) ? item.enrichmentWarnings : [],
+      );
+      if (pagingError || enrichmentWarnings.length > 0) {
+        const pagingDetails = pagingError
+          ? this.graphError(pagingError)
+          : undefined;
+        base.error = {
+          message: [pagingDetails?.message, ...new Set(enrichmentWarnings)]
+            .filter(Boolean)
+            .join("; "),
+          errorCode: pagingDetails?.errorCode,
+          statusCode: pagingDetails?.statusCode,
+          permissionHint: entry.permissionHint,
+          partial: true,
+        };
+      }
+    } catch (error: any) {
+      const details = this.graphError(error);
+      if (!(details.statusCode === 404 && entry.notConfiguredOn404)) {
+        base.error = {
+          ...details,
+          permissionHint: entry.permissionHint,
+        };
+      }
+    }
+
+    this.progressCallback?.({
+      step: entry.label,
+      type: "section",
+      section: base,
+    });
+    return base;
+  }
+
+  async getAdditionalConfigurationSections() {
+    return mapWithConcurrency(INTUNE_POLICY_REGISTRY, 6, (entry) =>
+      this.fetchRegistrySection(entry),
+    );
   }
 
   // Helper function to add delay between requests
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Helper function to retry an API call with exponential backoff and jitter
   private async retryWithBackoff<T>(
     fn: () => Promise<T>,
     maxRetries: number = 5,
-    initialDelay: number = 1000
+    initialDelay: number = 1000,
   ): Promise<T> {
     let lastError: any;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -160,7 +409,7 @@ export class DetailedIntuneService {
       } catch (error: any) {
         lastError = error;
         const statusCode = error?.statusCode || error?.response?.status;
-        const errorMessage = error?.message || '';
+        const errorMessage = error?.message || "";
 
         // Don't retry on permanent failures
         // 404 or 403 - resource doesn't exist or forbidden
@@ -168,7 +417,7 @@ export class DetailedIntuneService {
         if (
           statusCode === 404 ||
           statusCode === 403 ||
-          errorMessage.includes('No OData route exists')
+          errorMessage.includes("No OData route exists")
         ) {
           throw error;
         }
@@ -179,11 +428,14 @@ export class DetailedIntuneService {
         }
 
         // Check if it's a rate limit error (429)
-        if (statusCode === 429 || error?.code === 'TooManyRequests') {
+        if (statusCode === 429 || error?.code === "TooManyRequests") {
           // Try to get Retry-After header
-          const retryAfter = error?.headers?.['retry-after'] || error?.retryAfter;
+          const retryAfter =
+            error?.headers?.["retry-after"] || error?.retryAfter;
           const retryDelay = retryAfter ? parseInt(retryAfter) * 1000 : 30000; // Default to 30s
-          console.log(`Rate limited (429). Waiting ${retryDelay}ms before retry ${attempt + 1}/${maxRetries}`);
+          console.log(
+            `Rate limited (429). Waiting ${retryDelay}ms before retry ${attempt + 1}/${maxRetries}`,
+          );
           await this.delay(retryDelay);
           continue;
         }
@@ -193,7 +445,9 @@ export class DetailedIntuneService {
         const jitter = Math.random() * 500; // Random jitter up to 500ms
         const delayMs = exponentialDelay + jitter;
 
-        console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${Math.round(delayMs)}ms (error: ${error?.message || 'Unknown'})`);
+        console.log(
+          `Retry attempt ${attempt + 1}/${maxRetries} after ${Math.round(delayMs)}ms (error: ${error?.message || "Unknown"})`,
+        );
         await this.delay(delayMs);
       }
     }
@@ -201,18 +455,27 @@ export class DetailedIntuneService {
   }
 
   // 1. Settings Catalog with full settings
-  async getConfigurationPoliciesWithSettings(): Promise<DetailedConfiguration[]> {
+  async getConfigurationPoliciesWithSettings(): Promise<
+    DetailedConfiguration[]
+  > {
     try {
       console.log("Fetching Settings Catalog policies...");
       const policies = await this.client
         .api("/deviceManagement/configurationPolicies")
         .version("beta")
-        .select("id,name,description,platforms,technologies,createdDateTime,lastModifiedDateTime,settingCount,templateReference")
+        .select(
+          "id,name,description,platforms,technologies,createdDateTime,lastModifiedDateTime,settingCount,templateReference",
+        )
         .top(999)
         .get();
 
-      const allPolicies = await collectAllPages<any>(this.client as unknown as Client, policies);
-      console.log(`Found ${allPolicies?.length || 0} Settings Catalog policies`);
+      const allPolicies = await collectAllPages<any>(
+        this.client as unknown as Client,
+        policies,
+      );
+      console.log(
+        `Found ${allPolicies?.length || 0} Settings Catalog policies`,
+      );
 
       // Process policies in batches to avoid rate limiting
       // Larger batch size for better performance, smaller for more progress updates
@@ -228,11 +491,11 @@ export class DetailedIntuneService {
 
         // Emit progress callback
         this.progressCallback?.({
-          step: 'Settings Catalog',
-          type: 'batch-progress',
+          step: "Settings Catalog",
+          type: "batch-progress",
           current: batchNumber,
           total: totalBatches,
-          message: `Processing Settings Catalog batch ${batchNumber}/${totalBatches}`
+          message: `Processing Settings Catalog batch ${batchNumber}/${totalBatches}`,
         });
 
         const batchResults = await Promise.all(
@@ -240,74 +503,142 @@ export class DetailedIntuneService {
             try {
               // Try to fetch settings with expanded definitions first
               let settings: any[] = [];
+              const policyWarnings: string[] = [];
               try {
-                const settingsResponse = await this.retryWithBackoff(async () => {
-                  return await this.client
-                    .api(`/deviceManagement/configurationPolicies('${policy.id}')/settings`)
-                    .version("beta")
-                    .top(1000)
-                    .expand("settingDefinitions")
-                    .get();
-                });
-                settings = await collectAllPages<any>(this.client as unknown as Client, settingsResponse);
-              } catch (expandError: any) {
-                // If expand fails, try without it as a fallback
-                console.warn(`Failed to fetch with expand for ${policy.name}, trying without expand...`);
-                try {
-                  const settingsResponse = await this.retryWithBackoff(async () => {
+                const settingsResponse = await this.retryWithBackoff(
+                  async () => {
                     return await this.client
-                      .api(`/deviceManagement/configurationPolicies('${policy.id}')/settings`)
+                      .api(
+                        `/deviceManagement/configurationPolicies('${policy.id}')/settings`,
+                      )
                       .version("beta")
                       .top(1000)
+                      .expand("settingDefinitions")
                       .get();
-                  });
-                  settings = await collectAllPages<any>(this.client as unknown as Client, settingsResponse);
+                  },
+                );
+                const settingsPages = await collectAllPagesWithStatus<any>(
+                  this.client as unknown as Client,
+                  settingsResponse,
+                );
+                settings = settingsPages.items;
+                if (!settingsPages.complete) {
+                  policyWarnings.push(
+                    `Settings: ${this.graphError(settingsPages.error).message}`,
+                  );
+                }
+              } catch {
+                // If expand fails, try without it as a fallback
+                console.warn(
+                  `Failed to fetch with expand for ${policy.name}, trying without expand...`,
+                );
+                try {
+                  const settingsResponse = await this.retryWithBackoff(
+                    async () => {
+                      return await this.client
+                        .api(
+                          `/deviceManagement/configurationPolicies('${policy.id}')/settings`,
+                        )
+                        .version("beta")
+                        .top(1000)
+                        .get();
+                    },
+                  );
+                  const settingsPages = await collectAllPagesWithStatus<any>(
+                    this.client as unknown as Client,
+                    settingsResponse,
+                  );
+                  settings = settingsPages.items;
+                  if (!settingsPages.complete) {
+                    policyWarnings.push(
+                      `Settings: ${this.graphError(settingsPages.error).message}`,
+                    );
+                  }
                 } catch (fallbackError: any) {
                   throw fallbackError;
                 }
               }
 
               // Fetch assignments with retry
-              let assignmentsResponse;
+              let assignments: any[] = [];
               try {
-                assignmentsResponse = await this.retryWithBackoff(() =>
+                const assignmentsResponse = await this.retryWithBackoff(() =>
                   this.client
-                    .api(`/deviceManagement/configurationPolicies('${policy.id}')/assignments`)
+                    .api(
+                      `/deviceManagement/configurationPolicies('${policy.id}')/assignments`,
+                    )
                     .version("beta")
-                    .get()
+                    .get(),
                 );
+                const assignmentPages = await collectAllPagesWithStatus<any>(
+                  this.client as unknown as Client,
+                  assignmentsResponse,
+                );
+                assignments = assignmentPages.items;
+                if (!assignmentPages.complete) {
+                  policyWarnings.push(
+                    `Assignments: ${this.graphError(assignmentPages.error).message}`,
+                  );
+                }
               } catch (assignmentError: any) {
-                console.warn(`Failed to fetch assignments for ${policy.name}:`, assignmentError?.message);
-                assignmentsResponse = { value: [] };
+                console.warn(
+                  `Failed to fetch assignments for ${policy.name}:`,
+                  assignmentError?.message,
+                );
+                policyWarnings.push(
+                  `Assignments: ${assignmentError?.message || "request failed"}`,
+                );
               }
-              const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+
+              if (policyWarnings.length > 0) {
+                this.fetchErrors.push({
+                  policyId: policy.id,
+                  policyName: policy.name,
+                  policyType: "Settings Catalog",
+                  familyKey: "settingsCatalog",
+                  endpoint: `/deviceManagement/configurationPolicies('${policy.id}')`,
+                  error: [...new Set(policyWarnings)].join("; "),
+                  partial: true,
+                });
+              }
 
               return {
                 ...policy,
                 displayName: policy.name,
                 configType: "Settings Catalog",
                 settings: settings || [],
-                assignments: assignments || []
+                assignments: assignments || [],
+                hasFetchError: policyWarnings.length > 0,
+                fetchErrorMessage:
+                  policyWarnings.length > 0
+                    ? [...new Set(policyWarnings)].join("; ")
+                    : undefined,
               };
             } catch (error: any) {
-              const errorMessage = error?.message || "Failed to fetch policy settings";
+              const errorMessage =
+                error?.message || "Failed to fetch policy settings";
               const errorCode = error?.code || error?.error?.code;
               const statusCode = error?.statusCode || error?.response?.status;
 
-              console.error(`Error fetching details for policy ${policy.name}:`, {
-                message: errorMessage,
-                code: errorCode,
-                status: statusCode
-              });
+              console.error(
+                `Error fetching details for policy ${policy.name}:`,
+                {
+                  message: errorMessage,
+                  code: errorCode,
+                  status: statusCode,
+                },
+              );
 
               // Track the fetch error with more details
               this.fetchErrors.push({
                 policyId: policy.id,
                 policyName: policy.name,
                 policyType: "Settings Catalog",
+                familyKey: "settingsCatalog",
+                endpoint: `/deviceManagement/configurationPolicies('${policy.id}')`,
                 error: errorMessage,
                 errorCode: errorCode,
-                statusCode: statusCode
+                statusCode: statusCode,
               });
 
               return {
@@ -316,10 +647,11 @@ export class DetailedIntuneService {
                 configType: "Settings Catalog",
                 settings: [],
                 assignments: [],
-                hasFetchError: true
+                hasFetchError: true,
+                fetchErrorMessage: errorMessage,
               };
             }
-          })
+          }),
         );
 
         detailedPolicies.push(...batchResults);
@@ -331,11 +663,18 @@ export class DetailedIntuneService {
         }
       }
 
-      console.log(`Successfully fetched ${detailedPolicies.filter(p => !p.hasFetchError).length}/${detailedPolicies.length} Settings Catalog policies`);
+      console.log(
+        `Successfully fetched ${detailedPolicies.filter((p) => !p.hasFetchError).length}/${detailedPolicies.length} Settings Catalog policies`,
+      );
       return detailedPolicies;
     } catch (error) {
       console.error("Error fetching configuration policies:", error);
-      return [];
+      this.recordCollectionError(
+        "Settings Catalog",
+        error,
+        "DeviceManagementConfiguration.Read.All",
+      );
+      return this.partialCollectionItems(error, "Settings Catalog");
     }
   }
 
@@ -349,122 +688,285 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
-      const allConfigs = await collectAllPages<any>(this.client as unknown as Client, configs);
+      const allConfigs = await collectAllPages<any>(
+        this.client as unknown as Client,
+        configs,
+      );
+
+      const nonUpdateRingConfigs = (allConfigs || []).filter(
+        (config) =>
+          !String(config["@odata.type"] || "").includes(
+            "windowsUpdateForBusinessConfiguration",
+          ),
+      );
 
       const detailedConfigs = await Promise.all(
-        (allConfigs || []).map(async (config: any) => {
+        nonUpdateRingConfigs.map(async (config: any) => {
           try {
             // Fetch assignments with retry
             let assignmentsResponse;
             try {
               assignmentsResponse = await this.retryWithBackoff(() =>
                 this.client
-                  .api(`/deviceManagement/deviceConfigurations('${config.id}')/assignments`)
+                  .api(
+                    `/deviceManagement/deviceConfigurations('${config.id}')/assignments`,
+                  )
                   .version("beta")
-                  .get()
+                  .get(),
               );
             } catch (assignmentError: any) {
-              console.warn(`Failed to fetch assignments for ${config.displayName}:`, assignmentError?.message);
+              console.warn(
+                `Failed to fetch assignments for ${config.displayName}:`,
+                assignmentError?.message,
+              );
               assignmentsResponse = { value: [] };
             }
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+            const assignments = await collectAllPages<any>(
+              this.client as unknown as Client,
+              assignmentsResponse,
+            );
 
             // The config object already contains all settings as properties
             return {
               ...config,
               configType: this.getConfigurationType(config["@odata.type"]),
-              assignments: assignments || []
+              assignments: assignments || [],
             };
           } catch (error) {
-            console.error(`Error fetching details for config ${config.displayName}:`, error);
+            console.error(
+              `Error fetching details for config ${config.displayName}:`,
+              error,
+            );
             return {
               ...config,
               configType: this.getConfigurationType(config["@odata.type"]),
-              assignments: []
+              assignments: [],
             };
           }
-        })
+        }),
       );
 
       return detailedConfigs;
     } catch (error) {
       console.error("Error fetching device configurations:", error);
-      return [];
+      this.recordCollectionError(
+        "Device Configurations",
+        error,
+        "DeviceManagementConfiguration.Read.All",
+      );
+      return this.partialCollectionItems(error, "Device Configuration").filter(
+        (config) =>
+          !String(config["@odata.type"] || "").includes(
+            "windowsUpdateForBusinessConfiguration",
+          ),
+      );
     }
   }
 
   // 3. Administrative Templates with definition values
-  async getGroupPolicyConfigurationsDetailed(): Promise<DetailedConfiguration[]> {
+  async getGroupPolicyConfigurationsDetailed(): Promise<
+    DetailedConfiguration[]
+  > {
     try {
       console.log("Fetching Administrative Templates...");
       const configs = await this.client
         .api("/deviceManagement/groupPolicyConfigurations")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,roleScopeTagIds")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,roleScopeTagIds",
+        )
         .top(999)
         .get();
 
-      const allConfigs = await collectAllPages<any>(this.client as unknown as Client, configs);
+      const allConfigs = await collectAllPages<any>(
+        this.client as unknown as Client,
+        configs,
+      );
 
-      const detailedConfigs = await Promise.all(
-        (allConfigs || []).map(async (config: any) => {
+      const detailedConfigs = await mapWithConcurrency(
+        allConfigs || [],
+        3,
+        async (config: any) => {
+          const policyWarnings: string[] = [];
           try {
             // Fetch definition values (actual settings) with retry
-            let definitionValues;
+            let definitionValuesAll: any[] = [];
             try {
-              definitionValues = await this.retryWithBackoff(() =>
+              const definitionValues = await this.retryWithBackoff(() =>
                 this.client
-                  .api(`/deviceManagement/groupPolicyConfigurations('${config.id}')/definitionValues`)
+                  .api(
+                    `/deviceManagement/groupPolicyConfigurations('${config.id}')/definitionValues`,
+                  )
                   .version("beta")
                   .expand("definition")
                   .top(999)
-                  .get()
+                  .get(),
               );
+              const definitionPages = await collectAllPagesWithStatus<any>(
+                this.client as unknown as Client,
+                definitionValues,
+              );
+              definitionValuesAll = definitionPages.items;
+              if (!definitionPages.complete) {
+                policyWarnings.push(
+                  `Definition values: ${this.graphError(definitionPages.error).message}`,
+                );
+              }
             } catch (defError: any) {
-              console.warn(`Failed to fetch definition values for ${config.displayName}:`, defError?.message);
-              definitionValues = { value: [] };
+              console.warn(
+                `Failed to fetch definition values for ${config.displayName}:`,
+                defError?.message,
+              );
+              policyWarnings.push(
+                `Definition values: ${defError?.message || "request failed"}`,
+              );
+              definitionValuesAll = [];
             }
-            const definitionValuesAll = await collectAllPages<any>(this.client as unknown as Client, definitionValues);
+
+            const definitionValuesWithPresentations = await mapWithConcurrency(
+              definitionValuesAll || [],
+              3,
+              async (definitionValue: any) => {
+                try {
+                  const response = await this.retryWithBackoff(
+                    () =>
+                      this.client
+                        .api(
+                          `/deviceManagement/groupPolicyConfigurations('${config.id}')/definitionValues('${definitionValue.id}')/presentationValues`,
+                        )
+                        .version("beta")
+                        .expand("presentation")
+                        .top(999)
+                        .get(),
+                    3,
+                    500,
+                  );
+                  const presentationPages =
+                    await collectAllPagesWithStatus<any>(
+                      this.client as unknown as Client,
+                      response,
+                    );
+                  if (!presentationPages.complete) {
+                    policyWarnings.push(
+                      `Presentation values: ${this.graphError(presentationPages.error).message}`,
+                    );
+                  }
+                  return {
+                    ...definitionValue,
+                    presentationValues: presentationPages.items,
+                    presentationFetchError: !presentationPages.complete,
+                  };
+                } catch (error: any) {
+                  console.warn(
+                    `Presentation values unavailable for ${config.displayName}:`,
+                    error?.message,
+                  );
+                  policyWarnings.push(
+                    `Presentation values: ${error?.message || "request failed"}`,
+                  );
+                  return {
+                    ...definitionValue,
+                    presentationValues: [],
+                    presentationFetchError: true,
+                  };
+                }
+              },
+            );
 
             // Fetch assignments with retry
-            let assignmentsResponse;
+            let assignments: any[] = [];
             try {
-              assignmentsResponse = await this.retryWithBackoff(() =>
+              const assignmentsResponse = await this.retryWithBackoff(() =>
                 this.client
-                  .api(`/deviceManagement/groupPolicyConfigurations('${config.id}')/assignments`)
+                  .api(
+                    `/deviceManagement/groupPolicyConfigurations('${config.id}')/assignments`,
+                  )
                   .version("beta")
-                  .get()
+                  .get(),
               );
+              const assignmentPages = await collectAllPagesWithStatus<any>(
+                this.client as unknown as Client,
+                assignmentsResponse,
+              );
+              assignments = assignmentPages.items;
+              if (!assignmentPages.complete) {
+                policyWarnings.push(
+                  `Assignments: ${this.graphError(assignmentPages.error).message}`,
+                );
+              }
             } catch (assignmentError: any) {
-              console.warn(`Failed to fetch assignments for ${config.displayName}:`, assignmentError?.message);
-              assignmentsResponse = { value: [] };
+              console.warn(
+                `Failed to fetch assignments for ${config.displayName}:`,
+                assignmentError?.message,
+              );
+              policyWarnings.push(
+                `Assignments: ${assignmentError?.message || "request failed"}`,
+              );
+              assignments = [];
             }
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+
+            if (policyWarnings.length > 0) {
+              this.fetchErrors.push({
+                policyId: config.id,
+                policyName: config.displayName,
+                policyType: "Administrative Template",
+                familyKey: "administrativeTemplates",
+                endpoint: `/deviceManagement/groupPolicyConfigurations('${config.id}')`,
+                error: [...new Set(policyWarnings)].join("; "),
+                partial: true,
+              });
+            }
 
             return {
               ...config,
               configType: "Administrative Template",
-              definitionValues: definitionValuesAll || [],
+              definitionValues: definitionValuesWithPresentations,
               assignments: assignments || [],
-              version: 1
+              version: 1,
+              hasFetchError: policyWarnings.length > 0,
+              fetchErrorMessage:
+                policyWarnings.length > 0
+                  ? [...new Set(policyWarnings)].join("; ")
+                  : undefined,
             };
           } catch (error) {
-            console.error(`Error fetching details for group policy ${config.displayName}:`, error);
+            console.error(
+              `Error fetching details for group policy ${config.displayName}:`,
+              error,
+            );
+            this.fetchErrors.push({
+              policyId: config.id,
+              policyName: config.displayName,
+              policyType: "Administrative Template",
+              familyKey: "administrativeTemplates",
+              endpoint: `/deviceManagement/groupPolicyConfigurations('${config.id}')`,
+              error:
+                error instanceof Error ? error.message : "Detail fetch failed",
+              partial: true,
+            });
             return {
               ...config,
               configType: "Administrative Template",
               definitionValues: [],
               assignments: [],
-              version: 1
+              version: 1,
+              hasFetchError: true,
+              fetchErrorMessage:
+                error instanceof Error ? error.message : "Detail fetch failed",
             };
           }
-        })
+        },
       );
 
       return detailedConfigs;
     } catch (error) {
       console.error("Error fetching group policy configurations:", error);
-      return [];
+      this.recordCollectionError(
+        "Administrative Templates",
+        error,
+        "DeviceManagementConfiguration.Read.All",
+      );
+      return this.partialCollectionItems(error, "Administrative Template");
     }
   }
 
@@ -478,7 +980,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
-      const allPolicies = await collectAllPages<any>(this.client as unknown as Client, policies);
+      const allPolicies = await collectAllPages<any>(
+        this.client as unknown as Client,
+        policies,
+      );
 
       const detailedPolicies = await Promise.all(
         (allPolicies || []).map(async (policy: any) => {
@@ -488,15 +993,23 @@ export class DetailedIntuneService {
             try {
               assignmentsResponse = await this.retryWithBackoff(() =>
                 this.client
-                  .api(`/deviceManagement/deviceCompliancePolicies('${policy.id}')/assignments`)
+                  .api(
+                    `/deviceManagement/deviceCompliancePolicies('${policy.id}')/assignments`,
+                  )
                   .version("beta")
-                  .get()
+                  .get(),
               );
             } catch (assignmentError: any) {
-              console.warn(`Failed to fetch assignments for ${policy.displayName}:`, assignmentError?.message);
+              console.warn(
+                `Failed to fetch assignments for ${policy.displayName}:`,
+                assignmentError?.message,
+              );
               assignmentsResponse = { value: [] };
             }
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+            const assignments = await collectAllPages<any>(
+              this.client as unknown as Client,
+              assignmentsResponse,
+            );
 
             // Fetch scheduled actions for rules with retry
             // Note: Not all compliance policies support the scheduledActionsForRule endpoint
@@ -504,43 +1017,59 @@ export class DetailedIntuneService {
             try {
               scheduledActions = await this.retryWithBackoff(() =>
                 this.client
-                  .api(`/deviceManagement/deviceCompliancePolicies('${policy.id}')/scheduledActionsForRule`)
+                  .api(
+                    `/deviceManagement/deviceCompliancePolicies('${policy.id}')/scheduledActionsForRule`,
+                  )
                   .version("beta")
                   .expand("scheduledActionConfigurations")
-                  .get()
+                  .get(),
               );
             } catch (scheduledError: any) {
-              const errorMessage = scheduledError?.message || '';
+              const errorMessage = scheduledError?.message || "";
               // Don't log warnings for known API limitations (OData route not exists)
-              if (!errorMessage.includes('No OData route exists')) {
-                console.warn(`Failed to fetch scheduled actions for ${policy.displayName}:`, scheduledError?.message);
+              if (!errorMessage.includes("No OData route exists")) {
+                console.warn(
+                  `Failed to fetch scheduled actions for ${policy.displayName}:`,
+                  scheduledError?.message,
+                );
               }
               scheduledActions = { value: [] };
             }
-            const scheduledActionsAll = await collectAllPages<any>(this.client as unknown as Client, scheduledActions);
+            const scheduledActionsAll = await collectAllPages<any>(
+              this.client as unknown as Client,
+              scheduledActions,
+            );
 
             return {
               ...policy,
               configType: "Compliance Policy",
               scheduledActionsForRule: scheduledActionsAll || [],
-              assignments: assignments || []
+              assignments: assignments || [],
             };
           } catch (error) {
-            console.error(`Error fetching details for compliance policy ${policy.displayName}:`, error);
+            console.error(
+              `Error fetching details for compliance policy ${policy.displayName}:`,
+              error,
+            );
             return {
               ...policy,
               configType: "Compliance Policy",
               scheduledActionsForRule: [],
-              assignments: []
+              assignments: [],
             };
           }
-        })
+        }),
       );
 
       return detailedPolicies;
     } catch (error) {
       console.error("Error fetching compliance policies:", error);
-      return [];
+      this.recordCollectionError(
+        "Compliance Policies",
+        error,
+        "DeviceManagementConfiguration.Read.All",
+      );
+      return this.partialCollectionItems(error, "Compliance Policy");
     }
   }
 
@@ -550,36 +1079,74 @@ export class DetailedIntuneService {
       console.log("Fetching App Protection Policies...");
 
       // Fetch iOS, Android, and Windows MAM policies in parallel
-      const [iosPolicies, androidPolicies, windowsPolicies] = await Promise.all([
-        this.client
-          .api("/deviceAppManagement/iosManagedAppProtections")
-          .version("beta")
-          .top(999)
-          .get()
-          .catch(() => ({ value: [] })),
-        this.client
-          .api("/deviceAppManagement/androidManagedAppProtections")
-          .version("beta")
-          .top(999)
-          .get()
-          .catch(() => ({ value: [] })),
-        this.client
-          .api("/deviceAppManagement/windowsManagedAppProtections")
-          .version("beta")
-          .top(999)
-          .get()
-          .catch(() => ({ value: [] }))
-      ]);
+      const [iosPolicies, androidPolicies, windowsPolicies] = await Promise.all(
+        [
+          this.client
+            .api("/deviceAppManagement/iosManagedAppProtections")
+            .version("beta")
+            .top(999)
+            .get()
+            .catch((error) => {
+              this.recordCollectionError(
+                "iOS App Protection Policies",
+                error,
+                "DeviceManagementApps.Read.All",
+              );
+              return { value: [] };
+            }),
+          this.client
+            .api("/deviceAppManagement/androidManagedAppProtections")
+            .version("beta")
+            .top(999)
+            .get()
+            .catch((error) => {
+              this.recordCollectionError(
+                "Android App Protection Policies",
+                error,
+                "DeviceManagementApps.Read.All",
+              );
+              return { value: [] };
+            }),
+          this.client
+            .api("/deviceAppManagement/windowsManagedAppProtections")
+            .version("beta")
+            .top(999)
+            .get()
+            .catch((error) => {
+              this.recordCollectionError(
+                "Windows App Protection Policies",
+                error,
+                "DeviceManagementApps.Read.All",
+              );
+              return { value: [] };
+            }),
+        ],
+      );
 
-      const allIosPolicies = await collectAllPages<any>(this.client as unknown as Client, iosPolicies);
-      const allAndroidPolicies = await collectAllPages<any>(this.client as unknown as Client, androidPolicies);
-      const allWindowsPolicies = await collectAllPages<any>(this.client as unknown as Client, windowsPolicies);
+      const allIosPolicies = await collectAllPages<any>(
+        this.client as unknown as Client,
+        iosPolicies,
+      );
+      const allAndroidPolicies = await collectAllPages<any>(
+        this.client as unknown as Client,
+        androidPolicies,
+      );
+      const allWindowsPolicies = await collectAllPages<any>(
+        this.client as unknown as Client,
+        windowsPolicies,
+      );
 
       // Combine all policies and fetch their assignments
       const allPolicies = [
         ...(allIosPolicies || []).map((p: any) => ({ ...p, platform: "iOS" })),
-        ...(allAndroidPolicies || []).map((p: any) => ({ ...p, platform: "Android" })),
-        ...(allWindowsPolicies || []).map((p: any) => ({ ...p, platform: "Windows" }))
+        ...(allAndroidPolicies || []).map((p: any) => ({
+          ...p,
+          platform: "Android",
+        })),
+        ...(allWindowsPolicies || []).map((p: any) => ({
+          ...p,
+          platform: "Windows",
+        })),
       ];
 
       const detailedPolicies = await Promise.all(
@@ -595,36 +1162,60 @@ export class DetailedIntuneService {
               endpoint = `/deviceAppManagement/windowsManagedAppProtections('${policy.id}')/assignments`;
             }
 
-            // Fetch assignments
+            // Fetch assignments and targeted apps
             const assignmentsResponse = await this.client
               .api(endpoint)
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+            const assignments = await collectAllPages<any>(
+              this.client as unknown as Client,
+              assignmentsResponse,
+            );
+
+            const appsEndpoint = endpoint.replace(/\/assignments$/, "/apps");
+            const appsResponse = await this.client
+              .api(appsEndpoint)
+              .version("beta")
+              .top(999)
+              .get()
+              .catch(() => ({ value: [] }));
+            const apps = await collectAllPages<any>(
+              this.client as unknown as Client,
+              appsResponse,
+            );
 
             return {
               ...policy,
               configType: "App Protection Policy",
               platformType: policy.platform,
-              assignments: assignments || []
+              assignments: assignments || [],
+              apps: apps || [],
             };
           } catch (error) {
-            console.error(`Error fetching details for app protection policy ${policy.displayName}:`, error);
+            console.error(
+              `Error fetching details for app protection policy ${policy.displayName}:`,
+              error,
+            );
             return {
               ...policy,
               configType: "App Protection Policy",
               platformType: policy.platform,
-              assignments: []
+              assignments: [],
             };
           }
-        })
+        }),
       );
 
       return detailedPolicies;
     } catch (error) {
       console.error("Error fetching app protection policies:", error);
-      return [];
+      this.recordCollectionError(
+        "App Protection Policies",
+        error,
+        "DeviceManagementApps.Read.All",
+      );
+      return this.partialCollectionItems(error, "App Protection Policy");
     }
   }
 
@@ -635,11 +1226,16 @@ export class DetailedIntuneService {
       const intents = await this.client
         .api("/deviceManagement/intents")
         .version("beta")
-        .select("id,displayName,description,lastModifiedDateTime,isAssigned,templateId")
+        .select(
+          "id,displayName,description,lastModifiedDateTime,isAssigned,templateId",
+        )
         .top(999)
         .get();
 
-      const allIntents = await collectAllPages<any>(this.client as unknown as Client, intents);
+      const allIntents = await collectAllPages<any>(
+        this.client as unknown as Client,
+        intents,
+      );
 
       const detailedIntents = await Promise.all(
         (allIntents || []).map(async (intent: any) => {
@@ -651,7 +1247,10 @@ export class DetailedIntuneService {
               .expand("settings")
               .get()
               .catch(() => ({ value: [] }));
-            const categoriesAll = await collectAllPages<any>(this.client as unknown as Client, categories);
+            const categoriesAll = await collectAllPages<any>(
+              this.client as unknown as Client,
+              categories,
+            );
 
             // Fetch assignments
             const assignmentsResponse = await this.client
@@ -659,41 +1258,55 @@ export class DetailedIntuneService {
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+            const assignments = await collectAllPages<any>(
+              this.client as unknown as Client,
+              assignmentsResponse,
+            );
 
             return {
               ...intent,
               configType: "Security Baseline",
               categories: categoriesAll || [],
-              assignments: assignments || []
+              assignments: assignments || [],
             };
           } catch (error) {
-            console.error(`Error fetching details for intent ${intent.displayName}:`, error);
+            console.error(
+              `Error fetching details for intent ${intent.displayName}:`,
+              error,
+            );
             return {
               ...intent,
               configType: "Security Baseline",
               categories: [],
-              assignments: []
+              assignments: [],
             };
           }
-        })
+        }),
       );
 
       return detailedIntents;
     } catch (error) {
       console.error("Error fetching security baselines:", error);
-      return [];
+      this.recordCollectionError(
+        "Security Baselines",
+        error,
+        "DeviceManagementConfiguration.Read.All",
+      );
+      return this.partialCollectionItems(error, "Security Baseline");
     }
   }
 
   // 6. Scripts with content
-  async getScriptsDetailed(): Promise<{windows: DetailedConfiguration[], macOS: DetailedConfiguration[]}> {
+  async getScriptsDetailed(): Promise<{
+    windows: DetailedConfiguration[];
+    macOS: DetailedConfiguration[];
+  }> {
     const windowsScripts = await this.getWindowsScriptsDetailed();
     const macOSScripts = await this.getMacOSScriptsDetailed();
-    
+
     return {
       windows: windowsScripts,
-      macOS: macOSScripts
+      macOS: macOSScripts,
     };
   }
 
@@ -703,11 +1316,16 @@ export class DetailedIntuneService {
       const scripts = await this.client
         .api("/deviceManagement/deviceManagementScripts")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,runAsAccount,enforceSignatureCheck,runAs32Bit")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,runAsAccount,enforceSignatureCheck,runAs32Bit",
+        )
         .top(999)
         .get();
 
-      const allScripts = await collectAllPages<any>(this.client as unknown as Client, scripts);
+      const allScripts = await collectAllPages<any>(
+        this.client as unknown as Client,
+        scripts,
+      );
 
       const detailedScripts = await Promise.all(
         (allScripts || []).map(async (script: any) => {
@@ -722,45 +1340,65 @@ export class DetailedIntuneService {
 
             // Fetch assignments
             const assignmentsResponse = await this.client
-              .api(`/deviceManagement/deviceManagementScripts('${script.id}')/assignments`)
+              .api(
+                `/deviceManagement/deviceManagementScripts('${script.id}')/assignments`,
+              )
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+            const assignments = await collectAllPages<any>(
+              this.client as unknown as Client,
+              assignmentsResponse,
+            );
 
             return {
               ...script,
-              scriptContent: scriptContent.scriptContent ? atob(scriptContent.scriptContent) : null,
+              scriptContent: scriptContent.scriptContent
+                ? Buffer.from(scriptContent.scriptContent, "base64").toString(
+                    "utf8",
+                  )
+                : null,
               configType: "PowerShell Script",
               platformType: "Windows",
-              assignments: assignments || []
+              assignments: assignments || [],
             };
           } catch (error) {
-            console.error(`Error fetching details for script ${script.displayName}:`, error);
+            console.error(
+              `Error fetching details for script ${script.displayName}:`,
+              error,
+            );
             return {
               ...script,
               configType: "PowerShell Script",
               platformType: "Windows",
-              assignments: []
+              assignments: [],
             };
           }
-        })
+        }),
       );
 
       return detailedScripts;
     } catch (error: any) {
       // Check if it's a permission error
-      if (error?.statusCode === 403 || error?.code === 'Forbidden') {
-        console.log("Windows PowerShell Scripts skipped - insufficient permissions");
+      if (error?.statusCode === 403 || error?.code === "Forbidden") {
+        console.log(
+          "Windows PowerShell Scripts skipped - insufficient permissions",
+        );
         this.permissionErrors.push({
           resource: "Windows PowerShell Scripts",
           requiredPermission: "DeviceManagementScripts.Read.All",
-          message: "Unable to fetch Windows PowerShell Scripts due to missing permissions"
+          message:
+            "Unable to fetch Windows PowerShell Scripts due to missing permissions",
         });
       } else {
         console.error("Error fetching Windows scripts:", error);
+        this.recordCollectionError(
+          "Windows PowerShell Scripts",
+          error,
+          "DeviceManagementScripts.Read.All",
+        );
       }
-      return [];
+      return this.partialCollectionItems(error, "PowerShell Script");
     }
   }
 
@@ -770,11 +1408,16 @@ export class DetailedIntuneService {
       const scripts = await this.client
         .api("/deviceManagement/deviceShellScripts")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,runAsAccount")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,runAsAccount",
+        )
         .top(999)
         .get();
 
-      const allScripts = await collectAllPages<any>(this.client as unknown as Client, scripts);
+      const allScripts = await collectAllPages<any>(
+        this.client as unknown as Client,
+        scripts,
+      );
 
       const detailedScripts = await Promise.all(
         (allScripts || []).map(async (script: any) => {
@@ -789,45 +1432,63 @@ export class DetailedIntuneService {
 
             // Fetch assignments
             const assignmentsResponse = await this.client
-              .api(`/deviceManagement/deviceShellScripts('${script.id}')/assignments`)
+              .api(
+                `/deviceManagement/deviceShellScripts('${script.id}')/assignments`,
+              )
               .version("beta")
               .get()
               .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+            const assignments = await collectAllPages<any>(
+              this.client as unknown as Client,
+              assignmentsResponse,
+            );
 
             return {
               ...script,
-              scriptContent: scriptContent.scriptContent ? atob(scriptContent.scriptContent) : null,
+              scriptContent: scriptContent.scriptContent
+                ? Buffer.from(scriptContent.scriptContent, "base64").toString(
+                    "utf8",
+                  )
+                : null,
               configType: "Shell Script",
               platformType: "macOS",
-              assignments: assignments || []
+              assignments: assignments || [],
             };
           } catch (error) {
-            console.error(`Error fetching details for script ${script.displayName}:`, error);
+            console.error(
+              `Error fetching details for script ${script.displayName}:`,
+              error,
+            );
             return {
               ...script,
               configType: "Shell Script",
               platformType: "macOS",
-              assignments: []
+              assignments: [],
             };
           }
-        })
+        }),
       );
 
       return detailedScripts;
     } catch (error: any) {
       // Check if it's a permission error
-      if (error?.statusCode === 403 || error?.code === 'Forbidden') {
+      if (error?.statusCode === 403 || error?.code === "Forbidden") {
         console.log("macOS Shell Scripts skipped - insufficient permissions");
         this.permissionErrors.push({
           resource: "macOS Shell Scripts",
           requiredPermission: "DeviceManagementScripts.Read.All",
-          message: "Unable to fetch macOS Shell Scripts due to missing permissions"
+          message:
+            "Unable to fetch macOS Shell Scripts due to missing permissions",
         });
       } else {
         console.error("Error fetching macOS scripts:", error);
+        this.recordCollectionError(
+          "macOS Shell Scripts",
+          error,
+          "DeviceManagementScripts.Read.All",
+        );
       }
-      return [];
+      return this.partialCollectionItems(error, "Shell Script");
     }
   }
 
@@ -835,46 +1496,70 @@ export class DetailedIntuneService {
   private getConfigurationType(odataType: string): string {
     const typeMap: Record<string, string> = {
       // Windows configurations
-      "#microsoft.graph.windows10GeneralConfiguration": "Windows 10 General Configuration",
-      "#microsoft.graph.windows10EndpointProtectionConfiguration": "Windows 10 Endpoint Protection",
-      "#microsoft.graph.windows10CustomConfiguration": "Windows 10 Custom Configuration",
-      "#microsoft.graph.windows10SecureAssessmentConfiguration": "Windows 10 Secure Assessment",
-      "#microsoft.graph.windows10EnterpriseModernAppManagementConfiguration": "Windows 10 Enterprise App Management",
-      "#microsoft.graph.windows81GeneralConfiguration": "Windows 8.1 General Configuration",
-      "#microsoft.graph.windowsUpdateForBusinessConfiguration": "Windows Update for Business",
-      "#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration": "Windows Defender ATP",
-      "#microsoft.graph.windowsIdentityProtectionConfiguration": "Windows Identity Protection",
+      "#microsoft.graph.windows10GeneralConfiguration":
+        "Windows 10 General Configuration",
+      "#microsoft.graph.windows10EndpointProtectionConfiguration":
+        "Windows 10 Endpoint Protection",
+      "#microsoft.graph.windows10CustomConfiguration":
+        "Windows 10 Custom Configuration",
+      "#microsoft.graph.windows10SecureAssessmentConfiguration":
+        "Windows 10 Secure Assessment",
+      "#microsoft.graph.windows10EnterpriseModernAppManagementConfiguration":
+        "Windows 10 Enterprise App Management",
+      "#microsoft.graph.windows81GeneralConfiguration":
+        "Windows 8.1 General Configuration",
+      "#microsoft.graph.windowsUpdateForBusinessConfiguration":
+        "Windows Update for Business",
+      "#microsoft.graph.windowsDefenderAdvancedThreatProtectionConfiguration":
+        "Windows Defender ATP",
+      "#microsoft.graph.windowsIdentityProtectionConfiguration":
+        "Windows Identity Protection",
       "#microsoft.graph.editionUpgradeConfiguration": "Windows Edition Upgrade",
-      "#microsoft.graph.windowsKioskConfiguration": "Windows Kiosk Configuration",
-      "#microsoft.graph.windows10TeamGeneralConfiguration": "Surface Hub Configuration",
+      "#microsoft.graph.windowsKioskConfiguration":
+        "Windows Kiosk Configuration",
+      "#microsoft.graph.windows10TeamGeneralConfiguration":
+        "Surface Hub Configuration",
 
       // macOS configurations
-      "#microsoft.graph.macOSGeneralConfiguration": "macOS General Configuration",
-      "#microsoft.graph.macOSEndpointProtectionConfiguration": "macOS Endpoint Protection",
+      "#microsoft.graph.macOSGeneralConfiguration":
+        "macOS General Configuration",
+      "#microsoft.graph.macOSEndpointProtectionConfiguration":
+        "macOS Endpoint Protection",
       "#microsoft.graph.macOSCustomConfiguration": "macOS Custom Configuration",
-      "#microsoft.graph.macOSDeviceFeaturesConfiguration": "macOS Device Features",
+      "#microsoft.graph.macOSDeviceFeaturesConfiguration":
+        "macOS Device Features",
       "#microsoft.graph.macOSExtensionsConfiguration": "macOS Extensions",
-      "#microsoft.graph.macOSSoftwareUpdateConfiguration": "macOS Software Update",
+      "#microsoft.graph.macOSSoftwareUpdateConfiguration":
+        "macOS Software Update",
 
       // iOS/iPadOS configurations
       "#microsoft.graph.iosGeneralConfiguration": "iOS General Configuration",
       "#microsoft.graph.iosCustomConfiguration": "iOS Custom Configuration",
       "#microsoft.graph.iosUpdateConfiguration": "iOS Update Configuration",
       "#microsoft.graph.iosDeviceFeaturesConfiguration": "iOS Device Features",
-      "#microsoft.graph.iosEndpointProtectionConfiguration": "iOS Endpoint Protection",
-      "#microsoft.graph.iosCertificateProfileConfiguration": "iOS Certificate Profile",
+      "#microsoft.graph.iosEndpointProtectionConfiguration":
+        "iOS Endpoint Protection",
+      "#microsoft.graph.iosCertificateProfileConfiguration":
+        "iOS Certificate Profile",
       "#microsoft.graph.iosEasEmailProfileConfiguration": "iOS Email Profile",
       "#microsoft.graph.iosWiFiConfiguration": "iOS WiFi Profile",
       "#microsoft.graph.iosVpnConfiguration": "iOS VPN Profile",
 
       // Android configurations
-      "#microsoft.graph.androidGeneralConfiguration": "Android General Configuration",
-      "#microsoft.graph.androidCustomConfiguration": "Android Custom Configuration",
-      "#microsoft.graph.androidWorkProfileGeneralConfiguration": "Android Work Profile Configuration",
-      "#microsoft.graph.androidWorkProfileCustomConfiguration": "Android Work Profile Custom",
-      "#microsoft.graph.androidDeviceOwnerGeneralConfiguration": "Android Device Owner Configuration",
-      "#microsoft.graph.androidOMAConfiguration": "Android OMA-DM Configuration",
-      "#microsoft.graph.androidEasEmailProfileConfiguration": "Android Email Profile",
+      "#microsoft.graph.androidGeneralConfiguration":
+        "Android General Configuration",
+      "#microsoft.graph.androidCustomConfiguration":
+        "Android Custom Configuration",
+      "#microsoft.graph.androidWorkProfileGeneralConfiguration":
+        "Android Work Profile Configuration",
+      "#microsoft.graph.androidWorkProfileCustomConfiguration":
+        "Android Work Profile Custom",
+      "#microsoft.graph.androidDeviceOwnerGeneralConfiguration":
+        "Android Device Owner Configuration",
+      "#microsoft.graph.androidOMAConfiguration":
+        "Android OMA-DM Configuration",
+      "#microsoft.graph.androidEasEmailProfileConfiguration":
+        "Android Email Profile",
       "#microsoft.graph.androidWiFiConfiguration": "Android WiFi Profile",
       "#microsoft.graph.androidVpnConfiguration": "Android VPN Profile",
 
@@ -882,13 +1567,16 @@ export class DetailedIntuneService {
       "#microsoft.graph.sharedPCConfiguration": "Shared PC Configuration",
       "#microsoft.graph.vpnConfiguration": "VPN Configuration",
       "#microsoft.graph.wiFiConfiguration": "WiFi Configuration",
-      "#microsoft.graph.emailConfiguration": "Email Configuration"
+      "#microsoft.graph.emailConfiguration": "Email Configuration",
     };
 
     // If not in map, try to extract a friendly name from the odataType
     if (!typeMap[odataType]) {
       // Remove prefix and format: "#microsoft.graph.iosGeneralConfiguration" -> "Ios General Configuration"
-      const typeName = odataType.replace("#microsoft.graph.", "").replace(/([A-Z])/g, " $1").trim();
+      const typeName = odataType
+        .replace("#microsoft.graph.", "")
+        .replace(/([A-Z])/g, " $1")
+        .trim();
       return typeName.charAt(0).toUpperCase() + typeName.slice(1);
     }
 
@@ -906,7 +1594,10 @@ export class DetailedIntuneService {
         .top(999)
         .get();
 
-      const allConfigs = await collectAllPages<any>(this.client as unknown as Client, response);
+      const allConfigs = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
 
       // Fetch full details and assignments for each configuration
       const detailedConfigs = await Promise.all(
@@ -917,12 +1608,17 @@ export class DetailedIntuneService {
             try {
               fullConfig = await this.retryWithBackoff(() =>
                 this.client
-                  .api(`/deviceAppManagement/mobileAppConfigurations('${config.id}')`)
+                  .api(
+                    `/deviceAppManagement/mobileAppConfigurations('${config.id}')`,
+                  )
                   .version("beta")
-                  .get()
+                  .get(),
               );
             } catch (detailsError: any) {
-              console.warn(`Failed to fetch full details for ${config.displayName}:`, detailsError?.message);
+              console.warn(
+                `Failed to fetch full details for ${config.displayName}:`,
+                detailsError?.message,
+              );
               fullConfig = config; // Fallback to basic config
             }
 
@@ -931,36 +1627,52 @@ export class DetailedIntuneService {
             try {
               assignmentsResponse = await this.retryWithBackoff(() =>
                 this.client
-                  .api(`/deviceAppManagement/mobileAppConfigurations('${config.id}')/assignments`)
+                  .api(
+                    `/deviceAppManagement/mobileAppConfigurations('${config.id}')/assignments`,
+                  )
                   .version("beta")
-                  .get()
+                  .get(),
               );
             } catch (assignmentError: any) {
-              console.warn(`Failed to fetch assignments for ${config.displayName}:`, assignmentError?.message);
+              console.warn(
+                `Failed to fetch assignments for ${config.displayName}:`,
+                assignmentError?.message,
+              );
               assignmentsResponse = { value: [] };
             }
-            const assignments = await collectAllPages<any>(this.client as unknown as Client, assignmentsResponse);
+            const assignments = await collectAllPages<any>(
+              this.client as unknown as Client,
+              assignmentsResponse,
+            );
 
             return {
               ...fullConfig, // Use full config with all settings
               configType: "App Configuration",
-              assignments: assignments || []
+              assignments: assignments || [],
             };
           } catch (error) {
-            console.error(`Error fetching details for app configuration ${config.displayName}:`, error);
+            console.error(
+              `Error fetching details for app configuration ${config.displayName}:`,
+              error,
+            );
             return {
               ...config,
               configType: "App Configuration",
-              assignments: []
+              assignments: [],
             };
           }
-        })
+        }),
       );
 
       return detailedConfigs;
     } catch (error) {
       console.error("Error fetching app configurations:", error);
-      return [];
+      this.recordCollectionError(
+        "App Configurations",
+        error,
+        "DeviceManagementApps.Read.All",
+      );
+      return this.partialCollectionItems(error, "App Configuration");
     }
   }
 
@@ -971,11 +1683,16 @@ export class DetailedIntuneService {
         .api("/deviceManagement/deviceConfigurations")
         .version("beta")
         .filter("isof('microsoft.graph.windowsUpdateForBusinessConfiguration')")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,assignments")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,assignments",
+        )
         .expand("assignments")
         .top(999)
         .get();
-      const list = await collectAllPages<any>(this.client as unknown as Client, response);
+      const list = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
 
       // Fetch detailed settings for each policy
       const detailedPolicies = await Promise.all(
@@ -985,19 +1702,36 @@ export class DetailedIntuneService {
               .api(`/deviceManagement/deviceConfigurations/${policy.id}`)
               .version("beta")
               .get();
-            
-            return detailResponse;
+
+            return {
+              ...policy,
+              ...detailResponse,
+              configType: "Windows Update Ring",
+              assignments:
+                policy.assignments || detailResponse.assignments || [],
+            };
           } catch (error) {
-            console.error(`Error fetching details for Windows Update policy ${policy.id}:`, error);
-            return policy;
+            console.error(
+              `Error fetching details for Windows Update policy ${policy.id}:`,
+              error,
+            );
+            return {
+              ...policy,
+              configType: "Windows Update Ring",
+            };
           }
-        })
+        }),
       );
 
       return detailedPolicies;
     } catch (error) {
       console.error("Error fetching Windows Update policies:", error);
-      return [];
+      this.recordCollectionError(
+        "Windows Update Policies",
+        error,
+        "DeviceManagementConfiguration.Read.All",
+      );
+      return this.partialCollectionItems(error, "Windows Update Ring");
     }
   }
 
@@ -1007,14 +1741,21 @@ export class DetailedIntuneService {
       const response = await this.client
         .api("/deviceManagement/deviceEnrollmentConfigurations")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,priority,assignments")
         .expand("assignments")
         .top(999)
         .get();
-      return await collectAllPages<any>(this.client as unknown as Client, response);
+      return await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
     } catch (error) {
       console.error("Error fetching enrollment configurations:", error);
-      return [];
+      this.recordCollectionError(
+        "Enrollment Configurations",
+        error,
+        "DeviceManagementServiceConfig.Read.All",
+      );
+      return this.partialCollectionItems(error, "Enrollment Configuration");
     }
   }
 
@@ -1031,135 +1772,454 @@ export class DetailedIntuneService {
   // Main method to get all detailed configurations
   // Emit a progress event the moment an individual policy-type fetch settles,
   // so the client can show real per-type completion instead of one big jump.
-  private withCompletionEvent<T>(step: string, promise: Promise<T>): Promise<T> {
+  private progressSectionsFor(
+    step: string,
+    value: any,
+  ): ConfigurationSectionData[] {
+    const make = (
+      key: string,
+      familyKey: string,
+      label: string,
+      selectionPrefix: string,
+      items: any[],
+    ): ConfigurationSectionData => ({
+      key,
+      familyKey,
+      label,
+      selectionPrefix,
+      items: sanitizeGraphData(items || []) as any[],
+    });
+
+    switch (step) {
+      case "Settings Catalog":
+        return [
+          make("settingsCatalog", "settingsCatalog", step, "catalog", value),
+        ];
+      case "Device Configurations":
+        return [
+          make(
+            "deviceConfigurations",
+            "deviceConfigurations",
+            step,
+            "device",
+            value,
+          ),
+        ];
+      case "Administrative Templates":
+        return [
+          make(
+            "administrativeTemplates",
+            "administrativeTemplates",
+            step,
+            "admx",
+            value,
+          ),
+        ];
+      case "Compliance Policies":
+        return [
+          make(
+            "compliancePolicies",
+            "compliancePolicies",
+            step,
+            "compliance",
+            value,
+          ),
+        ];
+      case "App Protection Policies":
+        return [
+          make(
+            "appProtectionPolicies",
+            "appProtectionPolicies",
+            step,
+            "app-protection",
+            value,
+          ),
+        ];
+      case "Security Baselines":
+        return [
+          make(
+            "securityBaselines",
+            "securityBaselines",
+            step,
+            "security",
+            value,
+          ),
+        ];
+      case "Scripts":
+        return [
+          make(
+            "windowsScripts",
+            "scripts",
+            "Windows PowerShell scripts",
+            "script-win",
+            value?.windows,
+          ),
+          make(
+            "macOSScripts",
+            "scripts",
+            "macOS shell scripts",
+            "script-mac",
+            value?.macOS,
+          ),
+        ];
+      case "App Configurations":
+        return [
+          make("appConfigurations", "appConfigurations", step, "app", value),
+        ];
+      case "Windows Update Policies":
+        return [
+          make(
+            "windowsUpdatePolicies",
+            "windowsUpdatePolicies",
+            "Windows update rings",
+            "update",
+            value,
+          ),
+        ];
+      case "Enrollment Configurations":
+        return [
+          make(
+            "enrollmentConfigurations",
+            "enrollmentConfigurations",
+            step,
+            "enrollment",
+            value,
+          ),
+        ];
+      case "Conditional Access Policies":
+        return [
+          make(
+            "conditionalAccessPolicies",
+            "conditionalAccessPolicies",
+            step,
+            "ca",
+            value,
+          ),
+        ];
+      default:
+        return [];
+    }
+  }
+
+  private withCompletionEvent<T>(
+    step: string,
+    promise: Promise<T>,
+  ): Promise<T> {
     return promise.then(
       (value) => {
-        this.progressCallback?.({ step, type: 'completed' });
+        this.progressSectionsFor(step, value).forEach((section) =>
+          this.progressCallback?.({ step, type: "section", section }),
+        );
+        this.progressCallback?.({ step, type: "completed" });
         return value;
       },
       (error: any) => {
         this.progressCallback?.({
           step,
-          type: 'error',
-          message: error?.message || 'Fetch failed'
+          type: "error",
+          message: error?.message || "Fetch failed",
         });
         throw error;
-      }
+      },
     );
   }
 
-  async getAllDetailedConfigurations() {
+  async getAllDetailedConfigurations(includeConditionalAccess = true) {
     console.log("Fetching all detailed Intune configurations...");
     this.permissionErrors = []; // Reset permission errors
     this.fetchErrors = []; // Reset fetch errors
 
     // Use Promise.allSettled instead of Promise.all to prevent one failure from breaking everything
     const results = await Promise.allSettled([
-      this.withCompletionEvent('Settings Catalog', this.getConfigurationPoliciesWithSettings()),
-      this.withCompletionEvent('Device Configurations', this.getDeviceConfigurationsDetailed()),
-      this.withCompletionEvent('Administrative Templates', this.getGroupPolicyConfigurationsDetailed()),
-      this.withCompletionEvent('Compliance Policies', this.getCompliancePoliciesDetailed()),
-      this.withCompletionEvent('App Protection Policies', this.getAppProtectionPoliciesDetailed()),
-      this.withCompletionEvent('Security Baselines', this.getSecurityBaselinesDetailed()),
-      this.withCompletionEvent('Scripts', this.getScriptsDetailed()),
-      this.withCompletionEvent('App Configurations', this.getAppConfigurationsDetailed()),
-      this.withCompletionEvent('Windows Update Policies', this.getWindowsUpdatePoliciesDetailed()),
-      this.withCompletionEvent('Enrollment Configurations', this.getEnrollmentConfigurationsDetailed()),
-      this.withCompletionEvent('Conditional Access Policies', this.getConditionalAccessPoliciesDetailed())
+      this.withCompletionEvent(
+        "Settings Catalog",
+        this.getConfigurationPoliciesWithSettings(),
+      ),
+      this.withCompletionEvent(
+        "Device Configurations",
+        this.getDeviceConfigurationsDetailed(),
+      ),
+      this.withCompletionEvent(
+        "Administrative Templates",
+        this.getGroupPolicyConfigurationsDetailed(),
+      ),
+      this.withCompletionEvent(
+        "Compliance Policies",
+        this.getCompliancePoliciesDetailed(),
+      ),
+      this.withCompletionEvent(
+        "App Protection Policies",
+        this.getAppProtectionPoliciesDetailed(),
+      ),
+      this.withCompletionEvent(
+        "Security Baselines",
+        this.getSecurityBaselinesDetailed(),
+      ),
+      this.withCompletionEvent("Scripts", this.getScriptsDetailed()),
+      this.withCompletionEvent(
+        "App Configurations",
+        this.getAppConfigurationsDetailed(),
+      ),
+      this.withCompletionEvent(
+        "Windows Update Policies",
+        this.getWindowsUpdatePoliciesDetailed(),
+      ),
+      this.withCompletionEvent(
+        "Enrollment Configurations",
+        this.getEnrollmentConfigurationsDetailed(),
+      ),
+      this.withCompletionEvent(
+        "Conditional Access Policies",
+        includeConditionalAccess
+          ? this.getConditionalAccessPoliciesDetailed()
+          : Promise.resolve([]),
+      ),
+      this.withCompletionEvent(
+        "Additional Intune coverage",
+        this.getAdditionalConfigurationSections(),
+      ),
     ]);
 
     // Extract results and track failures
     const policyTypes = [
-      'Settings Catalog',
-      'Device Configurations',
-      'Administrative Templates',
-      'Compliance Policies',
-      'App Protection Policies',
-      'Security Baselines',
-      'Scripts',
-      'App Configurations',
-      'Windows Update Policies',
-      'Enrollment Configurations',
-      'Conditional Access Policies'
+      "Settings Catalog",
+      "Device Configurations",
+      "Administrative Templates",
+      "Compliance Policies",
+      "App Protection Policies",
+      "Security Baselines",
+      "Scripts",
+      "App Configurations",
+      "Windows Update Policies",
+      "Enrollment Configurations",
+      "Conditional Access Policies",
+      "Additional Intune coverage",
     ];
 
-    const settingsCatalog = results[0].status === 'fulfilled' ? results[0].value : [];
-    const deviceConfigurations = results[1].status === 'fulfilled' ? results[1].value : [];
-    const administrativeTemplates = results[2].status === 'fulfilled' ? results[2].value : [];
-    const compliancePolicies = results[3].status === 'fulfilled' ? results[3].value : [];
-    const appProtectionPolicies = results[4].status === 'fulfilled' ? results[4].value : [];
-    const securityBaselines = results[5].status === 'fulfilled' ? results[5].value : [];
-    const scripts = results[6].status === 'fulfilled' ? results[6].value : { windows: [], macOS: [] };
-    const appConfigurations = results[7].status === 'fulfilled' ? results[7].value : [];
-    const windowsUpdatePolicies = results[8].status === 'fulfilled' ? results[8].value : [];
-    const enrollmentConfigurations = results[9].status === 'fulfilled' ? results[9].value : [];
-    const conditionalAccessPolicies = results[10].status === 'fulfilled' ? results[10].value : [];
+    const settingsCatalog =
+      results[0].status === "fulfilled" ? results[0].value : [];
+    const deviceConfigurations =
+      results[1].status === "fulfilled" ? results[1].value : [];
+    const administrativeTemplates =
+      results[2].status === "fulfilled" ? results[2].value : [];
+    const compliancePolicies =
+      results[3].status === "fulfilled" ? results[3].value : [];
+    const appProtectionPolicies =
+      results[4].status === "fulfilled" ? results[4].value : [];
+    const securityBaselines =
+      results[5].status === "fulfilled" ? results[5].value : [];
+    const scripts =
+      results[6].status === "fulfilled"
+        ? results[6].value
+        : { windows: [], macOS: [] };
+    const appConfigurations =
+      results[7].status === "fulfilled" ? results[7].value : [];
+    const windowsUpdatePolicies =
+      results[8].status === "fulfilled" ? results[8].value : [];
+    const enrollmentConfigurations =
+      results[9].status === "fulfilled" ? results[9].value : [];
+    const conditionalAccessPolicies =
+      results[10].status === "fulfilled" ? results[10].value : [];
+    const additionalSections =
+      results[11].status === "fulfilled" ? results[11].value : [];
 
     // Log any failures
     results.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        const policyType = policyTypes[index] || 'Unknown Policy Type';
+      if (result.status === "rejected") {
+        const policyType = policyTypes[index] || "Unknown Policy Type";
         console.error(`Failed to fetch ${policyType}:`, result.reason);
 
         // Track as a fetch error
         this.fetchErrors.push({
-          policyId: 'N/A',
+          policyId: "N/A",
           policyName: policyType,
           policyType: policyType,
-          error: result.reason?.message || 'Unknown error during policy type fetch',
+          familyKey: FETCH_ERROR_FAMILY_KEYS[policyType],
+          error:
+            result.reason?.message || "Unknown error during policy type fetch",
           errorCode: result.reason?.code,
-          statusCode: result.reason?.statusCode
+          statusCode: result.reason?.statusCode,
         });
       }
     });
 
     // Log summary of what was fetched
-    const successfulTypes = results.filter(r => r.status === 'fulfilled').length;
-    const failedTypes = results.filter(r => r.status === 'rejected').length;
-    console.log(`Successfully fetched ${successfulTypes}/${results.length} policy types. Failed: ${failedTypes}`);
+    const successfulTypes = results.filter(
+      (r) => r.status === "fulfilled",
+    ).length;
+    const failedTypes = results.filter((r) => r.status === "rejected").length;
+    console.log(
+      `Successfully fetched ${successfulTypes}/${results.length} policy types. Failed: ${failedTypes}`,
+    );
+
+    const safeSettingsCatalog = sanitizeGraphData(
+      settingsCatalog,
+    ) as DetailedConfiguration[];
+    const safeDeviceConfigurations = sanitizeGraphData(
+      deviceConfigurations,
+    ) as DetailedConfiguration[];
+    const safeAdministrativeTemplates = sanitizeGraphData(
+      administrativeTemplates,
+    ) as DetailedConfiguration[];
+    const safeCompliancePolicies = sanitizeGraphData(
+      compliancePolicies,
+    ) as DetailedConfiguration[];
+    const safeAppProtectionPolicies = sanitizeGraphData(
+      appProtectionPolicies,
+    ) as DetailedConfiguration[];
+    const safeSecurityBaselines = sanitizeGraphData(
+      securityBaselines,
+    ) as DetailedConfiguration[];
+    const safeScripts = sanitizeGraphData(scripts) as typeof scripts;
+    const safeAppConfigurations = sanitizeGraphData(
+      appConfigurations,
+    ) as DetailedConfiguration[];
+    const safeWindowsUpdatePolicies = sanitizeGraphData(
+      windowsUpdatePolicies,
+    ) as DetailedConfiguration[];
+    const safeEnrollmentConfigurations = sanitizeGraphData(
+      enrollmentConfigurations,
+    ) as DetailedConfiguration[];
+    const safeConditionalAccessPolicies = sanitizeGraphData(
+      conditionalAccessPolicies,
+    ) as DetailedConfiguration[];
+
+    const sections: ConfigurationSectionData[] = [
+      {
+        key: "settingsCatalog",
+        familyKey: "settingsCatalog",
+        label: "Settings Catalog",
+        selectionPrefix: "catalog",
+        items: safeSettingsCatalog,
+      },
+      {
+        key: "deviceConfigurations",
+        familyKey: "deviceConfigurations",
+        label: "Device configurations (templates)",
+        selectionPrefix: "device",
+        items: safeDeviceConfigurations,
+      },
+      {
+        key: "administrativeTemplates",
+        familyKey: "administrativeTemplates",
+        label: "Administrative Templates",
+        selectionPrefix: "admx",
+        items: safeAdministrativeTemplates,
+      },
+      {
+        key: "securityBaselines",
+        familyKey: "securityBaselines",
+        label: "Security baselines & Endpoint Security",
+        selectionPrefix: "security",
+        items: safeSecurityBaselines,
+      },
+      {
+        key: "compliancePolicies",
+        familyKey: "compliancePolicies",
+        label: "Compliance policies",
+        selectionPrefix: "compliance",
+        items: safeCompliancePolicies,
+      },
+      {
+        key: "appProtectionPolicies",
+        familyKey: "appProtectionPolicies",
+        label: "App protection policies",
+        selectionPrefix: "app-protection",
+        items: safeAppProtectionPolicies,
+      },
+      {
+        key: "windowsScripts",
+        familyKey: "scripts",
+        label: "Windows PowerShell scripts",
+        selectionPrefix: "script-win",
+        items: safeScripts.windows,
+      },
+      {
+        key: "macOSScripts",
+        familyKey: "scripts",
+        label: "macOS shell scripts",
+        selectionPrefix: "script-mac",
+        items: safeScripts.macOS,
+      },
+      {
+        key: "appConfigurations",
+        familyKey: "appConfigurations",
+        label: "App configuration policies",
+        selectionPrefix: "app",
+        items: safeAppConfigurations,
+      },
+      {
+        key: "windowsUpdatePolicies",
+        familyKey: "windowsUpdatePolicies",
+        label: "Windows update rings",
+        selectionPrefix: "update",
+        items: safeWindowsUpdatePolicies,
+      },
+      {
+        key: "enrollmentConfigurations",
+        familyKey: "enrollmentConfigurations",
+        label: "Enrollment configurations",
+        selectionPrefix: "enrollment",
+        items: safeEnrollmentConfigurations,
+      },
+      {
+        key: "conditionalAccessPolicies",
+        familyKey: "conditionalAccessPolicies",
+        label: "Conditional Access policies",
+        selectionPrefix: "ca",
+        items: safeConditionalAccessPolicies,
+      },
+      ...additionalSections,
+    ];
+
+    additionalSections.forEach((section) => {
+      if (section.error) {
+        this.fetchErrors.push({
+          policyId: section.key,
+          policyName: section.label,
+          policyType: section.familyKey,
+          familyKey: section.familyKey,
+          error: section.error.message,
+          errorCode: section.error.errorCode,
+          statusCode: section.error.statusCode,
+          endpoint: section.endpoint,
+          permissionHint: section.permissionHint,
+          partial: section.error.partial,
+        });
+      }
+    });
+
+    const byType = sections.reduce<Record<string, number>>(
+      (counts, section) => {
+        counts[section.familyKey] =
+          (counts[section.familyKey] || 0) + section.items.length;
+        return counts;
+      },
+      {},
+    );
 
     return {
-      settingsCatalog,
-      deviceConfigurations,
-      administrativeTemplates,
-      compliancePolicies,
-      appProtectionPolicies,
-      securityBaselines,
-      scripts: scripts,
-      appConfigurations,
-      windowsUpdatePolicies,
-      enrollmentConfigurations,
-      conditionalAccessPolicies,
+      settingsCatalog: safeSettingsCatalog,
+      deviceConfigurations: safeDeviceConfigurations,
+      administrativeTemplates: safeAdministrativeTemplates,
+      compliancePolicies: safeCompliancePolicies,
+      appProtectionPolicies: safeAppProtectionPolicies,
+      securityBaselines: safeSecurityBaselines,
+      scripts: safeScripts,
+      appConfigurations: safeAppConfigurations,
+      windowsUpdatePolicies: safeWindowsUpdatePolicies,
+      enrollmentConfigurations: safeEnrollmentConfigurations,
+      conditionalAccessPolicies: safeConditionalAccessPolicies,
+      sections,
       permissionErrors: this.permissionErrors,
       fetchErrors: this.fetchErrors,
       summary: {
-        totalConfigurations:
-          settingsCatalog.length +
-          deviceConfigurations.length +
-          administrativeTemplates.length +
-          compliancePolicies.length +
-          appProtectionPolicies.length +
-          securityBaselines.length +
-          scripts.windows.length +
-          scripts.macOS.length +
-          appConfigurations.length +
-          windowsUpdatePolicies.length +
-          enrollmentConfigurations.length +
-          conditionalAccessPolicies.length,
-        byType: {
-          settingsCatalog: settingsCatalog.length,
-          deviceConfigurations: deviceConfigurations.length,
-          administrativeTemplates: administrativeTemplates.length,
-          compliancePolicies: compliancePolicies.length,
-          appProtectionPolicies: appProtectionPolicies.length,
-          securityBaselines: securityBaselines.length,
-          scripts: scripts.windows.length + scripts.macOS.length,
-          appConfigurations: appConfigurations.length,
-          windowsUpdatePolicies: windowsUpdatePolicies.length,
-          enrollmentConfigurations: enrollmentConfigurations.length,
-          conditionalAccessPolicies: conditionalAccessPolicies.length
-        }
-      }
+        totalConfigurations: sections.reduce(
+          (total, section) => total + section.items.length,
+          0,
+        ),
+        byType,
+      },
     };
   }
 }

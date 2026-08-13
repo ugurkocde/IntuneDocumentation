@@ -8,6 +8,7 @@ import { KpiCards } from "~/components/dashboard/kpi-cards";
 import { SelectionProgress } from "~/components/dashboard/selection-progress";
 import { TypeDonut } from "~/components/dashboard/type-donut";
 import type {
+  ConfigurationTypeKey,
   DashboardConfigurationItem,
   DashboardTypeStat,
   DashboardView,
@@ -35,6 +36,7 @@ interface DashboardContentProps {
   onSelectFiltered: () => void;
   onSelectConfig: (id: string) => void;
   onBulkSelect: (idsToAdd: string[], idsToRemove: string[]) => void;
+  onToggleFamily: (key: ConfigurationTypeKey) => void;
   onIncludeCAChange: (next: boolean) => void | Promise<void>;
 }
 
@@ -207,6 +209,7 @@ export function DashboardContent({
   onSelectFiltered,
   onSelectConfig,
   onBulkSelect,
+  onToggleFamily,
   onIncludeCAChange,
 }: DashboardContentProps) {
   const showConditionalAccess = includeCA && caConsentStatus === "included";
@@ -229,7 +232,20 @@ export function DashboardContent({
   const warningCount =
     (configurations.permissionErrors?.length ?? 0) +
     (configurations.fetchErrors?.length ?? 0);
-  const populatedTypeCount = typeStats.filter((stat) => stat.total > 0).length;
+  const overviewTypeStats = typeStats.filter(
+    (stat) => showConditionalAccess || stat.key !== "conditionalAccessPolicies",
+  );
+  const overviewSelectedCount = overviewTypeStats.reduce(
+    (count, stat) => count + stat.selected,
+    0,
+  );
+  const overviewTotalCount = overviewTypeStats.reduce(
+    (count, stat) => count + stat.total,
+    0,
+  );
+  const populatedTypeCount = overviewTypeStats.filter(
+    (stat) => stat.total > 0,
+  ).length;
   const filter = (items: DashboardConfigurationItem[]) =>
     filterConfigurations(items, searchQuery);
 
@@ -265,14 +281,12 @@ export function DashboardContent({
         {activeView === "overview" && (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
             <SelectionProgress
-              stats={typeStats}
-              selectedCount={selectedConfigs.size}
-              totalCount={configurations.summary.totalConfigurations}
+              stats={overviewTypeStats}
+              selectedCount={overviewSelectedCount}
+              totalCount={overviewTotalCount}
+              onToggleFamily={onToggleFamily}
             />
-            <TypeDonut
-              stats={typeStats}
-              total={configurations.summary.totalConfigurations}
-            />
+            <TypeDonut stats={overviewTypeStats} total={overviewTotalCount} />
           </div>
         )}
 

@@ -205,6 +205,10 @@ button:focus-visible {
     cursor: pointer;
   }
 
+  .checkbox-enhanced--round {
+    border-radius: 9999px;
+  }
+
   .checkbox-enhanced:checked {
     background: var(--color-teal-600);
     border-color: var(--color-teal-600);

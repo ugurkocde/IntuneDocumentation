@@ -45,6 +45,14 @@ const CONFIGURATION_ITEMS: SidebarItem[] = [
   { key: "appConfigurations", icon: Package },
   { key: "windowsUpdatePolicies", icon: RefreshCw },
   { key: "enrollmentConfigurations", icon: UserCheck },
+  { key: "windowsUpdateProfiles", icon: RefreshCw },
+  { key: "scriptsAndRemediations", icon: Code },
+  { key: "enrollmentAndProvisioning", icon: UserCheck },
+  { key: "applications", icon: Package },
+  { key: "assignmentAndRbac", icon: Shield },
+  { key: "tenantAndService", icon: Settings },
+  { key: "connectors", icon: Laptop },
+  { key: "specialistPolicies", icon: FileText },
 ];
 
 interface DashboardSidebarProps {
@@ -53,6 +61,7 @@ interface DashboardSidebarProps {
   counts: ConfigurationTypeCounts;
   totalCount: number;
   selectedCount: number;
+  affectedFamilyKeys: string[];
   showConditionalAccess: boolean;
   userName: string;
   onToggle: () => void;
@@ -123,6 +132,7 @@ export function DashboardSidebar({
   counts,
   totalCount,
   selectedCount,
+  affectedFamilyKeys,
   showConditionalAccess,
   userName,
   onToggle,
@@ -132,7 +142,23 @@ export function DashboardSidebar({
   onSignOut,
 }: DashboardSidebarProps) {
   const visibleItems = CONFIGURATION_ITEMS.filter(
-    ({ key }) => key !== "conditionalAccessPolicies" || showConditionalAccess,
+    ({ key }) =>
+      (key !== "conditionalAccessPolicies" || showConditionalAccess) &&
+      ((counts[key] || 0) > 0 ||
+        affectedFamilyKeys.includes(key) ||
+        [
+          "settingsCatalog",
+          "deviceConfigurations",
+          "administrativeTemplates",
+          "securityBaselines",
+          "compliancePolicies",
+          "appProtectionPolicies",
+          "scripts",
+          "appConfigurations",
+          "windowsUpdatePolicies",
+          "enrollmentConfigurations",
+          "conditionalAccessPolicies",
+        ].includes(key)),
   );
 
   return (

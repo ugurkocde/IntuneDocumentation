@@ -35,43 +35,43 @@ export async function GET(request: NextRequest) {
       {
         permission: "DeviceManagementConfiguration.Read.All",
         resource: "Device Configurations",
-        hasAccess: false
+        hasAccess: false,
       },
       {
         permission: "DeviceManagementScripts.Read.All",
         resource: "PowerShell/Shell Scripts",
-        hasAccess: false
+        hasAccess: false,
       },
       {
         permission: "DeviceManagementApps.Read.All",
         resource: "App Configurations",
-        hasAccess: false
+        hasAccess: false,
       },
       {
         permission: "DeviceManagementManagedDevices.Read.All",
         resource: "Managed Devices",
-        hasAccess: false
+        hasAccess: false,
       },
       {
         permission: "DeviceManagementRBAC.Read.All",
         resource: "RBAC Settings",
-        hasAccess: false
+        hasAccess: false,
       },
       {
         permission: "DeviceManagementServiceConfig.Read.All",
         resource: "Service Configuration",
-        hasAccess: false
+        hasAccess: false,
       },
       {
         permission: "Group.Read.All",
         resource: "Group Information",
-        hasAccess: false
+        hasAccess: false,
       },
       {
         permission: "Policy.Read.All",
         resource: "Conditional Access Policies",
-        hasAccess: false
-      }
+        hasAccess: false,
+      },
     ];
 
     // Test each permission by making a lightweight API call
@@ -79,7 +79,8 @@ export async function GET(request: NextRequest) {
       try {
         switch (check.permission) {
           case "DeviceManagementConfiguration.Read.All":
-            await client.api("/deviceManagement/deviceConfigurations")
+            await client
+              .api("/deviceManagement/deviceConfigurations")
               .version("beta")
               .top(1)
               .select("id")
@@ -88,7 +89,8 @@ export async function GET(request: NextRequest) {
             break;
 
           case "DeviceManagementScripts.Read.All":
-            await client.api("/deviceManagement/deviceManagementScripts")
+            await client
+              .api("/deviceManagement/deviceManagementScripts")
               .version("beta")
               .top(1)
               .select("id")
@@ -97,7 +99,8 @@ export async function GET(request: NextRequest) {
             break;
 
           case "DeviceManagementApps.Read.All":
-            await client.api("/deviceAppManagement/mobileApps")
+            await client
+              .api("/deviceAppManagement/mobileApps")
               .version("beta")
               .top(1)
               .select("id")
@@ -106,7 +109,8 @@ export async function GET(request: NextRequest) {
             break;
 
           case "DeviceManagementManagedDevices.Read.All":
-            await client.api("/deviceManagement/managedDevices")
+            await client
+              .api("/deviceManagement/managedDevices")
               .version("beta")
               .top(1)
               .select("id")
@@ -115,7 +119,8 @@ export async function GET(request: NextRequest) {
             break;
 
           case "DeviceManagementRBAC.Read.All":
-            await client.api("/deviceManagement/roleDefinitions")
+            await client
+              .api("/deviceManagement/roleDefinitions")
               .version("beta")
               .top(1)
               .select("id")
@@ -124,7 +129,8 @@ export async function GET(request: NextRequest) {
             break;
 
           case "DeviceManagementServiceConfig.Read.All":
-            await client.api("/deviceManagement")
+            await client
+              .api("/deviceManagement")
               .version("beta")
               .select("id")
               .get();
@@ -132,8 +138,9 @@ export async function GET(request: NextRequest) {
             break;
 
           case "Group.Read.All":
-            await client.api("/groups")
-              .version("v1.0")
+            await client
+              .api("/groups")
+              .version("beta")
               .top(1)
               .select("id")
               .get();
@@ -141,8 +148,9 @@ export async function GET(request: NextRequest) {
             break;
 
           case "Policy.Read.All":
-            await client.api("/identity/conditionalAccess/policies")
-              .version("v1.0")
+            await client
+              .api("/identity/conditionalAccess/policies")
+              .version("beta")
               .top(1)
               .select("id")
               .get();
@@ -150,7 +158,7 @@ export async function GET(request: NextRequest) {
             break;
         }
       } catch (error: any) {
-        if (error?.statusCode === 403 || error?.code === 'Forbidden') {
+        if (error?.statusCode === 403 || error?.code === "Forbidden") {
           check.hasAccess = false;
           check.error = "Insufficient permissions";
         } else {
@@ -167,8 +175,8 @@ export async function GET(request: NextRequest) {
     // Calculate summary
     const summary = {
       totalPermissions: results.length,
-      granted: results.filter(r => r.hasAccess).length,
-      denied: results.filter(r => !r.hasAccess).length,
+      granted: results.filter((r) => r.hasAccess).length,
+      denied: results.filter((r) => !r.hasAccess).length,
       requiredForFullAccess: [
         "DeviceManagementConfiguration.Read.All",
         "DeviceManagementScripts.Read.All",
@@ -176,23 +184,24 @@ export async function GET(request: NextRequest) {
         "DeviceManagementManagedDevices.Read.All",
         "DeviceManagementRBAC.Read.All",
         "DeviceManagementServiceConfig.Read.All",
-        "Group.Read.All"
+        "Group.Read.All",
       ],
-      optionalPermissions: [
-        "Policy.Read.All"
-      ]
+      optionalPermissions: ["Policy.Read.All"],
     };
 
     return NextResponse.json({
       permissions: results,
       summary,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Error checking permissions:", error);
     return NextResponse.json(
-      { error: "Failed to check permissions", details: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
+      {
+        error: "Failed to check permissions",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
     );
   }
 }

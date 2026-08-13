@@ -1,6 +1,19 @@
 import type { BrandingOptions } from "~/types/branding";
+import type { ConfigurationSectionData } from "./configuration-sections";
 
 export interface DetailedExportData {
+  sections?: ConfigurationSectionData[];
+  fetchErrors?: Array<{
+    policyId: string;
+    policyName: string;
+    policyType: string;
+    familyKey?: string;
+    error: string;
+    statusCode?: number;
+    endpoint?: string;
+    permissionHint?: string;
+    partial?: boolean;
+  }>;
   settingsCatalog: any[];
   deviceConfigurations: any[];
   administrativeTemplates: any[];
@@ -34,40 +47,53 @@ export interface ExportGenerationResult {
 }
 
 export function analyzeConfigurations(data: DetailedExportData) {
-  const allConfigs = [
-    ...data.settingsCatalog,
-    ...data.deviceConfigurations,
-    ...data.administrativeTemplates,
-    ...data.compliancePolicies,
-    ...(data.appProtectionPolicies || []),
-    ...data.securityBaselines,
-    ...data.scripts.windows,
-    ...data.scripts.macOS
-  ];
+  const allConfigs = data.sections?.length
+    ? data.sections.flatMap((section) => section.items)
+    : [
+        ...data.settingsCatalog,
+        ...data.deviceConfigurations,
+        ...data.administrativeTemplates,
+        ...data.compliancePolicies,
+        ...(data.appProtectionPolicies || []),
+        ...data.securityBaselines,
+        ...data.scripts.windows,
+        ...data.scripts.macOS,
+        ...(data.appConfigurations || []),
+        ...(data.windowsUpdatePolicies || []),
+        ...(data.enrollmentConfigurations || []),
+        ...(data.conditionalAccessPolicies || []),
+      ];
 
   const uniqueGroups = new Set<string>();
   const groupAssignmentCount: Record<string, number> = {};
   let assignedCount = 0;
   let unassignedCount = 0;
 
-  allConfigs.forEach(config => {
+  allConfigs.forEach((config) => {
     if (config.assignments && config.assignments.length > 0) {
       assignedCount++;
       config.assignments.forEach((assignment: any) => {
-        const odataType = typeof assignment.target?.["@odata.type"] === "string"
-          ? assignment.target["@odata.type"].toLowerCase()
-          : "";
+        const odataType =
+          typeof assignment.target?.["@odata.type"] === "string"
+            ? assignment.target["@odata.type"].toLowerCase()
+            : "";
 
         if (assignment.target?.groupId) {
           uniqueGroups.add(assignment.target.groupId);
           const groupId = assignment.target.groupId;
-          groupAssignmentCount[groupId] = (groupAssignmentCount[groupId] || 0) + 1;
-        } else if (odataType.includes("alllicensedusers") || odataType.includes("allusers")) {
+          groupAssignmentCount[groupId] =
+            (groupAssignmentCount[groupId] || 0) + 1;
+        } else if (
+          odataType.includes("alllicensedusers") ||
+          odataType.includes("allusers")
+        ) {
           uniqueGroups.add("All Users");
-          groupAssignmentCount["All Users"] = (groupAssignmentCount["All Users"] || 0) + 1;
+          groupAssignmentCount["All Users"] =
+            (groupAssignmentCount["All Users"] || 0) + 1;
         } else if (odataType.includes("alldevices")) {
           uniqueGroups.add("All Devices");
-          groupAssignmentCount["All Devices"] = (groupAssignmentCount["All Devices"] || 0) + 1;
+          groupAssignmentCount["All Devices"] =
+            (groupAssignmentCount["All Devices"] || 0) + 1;
         }
       });
     } else {
@@ -78,7 +104,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
   const platformCounts: Record<string, number> = {};
 
   const normalizePlatform = (platform: string): string => {
-    if (typeof platform !== 'string') return String(platform);
+    if (typeof platform !== "string") return String(platform);
     const lower = platform.toLowerCase();
     if (lower.includes("windows")) return "Windows";
     if (lower.includes("mac")) return "macOS";
@@ -88,7 +114,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
     return platform;
   };
 
-  allConfigs.forEach(config => {
+  allConfigs.forEach((config) => {
     let platform: string | null = null;
 
     if (config.platforms) {
@@ -97,7 +123,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
       platform = normalizePlatform(config.platformType);
     } else if (config["@odata.type"]) {
       const odataType = config["@odata.type"];
-      if (typeof odataType === 'string') {
+      if (typeof odataType === "string") {
         const type = odataType.toLowerCase();
         if (type.includes("windows")) platform = "Windows";
         else if (type.includes("mac")) platform = "macOS";
@@ -120,7 +146,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
   let recentlyModified = 0;
   let staleConfigs = 0;
 
-  allConfigs.forEach(config => {
+  allConfigs.forEach((config) => {
     if (config.createdDateTime) {
       const created = new Date(config.createdDateTime);
       if (created > sevenDaysAgo) recentlyCreated++;
@@ -136,6 +162,67 @@ export function analyzeConfigurations(data: DetailedExportData) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
 
+  const inventory = data.sections?.length
+    ? data.sections.map((section) => ({
+        key: section.key,
+        label: section.label,
+        total: section.items.length,
+        assigned: section.items.filter(
+          (item) =>
+            Array.isArray(item.assignments) && item.assignments.length > 0,
+        ).length,
+      }))
+    : [
+        {
+          key: "settingsCatalog",
+          label: "Settings Catalog",
+          items: data.settingsCatalog,
+        },
+        {
+          key: "deviceConfigurations",
+          label: "Device Configurations",
+          items: data.deviceConfigurations,
+        },
+        {
+          key: "administrativeTemplates",
+          label: "Administrative Templates",
+          items: data.administrativeTemplates,
+        },
+        {
+          key: "compliancePolicies",
+          label: "Compliance Policies",
+          items: data.compliancePolicies,
+        },
+        {
+          key: "appProtectionPolicies",
+          label: "App Protection Policies",
+          items: data.appProtectionPolicies || [],
+        },
+        {
+          key: "securityBaselines",
+          label: "Security Baselines",
+          items: data.securityBaselines,
+        },
+        {
+          key: "scriptsWindows",
+          label: "Scripts (Windows)",
+          items: data.scripts.windows,
+        },
+        {
+          key: "scriptsMacOS",
+          label: "Scripts (macOS)",
+          items: data.scripts.macOS,
+        },
+      ].map(({ key, label, items }) => ({
+        key,
+        label,
+        total: items.length,
+        assigned: items.filter(
+          (item) =>
+            Array.isArray(item.assignments) && item.assignments.length > 0,
+        ).length,
+      }));
+
   return {
     totalConfigs: allConfigs.length,
     assignedConfigs: assignedCount,
@@ -146,6 +233,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
     recentlyCreated,
     recentlyModified,
     staleConfigs,
+    inventory,
     byType: {
       settingsCatalog: data.settingsCatalog.length,
       deviceConfigurations: data.deviceConfigurations.length,
@@ -154,7 +242,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
       appProtectionPolicies: (data.appProtectionPolicies || []).length,
       securityBaselines: data.securityBaselines.length,
       scriptsWindows: data.scripts.windows.length,
-      scriptsMacOS: data.scripts.macOS.length
-    }
+      scriptsMacOS: data.scripts.macOS.length,
+    },
   };
 }

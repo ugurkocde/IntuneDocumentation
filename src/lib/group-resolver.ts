@@ -22,9 +22,10 @@ export class GroupResolver {
     try {
       const group = await this.client
         .api(`/groups/${groupId}`)
+        .version("beta")
         .select("id,displayName")
         .get();
-      
+
       const displayName = group.displayName || `Group ${groupId}`;
       this.groupCache.set(groupId, displayName);
       return displayName;
@@ -55,16 +56,17 @@ export class GroupResolver {
         const batchRequests = uncachedIds.map((id, index) => ({
           id: index.toString(),
           method: "GET",
-          url: `/groups/${id}?$select=id,displayName`
+          url: `/groups/${id}?$select=id,displayName`,
         }));
 
         // Process in batches of 20 (Graph API limit)
         const batchSize = 20;
         for (let i = 0; i < batchRequests.length; i += batchSize) {
           const batch = batchRequests.slice(i, i + batchSize);
-          
+
           const batchResponse = await this.client
             .api("/$batch")
+            .version("beta")
             .post({ requests: batch });
 
           for (const response of batchResponse.responses) {
@@ -121,16 +123,18 @@ export class GroupResolver {
       }
 
       const type = target["@odata.type"];
-      
+
       if (type?.includes("allDevicesAssignmentTarget")) {
         resolvedTargets.push("All Devices");
       } else if (type?.includes("allLicensedUsersAssignmentTarget")) {
         resolvedTargets.push("All Users");
       } else if (type?.includes("exclusionGroupAssignmentTarget")) {
-        const groupName = groupNames.get(target.groupId) || `Group ${target.groupId}`;
+        const groupName =
+          groupNames.get(target.groupId) || `Group ${target.groupId}`;
         resolvedTargets.push(`Excluded: ${groupName}`);
       } else if (type?.includes("groupAssignmentTarget")) {
-        const groupName = groupNames.get(target.groupId) || `Group ${target.groupId}`;
+        const groupName =
+          groupNames.get(target.groupId) || `Group ${target.groupId}`;
         resolvedTargets.push(groupName);
       } else {
         resolvedTargets.push("Custom Assignment");
@@ -141,7 +145,9 @@ export class GroupResolver {
   }
 
   // Get all unique groups from a set of configurations
-  async getAllGroupsFromConfigurations(configurations: any[]): Promise<Map<string, string>> {
+  async getAllGroupsFromConfigurations(
+    configurations: any[],
+  ): Promise<Map<string, string>> {
     const allGroupIds = new Set<string>();
 
     for (const config of configurations) {

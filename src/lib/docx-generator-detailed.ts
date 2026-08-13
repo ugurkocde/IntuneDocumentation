@@ -7,7 +7,6 @@ import {
   HeadingLevel,
   ImageRun,
   Packer,
-
   PageNumber,
   Paragraph,
   ShadingType,
@@ -36,8 +35,11 @@ import {
   parseSecurityBaseline,
   parseAssignments,
   formatValue,
+  parseDocumentableProperties,
+  extractAppConfigurationSettings,
 } from "./configuration-parser";
 import type { BrandingOptions } from "~/types/branding";
+import { REDACTED_VALUE } from "./intune-policy-registry";
 
 // ---------------------------------------------------------------------------
 // Helper utilities
@@ -67,8 +69,18 @@ function formatDocDate(dateStr?: string): string {
   const d = dateStr ? new Date(dateStr) : new Date();
   if (isNaN(d.getTime())) return "Unknown";
   const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
   ];
   const day = String(d.getDate()).padStart(2, "0");
   const mon = months[d.getMonth()] ?? "Jan";
@@ -316,10 +328,7 @@ export async function generateDetailedDOCX(
   );
 
   // Logo on cover
-  if (
-    branding?.logo?.dataUrl &&
-    branding.logo.position === "cover"
-  ) {
+  if (branding?.logo?.dataUrl && branding.logo.position === "cover") {
     try {
       const logoBase64 = extractBase64(branding.logo.dataUrl);
       const logoW = branding.logo.width ?? 60;
@@ -345,8 +354,7 @@ export async function generateDetailedDOCX(
   }
 
   // Main title
-  const titleText =
-    branding?.coverPage?.title || "Microsoft Intune";
+  const titleText = branding?.coverPage?.title || "Microsoft Intune";
   coverChildren.push(
     new Paragraph({
       children: [
@@ -401,8 +409,7 @@ export async function generateDetailedDOCX(
   const metaRows: string[][] = [];
   const orgLine = [companyName, department].filter(Boolean).join(" - ");
   if (orgLine) metaRows.push(["Organization", orgLine]);
-  const authorName =
-    branding?.coverPage?.author || branding?.metadata?.author;
+  const authorName = branding?.coverPage?.author || branding?.metadata?.author;
   if (authorName) metaRows.push(["Prepared by", authorName]);
   if (branding?.contactEmail) metaRows.push(["Contact", branding.contactEmail]);
   if (branding?.website) metaRows.push(["Website", branding.website]);
@@ -444,10 +451,26 @@ export async function generateDetailedDOCX(
                     fill: "F5F5F5",
                   },
                   borders: {
-                    top: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-                    bottom: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-                    left: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-                    right: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
+                    top: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
+                    bottom: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
+                    left: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
+                    right: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
                   },
                 }),
                 new TableCell({
@@ -464,10 +487,26 @@ export async function generateDetailedDOCX(
                   ],
                   width: { size: 65, type: WidthType.PERCENTAGE },
                   borders: {
-                    top: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-                    bottom: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-                    left: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-                    right: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
+                    top: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
+                    bottom: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
+                    left: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
+                    right: {
+                      style: BorderStyle.SINGLE,
+                      size: 1,
+                      color: "DDDDDD",
+                    },
                   },
                 }),
               ],
@@ -479,8 +518,16 @@ export async function generateDetailedDOCX(
           bottom: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
           left: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
           right: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-          insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-          insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
+          insideHorizontal: {
+            style: BorderStyle.SINGLE,
+            size: 1,
+            color: "DDDDDD",
+          },
+          insideVertical: {
+            style: BorderStyle.SINGLE,
+            size: 1,
+            color: "DDDDDD",
+          },
         },
       }),
     );
@@ -517,7 +564,8 @@ export async function generateDetailedDOCX(
     }
 
     if (
-      (branding?.header?.includeLogo || branding?.logo?.position === "header") &&
+      (branding?.header?.includeLogo ||
+        branding?.logo?.position === "header") &&
       branding?.logo?.dataUrl
     ) {
       try {
@@ -690,7 +738,12 @@ export async function generateDetailedDOCX(
   const metaText = (text: string): Paragraph =>
     new Paragraph({
       children: [
-        new TextRun({ text, font: fontName, size: bodySizeHp - 2, color: "888888" }),
+        new TextRun({
+          text,
+          font: fontName,
+          size: bodySizeHp - 2,
+          color: "888888",
+        }),
       ],
       spacing: { after: 40 },
     });
@@ -738,7 +791,9 @@ export async function generateDetailedDOCX(
       // Key metrics table (3 columns)
       const coveragePercent =
         analytics.totalConfigs > 0
-          ? Math.round((analytics.assignedConfigs / analytics.totalConfigs) * 100)
+          ? Math.round(
+              (analytics.assignedConfigs / analytics.totalConfigs) * 100,
+            )
           : 0;
 
       summaryChildren.push(
@@ -821,40 +876,10 @@ export async function generateDetailedDOCX(
       // Configuration inventory by type
       summaryChildren.push(heading2("Configuration Inventory"));
       const inventoryRows: string[][] = [];
-      const typeLabels: [string, number][] = [
-        ["Settings Catalog", analytics.byType.settingsCatalog],
-        ["Device Configurations", analytics.byType.deviceConfigurations],
-        ["Administrative Templates", analytics.byType.administrativeTemplates],
-        ["Compliance Policies", analytics.byType.compliancePolicies],
-        ["App Protection Policies", analytics.byType.appProtectionPolicies],
-        ["Security Baselines", analytics.byType.securityBaselines],
-        ["Scripts (Windows)", analytics.byType.scriptsWindows],
-        ["Scripts (macOS)", analytics.byType.scriptsMacOS],
-      ];
-
-      // Count assigned per type by iterating through data arrays
-      const countAssigned = (items: any[]): number =>
-        items.filter(
-          (i) => i.assignments && i.assignments.length > 0,
-        ).length;
-
-      const typeArrays: any[][] = [
-        data.settingsCatalog,
-        data.deviceConfigurations,
-        data.administrativeTemplates,
-        data.compliancePolicies,
-        data.appProtectionPolicies ?? [],
-        data.securityBaselines,
-        data.scripts.windows,
-        data.scripts.macOS,
-      ];
-
-      typeLabels.forEach(([label, total], idx) => {
+      analytics.inventory.forEach(({ label, total, assigned }) => {
         if (total > 0) {
-          const arr = typeArrays[idx] ?? [];
-          const assigned = countAssigned(arr);
           inventoryRows.push([
-            label ?? "",
+            label,
             String(total),
             String(assigned),
             String(total - assigned),
@@ -912,12 +937,41 @@ export async function generateDetailedDOCX(
     }
   }
 
+  if (data.fetchErrors?.length) {
+    const warningRows = data.fetchErrors.map((warning) => [
+      `${warning.partial ? "Partial data" : "Unavailable"}: ${warning.policyType}`,
+      warning.policyName,
+      [
+        warning.error,
+        warning.statusCode ? `HTTP ${warning.statusCode}` : undefined,
+        warning.endpoint
+          ? `Microsoft Graph beta ${warning.endpoint}`
+          : undefined,
+        warning.permissionHint
+          ? `Permission hint: ${warning.permissionHint}`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ]);
+    pushContentSection([
+      heading1("Collection Warnings"),
+      bodyText(
+        "The following resources were only partially collected or were unavailable. Successful sibling resources remain in this document.",
+      ),
+      spacer(),
+      createSettingsTable(
+        ["Status", "Resource", "Details"],
+        warningRows,
+        branding,
+      ),
+    ]);
+  }
+
   // ===== POLICY SECTION HELPERS =====
 
   /** Build assignment + description paragraphs for a policy. */
-  const policyMeta = (
-    policy: any,
-  ): Paragraph[] => {
+  const policyMeta = (policy: any): Paragraph[] => {
     const parts: Paragraph[] = [];
 
     // Created / Modified dates
@@ -926,13 +980,18 @@ export async function generateDetailedDOCX(
     }
     if (policy.lastModifiedDateTime) {
       parts.push(
-        metaText(`Last Modified: ${formatDocDate(policy.lastModifiedDateTime)}`),
+        metaText(
+          `Last Modified: ${formatDocDate(policy.lastModifiedDateTime)}`,
+        ),
       );
     }
 
     // Assignments
     const rawAssignment = parseAssignments(policy.assignments);
-    const assignmentText = enhanceAssignmentText(rawAssignment, data.groupNames);
+    const assignmentText = enhanceAssignmentText(
+      rawAssignment,
+      data.groupNames,
+    );
     parts.push(
       new Paragraph({
         children: [
@@ -957,6 +1016,14 @@ export async function generateDetailedDOCX(
     // Description
     if (policy.description) {
       parts.push(bodyText(policy.description));
+    }
+
+    if (policy.hasFetchError) {
+      parts.push(
+        bodyText(
+          `Partial collection: ${policy.fetchErrorMessage || "Microsoft Graph did not return every detail for this resource."}`,
+        ),
+      );
     }
 
     parts.push(spacer());
@@ -999,11 +1066,7 @@ export async function generateDetailedDOCX(
             sectionChildren.push(
               createSettingsTable(
                 ["Setting", "Value", "Description"],
-                formatted.map((s) => [
-                  s.name,
-                  s.value,
-                  s.description ?? "",
-                ]),
+                formatted.map((s) => [s.name, s.value, s.description ?? ""]),
                 branding,
               ),
             );
@@ -1047,11 +1110,7 @@ export async function generateDetailedDOCX(
             sectionChildren.push(
               createSettingsTable(
                 ["Setting", "Value", "Description"],
-                cat.settings.map((s) => [
-                  s.name,
-                  s.value,
-                  s.description ?? "",
-                ]),
+                cat.settings.map((s) => [s.name, s.value, s.description ?? ""]),
                 branding,
               ),
             );
@@ -1104,10 +1163,7 @@ export async function generateDetailedDOCX(
           sectionChildren.push(
             createSettingsTable(
               ["Setting", "Value"],
-              items.map((i) => [
-                `${i.name} (${i.state})`,
-                i.value,
-              ]),
+              items.map((i) => [`${i.name} (${i.state})`, i.value]),
               branding,
             ),
           );
@@ -1190,24 +1246,43 @@ export async function generateDetailedDOCX(
         const addIf = (label: string, val: any) => {
           if (val !== undefined && val !== null) {
             const fv = formatValue(val);
-            if (fv !== "Not configured") settings.push({ name: label, value: fv });
+            if (fv !== "Not configured")
+              settings.push({ name: label, value: fv });
           }
         };
 
         // Data protection
         addIf("App Data Encryption Type", policy.appDataEncryptionType);
-        addIf("Allowed Data Storage Locations", policy.allowedDataStorageLocations);
-        addIf("Allowed Inbound Data Transfer Sources", policy.allowedInboundDataTransferSources);
-        addIf("Allowed Outbound Data Transfer Destinations", policy.allowedOutboundDataTransferDestinations);
-        addIf("Allowed Outbound Clipboard Sharing Level", policy.allowedOutboundClipboardSharingLevel);
+        addIf(
+          "Allowed Data Storage Locations",
+          policy.allowedDataStorageLocations,
+        );
+        addIf(
+          "Allowed Inbound Data Transfer Sources",
+          policy.allowedInboundDataTransferSources,
+        );
+        addIf(
+          "Allowed Outbound Data Transfer Destinations",
+          policy.allowedOutboundDataTransferDestinations,
+        );
+        addIf(
+          "Allowed Outbound Clipboard Sharing Level",
+          policy.allowedOutboundClipboardSharingLevel,
+        );
         addIf("Block Data Backup", policy.dataBackupBlocked);
         addIf("Block Save As", policy.saveAsBlocked);
         addIf("Block Printing", policy.printBlocked);
-        addIf("Organizational Credentials Required", policy.organizationalCredentialsRequired);
+        addIf(
+          "Organizational Credentials Required",
+          policy.organizationalCredentialsRequired,
+        );
         addIf("Block Screen Capture", policy.screenCaptureBlocked);
         addIf("Encrypt App Data", policy.encryptAppData);
         addIf("Contact Sync Blocked", policy.contactSyncBlocked);
-        addIf("Disable App Encryption If Device Encryption Is Enabled", policy.disableAppEncryptionIfDeviceEncryptionIsEnabled);
+        addIf(
+          "Disable App Encryption If Device Encryption Is Enabled",
+          policy.disableAppEncryptionIfDeviceEncryptionIsEnabled,
+        );
 
         // Access requirements
         addIf("PIN Required", policy.pinRequired);
@@ -1219,10 +1294,22 @@ export async function generateDetailedDOCX(
 
         // Conditional launch
         addIf("Device Compliance Required", policy.deviceComplianceRequired);
-        addIf("Managed Browser Required", policy.managedBrowserToOpenLinksRequired);
-        addIf("Maximum Allowed Device Threat Level", policy.maximumAllowedDeviceThreatLevel);
-        addIf("Mobile Threat Defense Remediation Action", policy.mobileThreatDefenseRemediationAction);
-        addIf("Action If Unable to Authenticate User", policy.appActionIfUnableToAuthenticateUser);
+        addIf(
+          "Managed Browser Required",
+          policy.managedBrowserToOpenLinksRequired,
+        );
+        addIf(
+          "Maximum Allowed Device Threat Level",
+          policy.maximumAllowedDeviceThreatLevel,
+        );
+        addIf(
+          "Mobile Threat Defense Remediation Action",
+          policy.mobileThreatDefenseRemediationAction,
+        );
+        addIf(
+          "Action If Unable to Authenticate User",
+          policy.appActionIfUnableToAuthenticateUser,
+        );
 
         // Version requirements - minimum
         addIf("Minimum Required SDK Version", policy.minimumRequiredSdkVersion);
@@ -1244,13 +1331,29 @@ export async function generateDetailedDOCX(
         addIf("Maximum Wipe OS Version", policy.maximumWipeOsVersion);
 
         // Offline / grace periods
-        addIf("Period Offline Before Wipe Is Enforced", policy.periodOfflineBeforeWipeIsEnforced);
-        addIf("Period Offline Before Access Check", policy.periodOfflineBeforeAccessCheck);
-        addIf("Period Online Before Access Check", policy.periodOnlineBeforeAccessCheck);
+        addIf(
+          "Period Offline Before Wipe Is Enforced",
+          policy.periodOfflineBeforeWipeIsEnforced,
+        );
+        addIf(
+          "Period Offline Before Access Check",
+          policy.periodOfflineBeforeAccessCheck,
+        );
+        addIf(
+          "Period Online Before Access Check",
+          policy.periodOnlineBeforeAccessCheck,
+        );
 
         // Additional
         addIf("Is Assigned", policy.isAssigned);
         addIf("Deployed App Count", policy.deployedAppCount);
+
+        const existingSettingNames = new Set(settings.map((item) => item.name));
+        settings.push(
+          ...parseDocumentableProperties(policy).filter(
+            (item) => !existingSettingNames.has(item.name),
+          ),
+        );
 
         if (settings.length > 0) {
           sectionChildren.push(
@@ -1298,11 +1401,7 @@ export async function generateDetailedDOCX(
           sectionChildren.push(
             createSettingsTable(
               ["Setting", "Value", "Description"],
-              cat.settings.map((s) => [
-                s.name,
-                s.value,
-                s.description ?? "",
-              ]),
+              cat.settings.map((s) => [s.name, s.value, s.description ?? ""]),
               branding,
             ),
           );
@@ -1343,8 +1442,7 @@ export async function generateDetailedDOCX(
           }
 
           const scriptMeta: string[][] = [];
-          if (script.fileName)
-            scriptMeta.push(["File Name", script.fileName]);
+          if (script.fileName) scriptMeta.push(["File Name", script.fileName]);
           if (script.runAsAccount !== undefined)
             scriptMeta.push([
               "Run As",
@@ -1356,10 +1454,7 @@ export async function generateDetailedDOCX(
               formatValue(script.enforceSignatureCheck),
             ]);
           if (script.runAs32Bit !== undefined)
-            scriptMeta.push([
-              "Run As 32-bit",
-              formatValue(script.runAs32Bit),
-            ]);
+            scriptMeta.push(["Run As 32-bit", formatValue(script.runAs32Bit)]);
 
           if (scriptMeta.length > 0) {
             sectionChildren.push(
@@ -1376,7 +1471,11 @@ export async function generateDetailedDOCX(
               content = "(Base64 decode failed)";
             }
           }
-          if (content) {
+          if (content === REDACTED_VALUE) {
+            sectionChildren.push(
+              bodyText("Script content omitted from the export for security."),
+            );
+          } else if (content) {
             sectionChildren.push(
               new Paragraph({
                 children: [
@@ -1431,16 +1530,13 @@ export async function generateDetailedDOCX(
       for (const script of data.scripts.macOS) {
         totalPolicies++;
         try {
-          sectionChildren.push(
-            heading3(script.displayName || "macOS Script"),
-          );
+          sectionChildren.push(heading3(script.displayName || "macOS Script"));
           if (script.description) {
             sectionChildren.push(bodyText(script.description));
           }
 
           const scriptMeta: string[][] = [];
-          if (script.fileName)
-            scriptMeta.push(["File Name", script.fileName]);
+          if (script.fileName) scriptMeta.push(["File Name", script.fileName]);
           if (script.runAsAccount !== undefined)
             scriptMeta.push([
               "Run As",
@@ -1452,10 +1548,7 @@ export async function generateDetailedDOCX(
               formatValue(script.blockExecutionNotifications),
             ]);
           if (script.executionFrequency)
-            scriptMeta.push([
-              "Execution Frequency",
-              script.executionFrequency,
-            ]);
+            scriptMeta.push(["Execution Frequency", script.executionFrequency]);
           if (script.retryCount !== undefined)
             scriptMeta.push(["Retry Count", String(script.retryCount)]);
 
@@ -1474,7 +1567,11 @@ export async function generateDetailedDOCX(
               content = "(Base64 decode failed)";
             }
           }
-          if (content) {
+          if (content === REDACTED_VALUE) {
+            sectionChildren.push(
+              bodyText("Script content omitted from the export for security."),
+            );
+          } else if (content) {
             sectionChildren.push(
               new Paragraph({
                 children: [
@@ -1549,7 +1646,10 @@ export async function generateDetailedDOCX(
         }
 
         if (config.description) {
-          configSettings.push({ name: "Description", value: config.description });
+          configSettings.push({
+            name: "Description",
+            value: config.description,
+          });
         }
 
         // Targeted apps
@@ -1565,61 +1665,59 @@ export async function generateDetailedDOCX(
 
         // XML payload (managed app configurations)
         if (config.encodedSettingXml) {
-          try {
-            const decoded = atob(config.encodedSettingXml);
+          if (config.encodedSettingXml === REDACTED_VALUE) {
             configSettings.push({
               name: "Configuration Settings (XML)",
-              value:
-                decoded.length > 500
-                  ? decoded.substring(0, 500) + "..."
-                  : decoded,
+              value: "Omitted from the export for security",
             });
-          } catch {
-            configSettings.push({
-              name: "Configuration Settings",
-              value: "XML settings present (base64 encoded)",
-            });
-          }
+          } else
+            try {
+              const decoded = atob(config.encodedSettingXml);
+              configSettings.push({
+                name: "Configuration Settings (XML)",
+                value:
+                  decoded.length > 500
+                    ? decoded.substring(0, 500) + "..."
+                    : decoded,
+              });
+            } catch {
+              configSettings.push({
+                name: "Configuration Settings",
+                value: "XML settings present (base64 encoded)",
+              });
+            }
         }
 
         // JSON payload (managed device configurations)
         if (config.payloadJson) {
-          try {
-            const payload = JSON.parse(config.payloadJson);
-            Object.entries(payload).forEach(([key, value]) => {
-              const fv = formatValue(value);
-              if (fv !== "Not configured") {
-                configSettings.push({ name: key, value: fv });
-              }
-            });
-          } catch {
+          if (config.payloadJson === REDACTED_VALUE) {
             configSettings.push({
               name: "Configuration Payload",
-              value:
-                config.payloadJson.length > 200
-                  ? config.payloadJson.substring(0, 200) + "..."
-                  : config.payloadJson,
+              value: "Omitted from the export for security",
             });
-          }
+          } else
+            try {
+              const payload = JSON.parse(config.payloadJson);
+              Object.entries(payload).forEach(([key, value]) => {
+                const fv = formatValue(value);
+                if (fv !== "Not configured") {
+                  configSettings.push({ name: key, value: fv });
+                }
+              });
+            } catch {
+              configSettings.push({
+                name: "Configuration Payload",
+                value:
+                  config.payloadJson.length > 200
+                    ? config.payloadJson.substring(0, 200) + "..."
+                    : config.payloadJson,
+              });
+            }
         }
 
         // Generic settings array
         if (config.settings && Array.isArray(config.settings)) {
-          for (const setting of config.settings) {
-            const fv = formatValue(
-              setting.settingValue || setting.value || setting.valueJson,
-            );
-            if (fv !== "Not configured") {
-              configSettings.push({
-                name:
-                  setting.settingName ||
-                  setting.name ||
-                  setting.key ||
-                  "Setting",
-                value: fv,
-              });
-            }
-          }
+          configSettings.push(...extractAppConfigurationSettings(config));
         }
 
         // Raw payload string
@@ -1627,9 +1725,11 @@ export async function generateDetailedDOCX(
           configSettings.push({
             name: "Payload",
             value:
-              config.payload.length > 200
-                ? config.payload.substring(0, 200) + "..."
-                : config.payload,
+              config.payload === REDACTED_VALUE
+                ? "Omitted from the export for security"
+                : config.payload.length > 200
+                  ? config.payload.substring(0, 200) + "..."
+                  : config.payload,
           });
         }
 
@@ -1684,35 +1784,80 @@ export async function generateDetailedDOCX(
         const addIf = (label: string, val: any) => {
           if (val !== undefined && val !== null) {
             const fv = formatValue(val);
-            if (fv !== "Not configured") settings.push({ name: label, value: fv });
+            if (fv !== "Not configured")
+              settings.push({ name: label, value: fv });
           }
         };
 
         addIf("Delivery Optimization Mode", policy.deliveryOptimizationMode);
         addIf("Prerelease Features", policy.prereleaseFeatures);
         addIf("Automatic Update Mode", policy.automaticUpdateMode);
-        addIf("Microsoft Update Service Allowed", policy.microsoftUpdateServiceAllowed);
+        addIf(
+          "Microsoft Update Service Allowed",
+          policy.microsoftUpdateServiceAllowed,
+        );
         addIf("Drivers Excluded", policy.driversExcluded);
-        addIf("Quality Updates Deferral (Days)", policy.qualityUpdatesDeferralPeriodInDays);
-        addIf("Feature Updates Deferral (Days)", policy.featureUpdatesDeferralPeriodInDays);
-        addIf("Quality Updates Pause Start Date", policy.qualityUpdatesPauseStartDate);
-        addIf("Feature Updates Pause Start Date", policy.featureUpdatesPauseStartDate);
+        addIf(
+          "Quality Updates Deferral (Days)",
+          policy.qualityUpdatesDeferralPeriodInDays,
+        );
+        addIf(
+          "Feature Updates Deferral (Days)",
+          policy.featureUpdatesDeferralPeriodInDays,
+        );
+        addIf(
+          "Quality Updates Pause Start Date",
+          policy.qualityUpdatesPauseStartDate,
+        );
+        addIf(
+          "Feature Updates Pause Start Date",
+          policy.featureUpdatesPauseStartDate,
+        );
         addIf("Quality Updates Paused", policy.qualityUpdatesPaused);
         addIf("Feature Updates Paused", policy.featureUpdatesPaused);
         addIf("Business Ready Updates Only", policy.businessReadyUpdatesOnly);
         addIf("Skip Checks Before Restart", policy.skipChecksBeforeRestart);
         addIf("Update Weeks", policy.updateWeeks);
-        addIf("Installation Schedule", policy.installationSchedule ? JSON.stringify(policy.installationSchedule) : undefined);
+        addIf(
+          "Installation Schedule",
+          policy.installationSchedule
+            ? JSON.stringify(policy.installationSchedule)
+            : undefined,
+        );
         addIf("User Pause Access", policy.userPauseAccess);
-        addIf("User Windows Update Scan Access", policy.userWindowsUpdateScanAccess);
-        addIf("Auto Restart Notification Dismissal", policy.autoRestartNotificationDismissal);
-        addIf("Deadline For Feature Updates (Days)", policy.deadlineForFeatureUpdatesInDays);
-        addIf("Deadline For Quality Updates (Days)", policy.deadlineForQualityUpdatesInDays);
+        addIf(
+          "User Windows Update Scan Access",
+          policy.userWindowsUpdateScanAccess,
+        );
+        addIf(
+          "Auto Restart Notification Dismissal",
+          policy.autoRestartNotificationDismissal,
+        );
+        addIf(
+          "Deadline For Feature Updates (Days)",
+          policy.deadlineForFeatureUpdatesInDays,
+        );
+        addIf(
+          "Deadline For Quality Updates (Days)",
+          policy.deadlineForQualityUpdatesInDays,
+        );
         addIf("Deadline Grace Period (Days)", policy.deadlineGracePeriodInDays);
-        addIf("Postpone Reboot Until After Deadline", policy.postponeRebootUntilAfterDeadline);
-        addIf("Engaged Restart Deadline (Days)", policy.engagedRestartDeadlineInDays);
-        addIf("Engaged Restart Snooze Schedule (Days)", policy.engagedRestartSnoozeScheduleInDays);
-        addIf("Engaged Restart Transition Schedule (Days)", policy.engagedRestartTransitionScheduleInDays);
+        addIf(
+          "Postpone Reboot Until After Deadline",
+          policy.postponeRebootUntilAfterDeadline,
+        );
+        addIf(
+          "Engaged Restart Deadline (Days)",
+          policy.engagedRestartDeadlineInDays,
+        );
+        addIf(
+          "Engaged Restart Snooze Schedule (Days)",
+          policy.engagedRestartSnoozeScheduleInDays,
+        );
+        addIf(
+          "Engaged Restart Transition Schedule (Days)",
+          policy.engagedRestartTransitionScheduleInDays,
+        );
 
         if (settings.length > 0) {
           sectionChildren.push(
@@ -1757,7 +1902,8 @@ export async function generateDetailedDOCX(
         const addIf = (label: string, val: any) => {
           if (val !== undefined && val !== null) {
             const fv = formatValue(val);
-            if (fv !== "Not configured") settings.push({ name: label, value: fv });
+            if (fv !== "Not configured")
+              settings.push({ name: label, value: fv });
           }
         };
 
@@ -1809,6 +1955,13 @@ export async function generateDetailedDOCX(
         addIf("Device Limit", config.limit);
         addIf("Description", config.description);
 
+        const existingSettingNames = new Set(settings.map((item) => item.name));
+        settings.push(
+          ...parseDocumentableProperties(config).filter(
+            (item) => !existingSettingNames.has(item.name),
+          ),
+        );
+
         if (settings.length > 0) {
           sectionChildren.push(
             createSettingsTable(
@@ -1855,7 +2008,7 @@ export async function generateDetailedDOCX(
               ? "Disabled"
               : policy.state === "enabledForReportingButNotEnforced"
                 ? "Report-only"
-                : policy.state ?? "Unknown";
+                : (policy.state ?? "Unknown");
 
         sectionChildren.push(
           new Paragraph({
@@ -2018,10 +2171,7 @@ export async function generateDetailedDOCX(
         const grantControls = policy.grantControls;
         if (grantControls) {
           if (grantControls.operator) {
-            conditions.push([
-              "Grant Operator",
-              grantControls.operator,
-            ]);
+            conditions.push(["Grant Operator", grantControls.operator]);
           }
           if (grantControls.builtInControls?.length) {
             conditions.push([
@@ -2047,15 +2197,13 @@ export async function generateDetailedDOCX(
         const sessionControls = policy.sessionControls;
         if (sessionControls) {
           if (sessionControls.applicationEnforcedRestrictions?.isEnabled) {
-            conditions.push([
-              "App Enforced Restrictions",
-              "Enabled",
-            ]);
+            conditions.push(["App Enforced Restrictions", "Enabled"]);
           }
           if (sessionControls.cloudAppSecurity?.isEnabled) {
             conditions.push([
               "Cloud App Security",
-              sessionControls.cloudAppSecurity.cloudAppSecurityType || "Enabled",
+              sessionControls.cloudAppSecurity.cloudAppSecurityType ||
+                "Enabled",
             ]);
           }
           if (sessionControls.signInFrequency?.isEnabled) {
@@ -2074,11 +2222,7 @@ export async function generateDetailedDOCX(
 
         if (conditions.length > 0) {
           sectionChildren.push(
-            createSettingsTable(
-              ["Condition", "Value"],
-              conditions,
-              branding,
-            ),
+            createSettingsTable(["Condition", "Value"], conditions, branding),
           );
         } else {
           sectionChildren.push(bodyText("No conditions configured"));
@@ -2098,6 +2242,60 @@ export async function generateDetailedDOCX(
     pushContentSection(sectionChildren);
   }
 
+  const additionalSections = (data.sections || []).filter(
+    (section) =>
+      section.selectionPrefix.startsWith("additional-") &&
+      (section.items.length > 0 || section.error),
+  );
+  for (const sourceSection of additionalSections) {
+    const sectionChildren: (Paragraph | Table)[] = [
+      heading1(sourceSection.label),
+    ];
+    if (sourceSection.endpoint) {
+      sectionChildren.push(
+        metaText(`Source: Microsoft Graph beta ${sourceSection.endpoint}`),
+      );
+    }
+    if (sourceSection.error) {
+      sectionChildren.push(
+        bodyText(
+          `${sourceSection.error.partial ? "Partial data" : "Collection unavailable"}: ${sourceSection.error.message}`,
+        ),
+      );
+    }
+
+    for (const item of sourceSection.items) {
+      totalPolicies++;
+      try {
+        sectionChildren.push(
+          heading2(item.displayName || item.name || sourceSection.label),
+        );
+        sectionChildren.push(...policyMeta(item));
+        const settings = parseDocumentableProperties(item);
+        if (settings.length > 0) {
+          sectionChildren.push(
+            createSettingsTable(
+              ["Setting", "Value"],
+              settings.map((setting) => [setting.name, setting.value]),
+              branding,
+            ),
+          );
+        } else {
+          sectionChildren.push(bodyText("No additional settings returned"));
+        }
+        sectionChildren.push(spacer());
+        successfulPolicies++;
+      } catch (e: any) {
+        errors.push({
+          policyType: sourceSection.label,
+          policyName: item.displayName || item.name || sourceSection.label,
+          error: e?.message ?? String(e),
+        });
+      }
+    }
+    pushContentSection(sectionChildren);
+  }
+
   // -----------------------------------------------------------------------
   // Build the Document
   // -----------------------------------------------------------------------
@@ -2107,8 +2305,11 @@ export async function generateDetailedDOCX(
     },
     title: branding?.metadata?.title || "Intune Configuration Documentation",
     creator: branding?.metadata?.author || "IntuneDocumentation",
-    subject: branding?.metadata?.subject || "Microsoft Intune Configuration Export",
-    keywords: branding?.metadata?.keywords?.join(", ") || "Intune, Configuration, Documentation",
+    subject:
+      branding?.metadata?.subject || "Microsoft Intune Configuration Export",
+    keywords:
+      branding?.metadata?.keywords?.join(", ") ||
+      "Intune, Configuration, Documentation",
     styles: {
       default: {
         document: {

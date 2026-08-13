@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
   }
 
   const accessToken = authHeader.replace("Bearer ", "");
+  const includeConditionalAccess =
+    request.headers.get("X-Include-Conditional-Access") === "true";
 
   // Create a readable stream for Server-Sent Events
   const encoder = new TextEncoder();
@@ -52,7 +54,8 @@ export async function GET(request: NextRequest) {
           "App Configurations": 8,
           "Windows Update Policies": 9,
           "Enrollment Configurations": 10,
-          "Conditional Access Policies": 11,
+          "Additional Intune coverage": 11,
+          "Conditional Access Policies": 12,
         };
 
         // Create service with progress callback
@@ -60,6 +63,11 @@ export async function GET(request: NextRequest) {
           accessToken,
           (progressEvent) => {
             const stepIndex = stepIndexByName[progressEvent.step];
+
+            if (progressEvent.type === "section" && progressEvent.section) {
+              sendEvent("section", { section: progressEvent.section });
+              return;
+            }
 
             if (progressEvent.type === "completed") {
               // A policy type finished for real; let the client mark it done
@@ -113,6 +121,7 @@ export async function GET(request: NextRequest) {
           { name: "App Configurations", stepIndex: 8 },
           { name: "Windows Update Policies", stepIndex: 9 },
           { name: "Enrollment Configurations", stepIndex: 10 },
+          { name: "Additional Intune coverage", stepIndex: 11 },
         ];
 
         // Mark all as loading
@@ -125,7 +134,9 @@ export async function GET(request: NextRequest) {
         });
 
         // Fetch all configurations; per-type completion events stream in live
-        const configurations = await service.getAllDetailedConfigurations();
+        const configurations = await service.getAllDetailedConfigurations(
+          includeConditionalAccess,
+        );
 
         // Safety net: ensure every step reads as completed before the payload
         policyTypes.forEach((type) => {
@@ -138,7 +149,11 @@ export async function GET(request: NextRequest) {
 
         // Send final data
         sendEvent("complete", {
-          data: configurations,
+          data: {
+            permissionErrors: configurations.permissionErrors,
+            fetchErrors: configurations.fetchErrors,
+            summary: configurations.summary,
+          },
           message: "All configurations fetched successfully",
         });
 

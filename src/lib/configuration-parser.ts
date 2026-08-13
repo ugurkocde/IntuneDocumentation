@@ -5,9 +5,15 @@ import type { ConfigurationSetting } from "./intune-detailed-client";
 function extractNestedSettings(
   children: any[],
   depth: number = 0,
-  parentDefinitions?: Array<{id: string; displayName: string; description?: string; options?: any[]}>
-): Array<{name: string, value: string, description?: string}> {
-  const results: Array<{name: string, value: string, description?: string}> = [];
+  parentDefinitions?: Array<{
+    id: string;
+    displayName: string;
+    description?: string;
+    options?: any[];
+  }>,
+): Array<{ name: string; value: string; description?: string }> {
+  const results: Array<{ name: string; value: string; description?: string }> =
+    [];
   const indent = "  ".repeat(depth);
 
   // Safety check: ensure children is an array
@@ -25,13 +31,15 @@ function extractNestedSettings(
       const settingDefinitionId = child.settingDefinitionId;
 
       // Find the definition from the parent's definitions array
-      const settingDef = parentDefinitions?.find(def => def.id === settingDefinitionId);
+      const settingDef = parentDefinitions?.find(
+        (def) => def.id === settingDefinitionId,
+      );
 
       // Create a proper ConfigurationSetting structure
       const configSetting: ConfigurationSetting = {
         id: settingDefinitionId || "",
         settingInstance: child, // The child IS the settingInstance
-        settingDefinitions: settingDef ? [settingDef as any] : []
+        settingDefinitions: settingDef ? [settingDef as any] : [],
       };
 
       const childResult = extractSettingValue(configSetting, depth);
@@ -45,7 +53,7 @@ function extractNestedSettings(
       results.push({
         name: indent + childResult.name,
         value: childResult.value,
-        description: childResult.description
+        description: childResult.description,
       });
 
       // If this setting has nested children, add them recursively
@@ -63,19 +71,24 @@ function extractNestedSettings(
 }
 
 // Helper to extract setting value from complex structures
-export function extractSettingValue(setting: ConfigurationSetting, depth: number = 0): {
+export function extractSettingValue(
+  setting: ConfigurationSetting,
+  depth: number = 0,
+): {
   name: string;
   value: any;
   type: string;
   description?: string;
-  nestedSettings?: Array<{name: string, value: string, description?: string}>;
+  nestedSettings?: Array<{ name: string; value: string; description?: string }>;
 } {
   const settingDef = setting.settingDefinitions?.[0];
   const instance = setting.settingInstance;
 
   let value: any = "Not configured";
   let type = "Unknown";
-  let nestedSettings: Array<{name: string, value: string, description?: string}> | undefined;
+  let nestedSettings:
+    | Array<{ name: string; value: string; description?: string }>
+    | undefined;
 
   // Safety check: if settingInstance is missing or undefined, return early
   if (!instance) {
@@ -83,7 +96,7 @@ export function extractSettingValue(setting: ConfigurationSetting, depth: number
       name: settingDef?.displayName || setting.id || "Unknown Setting",
       value: "Not configured",
       type: "Unknown",
-      description: settingDef?.description
+      description: settingDef?.description,
     };
   }
 
@@ -94,28 +107,46 @@ export function extractSettingValue(setting: ConfigurationSetting, depth: number
   } else if (instance.simpleSettingCollectionValue) {
     // Handle array of simple values (strings, numbers, booleans)
     type = "Simple Collection";
-    const values = instance.simpleSettingCollectionValue.map(item => item.value);
-    value = values;  // formatValue will handle array formatting
+    const values = instance.simpleSettingCollectionValue.map(
+      (item) => item.value,
+    );
+    value = values; // formatValue will handle array formatting
   } else if (instance.choiceSettingValue) {
     value = instance.choiceSettingValue.value;
     type = "Choice";
     // Get the display name for the choice if available
     if (settingDef?.options) {
-      const option = settingDef.options.find(o => o.name === value);
+      const option = settingDef.options.find(
+        (o) => o.name === value || o.itemId === value,
+      );
       if (option) {
         value = option.displayName || value;
       }
     }
 
     // Handle nested children in choice settings
-    if (instance.choiceSettingValue.children && instance.choiceSettingValue.children.length > 0) {
-      nestedSettings = extractNestedSettings(instance.choiceSettingValue.children, depth + 1, setting.settingDefinitions);
+    if (
+      instance.choiceSettingValue.children &&
+      instance.choiceSettingValue.children.length > 0
+    ) {
+      nestedSettings = extractNestedSettings(
+        instance.choiceSettingValue.children,
+        depth + 1,
+        setting.settingDefinitions,
+      );
     }
   } else if (instance.groupSettingValue) {
     // Handle single group setting (not a collection)
     type = "Group";
-    if (instance.groupSettingValue.children && instance.groupSettingValue.children.length > 0) {
-      nestedSettings = extractNestedSettings(instance.groupSettingValue.children, depth + 1, setting.settingDefinitions);
+    if (
+      instance.groupSettingValue.children &&
+      instance.groupSettingValue.children.length > 0
+    ) {
+      nestedSettings = extractNestedSettings(
+        instance.groupSettingValue.children,
+        depth + 1,
+        setting.settingDefinitions,
+      );
       value = `${nestedSettings.length} setting(s) in group`;
     } else {
       value = "Group setting (no children)";
@@ -123,11 +154,21 @@ export function extractSettingValue(setting: ConfigurationSetting, depth: number
   } else if (instance.groupSettingCollectionValue) {
     // Instead of just showing "Collection (X items)", extract the nested settings
     type = "Group Collection";
-    const allNestedSettings: Array<{name: string, value: string, description?: string}> = [];
+    const allNestedSettings: Array<{
+      name: string;
+      value: string;
+      description?: string;
+    }> = [];
 
     for (const group of instance.groupSettingCollectionValue) {
       if (group.children && group.children.length > 0) {
-        allNestedSettings.push(...extractNestedSettings(group.children, depth + 1, setting.settingDefinitions));
+        allNestedSettings.push(
+          ...extractNestedSettings(
+            group.children,
+            depth + 1,
+            setting.settingDefinitions,
+          ),
+        );
       }
     }
 
@@ -140,11 +181,14 @@ export function extractSettingValue(setting: ConfigurationSetting, depth: number
   }
 
   return {
-    name: settingDef?.displayName || instance.settingDefinitionId || "Unknown Setting",
+    name:
+      settingDef?.displayName ||
+      instance.settingDefinitionId ||
+      "Unknown Setting",
     value: formatValue(value),
     type,
     description: settingDef?.description,
-    nestedSettings
+    nestedSettings,
   };
 }
 
@@ -209,6 +253,110 @@ export function formatValue(value: any): string {
   return String(value);
 }
 
+const DOCUMENT_METADATA_KEYS = new Set([
+  "id",
+  "@odata.type",
+  "@odata.context",
+  "displayName",
+  "name",
+  "description",
+  "createdDateTime",
+  "lastModifiedDateTime",
+  "modifiedDateTime",
+  "assignments",
+  "configType",
+  "registryKey",
+  "sourceEndpoint",
+]);
+
+function humanizePropertyName(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_.]/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+export function parseDocumentableProperties(
+  value: Record<string, any>,
+  maxDepth = 5,
+): Array<{ name: string; value: string }> {
+  const settings: Array<{ name: string; value: string }> = [];
+
+  if (typeof value["@odata.type"] === "string") {
+    settings.push({
+      name: "Resource Type",
+      value: value["@odata.type"].replace("#microsoft.graph.", ""),
+    });
+  }
+
+  const visit = (current: unknown, path: string[], depth: number) => {
+    if (current === null || current === undefined) return;
+    if (
+      depth < maxDepth &&
+      Array.isArray(current) &&
+      current.every((item) => item && typeof item === "object")
+    ) {
+      current.forEach((item, index) => {
+        const record = item as Record<string, unknown>;
+        const candidate =
+          record.displayName ??
+          record.name ??
+          record.title ??
+          record.id ??
+          `Item ${index + 1}`;
+        const label =
+          typeof candidate === "string" || typeof candidate === "number"
+            ? String(candidate)
+            : `Item ${index + 1}`;
+        visit(item, [...path, label], depth + 1);
+      });
+      return;
+    }
+    if (
+      depth < maxDepth &&
+      !Array.isArray(current) &&
+      typeof current === "object"
+    ) {
+      for (const [key, nested] of Object.entries(
+        current as Record<string, unknown>,
+      )) {
+        if (DOCUMENT_METADATA_KEYS.has(key)) continue;
+        visit(nested, [...path, humanizePropertyName(key)], depth + 1);
+      }
+      return;
+    }
+
+    const formatted = formatValue(current);
+    if (formatted !== "Not configured" && path.length > 0) {
+      settings.push({ name: path.join(" › "), value: formatted });
+    }
+  };
+
+  visit(value, [], 0);
+  return settings;
+}
+
+export function extractAppConfigurationSettings(config: Record<string, any>) {
+  if (!Array.isArray(config.settings)) return [];
+  return config.settings
+    .map((setting: Record<string, any>) => ({
+      name:
+        setting.appConfigKey ||
+        setting.settingName ||
+        setting.name ||
+        setting.key ||
+        "Setting",
+      value: formatValue(
+        setting.appConfigKeyValue ??
+          setting.settingValue ??
+          setting.value ??
+          setting.valueJson,
+      ),
+      type: setting.appConfigKeyType,
+    }))
+    .filter((setting) => setting.value !== "Not configured");
+}
+
 // Parse device configuration properties
 export function parseDeviceConfiguration(config: any): Array<{
   category: string;
@@ -220,14 +368,27 @@ export function parseDeviceConfiguration(config: any): Array<{
 }> {
   const categories: Record<string, any[]> = {};
   const ignoredKeys = [
-    "id", "@odata.type", "@odata.context", "displayName", "description",
-    "createdDateTime", "lastModifiedDateTime", "version", "assignments",
-    "configType", "roleScopeTagIds", "supportsScopeTags"
+    "id",
+    "@odata.type",
+    "@odata.context",
+    "displayName",
+    "description",
+    "createdDateTime",
+    "lastModifiedDateTime",
+    "version",
+    "assignments",
+    "configType",
+    "roleScopeTagIds",
+    "supportsScopeTags",
   ];
 
   // Group settings by category
-  Object.keys(config).forEach(key => {
-    if (!ignoredKeys.includes(key) && config[key] !== null && config[key] !== undefined) {
+  Object.keys(config).forEach((key) => {
+    if (
+      !ignoredKeys.includes(key) &&
+      config[key] !== null &&
+      config[key] !== undefined
+    ) {
       const formattedValue = formatValue(config[key]);
 
       // Skip unconfigured settings
@@ -243,14 +404,14 @@ export function parseDeviceConfiguration(config: any): Array<{
       categories[category].push({
         name: formatKeyName(key),
         value: formattedValue,
-        description: getPropertyDescription(key)
+        description: getPropertyDescription(key),
       });
     }
   });
 
-  return Object.keys(categories).map(category => ({
+  return Object.keys(categories).map((category) => ({
     category,
-    settings: categories[category] || []
+    settings: categories[category] || [],
   }));
 }
 
@@ -261,32 +422,36 @@ export function parseAdministrativeTemplate(definitionValues: any[]): Array<{
   state: string;
   category: string;
 }> {
-  return definitionValues.map(dv => {
+  return definitionValues.map((dv) => {
     const definition = dv.definition || {};
     const presentationValues = dv.presentationValues || [];
-    
-    let value = "Not configured";
+
+    let value = dv.presentationFetchError
+      ? "Unavailable (Microsoft Graph did not return presentation values)"
+      : "Not configured";
     const state = dv.enabled ? "Enabled" : "Disabled";
-    
+
     // Extract values from presentation values
     if (presentationValues.length > 0) {
-      const values = presentationValues.map((pv: any) => {
-        if (pv.value !== undefined && pv.value !== null) {
-          return `${pv.presentation?.label || "Value"}: ${formatValue(pv.value)}`;
-        }
-        return null;
-      }).filter(Boolean);
-      
+      const values = presentationValues
+        .map((pv: any) => {
+          if (pv.value !== undefined && pv.value !== null) {
+            return `${pv.presentation?.label || "Value"}: ${formatValue(pv.value)}`;
+          }
+          return null;
+        })
+        .filter(Boolean);
+
       if (values.length > 0) {
         value = values.join(", ");
       }
     }
-    
+
     return {
       name: definition.displayName || "Unknown Setting",
       value,
       state,
-      category: definition.categoryPath || "General"
+      category: definition.categoryPath || "General",
     };
   });
 }
@@ -302,14 +467,26 @@ export function parseComplianceRules(policy: any): Array<{
 
   // Properties to ignore (metadata, not actual compliance settings)
   const ignoredKeys = [
-    "id", "@odata.type", "@odata.context", "displayName", "description",
-    "createdDateTime", "lastModifiedDateTime", "version", "assignments",
-    "roleScopeTagIds", "scheduledActionsForRule"
+    "id",
+    "@odata.type",
+    "@odata.context",
+    "displayName",
+    "description",
+    "createdDateTime",
+    "lastModifiedDateTime",
+    "version",
+    "assignments",
+    "roleScopeTagIds",
+    "scheduledActionsForRule",
   ];
 
   // Enumerate all properties dynamically
-  Object.keys(policy).forEach(key => {
-    if (!ignoredKeys.includes(key) && policy[key] !== undefined && policy[key] !== null) {
+  Object.keys(policy).forEach((key) => {
+    if (
+      !ignoredKeys.includes(key) &&
+      policy[key] !== undefined &&
+      policy[key] !== null
+    ) {
       const formattedValue = formatValue(policy[key]);
 
       // Skip unconfigured settings
@@ -321,7 +498,7 @@ export function parseComplianceRules(policy: any): Array<{
         category: getCategoryFromKey(key),
         rule: formatKeyName(key),
         value: formattedValue,
-        action: getComplianceAction(policy.scheduledActionsForRule)
+        action: getComplianceAction(policy.scheduledActionsForRule),
       });
     }
   });
@@ -330,7 +507,9 @@ export function parseComplianceRules(policy: any): Array<{
 }
 
 // Helper to parse security baseline setting name from definitionId
-function parseSecurityBaselineSettingName(definitionId: string | undefined): string {
+function parseSecurityBaselineSettingName(
+  definitionId: string | undefined,
+): string {
   if (!definitionId) return "Unknown Setting";
 
   // Example: "device_vendor_msft_defender_configuration_enablenetworkprotection"
@@ -376,7 +555,7 @@ export function parseSecurityBaseline(categories: any[]): Array<{
     description?: string;
   }>;
 }> {
-  return categories.map(category => {
+  return categories.map((category) => {
     const settings = (category.settings || [])
       .map((setting: any) => {
         let value = "Not configured";
@@ -394,14 +573,17 @@ export function parseSecurityBaseline(categories: any[]): Array<{
         return {
           name: parseSecurityBaselineSettingName(setting.definitionId),
           value,
-          description: setting.description
+          description: setting.description,
         };
       })
-      .filter((setting: {name: string; value: string; description?: string}) => setting.value !== "Not configured"); // Filter out unconfigured settings
+      .filter(
+        (setting: { name: string; value: string; description?: string }) =>
+          setting.value !== "Not configured",
+      ); // Filter out unconfigured settings
 
     return {
       category: category.displayName || "General",
-      settings
+      settings,
     };
   });
 }
@@ -417,11 +599,11 @@ export function parseAssignments(assignments: any[]): string {
   for (const assn of assignments) {
     const target = assn?.target ?? assn ?? {};
     const typeRaw = target["@odata.type"] || "";
-    const type = typeof typeRaw === 'string' ? typeRaw.toLowerCase() : '';
+    const type = typeof typeRaw === "string" ? typeRaw.toLowerCase() : "";
 
     // Common group-based assignments
     if (target.groupId) {
-      if (type.includes('exclusiongroup')) {
+      if (type.includes("exclusiongroup")) {
         labels.push(`Excluded: ${target.groupId}`);
       } else {
         labels.push(`Group: ${target.groupId}`);
@@ -430,34 +612,45 @@ export function parseAssignments(assignments: any[]): string {
     }
 
     // All Devices / All Users / All Licensed Users
-    if (type.includes('alldevices')) {
-      labels.push('All Devices');
+    if (type.includes("alldevices")) {
+      labels.push("All Devices");
       continue;
     }
-    if (type.includes('alllicensedusers') || type.includes('allusers')) {
-      labels.push('All Users');
+    if (type.includes("alllicensedusers") || type.includes("allusers")) {
+      labels.push("All Users");
       continue;
     }
 
     // Intune assignment filter
     if (target.deviceAndAppManagementAssignmentFilterId) {
-      const fType = String(target.deviceAndAppManagementAssignmentFilterType || '').toLowerCase();
-      const prefix = fType.includes('include') ? 'Filter (Include)' : fType.includes('exclude') ? 'Filter (Exclude)' : 'Filter';
-      labels.push(`${prefix}: ${target.deviceAndAppManagementAssignmentFilterId}`);
+      const fType = String(
+        target.deviceAndAppManagementAssignmentFilterType || "",
+      ).toLowerCase();
+      const prefix = fType.includes("include")
+        ? "Filter (Include)"
+        : fType.includes("exclude")
+          ? "Filter (Exclude)"
+          : "Filter";
+      labels.push(
+        `${prefix}: ${target.deviceAndAppManagementAssignmentFilterId}`,
+      );
       continue;
     }
 
     // ConfigMgr collections
-    if (type.includes('configurationmanagercollectionassignmenttarget') && target.collectionId) {
+    if (
+      type.includes("configurationmanagercollectionassignmenttarget") &&
+      target.collectionId
+    ) {
       labels.push(`CM Collection: ${target.collectionId}`);
       continue;
     }
 
     // Fallback
-    labels.push('Custom Assignment');
+    labels.push("Custom Assignment");
   }
 
-  return labels.join(', ');
+  return labels.join(", ");
 }
 
 // Helper functions
@@ -473,16 +666,16 @@ function getCategoryFromKey(key: string): string {
     network: "Network",
     security: "Security",
     privacy: "Privacy",
-    browser: "Browser"
+    browser: "Browser",
   };
-  
+
   const lowerKey = key.toLowerCase();
   for (const [prefix, category] of Object.entries(categoryMap)) {
     if (lowerKey.includes(prefix)) {
       return category;
     }
   }
-  
+
   return "General";
 }
 
@@ -490,21 +683,22 @@ function formatKeyName(key: string): string {
   // Convert camelCase to Title Case
   return key
     .replace(/([A-Z])/g, " $1")
-    .replace(/^./, str => str.toUpperCase())
+    .replace(/^./, (str) => str.toUpperCase())
     .trim();
 }
 
 function getPropertyDescription(key: string): string | undefined {
   // Add common property descriptions
   const descriptions: Record<string, string> = {
-    passwordMinimumLength: "Minimum number of characters required for device password",
+    passwordMinimumLength:
+      "Minimum number of characters required for device password",
     passwordRequired: "Require a password to unlock device",
     storageRequireEncryption: "Require encryption on device storage",
     firewallEnabled: "Enable Windows Firewall for all network profiles",
     defenderEnabled: "Enable Microsoft Defender Antimalware",
-    bitLockerEnabled: "Require BitLocker encryption on Windows devices"
+    bitLockerEnabled: "Require BitLocker encryption on Windows devices",
   };
-  
+
   return descriptions[key];
 }
 
@@ -512,14 +706,14 @@ function getComplianceAction(scheduledActions: any[]): string {
   if (!scheduledActions || scheduledActions.length === 0) {
     return "No action configured";
   }
-  
+
   const actions = scheduledActions
-    .flatMap(sa => sa.scheduledActionConfigurations || [])
+    .flatMap((sa) => sa.scheduledActionConfigurations || [])
     .map((config: any) => {
       const hours = config.gracePeriodHours || 0;
       const days = Math.floor(hours / 24);
       const actionType = config.actionType || "notification";
-      
+
       if (actionType === "block") {
         return `Block access after ${days} days`;
       } else if (actionType === "retire") {
@@ -527,9 +721,9 @@ function getComplianceAction(scheduledActions: any[]): string {
       } else if (actionType === "removeResourceAccessProfiles") {
         return `Remove profiles after ${days} days`;
       }
-      
+
       return `Notify after ${days} days`;
     });
-  
+
   return actions.join(", ");
 }

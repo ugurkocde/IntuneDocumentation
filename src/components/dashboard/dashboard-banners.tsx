@@ -85,8 +85,8 @@ export function DashboardBanners({
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-orange-950">
                 {fetchErrors.length}{" "}
-                {fetchErrors.length === 1 ? "policy" : "policies"} could not be
-                fully loaded
+                {fetchErrors.length === 1 ? "resource" : "resources"} could not
+                be fully loaded
               </p>
               <p className="mt-1 text-xs leading-5 text-orange-900/80">
                 These policies remain visible, but some settings may be missing
@@ -94,7 +94,7 @@ export function DashboardBanners({
               </p>
               <details className="mt-3">
                 <summary className="cursor-pointer text-xs font-semibold text-orange-950 underline decoration-orange-600/30 underline-offset-2 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none">
-                  View affected policies
+                  View affected resources
                 </summary>
                 <ul className="mt-2 space-y-2">
                   {fetchErrors.map((error) => (
@@ -104,8 +104,20 @@ export function DashboardBanners({
                     >
                       <strong>{error.policyType}:</strong> {error.policyName}
                       <span className="mt-1 block text-[11px] text-orange-800">
+                        {error.partial ? "Partial result: " : ""}
                         {error.error}
+                        {error.statusCode ? ` (HTTP ${error.statusCode})` : ""}
                       </span>
+                      {error.endpoint && (
+                        <code className="mt-1 block text-[10px] break-all text-orange-800/80">
+                          Microsoft Graph beta {error.endpoint}
+                        </code>
+                      )}
+                      {error.permissionHint && (
+                        <span className="mt-1 block text-[10px] text-orange-800/80">
+                          Permission hint: {error.permissionHint}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>

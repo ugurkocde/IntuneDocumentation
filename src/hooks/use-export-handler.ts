@@ -1,5 +1,10 @@
 import { useState } from "react";
-import type { ExportFormat, ExportConfig, ExportResult, PolicyExportError } from "~/components/export-modal";
+import type {
+  ExportFormat,
+  ExportConfig,
+  ExportResult,
+  PolicyExportError,
+} from "~/components/export-modal";
 
 export interface ExportProgress {
   stage: number;
@@ -28,75 +33,55 @@ export function useExportHandler({
 }: UseExportHandlerProps) {
   const [showExportModal, setShowExportModal] = useState(false);
 
+  const getSelectedSections = () =>
+    (configurations?.sections || [])
+      .filter(
+        (section: any) =>
+          section.familyKey !== "conditionalAccessPolicies" ||
+          (includeCA && caConsentStatus === "included"),
+      )
+      .map((section: any) => ({
+        ...section,
+        items: section.items.filter((item: any) =>
+          selectedConfigs.has(`${section.selectionPrefix}-${item.id}`),
+        ),
+      }));
+
+  const getRelevantFetchErrors = (sections: any[]) => {
+    const selectedPolicyIds = new Set(
+      sections.flatMap((section) =>
+        section.items.map((item: any) => String(item.id)),
+      ),
+    );
+    const selectedFamilyKeys = new Set(
+      sections
+        .filter((section) => section.items.length > 0)
+        .map((section) => section.familyKey),
+    );
+
+    return (configurations?.fetchErrors || []).filter(
+      (fetchError: any) =>
+        selectedPolicyIds.has(String(fetchError.policyId)) ||
+        (fetchError.familyKey &&
+          selectedFamilyKeys.has(fetchError.familyKey)) ||
+        fetchError.policyId === "stream",
+    );
+  };
+
   // Build export config with selected policy counts
   const getExportConfig = (): ExportConfig => {
-    const policyTypes: { name: string; count: number }[] = [];
-
-    const catalogCount = configurations?.settingsCatalog?.filter((c: any) =>
-      selectedConfigs.has(`catalog-${c.id}`)
-    ).length || 0;
-    if (catalogCount > 0) policyTypes.push({ name: "Settings Catalog", count: catalogCount });
-
-    const deviceCount = configurations?.deviceConfigurations?.filter((c: any) =>
-      selectedConfigs.has(`device-${c.id}`)
-    ).length || 0;
-    if (deviceCount > 0) policyTypes.push({ name: "Device Configurations", count: deviceCount });
-
-    const admxCount = configurations?.administrativeTemplates?.filter((c: any) =>
-      selectedConfigs.has(`admx-${c.id}`)
-    ).length || 0;
-    if (admxCount > 0) policyTypes.push({ name: "Administrative Templates", count: admxCount });
-
-    const securityCount = configurations?.securityBaselines?.filter((c: any) =>
-      selectedConfigs.has(`security-${c.id}`)
-    ).length || 0;
-    if (securityCount > 0) policyTypes.push({ name: "Security Baselines", count: securityCount });
-
-    const complianceCount = configurations?.compliancePolicies?.filter((c: any) =>
-      selectedConfigs.has(`compliance-${c.id}`)
-    ).length || 0;
-    if (complianceCount > 0) policyTypes.push({ name: "Compliance Policies", count: complianceCount });
-
-    const appProtectionCount = configurations?.appProtectionPolicies?.filter((c: any) =>
-      selectedConfigs.has(`app-protection-${c.id}`)
-    ).length || 0;
-    if (appProtectionCount > 0) policyTypes.push({ name: "App Protection Policies", count: appProtectionCount });
-
-    const scriptWinCount = configurations?.scripts?.windows?.filter((c: any) =>
-      selectedConfigs.has(`script-win-${c.id}`)
-    ).length || 0;
-    const scriptMacCount = configurations?.scripts?.macOS?.filter((c: any) =>
-      selectedConfigs.has(`script-mac-${c.id}`)
-    ).length || 0;
-    if (scriptWinCount + scriptMacCount > 0) {
-      policyTypes.push({ name: "Scripts", count: scriptWinCount + scriptMacCount });
-    }
-
-    const appCount = configurations?.appConfigurations?.filter((c: any) =>
-      selectedConfigs.has(`app-${c.id}`)
-    ).length || 0;
-    if (appCount > 0) policyTypes.push({ name: "App Configurations", count: appCount });
-
-    const updateCount = configurations?.windowsUpdatePolicies?.filter((c: any) =>
-      selectedConfigs.has(`update-${c.id}`)
-    ).length || 0;
-    if (updateCount > 0) policyTypes.push({ name: "Windows Update Policies", count: updateCount });
-
-    const enrollmentCount = configurations?.enrollmentConfigurations?.filter((c: any) =>
-      selectedConfigs.has(`enrollment-${c.id}`)
-    ).length || 0;
-    if (enrollmentCount > 0) policyTypes.push({ name: "Enrollment Configurations", count: enrollmentCount });
-
-    const caCount = (includeCA && caConsentStatus === 'included')
-      ? (configurations?.conditionalAccessPolicies?.filter((c: any) =>
-          selectedConfigs.has(`ca-${c.id}`)
-        ).length || 0)
-      : 0;
-    if (caCount > 0) policyTypes.push({ name: "Conditional Access Policies", count: caCount });
+    const selectedSections = getSelectedSections();
+    const policyTypes = selectedSections
+      .map((section: any) => ({
+        name: section.label,
+        count: section.items.length,
+      }))
+      .filter(({ count }: { count: number }) => count > 0);
 
     return {
       selectedCount: selectedConfigs.size,
       policyTypes,
+      collectionWarningCount: getRelevantFetchErrors(selectedSections).length,
     };
   };
 
@@ -105,56 +90,83 @@ export function useExportHandler({
       const accessToken = await getAccessToken();
 
       // Stage 0: Preparing data
-      onProgress?.({ stage: 0, progress: 5, message: "Preparing export data..." });
+      onProgress?.({
+        stage: 0,
+        progress: 5,
+        message: "Preparing export data...",
+      });
 
+      const selectedSections = getSelectedSections();
       const selectedData = {
-        settingsCatalog: configurations?.settingsCatalog?.filter((c: any) =>
-          selectedConfigs.has(`catalog-${c.id}`)
-        ) ?? [],
-        deviceConfigurations: configurations?.deviceConfigurations?.filter((c: any) =>
-          selectedConfigs.has(`device-${c.id}`)
-        ) ?? [],
-        administrativeTemplates: configurations?.administrativeTemplates?.filter((c: any) =>
-          selectedConfigs.has(`admx-${c.id}`)
-        ) ?? [],
-        securityBaselines: configurations?.securityBaselines?.filter((c: any) =>
-          selectedConfigs.has(`security-${c.id}`)
-        ) ?? [],
-        compliancePolicies: configurations?.compliancePolicies?.filter((c: any) =>
-          selectedConfigs.has(`compliance-${c.id}`)
-        ) ?? [],
-        appProtectionPolicies: configurations?.appProtectionPolicies?.filter((c: any) =>
-          selectedConfigs.has(`app-protection-${c.id}`)
-        ) ?? [],
-        scripts: {
-          macOS: configurations?.scripts?.macOS?.filter((c: any) =>
-            selectedConfigs.has(`script-mac-${c.id}`)
+        sections: selectedSections,
+        fetchErrors: getRelevantFetchErrors(selectedSections),
+        settingsCatalog:
+          configurations?.settingsCatalog?.filter((c: any) =>
+            selectedConfigs.has(`catalog-${c.id}`),
           ) ?? [],
-          windows: configurations?.scripts?.windows?.filter((c: any) =>
-            selectedConfigs.has(`script-win-${c.id}`)
-          ) ?? []
+        deviceConfigurations:
+          configurations?.deviceConfigurations?.filter((c: any) =>
+            selectedConfigs.has(`device-${c.id}`),
+          ) ?? [],
+        administrativeTemplates:
+          configurations?.administrativeTemplates?.filter((c: any) =>
+            selectedConfigs.has(`admx-${c.id}`),
+          ) ?? [],
+        securityBaselines:
+          configurations?.securityBaselines?.filter((c: any) =>
+            selectedConfigs.has(`security-${c.id}`),
+          ) ?? [],
+        compliancePolicies:
+          configurations?.compliancePolicies?.filter((c: any) =>
+            selectedConfigs.has(`compliance-${c.id}`),
+          ) ?? [],
+        appProtectionPolicies:
+          configurations?.appProtectionPolicies?.filter((c: any) =>
+            selectedConfigs.has(`app-protection-${c.id}`),
+          ) ?? [],
+        scripts: {
+          macOS:
+            configurations?.scripts?.macOS?.filter((c: any) =>
+              selectedConfigs.has(`script-mac-${c.id}`),
+            ) ?? [],
+          windows:
+            configurations?.scripts?.windows?.filter((c: any) =>
+              selectedConfigs.has(`script-win-${c.id}`),
+            ) ?? [],
         },
-        appConfigurations: configurations?.appConfigurations?.filter((c: any) =>
-          selectedConfigs.has(`app-${c.id}`)
-        ) ?? [],
-        windowsUpdatePolicies: configurations?.windowsUpdatePolicies?.filter((c: any) =>
-          selectedConfigs.has(`update-${c.id}`)
-        ) ?? [],
-        enrollmentConfigurations: configurations?.enrollmentConfigurations?.filter((c: any) =>
-          selectedConfigs.has(`enrollment-${c.id}`)
-        ) ?? [],
-        conditionalAccessPolicies: (includeCA && caConsentStatus === 'included')
-          ? (configurations?.conditionalAccessPolicies?.filter((c: any) => selectedConfigs.has(`ca-${c.id}`)) ?? [])
-          : [],
-        branding: brandingOptions
+        appConfigurations:
+          configurations?.appConfigurations?.filter((c: any) =>
+            selectedConfigs.has(`app-${c.id}`),
+          ) ?? [],
+        windowsUpdatePolicies:
+          configurations?.windowsUpdatePolicies?.filter((c: any) =>
+            selectedConfigs.has(`update-${c.id}`),
+          ) ?? [],
+        enrollmentConfigurations:
+          configurations?.enrollmentConfigurations?.filter((c: any) =>
+            selectedConfigs.has(`enrollment-${c.id}`),
+          ) ?? [],
+        conditionalAccessPolicies:
+          includeCA && caConsentStatus === "included"
+            ? (configurations?.conditionalAccessPolicies?.filter((c: any) =>
+                selectedConfigs.has(`ca-${c.id}`),
+              ) ?? [])
+            : [],
+        branding: brandingOptions,
       };
 
       onProgress?.({ stage: 0, progress: 10 });
 
       // Stage 1: Resolve groups
-      onProgress?.({ stage: 1, progress: 15, message: "Resolving group names..." });
+      onProgress?.({
+        stage: 1,
+        progress: 15,
+        message: "Resolving group names...",
+      });
 
-      const { resolveExportData } = await import("~/lib/client-export-resolver");
+      const { resolveExportData } = await import(
+        "~/lib/client-export-resolver"
+      );
       const resolvedData = await resolveExportData(
         selectedData,
         accessToken,
@@ -164,39 +176,53 @@ export function useExportHandler({
           } else {
             onProgress?.({ stage: 2, progress: 40, message: p.message });
           }
-        }
+        },
       );
 
       // Stage 2: Device counts done (part of resolveExportData)
-      onProgress?.({ stage: 2, progress: 50, message: "Device counts fetched" });
+      onProgress?.({
+        stage: 2,
+        progress: 50,
+        message: "Device counts fetched",
+      });
 
       // Stage 3: Generate document
-      onProgress?.({ stage: 3, progress: 55, message: "Generating document..." });
+      onProgress?.({
+        stage: 3,
+        progress: 55,
+        message: "Generating document...",
+      });
 
       let blob: Blob;
       let exportErrors: PolicyExportError[] | undefined;
       let totalPolicies: number | undefined;
       let successfulPolicies: number | undefined;
 
-      if (format === 'docx') {
-        const { generateDetailedDOCX } = await import("~/lib/docx-generator-detailed");
+      if (format === "docx") {
+        const { generateDetailedDOCX } = await import(
+          "~/lib/docx-generator-detailed"
+        );
         const docxResult = await generateDetailedDOCX(resolvedData);
         const ab = docxResult.buffer.buffer.slice(
           docxResult.buffer.byteOffset,
-          docxResult.buffer.byteOffset + docxResult.buffer.byteLength
+          docxResult.buffer.byteOffset + docxResult.buffer.byteLength,
         ) as ArrayBuffer;
-        blob = new Blob([ab], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+        blob = new Blob([ab], {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        });
         if (docxResult.errors.length > 0) {
           exportErrors = docxResult.errors;
           totalPolicies = docxResult.totalPolicies;
           successfulPolicies = docxResult.successfulPolicies;
         }
-      } else if (format === 'pdf-detailed') {
-        const { generateDetailedPDF } = await import("~/lib/pdf-generator-detailed");
+      } else if (format === "pdf-detailed") {
+        const { generateDetailedPDF } = await import(
+          "~/lib/pdf-generator-detailed"
+        );
         const pdfResult = await generateDetailedPDF(resolvedData);
         const ab = pdfResult.buffer.buffer.slice(
           pdfResult.buffer.byteOffset,
-          pdfResult.buffer.byteOffset + pdfResult.buffer.byteLength
+          pdfResult.buffer.byteOffset + pdfResult.buffer.byteLength,
         ) as ArrayBuffer;
         blob = new Blob([ab], { type: "application/pdf" });
         if (pdfResult.errors.length > 0) {
@@ -211,16 +237,21 @@ export function useExportHandler({
       onProgress?.({ stage: 3, progress: 90, message: "Document generated" });
 
       // Stage 4: Download
-      onProgress?.({ stage: 4, progress: 95, message: "Preparing download..." });
+      onProgress?.({
+        stage: 4,
+        progress: 95,
+        message: "Preparing download...",
+      });
 
       // Fire-and-forget: increment export counter
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       fetch("/api/stats/increment-export", { method: "POST" }).catch(() => {});
 
       const date = new Date().toISOString().split("T")[0];
-      const filename = format === 'docx'
-        ? `Intune-Configuration-Documentation-${date}.docx`
-        : `Intune-Configuration-Documentation-${date}.pdf`;
+      const filename =
+        format === "docx"
+          ? `Intune-Configuration-Documentation-${date}.docx`
+          : `Intune-Configuration-Documentation-${date}.pdf`;
 
       return {
         success: true,
@@ -230,7 +261,7 @@ export function useExportHandler({
         downloadData: { blob, filename },
       };
     } catch (error: any) {
-      console.error('Export failed:', error);
+      console.error("Export failed:", error);
       return {
         success: false,
         error: error?.message || "An unexpected error occurred during export",

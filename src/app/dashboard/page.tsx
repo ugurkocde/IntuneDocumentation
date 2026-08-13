@@ -28,6 +28,7 @@ import { DashboardSidebar } from "~/components/dashboard/dashboard-sidebar";
 import { DashboardContent } from "~/components/dashboard/dashboard-content";
 import {
   buildDashboardTypeStats,
+  type ConfigurationTypeKey,
   type DashboardView,
   type IntuneConfigurations,
 } from "~/components/dashboard/types";
@@ -579,7 +580,11 @@ export default function DashboardPage() {
       newSelected.add(id);
     }
     setSelectedConfigs(newSelected);
-    setSelectAll(newSelected.size === getAllConfigIds().length);
+    const allConfigIds = getAllConfigIds();
+    setSelectAll(
+      allConfigIds.length > 0 &&
+        allConfigIds.every((configId) => newSelected.has(configId)),
+    );
   };
 
   const handleBulkSelect = (idsToAdd: string[], idsToRemove: string[]) => {
@@ -587,7 +592,33 @@ export default function DashboardPage() {
     idsToRemove.forEach((id) => newSelected.delete(id));
     idsToAdd.forEach((id) => newSelected.add(id));
     setSelectedConfigs(newSelected);
-    setSelectAll(newSelected.size === getAllConfigIds().length);
+    const allConfigIds = getAllConfigIds();
+    setSelectAll(
+      allConfigIds.length > 0 &&
+        allConfigIds.every((configId) => newSelected.has(configId)),
+    );
+  };
+
+  const handleToggleFamily = (key: ConfigurationTypeKey) => {
+    if (!configurations) return;
+
+    const familyIds = configurations.sections
+      .filter(
+        (section) =>
+          section.familyKey === key &&
+          (section.familyKey !== "conditionalAccessPolicies" ||
+            (includeCA && caConsentStatus === "included")),
+      )
+      .flatMap((section) =>
+        section.items.map((item) => `${section.selectionPrefix}-${item.id}`),
+      );
+    const allFamilyItemsSelected =
+      familyIds.length > 0 && familyIds.every((id) => selectedConfigs.has(id));
+
+    handleBulkSelect(
+      allFamilyItemsSelected ? [] : familyIds,
+      allFamilyItemsSelected ? familyIds : [],
+    );
   };
 
   // Filter configurations based on search query
@@ -807,6 +838,7 @@ export default function DashboardPage() {
           onSelectFiltered={handleSelectFiltered}
           onSelectConfig={handleSelectConfig}
           onBulkSelect={handleBulkSelect}
+          onToggleFamily={handleToggleFamily}
           onIncludeCAChange={async (next) => {
             setIncludeCA(next);
             localStorage.setItem("include-ca", String(next));

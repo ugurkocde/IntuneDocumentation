@@ -15,16 +15,30 @@ export interface IntuneRegistryEntry {
   path: string;
   permissionHint: string;
   shape?: "collection" | "singleton";
+  pageSize?: number;
   select?: string[];
   notConfiguredOn404?: boolean;
+  unavailableWhen?: {
+    statusCode: number;
+    messageIncludes: string;
+  };
   legacy?: boolean;
   sensitiveFields?: string[];
   childCollections?: Array<{
     property: string;
     path: string;
     shape?: "collection" | "singleton";
+    pageSize?: number;
     expand?: string;
   }>;
+}
+
+export const DEFAULT_REGISTRY_PAGE_SIZE = 999;
+
+export function getRegistryPageSize(
+  entry: Pick<IntuneRegistryEntry, "pageSize">,
+): number {
+  return entry.pageSize ?? DEFAULT_REGISTRY_PAGE_SIZE;
 }
 
 export const ADDITIONAL_FAMILY_LABELS: Record<
@@ -48,6 +62,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsFeatureUpdateProfiles",
     permissionHint: "DeviceManagementConfiguration.Read.All",
+    pageSize: 200,
   },
   {
     key: "windowsQualityUpdateProfiles",
@@ -55,6 +70,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsQualityUpdateProfiles",
     permissionHint: "DeviceManagementConfiguration.Read.All",
+    pageSize: 200,
   },
   {
     key: "windowsQualityUpdatePolicies",
@@ -62,6 +78,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsQualityUpdatePolicies",
     permissionHint: "DeviceManagementConfiguration.Read.All",
+    pageSize: 200,
   },
   {
     key: "windowsDriverUpdateProfiles",
@@ -69,6 +86,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsDriverUpdateProfiles",
     permissionHint: "DeviceManagementConfiguration.Read.All",
+    pageSize: 200,
   },
   {
     key: "deviceHealthScripts",
@@ -129,7 +147,6 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     permissionHint: "DeviceManagementApps.Read.All",
     select: [
       "id",
-      "@odata.type",
       "displayName",
       "description",
       "publisher",
@@ -334,8 +351,40 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     permissionHint: "DeviceManagementServiceConfig.Read.All",
     shape: "singleton",
     notConfiguredOn404: true,
+    unavailableWhen: {
+      statusCode: 403,
+      messageIncludes: "RemoteAssistService",
+    },
   },
 ];
+
+function errorText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+export function isExpectedRegistryUnavailableError(
+  entry: IntuneRegistryEntry,
+  error: any,
+): boolean {
+  if (!entry.unavailableWhen) return false;
+
+  const statusCode = error?.statusCode || error?.response?.status;
+  const message = [error?.message, error?.error?.message]
+    .map(errorText)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    statusCode === entry.unavailableWhen.statusCode &&
+    message.includes(entry.unavailableWhen.messageIncludes.toLowerCase())
+  );
+}
 
 const REDACTED_FIELDS = new Set([
   "apptoken",

@@ -9,6 +9,8 @@ import type { ConfigurationSectionData } from "./configuration-sections";
 import { getItemLabel, getStableItemId } from "./configuration-sections";
 import {
   INTUNE_POLICY_REGISTRY,
+  getRegistryPageSize,
+  isExpectedRegistryUnavailableError,
   mapWithConcurrency,
   sanitizeGraphData,
 } from "./intune-policy-registry";
@@ -273,7 +275,8 @@ export class DetailedIntuneService {
       let request = this.client.api(entry.path).version("beta");
       if (entry.select?.length)
         request = request.select(entry.select.join(","));
-      if (entry.shape !== "singleton") request = request.top(999);
+      if (entry.shape !== "singleton")
+        request = request.top(getRegistryPageSize(entry));
       const response = await this.retryWithBackoff(() => request.get(), 3, 500);
 
       let rawItems: any[];
@@ -302,7 +305,7 @@ export class DetailedIntuneService {
               if (child.expand)
                 childRequest = childRequest.expand(child.expand);
               if (child.shape !== "singleton")
-                childRequest = childRequest.top(999);
+                childRequest = childRequest.top(getRegistryPageSize(child));
               const childResponse = await this.retryWithBackoff(
                 () => childRequest.get(),
                 2,
@@ -369,7 +372,10 @@ export class DetailedIntuneService {
       }
     } catch (error: any) {
       const details = this.graphError(error);
-      if (!(details.statusCode === 404 && entry.notConfiguredOn404)) {
+      if (
+        !(details.statusCode === 404 && entry.notConfiguredOn404) &&
+        !isExpectedRegistryUnavailableError(entry, error)
+      ) {
         base.error = {
           ...details,
           permissionHint: entry.permissionHint,

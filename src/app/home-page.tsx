@@ -1,7 +1,7 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import {
   ArrowRight,
   Check,
@@ -134,20 +134,104 @@ function Eyebrow({
   );
 }
 
-function ProductMockup() {
+function ProductMockup({ prefersReduced }: { prefersReduced: boolean | null }) {
   const rows = [
     ["Device Configurations", "47 policies"],
     ["Compliance Policies", "12 policies"],
     ["PowerShell Scripts", "8 scripts"],
   ];
+  const collectionStory: Variants = prefersReduced
+    ? { hidden: {}, visible: {} }
+    : {
+        hidden: {},
+        visible: { transition: { staggerChildren: 0.12 } },
+      };
+  const reportCard: Variants = prefersReduced
+    ? {
+        hidden: { opacity: 1, y: 0 },
+        visible: { opacity: 1, y: 0 },
+      }
+    : {
+        hidden: { opacity: 0, y: 14 },
+        visible: {
+          opacity: 1,
+          y: 0,
+          transition: {
+            duration: 0.35,
+            ease: "easeOut",
+            delayChildren: 0.18,
+            staggerChildren: 0.12,
+          },
+        },
+      };
+  const reportRow: Variants = prefersReduced
+    ? {
+        hidden: { opacity: 1, y: 0 },
+        visible: { opacity: 1, y: 0 },
+      }
+    : {
+        hidden: { opacity: 0, y: 14 },
+        visible: {
+          opacity: 1,
+          y: 0,
+          transition: {
+            duration: 0.35,
+            ease: "easeOut",
+            when: "beforeChildren",
+            delayChildren: 0.1,
+          },
+        },
+      };
+  const popIn: Variants = prefersReduced
+    ? {
+        hidden: { opacity: 1, scale: 1 },
+        visible: { opacity: 1, scale: 1 },
+      }
+    : {
+        hidden: { opacity: 0, scale: 0.5 },
+        visible: {
+          opacity: 1,
+          scale: 1,
+          transition: {
+            duration: 0.28,
+            ease: [0.34, 1.56, 0.64, 1],
+          },
+        },
+      };
+  const readyBadge: Variants = prefersReduced
+    ? {
+        hidden: { opacity: 1, x: 0, y: 0, scale: 1 },
+        visible: { opacity: 1, x: 0, y: 0, scale: 1 },
+      }
+    : {
+        hidden: { opacity: 0, x: 14, y: -12, scale: 0.96 },
+        visible: {
+          opacity: 1,
+          x: 0,
+          y: 0,
+          scale: 1,
+          transition: {
+            duration: 0.4,
+            delay: 0.98,
+            ease: [0.34, 1.56, 0.64, 1],
+          },
+        },
+      };
 
   return (
-    <div
+    <motion.div
+      initial={prefersReduced ? false : "hidden"}
+      whileInView="visible"
+      viewport={{ once: true, margin: "-80px" }}
+      variants={collectionStory}
       className="relative mx-auto w-full max-w-[500px] px-3 pt-12 pb-8 sm:px-10"
       aria-hidden="true"
     >
       <div className="absolute inset-5 -z-10 rounded-[2.5rem] bg-teal-100/75 blur-2xl" />
-      <div className="shadow-soft relative rounded-[1.6rem] border border-white bg-white p-5 sm:p-7">
+      <motion.div
+        variants={reportCard}
+        className="shadow-soft relative rounded-[1.6rem] border border-white bg-white p-5 sm:p-7"
+      >
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white">
             <FileText className="h-5 w-5" />
@@ -164,40 +248,53 @@ function ProductMockup() {
 
         <div className="space-y-2.5">
           {rows.map(([label, value]) => (
-            <div
+            <motion.div
               key={label}
+              variants={reportRow}
               className="border-petrol-950/7 bg-surface flex items-center gap-3 rounded-xl border px-3 py-3.5"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+              <motion.span
+                variants={popIn}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700"
+              >
                 <Check className="h-3.5 w-3.5" strokeWidth={3} />
-              </span>
+              </motion.span>
               <span className="text-petrol-800 min-w-0 flex-1 truncate text-[11px] font-semibold sm:text-xs">
                 {label}
               </span>
               <span className="text-petrol-600 shrink-0 text-[10px] sm:text-[11px]">
                 {value}
               </span>
-            </div>
+            </motion.div>
           ))}
         </div>
 
-        <div className="my-4 flex items-center justify-between rounded-xl bg-teal-50 px-3 py-2.5">
+        <motion.div
+          variants={reportRow}
+          className="my-4 flex items-center justify-between rounded-xl bg-teal-50 px-3 py-2.5"
+        >
           <span className="text-petrol-700 flex items-center gap-2 text-[10px] font-medium sm:text-[11px]">
             <Users className="h-3.5 w-3.5 text-teal-700" />
             Group assignments included
           </span>
-          <span className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-teal-700">
+          <motion.span
+            variants={popIn}
+            className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-teal-700"
+          >
             Resolved
-          </span>
-        </div>
+          </motion.span>
+        </motion.div>
 
         <div className="bg-petrol-950 flex h-11 items-center justify-center gap-2 rounded-xl text-xs font-semibold text-white">
           <Download className="h-4 w-4" />
           Export PDF
         </div>
-      </div>
+      </motion.div>
 
-      <div className="diagonal-stripes absolute top-0 right-0 w-[175px] rounded-2xl bg-teal-600 p-4 text-white shadow-[0_20px_45px_-22px_rgba(8,47,54,0.55)] sm:right-2 sm:w-[195px] sm:p-5">
+      <motion.div
+        variants={readyBadge}
+        className="diagonal-stripes absolute top-0 right-0 w-[175px] rounded-2xl bg-teal-600 p-4 text-white shadow-[0_20px_45px_-22px_rgba(8,47,54,0.55)] sm:right-2 sm:w-[195px] sm:p-5"
+      >
         <div className="mb-6 flex items-start justify-between">
           <div>
             <p className="text-[9px] font-semibold tracking-[0.14em] text-white/65 uppercase">
@@ -215,8 +312,8 @@ function ProductMockup() {
           </p>
           <p className="mt-1 text-sm font-semibold">Complete</p>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -665,15 +762,9 @@ export function HomePage({ stats }: { stats: SiteStats }) {
               )}
             </motion.div>
 
-            <motion.div
-              initial="hidden"
-              animate="visible"
-              variants={fadeUp}
-              transition={{ duration: 0.6, delay: prefersReduced ? 0 : 0.18 }}
-              className="hidden sm:block"
-            >
-              <ProductMockup />
-            </motion.div>
+            <div className="hidden sm:block">
+              <ProductMockup prefersReduced={prefersReduced} />
+            </div>
           </div>
         </section>
 

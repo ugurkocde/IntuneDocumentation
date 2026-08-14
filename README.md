@@ -9,6 +9,12 @@ Intune Documentation is a Next.js web app that signs you into your Microsoft Ent
 [![CI](https://github.com/ugurkocde/IntuneDocumentation/actions/workflows/ci.yml/badge.svg)](https://github.com/ugurkocde/IntuneDocumentation/actions/workflows/ci.yml)
 [![License: Elastic-2.0](https://img.shields.io/badge/license-Elastic--2.0-blue.svg)](LICENSE)
 
+<p align="center">
+  <a href="https://intunedocumentation.com">
+    <img src="docs/website-screenshot.png" alt="Intune Documentation homepage showing the report generator" width="800">
+  </a>
+</p>
+
 ## Use the hosted version
 
 Go to [intunedocumentation.com](https://intunedocumentation.com), sign in, and start documenting your tenant. On first use, an administrator may need to grant consent for the delegated Microsoft Graph permissions.

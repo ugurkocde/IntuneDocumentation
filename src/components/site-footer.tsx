@@ -124,7 +124,7 @@ export function SiteFooter() {
             <ul className="mt-4 space-y-3 text-sm">
               <li>
                 <a
-                  href="https://www.linkedin.com/in/ugurkocde/"
+                  href="https://www.linkedin.com/company/ugurlabs"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-10 items-center gap-2 transition-colors hover:text-teal-700"

@@ -16,7 +16,7 @@ export function GET() {
   return new Response(body, {
     headers: {
       "Content-Type": "text/javascript; charset=utf-8",
-      "Cache-Control": "no-store",
+      "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
     },
   });
 }

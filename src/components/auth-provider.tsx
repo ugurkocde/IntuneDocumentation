@@ -4,14 +4,18 @@ import type { PublicClientApplication } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { getMsalInstance } from "~/lib/msal-config";
+import { getMsalInstance, getMsalInstanceSync } from "~/lib/msal-config";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [msalInstance, setMsalInstance] = useState<
     PublicClientApplication | undefined
-  >();
+  >(() => getMsalInstanceSync());
 
   useEffect(() => {
+    if (msalInstance) {
+      return;
+    }
+
     let isMounted = true;
 
     void getMsalInstance()
@@ -27,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [msalInstance]);
 
   if (!msalInstance) {
     return <>{children}</>;

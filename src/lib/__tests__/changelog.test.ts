@@ -42,7 +42,6 @@ describe("changelog client", () => {
 
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher).toHaveBeenCalledWith(CHANGELOG_API_URL, {
-      cache: "no-store",
       headers: { Accept: "application/json" },
     });
     expect(first).toEqual(second);

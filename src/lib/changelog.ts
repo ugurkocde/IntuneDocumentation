@@ -128,7 +128,6 @@ export function fetchLatestChangelog(
   if (pendingRequest) return pendingRequest;
 
   pendingRequest = fetcher(CHANGELOG_API_URL, {
-    cache: "no-store",
     headers: { Accept: "application/json" },
   })
     .then(async (response) => {

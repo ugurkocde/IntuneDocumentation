@@ -97,11 +97,6 @@ button:focus-visible {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
-.changelog-entry-list {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 640px;
-}
-
 @keyframes changelog-sheet-in {
   from {
     opacity: 0;

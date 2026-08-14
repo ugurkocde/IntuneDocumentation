@@ -56,6 +56,8 @@ describe("ChangelogBell", () => {
       name: "Open product updates",
     });
 
+    expect(fetch).not.toHaveBeenCalled();
+
     await user.click(trigger);
 
     expect(
@@ -67,9 +69,30 @@ describe("ChangelogBell", () => {
     await waitFor(() => expect(closeButton).toHaveFocus());
     expect(screen.getByText("A clearer update panel")).toBeInTheDocument();
     expect(screen.queryByText("Improved")).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledOnce();
     expect(window.localStorage.getItem(CHANGELOG_SEEN_STORAGE_KEY)).toBe(
       "entry-1",
     );
+  });
+
+  it("keeps the neutral scrim below the drawer and lets it dismiss the dialog", async () => {
+    const user = userEvent.setup();
+    render(<ChangelogBell />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open product updates" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "What's New" });
+    const scrim = document.querySelector<HTMLButtonElement>(".changelog-scrim");
+
+    expect(dialog).toHaveClass("relative", "z-10", "bg-white");
+    expect(scrim).toHaveClass("absolute", "z-0", "bg-black/15");
+    expect(scrim?.className).not.toContain("backdrop-blur");
+
+    await user.click(scrim!);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.querySelector(".changelog-scrim")).not.toBeInTheDocument();
   });
 
   it("wraps focus within the drawer and restores it after Escape", async () => {

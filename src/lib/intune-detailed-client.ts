@@ -14,6 +14,10 @@ import {
   mapWithConcurrency,
   sanitizeGraphData,
 } from "./intune-policy-registry";
+import {
+  associateConfigurationSettingDefinitions,
+  collectConfiguredSettingDefinitionIds,
+} from "./configuration-parser";
 
 export function createGraphClient(accessToken: string) {
   return Client.init({
@@ -24,51 +28,62 @@ export function createGraphClient(accessToken: string) {
 }
 
 // Enhanced configuration types with settings
-export interface ConfigurationSetting {
-  id: string;
-  settingInstance: {
-    "@odata.type": string;
-    settingDefinitionId: string;
-    settingInstanceTemplateReference?: {
-      settingInstanceTemplateId: string;
-    };
-    simpleSettingValue?: {
-      value: any;
-      "@odata.type": string;
-    };
-    simpleSettingCollectionValue?: Array<{
-      value: any;
-      "@odata.type": string;
-    }>;
-    groupSettingValue?: {
-      children: ConfigurationSetting[];
-    };
-    groupSettingCollectionValue?: Array<{
-      children: ConfigurationSetting[];
-    }>;
-    choiceSettingValue?: {
-      value: string;
-      children?: ConfigurationSetting[];
-    };
+export interface ConfigurationSettingInstance {
+  "@odata.type": string;
+  settingDefinitionId: string;
+  settingInstanceTemplateReference?: {
+    settingInstanceTemplateId: string;
   };
-  settingDefinitions?: Array<{
-    id: string;
+  simpleSettingValue?: {
+    value: any;
+    "@odata.type"?: string;
+  };
+  simpleSettingCollectionValue?: Array<{
+    value: any;
+    "@odata.type"?: string;
+  }>;
+  groupSettingValue?: {
+    children: ConfigurationSettingInstance[];
+  };
+  groupSettingCollectionValue?: Array<{
+    children: ConfigurationSettingInstance[];
+  }>;
+  choiceSettingValue?: {
+    value?: string;
+    children?: ConfigurationSettingInstance[];
+  };
+  choiceSettingCollectionValue?: Array<{
+    value?: string;
+    children?: ConfigurationSettingInstance[];
+  }>;
+}
+
+export interface ConfigurationSettingDefinition {
+  id: string;
+  displayName: string;
+  description?: string;
+  documentationUrl?: string;
+  baseType?: string;
+  offsetUri?: string;
+  dependentOn?: Array<{
+    dependentOn: string;
+    parentSettingId: string;
+  }>;
+  options?: Array<{
+    name: string;
+    itemId?: string;
     displayName: string;
     description?: string;
-    documentationUrl?: string;
-    baseType: string;
-    offsetUri?: string;
-    dependentOn?: Array<{
-      dependentOn: string;
-      parentSettingId: string;
-    }>;
-    options?: Array<{
-      name: string;
-      itemId?: string;
-      displayName: string;
-      description?: string;
-    }>;
+    optionValue?: {
+      value: any;
+    } | null;
   }>;
+}
+
+export interface ConfigurationSetting {
+  id: string;
+  settingInstance: ConfigurationSettingInstance;
+  settingDefinitions?: ConfigurationSettingDefinition[];
 }
 
 export interface DetailedConfiguration {
@@ -173,6 +188,22 @@ export class DetailedIntuneService {
   private permissionErrors: PermissionError[] = [];
   private fetchErrors: FetchError[] = [];
   private progressCallback?: ProgressCallback;
+  private configurationSettingDefinitionCache = new Map<
+    string,
+    ConfigurationSettingDefinition
+  >();
+  private configurationSettingDefinitionRequests = new Map<
+    string,
+    Promise<ConfigurationSettingDefinition | undefined>
+  >();
+  private configurationSettingDefinitionMisses = new Set<string>();
+  private configurationSettingDefinitionRequestLanes: Promise<void>[] = [
+    Promise.resolve(),
+    Promise.resolve(),
+    Promise.resolve(),
+    Promise.resolve(),
+  ];
+  private nextConfigurationSettingDefinitionRequestLane = 0;
 
   constructor(accessToken: string, progressCallback?: ProgressCallback) {
     this.client = createGraphClient(accessToken);
@@ -221,6 +252,183 @@ export class DetailedIntuneService {
       message: error?.message || "Microsoft Graph request failed",
       errorCode: error?.code || error?.error?.code,
       statusCode: error?.statusCode || error?.response?.status,
+    };
+  }
+
+  private chunkConfigurationSettingDefinitionIds(
+    definitionIds: string[],
+    maximumFilterLength = 1200,
+  ): string[][] {
+    const chunks: string[][] = [];
+    let chunk: string[] = [];
+    let filterLength = 0;
+
+    for (const definitionId of definitionIds) {
+      const clauseLength = `id eq '${definitionId.replace(/'/g, "''")}'`.length;
+      const separatorLength = chunk.length > 0 ? " or ".length : 0;
+      if (
+        chunk.length > 0 &&
+        filterLength + separatorLength + clauseLength > maximumFilterLength
+      ) {
+        chunks.push(chunk);
+        chunk = [];
+        filterLength = 0;
+      }
+      chunk.push(definitionId);
+      filterLength += (chunk.length > 1 ? " or ".length : 0) + clauseLength;
+    }
+
+    if (chunk.length > 0) chunks.push(chunk);
+    return chunks;
+  }
+
+  private scheduleConfigurationSettingDefinitionRequest<T>(
+    request: () => Promise<T>,
+  ): Promise<T> {
+    const laneIndex =
+      this.nextConfigurationSettingDefinitionRequestLane++ %
+      this.configurationSettingDefinitionRequestLanes.length;
+    const scheduled =
+      this.configurationSettingDefinitionRequestLanes[laneIndex]!.then(request);
+    this.configurationSettingDefinitionRequestLanes[laneIndex] = scheduled.then(
+      () => undefined,
+      () => undefined,
+    );
+    return scheduled;
+  }
+
+  private async getConfigurationSettingDefinitions(
+    definitionIds: string[],
+  ): Promise<ConfigurationSettingDefinition[]> {
+    const uniqueDefinitionIds = [...new Set(definitionIds)];
+    const unresolvedDefinitionIds = uniqueDefinitionIds.filter(
+      (definitionId) =>
+        !this.configurationSettingDefinitionCache.has(definitionId) &&
+        !this.configurationSettingDefinitionRequests.has(definitionId) &&
+        !this.configurationSettingDefinitionMisses.has(definitionId),
+    );
+
+    for (const chunk of this.chunkConfigurationSettingDefinitionIds(
+      unresolvedDefinitionIds,
+    )) {
+      const filter = chunk
+        .map((definitionId) => `id eq '${definitionId.replace(/'/g, "''")}'`)
+        .join(" or ");
+      const batchRequest = this.scheduleConfigurationSettingDefinitionRequest(
+        async () => {
+          try {
+            const response = await this.retryWithBackoff(
+              () =>
+                this.client
+                  .api("/deviceManagement/configurationSettings")
+                  .version("beta")
+                  .filter(filter)
+                  .top(chunk.length)
+                  .get(),
+              2,
+              300,
+            );
+            const pages = await collectAllPagesWithStatus<any>(
+              this.client as unknown as Client,
+              response,
+            );
+            if (!pages.complete) {
+              console.warn(
+                "Settings Catalog definition metadata was only partially returned:",
+                this.graphError(pages.error).message,
+              );
+            }
+            return {
+              complete: pages.complete,
+              definitions: pages.items as ConfigurationSettingDefinition[],
+            };
+          } catch (error: any) {
+            console.warn(
+              `Failed to fetch ${chunk.length} Settings Catalog definition(s):`,
+              error?.message,
+            );
+            return {
+              complete: false,
+              definitions: [] as ConfigurationSettingDefinition[],
+            };
+          }
+        },
+      );
+
+      for (const definitionId of chunk) {
+        const definitionRequest = batchRequest
+          .then((result) => {
+            const definition = result.definitions.find(
+              (candidate) => candidate.id === definitionId,
+            );
+            if (definition) {
+              this.configurationSettingDefinitionCache.set(
+                definitionId,
+                definition,
+              );
+            } else if (result.complete) {
+              this.configurationSettingDefinitionMisses.add(definitionId);
+            }
+            return definition;
+          })
+          .finally(() => {
+            this.configurationSettingDefinitionRequests.delete(definitionId);
+          });
+        this.configurationSettingDefinitionRequests.set(
+          definitionId,
+          definitionRequest,
+        );
+      }
+    }
+
+    const definitions = await Promise.all(
+      uniqueDefinitionIds.map(async (definitionId) => {
+        const cached =
+          this.configurationSettingDefinitionCache.get(definitionId);
+        if (cached) return cached;
+        return this.configurationSettingDefinitionRequests.get(definitionId);
+      }),
+    );
+
+    return definitions.filter(
+      (definition): definition is ConfigurationSettingDefinition =>
+        Boolean(definition),
+    );
+  }
+
+  private async enrichConfigurationSettingDefinitions(
+    settings: ConfigurationSetting[],
+  ): Promise<{
+    settings: ConfigurationSetting[];
+    missingDefinitionIds: string[];
+  }> {
+    const configuredDefinitionIds =
+      collectConfiguredSettingDefinitionIds(settings);
+    const expandedDefinitions = settings.flatMap(
+      (setting) => setting.settingDefinitions || [],
+    );
+    const availableDefinitionIds = new Set(
+      expandedDefinitions.map((definition) => definition.id),
+    );
+    const missingDefinitionIds = configuredDefinitionIds.filter(
+      (definitionId) => !availableDefinitionIds.has(definitionId),
+    );
+
+    const fetchedDefinitions =
+      await this.getConfigurationSettingDefinitions(missingDefinitionIds);
+
+    const resolvedDefinitionIds = new Set(
+      fetchedDefinitions.map((definition) => definition.id),
+    );
+
+    return {
+      settings: associateConfigurationSettingDefinitions(
+        settings,
+        fetchedDefinitions,
+      ),
+      missingDefinitionIds: missingDefinitionIds.filter(
+        (definitionId) => !resolvedDefinitionIds.has(definitionId),
+      ),
     };
   }
 
@@ -563,6 +771,15 @@ export class DetailedIntuneService {
                 } catch (fallbackError: any) {
                   throw fallbackError;
                 }
+              }
+
+              const enrichedSettings =
+                await this.enrichConfigurationSettingDefinitions(settings);
+              settings = enrichedSettings.settings;
+              if (enrichedSettings.missingDefinitionIds.length > 0) {
+                console.warn(
+                  `Setting metadata unavailable for ${enrichedSettings.missingDefinitionIds.length} definition(s) in ${policy.name}`,
+                );
               }
 
               // Fetch assignments with retry

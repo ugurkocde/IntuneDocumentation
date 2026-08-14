@@ -1,16 +1,124 @@
-import type { ConfigurationSetting } from "./intune-detailed-client";
+import type {
+  ConfigurationSetting,
+  ConfigurationSettingDefinition,
+  ConfigurationSettingInstance,
+} from "./intune-detailed-client";
+
+function collectDefinitionIdsFromInstance(
+  instance: ConfigurationSettingInstance | undefined,
+  definitionIds: Set<string>,
+) {
+  if (!instance || typeof instance !== "object") return;
+
+  if (typeof instance.settingDefinitionId === "string") {
+    definitionIds.add(instance.settingDefinitionId);
+  }
+
+  const childCollections = [
+    instance.choiceSettingValue?.children,
+    instance.groupSettingValue?.children,
+    ...(Array.isArray(instance.choiceSettingCollectionValue)
+      ? instance.choiceSettingCollectionValue.map((value) => value.children)
+      : []),
+    ...(Array.isArray(instance.groupSettingCollectionValue)
+      ? instance.groupSettingCollectionValue.map((value) => value.children)
+      : []),
+  ];
+
+  for (const children of childCollections) {
+    if (!Array.isArray(children)) continue;
+    for (const child of children) {
+      collectDefinitionIdsFromInstance(child, definitionIds);
+    }
+  }
+}
+
+export function collectConfiguredSettingDefinitionIds(
+  settings: ConfigurationSetting[],
+): string[] {
+  const definitionIds = new Set<string>();
+  for (const setting of settings) {
+    collectDefinitionIdsFromInstance(setting.settingInstance, definitionIds);
+  }
+  return [...definitionIds];
+}
+
+export function associateConfigurationSettingDefinitions(
+  settings: ConfigurationSetting[],
+  supplementalDefinitions: ConfigurationSettingDefinition[] = [],
+): ConfigurationSetting[] {
+  const definitionsById = new Map<string, ConfigurationSettingDefinition>();
+
+  for (const setting of settings) {
+    for (const definition of setting.settingDefinitions || []) {
+      definitionsById.set(definition.id, definition);
+    }
+  }
+  for (const definition of supplementalDefinitions) {
+    definitionsById.set(definition.id, definition);
+  }
+
+  return settings.map((setting) => {
+    const definitionIds = new Set<string>();
+    collectDefinitionIdsFromInstance(setting.settingInstance, definitionIds);
+    const matchingDefinitions = [...definitionIds]
+      .map((definitionId) => definitionsById.get(definitionId))
+      .filter((definition): definition is ConfigurationSettingDefinition =>
+        Boolean(definition),
+      );
+
+    return {
+      ...setting,
+      settingDefinitions:
+        definitionIds.size > 0
+          ? matchingDefinitions
+          : setting.settingDefinitions,
+    };
+  });
+}
+
+function resolveChoiceDisplayValue(
+  value: string | undefined,
+  settingDefinition?: ConfigurationSettingDefinition,
+): string | undefined {
+  if (!settingDefinition?.options) return value;
+
+  const optionByItemId =
+    value !== null && value !== undefined
+      ? settingDefinition.options.find(
+          (option) =>
+            option.itemId !== null &&
+            option.itemId !== undefined &&
+            option.itemId === value,
+        )
+      : undefined;
+  const optionByValue =
+    value !== null && value !== undefined
+      ? settingDefinition.options.find(
+          (option) =>
+            option.optionValue?.value !== null &&
+            option.optionValue?.value !== undefined &&
+            String(option.optionValue.value) === value,
+        )
+      : undefined;
+  const optionByName = settingDefinition.options.find(
+    (option) => option.name === value,
+  );
+
+  return (
+    optionByItemId?.displayName ||
+    optionByValue?.displayName ||
+    optionByName?.displayName ||
+    value
+  );
+}
 
 // Helper to recursively extract nested settings
 // Note: children in collections are raw settingInstance objects, not ConfigurationSetting objects
 function extractNestedSettings(
-  children: any[],
+  children: ConfigurationSettingInstance[],
   depth: number = 0,
-  parentDefinitions?: Array<{
-    id: string;
-    displayName: string;
-    description?: string;
-    options?: any[];
-  }>,
+  parentDefinitions?: ConfigurationSettingDefinition[],
 ): Array<{ name: string; value: string; description?: string }> {
   const results: Array<{ name: string; value: string; description?: string }> =
     [];
@@ -30,16 +138,11 @@ function extractNestedSettings(
       // They have settingDefinitionId but no settingInstance wrapper
       const settingDefinitionId = child.settingDefinitionId;
 
-      // Find the definition from the parent's definitions array
-      const settingDef = parentDefinitions?.find(
-        (def) => def.id === settingDefinitionId,
-      );
-
       // Create a proper ConfigurationSetting structure
       const configSetting: ConfigurationSetting = {
         id: settingDefinitionId || "",
         settingInstance: child, // The child IS the settingInstance
-        settingDefinitions: settingDef ? [settingDef as any] : [],
+        settingDefinitions: parentDefinitions || [],
       };
 
       const childResult = extractSettingValue(configSetting, depth);
@@ -81,8 +184,14 @@ export function extractSettingValue(
   description?: string;
   nestedSettings?: Array<{ name: string; value: string; description?: string }>;
 } {
-  const settingDef = setting.settingDefinitions?.[0];
   const instance = setting.settingInstance;
+  const settingDef =
+    setting.settingDefinitions?.find(
+      (definition) => definition.id === instance?.settingDefinitionId,
+    ) ||
+    (!instance?.settingDefinitionId && setting.settingDefinitions?.length === 1
+      ? setting.settingDefinitions[0]
+      : undefined);
 
   let value: any = "Not configured";
   let type = "Unknown";
@@ -112,17 +221,11 @@ export function extractSettingValue(
     );
     value = values; // formatValue will handle array formatting
   } else if (instance.choiceSettingValue) {
-    value = instance.choiceSettingValue.value;
+    value = resolveChoiceDisplayValue(
+      instance.choiceSettingValue.value,
+      settingDef,
+    );
     type = "Choice";
-    // Get the display name for the choice if available
-    if (settingDef?.options) {
-      const option = settingDef.options.find(
-        (o) => o.name === value || o.itemId === value,
-      );
-      if (option) {
-        value = option.displayName || value;
-      }
-    }
 
     // Handle nested children in choice settings
     if (
@@ -135,6 +238,22 @@ export function extractSettingValue(
         setting.settingDefinitions,
       );
     }
+  } else if (instance.choiceSettingCollectionValue) {
+    value = instance.choiceSettingCollectionValue.map((choice) =>
+      resolveChoiceDisplayValue(choice.value, settingDef),
+    );
+    type = "Choice Collection";
+    const allNestedSettings = instance.choiceSettingCollectionValue.flatMap(
+      (choice) =>
+        choice.children?.length
+          ? extractNestedSettings(
+              choice.children,
+              depth + 1,
+              setting.settingDefinitions,
+            )
+          : [],
+    );
+    if (allNestedSettings.length > 0) nestedSettings = allNestedSettings;
   } else if (instance.groupSettingValue) {
     // Handle single group setting (not a collection)
     type = "Group";
@@ -239,11 +358,10 @@ export function formatValue(value: any): string {
 
     // Handle arrays of primitives (strings, numbers, booleans)
     // Use newlines for better readability if more than 3 items
-    if (value.length > 3) {
-      return value.map((item: any) => String(item)).join("\n");
-    }
-
-    return value.map((item: any) => String(item)).join(", ");
+    const formattedItems = value.map((item: any) =>
+      typeof item === "string" ? formatValue(item) : String(item),
+    );
+    return formattedItems.join(value.length > 3 ? "\n" : ", ");
   }
 
   if (typeof value === "object") {

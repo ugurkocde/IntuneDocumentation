@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { User, LogOut, Menu, X } from "lucide-react";
+import { Github, User, LogOut, Menu, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { useEffect, useState, memo } from "react";
@@ -58,6 +58,16 @@ const NavLinks = memo(function NavLinks({
       >
         FAQ
       </Link>
+      <a
+        href="https://github.com/ugurkocde/IntuneDocumentation"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="GitHub repository"
+        className={`inline-flex min-h-11 min-w-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${vertical ? "justify-start gap-2" : "justify-center"} ${linkBase}`}
+      >
+        <Github className="h-5 w-5" />
+        {vertical && <span>GitHub</span>}
+      </a>
       {isAuthenticated && (
         <Link
           href="/dashboard"

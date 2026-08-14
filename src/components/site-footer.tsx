@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Linkedin } from "lucide-react";
+import { Github, Linkedin } from "lucide-react";
 
 export function SiteFooter() {
   const year = new Date().getFullYear();
@@ -131,6 +131,27 @@ export function SiteFooter() {
                 >
                   <Linkedin className="h-4 w-4" />
                   LinkedIn
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://github.com/ugurkocde/IntuneDocumentation"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 items-center gap-2 transition-colors hover:text-teal-700"
+                >
+                  <Github className="h-4 w-4" />
+                  GitHub
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://github.com/ugurkocde/IntuneDocumentation#self-host-with-docker"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-10 items-center transition-colors hover:text-teal-700"
+                >
+                  Self-hosting guide
                 </a>
               </li>
             </ul>

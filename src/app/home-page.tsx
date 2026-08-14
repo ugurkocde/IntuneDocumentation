@@ -8,11 +8,15 @@ import {
   CheckCircle,
   ChevronDown,
   Cloud,
+  Container,
   Database,
   Download,
   Eye,
+  EyeOff,
   FileCheck,
   FileText,
+  Github,
+  KeyRound,
   Lock,
   Monitor,
   RefreshCw,
@@ -45,6 +49,11 @@ const faqs = [
     question: "Is the Intune Documentation tool really free?",
     answer:
       "Yes, it's completely free. No hidden fees, no premium tiers, no credit card required. You can generate unlimited Intune documentation reports at no cost.",
+  },
+  {
+    question: "Can I self-host Intune Documentation?",
+    answer:
+      "Yes. Intune Documentation is open source under the Elastic License 2.0. The source is at https://github.com/ugurkocde/IntuneDocumentation and you can self-host it with a single docker compose command and your own Microsoft Entra app registration. Telemetry is disabled by default, and your tenant data stays in your browser either way.",
   },
   {
     question: "Is my Intune data secure?",
@@ -1178,6 +1187,124 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                   empty.
                 </p>
               </motion.article>
+            </motion.div>
+          </div>
+        </section>
+
+        <section className="bg-mint-50 py-24 sm:py-28">
+          <div className="mx-auto max-w-6xl px-5 sm:px-8 lg:px-10">
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: "-80px" }}
+              variants={fadeUp}
+              className="mx-auto max-w-2xl text-center"
+            >
+              <Eyebrow>Open source</Eyebrow>
+              <h2 className="text-petrol-950 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
+                Use it hosted, or run it yourself
+              </h2>
+              <p className="text-petrol-600 mt-4 text-base leading-7">
+                Same app, either way. Your tenant data stays in your browser.
+              </p>
+            </motion.div>
+
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: "-80px" }}
+              variants={fadeUp}
+              className="border-petrol-950/6 shadow-soft mt-12 rounded-3xl border bg-white p-3 sm:p-4"
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <article className="p-5 sm:p-7 lg:p-9">
+                  <h3 className="text-petrol-950 text-xl font-semibold">
+                    Hosted
+                  </h3>
+                  <ul className="mt-7 space-y-5">
+                    {[
+                      {
+                        icon: ArrowRight,
+                        text: "Start documenting at intunedocumentation.com in seconds",
+                      },
+                      {
+                        icon: RefreshCw,
+                        text: "Always on the latest version",
+                      },
+                      { icon: Cloud, text: "Nothing to operate" },
+                    ].map(({ icon: Icon, text }) => (
+                      <li key={text} className="flex items-start gap-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                          <Icon className="h-4 w-4" strokeWidth={2} />
+                        </span>
+                        <span className="text-petrol-700 pt-1 text-sm leading-6">
+                          {text}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+
+                <article className="rounded-2xl border border-teal-600/15 bg-teal-50/70 p-5 sm:p-7 lg:p-9">
+                  <h3 className="text-petrol-950 text-xl font-semibold">
+                    Self-hosted
+                  </h3>
+                  <ul className="mt-7 space-y-5">
+                    {[
+                      {
+                        icon: Container,
+                        text: "Runs on your own infrastructure with Docker",
+                      },
+                      {
+                        icon: KeyRound,
+                        text: "Connects to your own Entra app registration",
+                      },
+                      {
+                        icon: EyeOff,
+                        text: "All telemetry disabled by default",
+                      },
+                    ].map(({ icon: Icon, text }) => (
+                      <li key={text} className="flex items-start gap-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-teal-700 shadow-sm">
+                          <Icon className="h-4 w-4" strokeWidth={2} />
+                        </span>
+                        <span className="text-petrol-700 pt-1 text-sm leading-6">
+                          {text}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <pre className="bg-petrol-950 mt-7 overflow-x-auto rounded-xl px-4 py-3.5 text-sm text-white">
+                    <code>docker compose up -d</code>
+                  </pre>
+                </article>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: "-40px" }}
+              variants={fadeUp}
+              className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row"
+            >
+              <a
+                href="https://github.com/ugurkocde/IntuneDocumentation"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-petrol-950 hover:bg-petrol-900 inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+              >
+                <Github className="h-4 w-4" />
+                View on GitHub
+              </a>
+              <a
+                href="https://github.com/ugurkocde/IntuneDocumentation#self-host-with-docker"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="border-petrol-950/12 text-petrol-800 inline-flex min-h-11 items-center justify-center rounded-full border px-6 py-2.5 text-sm font-semibold transition-colors hover:border-teal-600/30 hover:bg-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+              >
+                Self-hosting guide
+              </a>
             </motion.div>
           </div>
         </section>

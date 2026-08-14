@@ -6,6 +6,13 @@ import "./src/env.js";
 import { withPlausibleProxy } from "next-plausible";
 
 /** @type {import("next").NextConfig} */
-const config = {};
+const config = {
+  output: "standalone",
+  // Pin the tracing root so standalone output lands at .next/standalone/server.js
+  // even when a lockfile exists in a parent directory.
+  outputFileTracingRoot: import.meta.dirname,
+};
 
-export default withPlausibleProxy()(config);
+export default process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true"
+  ? withPlausibleProxy()(config)
+  : config;

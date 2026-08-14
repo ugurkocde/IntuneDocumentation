@@ -1,7 +1,7 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
-import { motion, useReducedMotion, type Variants } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight,
   Check,
@@ -134,104 +134,35 @@ function Eyebrow({
   );
 }
 
-function ProductMockup({ prefersReduced }: { prefersReduced: boolean | null }) {
+function ProductMockup() {
   const rows = [
-    ["Device Configurations", "47 policies"],
-    ["Compliance Policies", "12 policies"],
-    ["PowerShell Scripts", "8 scripts"],
+    {
+      label: "Device Configurations",
+      value: "47 policies",
+      rowDelay: "animation-delay-180",
+      checkDelay: "animation-delay-630",
+    },
+    {
+      label: "Compliance Policies",
+      value: "12 policies",
+      rowDelay: "animation-delay-300",
+      checkDelay: "animation-delay-750",
+    },
+    {
+      label: "PowerShell Scripts",
+      value: "8 scripts",
+      rowDelay: "animation-delay-420",
+      checkDelay: "animation-delay-870",
+    },
   ];
-  const collectionStory: Variants = prefersReduced
-    ? { hidden: {}, visible: {} }
-    : {
-        hidden: {},
-        visible: { transition: { staggerChildren: 0.12 } },
-      };
-  const reportCard: Variants = prefersReduced
-    ? {
-        hidden: { opacity: 1, y: 0 },
-        visible: { opacity: 1, y: 0 },
-      }
-    : {
-        hidden: { opacity: 0, y: 14 },
-        visible: {
-          opacity: 1,
-          y: 0,
-          transition: {
-            duration: 0.35,
-            ease: "easeOut",
-            delayChildren: 0.18,
-            staggerChildren: 0.12,
-          },
-        },
-      };
-  const reportRow: Variants = prefersReduced
-    ? {
-        hidden: { opacity: 1, y: 0 },
-        visible: { opacity: 1, y: 0 },
-      }
-    : {
-        hidden: { opacity: 0, y: 14 },
-        visible: {
-          opacity: 1,
-          y: 0,
-          transition: {
-            duration: 0.35,
-            ease: "easeOut",
-            when: "beforeChildren",
-            delayChildren: 0.1,
-          },
-        },
-      };
-  const popIn: Variants = prefersReduced
-    ? {
-        hidden: { opacity: 1, scale: 1 },
-        visible: { opacity: 1, scale: 1 },
-      }
-    : {
-        hidden: { opacity: 0, scale: 0.5 },
-        visible: {
-          opacity: 1,
-          scale: 1,
-          transition: {
-            duration: 0.28,
-            ease: [0.34, 1.56, 0.64, 1],
-          },
-        },
-      };
-  const readyBadge: Variants = prefersReduced
-    ? {
-        hidden: { opacity: 1, x: 0, y: 0, scale: 1 },
-        visible: { opacity: 1, x: 0, y: 0, scale: 1 },
-      }
-    : {
-        hidden: { opacity: 0, x: 14, y: -12, scale: 0.96 },
-        visible: {
-          opacity: 1,
-          x: 0,
-          y: 0,
-          scale: 1,
-          transition: {
-            duration: 0.4,
-            delay: 0.98,
-            ease: [0.34, 1.56, 0.64, 1],
-          },
-        },
-      };
 
   return (
-    <motion.div
-      initial={prefersReduced ? false : "hidden"}
-      whileInView="visible"
-      viewport={{ once: true, margin: "-80px" }}
-      variants={collectionStory}
+    <div
       className="relative mx-auto w-full max-w-[500px] px-3 pt-12 pb-8 sm:px-10"
       aria-hidden="true"
     >
       <div className="absolute inset-5 -z-10 rounded-[2.5rem] bg-teal-100/75 blur-2xl" />
-      <motion.div
-        variants={reportCard}
-        className="shadow-soft relative rounded-[1.6rem] border border-white bg-white p-5 sm:p-7"
-      >
+      <div className="animate-mockup-card shadow-soft relative rounded-[1.6rem] border border-white bg-white p-5 sm:p-7">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white">
             <FileText className="h-5 w-5" />
@@ -247,54 +178,43 @@ function ProductMockup({ prefersReduced }: { prefersReduced: boolean | null }) {
         </div>
 
         <div className="space-y-2.5">
-          {rows.map(([label, value]) => (
-            <motion.div
+          {rows.map(({ label, value, rowDelay, checkDelay }) => (
+            <div
               key={label}
-              variants={reportRow}
-              className="border-petrol-950/7 bg-surface flex items-center gap-3 rounded-xl border px-3 py-3.5"
+              className={`animate-mockup-row ${rowDelay} border-petrol-950/7 bg-surface flex items-center gap-3 rounded-xl border px-3 py-3.5`}
             >
-              <motion.span
-                variants={popIn}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700"
+              <span
+                className={`animate-mockup-pop-in ${checkDelay} flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700`}
               >
                 <Check className="h-3.5 w-3.5" strokeWidth={3} />
-              </motion.span>
+              </span>
               <span className="text-petrol-800 min-w-0 flex-1 truncate text-[11px] font-semibold sm:text-xs">
                 {label}
               </span>
               <span className="text-petrol-600 shrink-0 text-[10px] sm:text-[11px]">
                 {value}
               </span>
-            </motion.div>
+            </div>
           ))}
         </div>
 
-        <motion.div
-          variants={reportRow}
-          className="my-4 flex items-center justify-between rounded-xl bg-teal-50 px-3 py-2.5"
-        >
+        <div className="animate-mockup-row animation-delay-540 my-4 flex items-center justify-between rounded-xl bg-teal-50 px-3 py-2.5">
           <span className="text-petrol-700 flex items-center gap-2 text-[10px] font-medium sm:text-[11px]">
             <Users className="h-3.5 w-3.5 text-teal-700" />
             Group assignments included
           </span>
-          <motion.span
-            variants={popIn}
-            className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-teal-700"
-          >
+          <span className="animate-mockup-pop-in animation-delay-990 rounded-full bg-white px-2 py-1 text-[9px] font-bold text-teal-700">
             Resolved
-          </motion.span>
-        </motion.div>
+          </span>
+        </div>
 
         <div className="bg-petrol-950 flex h-11 items-center justify-center gap-2 rounded-xl text-xs font-semibold text-white">
           <Download className="h-4 w-4" />
           Export PDF
         </div>
-      </motion.div>
+      </div>
 
-      <motion.div
-        variants={readyBadge}
-        className="diagonal-stripes absolute top-0 right-0 w-[175px] rounded-2xl bg-teal-600 p-4 text-white shadow-[0_20px_45px_-22px_rgba(8,47,54,0.55)] sm:right-2 sm:w-[195px] sm:p-5"
-      >
+      <div className="animate-mockup-ready animation-delay-1000 diagonal-stripes absolute top-0 right-0 w-[175px] rounded-2xl bg-teal-600 p-4 text-white shadow-[0_20px_45px_-22px_rgba(8,47,54,0.55)] sm:right-2 sm:w-[195px] sm:p-5">
         <div className="mb-6 flex items-start justify-between">
           <div>
             <p className="text-[9px] font-semibold tracking-[0.14em] text-white/65 uppercase">
@@ -312,8 +232,8 @@ function ProductMockup({ prefersReduced }: { prefersReduced: boolean | null }) {
           </p>
           <p className="mt-1 text-sm font-semibold">Complete</p>
         </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }
 
@@ -578,29 +498,18 @@ export function HomePage({ stats }: { stats: SiteStats }) {
 
         <section className="hero-stripes bg-mint-50 relative pt-28 pb-20 sm:pt-32 sm:pb-24 lg:min-h-[760px] lg:pt-36 lg:pb-28">
           <div className="mx-auto grid max-w-6xl items-center gap-14 px-5 sm:px-8 lg:grid-cols-[1.04fr_0.96fr] lg:gap-10 lg:px-10">
-            <motion.div
-              initial="hidden"
-              animate="visible"
-              variants={staggerContainer}
-              className="relative z-10"
-            >
-              <motion.h1
-                variants={fadeUp}
-                className="text-petrol-950 max-w-3xl text-[2.65rem] leading-[0.98] font-semibold tracking-[-0.055em] sm:text-6xl lg:text-[4.15rem]"
-              >
+            <div className="relative z-10">
+              <h1 className="animate-hero-fade-up text-petrol-950 max-w-3xl text-[2.65rem] leading-[0.98] font-semibold tracking-[-0.055em] sm:text-6xl lg:text-[4.15rem]">
                 Intune Documentation in minutes, not hours.
-              </motion.h1>
+              </h1>
 
-              <motion.p
-                variants={fadeUp}
-                className="text-petrol-600 mt-6 max-w-xl text-base leading-7 sm:text-lg"
-              >
+              <p className="animate-hero-fade-up animation-delay-120 text-petrol-600 mt-6 max-w-xl text-base leading-7 sm:text-lg">
                 Export policies, settings, and assignments as audit-ready PDFs
                 or Word documents, with broad coverage and clear collection
                 status.
-              </motion.p>
+              </p>
 
-              <motion.div variants={fadeUp} className="mt-8">
+              <div className="animate-hero-fade-up animation-delay-240 mt-8">
                 {!isAuthenticated ? (
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
@@ -721,12 +630,9 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                     </div>
                   </div>
                 )}
-              </motion.div>
+              </div>
 
-              <motion.div
-                variants={fadeUp}
-                className="mt-9 grid grid-cols-2 gap-x-4 gap-y-4 sm:flex sm:flex-wrap sm:gap-6"
-              >
+              <div className="animate-hero-fade-up animation-delay-360 mt-9 grid grid-cols-2 gap-x-4 gap-y-4 sm:flex sm:flex-wrap sm:gap-6">
                 {[
                   { icon: CheckCircle, label: "100% free" },
                   { icon: Eye, label: "Read-only access" },
@@ -741,13 +647,10 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                     <span>{label}</span>
                   </div>
                 ))}
-              </motion.div>
+              </div>
 
               {heroStats.length > 0 && (
-                <motion.div
-                  variants={fadeUp}
-                  className="border-petrol-950/8 mt-10 flex flex-wrap items-center gap-x-12 gap-y-4 border-t pt-7"
-                >
+                <div className="animate-hero-fade-up animation-delay-480 border-petrol-950/8 mt-10 flex flex-wrap items-center gap-x-12 gap-y-4 border-t pt-7">
                   {heroStats.map(({ value, label }) => (
                     <div key={label}>
                       <p className="text-petrol-950 text-3xl font-semibold tracking-[-0.045em] tabular-nums sm:text-4xl">
@@ -758,12 +661,12 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                       </p>
                     </div>
                   ))}
-                </motion.div>
+                </div>
               )}
-            </motion.div>
+            </div>
 
             <div className="hidden sm:block">
-              <ProductMockup prefersReduced={prefersReduced} />
+              <ProductMockup />
             </div>
           </div>
         </section>

@@ -271,6 +271,58 @@ button:focus-visible {
     animation-delay: 4000ms;
   }
 
+  .animation-delay-120 {
+    animation-delay: 120ms;
+  }
+
+  .animation-delay-180 {
+    animation-delay: 180ms;
+  }
+
+  .animation-delay-240 {
+    animation-delay: 240ms;
+  }
+
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  .animation-delay-360 {
+    animation-delay: 360ms;
+  }
+
+  .animation-delay-420 {
+    animation-delay: 420ms;
+  }
+
+  .animation-delay-480 {
+    animation-delay: 480ms;
+  }
+
+  .animation-delay-540 {
+    animation-delay: 540ms;
+  }
+
+  .animation-delay-630 {
+    animation-delay: 630ms;
+  }
+
+  .animation-delay-750 {
+    animation-delay: 750ms;
+  }
+
+  .animation-delay-870 {
+    animation-delay: 870ms;
+  }
+
+  .animation-delay-990 {
+    animation-delay: 990ms;
+  }
+
+  .animation-delay-1000 {
+    animation-delay: 1000ms;
+  }
+
   /* Smooth scroll behavior */
   html {
     scroll-behavior: smooth;
@@ -304,6 +356,67 @@ button:focus-visible {
   .animate-gradient {
     background-size: 200% 200%;
     animation: gradient-shift 8s ease infinite;
+  }
+
+  @keyframes hero-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes mockup-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes mockup-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes mockup-ready-land {
+    from {
+      opacity: 0;
+      transform: translate(14px, -12px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translate(0, 0) scale(1);
+    }
+  }
+
+  .animate-hero-fade-up {
+    animation: hero-fade-up 0.5s ease-out both;
+  }
+
+  .animate-mockup-card,
+  .animate-mockup-row {
+    animation: mockup-fade-up 0.35s ease-out both;
+  }
+
+  .animate-mockup-pop-in {
+    animation: mockup-pop-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  .animate-mockup-ready {
+    animation: mockup-ready-land 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
   }
 
   /* Shimmer animation for counter */
@@ -367,6 +480,14 @@ button:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .animate-hero-fade-up,
+  .animate-mockup-card,
+  .animate-mockup-row,
+  .animate-mockup-pop-in,
+  .animate-mockup-ready {
+    animation-delay: 0ms !important;
   }
 
   .animate-bounce,

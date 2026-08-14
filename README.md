@@ -6,7 +6,7 @@
 
 Intune Documentation is a Next.js web app that signs you into your Microsoft Entra tenant with MSAL, reads Intune configuration through delegated, read-only Microsoft Graph permissions, and creates professional PDF and Word documentation entirely in your browser. Intune configuration data never touches the application server.
 
-[![CI](https://github.com/ugurkocde/IntuneDocumentation-Website/actions/workflows/ci.yml/badge.svg)](https://github.com/ugurkocde/IntuneDocumentation-Website/actions/workflows/ci.yml)
+[![CI](https://github.com/ugurkocde/IntuneDocumentation/actions/workflows/ci.yml/badge.svg)](https://github.com/ugurkocde/IntuneDocumentation/actions/workflows/ci.yml)
 [![License: Elastic-2.0](https://img.shields.io/badge/license-Elastic--2.0-blue.svg)](LICENSE)
 
 ## Use the hosted version

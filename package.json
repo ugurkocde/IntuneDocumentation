@@ -6,7 +6,7 @@
   "license": "Elastic-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ugurkocde/IntuneDocumentation-Website.git"
+    "url": "https://github.com/ugurkocde/IntuneDocumentation.git"
   },
   "type": "module",
   "scripts": {

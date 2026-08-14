@@ -9,6 +9,7 @@ import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { useEffect, useState, memo } from "react";
 import { loginRequest } from "~/lib/msal-config";
+import { ChangelogBell } from "~/components/changelog-bell";
 
 interface NavLinksProps {
   vertical?: boolean;
@@ -197,74 +198,77 @@ export function NavigationHeader() {
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden items-center gap-8 md:flex">
+          <div className="hidden items-center gap-8 lg:flex">
             <NavLinks {...navProps} />
           </div>
 
           {/* Actions */}
-          <div className="hidden items-center gap-3 md:flex">
-            {isAuthenticated ? (
-              <>
-                <div className="flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5">
-                  <User className="h-4 w-4 text-teal-700" />
-                  <span className="text-petrol-800 max-w-[220px] truncate text-sm font-medium">
-                    {userProfile?.displayName ||
-                      accounts[0]?.username ||
-                      "User"}
-                  </span>
+          <div className="flex items-center gap-1 lg:gap-3">
+            <ChangelogBell />
+            <div className="hidden items-center gap-3 lg:flex">
+              {isAuthenticated ? (
+                <>
+                  <div className="flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5">
+                    <User className="h-4 w-4 text-teal-700" />
+                    <span className="text-petrol-800 max-w-[220px] truncate text-sm font-medium">
+                      {userProfile?.displayName ||
+                        accounts[0]?.username ||
+                        "User"}
+                    </span>
+                  </div>
+                  <Button
+                    onClick={handleSignOut}
+                    variant="ghost"
+                    size="sm"
+                    className="text-petrol-700 hover:bg-mint-100 rounded-full"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleSignIn}
+                    variant="ghost"
+                    size="sm"
+                    disabled={signingIn}
+                    className="text-petrol-800 rounded-full px-4 hover:bg-white"
+                  >
+                    Sign in
+                  </Button>
+                  <Button
+                    onClick={handleSignIn}
+                    size="sm"
+                    loading={signingIn}
+                    className="rounded-full bg-teal-600 px-5 text-white shadow-none hover:bg-teal-700 focus:ring-teal-600"
+                  >
+                    Get Started
+                  </Button>
+                  {signInError && (
+                    <span className="max-w-[200px] text-xs text-red-500">
+                      {signInError}
+                    </span>
+                  )}
                 </div>
-                <Button
-                  onClick={handleSignOut}
-                  variant="ghost"
-                  size="sm"
-                  className="text-petrol-700 hover:bg-mint-100 rounded-full"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Sign Out
-                </Button>
-              </>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleSignIn}
-                  variant="ghost"
-                  size="sm"
-                  disabled={signingIn}
-                  className="text-petrol-800 rounded-full px-4 hover:bg-white"
-                >
-                  Sign in
-                </Button>
-                <Button
-                  onClick={handleSignIn}
-                  size="sm"
-                  loading={signingIn}
-                  className="rounded-full bg-teal-600 px-5 text-white shadow-none hover:bg-teal-700 focus:ring-teal-600"
-                >
-                  Get Started
-                </Button>
-                {signInError && (
-                  <span className="max-w-[200px] text-xs text-red-500">
-                    {signInError}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Mobile menu button */}
-          <button
-            className="text-petrol-800 cursor-pointer rounded-lg p-2 transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none md:hidden"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-label="Toggle navigation menu"
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-navigation"
-          >
-            {mobileOpen ? (
-              <X className="h-5 w-5" />
-            ) : (
-              <Menu className="h-5 w-5" />
-            )}
-          </button>
+            {/* Mobile menu button */}
+            <button
+              className="text-petrol-800 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none lg:hidden"
+              onClick={() => setMobileOpen((v) => !v)}
+              aria-label="Toggle navigation menu"
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-navigation"
+            >
+              {mobileOpen ? (
+                <X className="h-5 w-5" />
+              ) : (
+                <Menu className="h-5 w-5" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -272,7 +276,7 @@ export function NavigationHeader() {
       {mobileOpen && (
         <div
           id="mobile-navigation"
-          className="border-petrol-950/8 border-t bg-white/95 backdrop-blur-xl md:hidden"
+          className="border-petrol-950/8 border-t bg-white/95 backdrop-blur-xl lg:hidden"
         >
           <div className="w-full space-y-4 px-4 py-4 sm:px-6 lg:px-8">
             <NavLinks vertical {...navProps} />

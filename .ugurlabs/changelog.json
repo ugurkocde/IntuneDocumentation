@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "productId": "intunedocumentation",
+  "productName": "Intune Documentation",
+  "websiteUrl": "https://www.intunedocumentation.com/",
+  "apiUrl": "https://changelog.ugurlabs.com/api/changelog",
+  "publishMode": "on-completion"
+}

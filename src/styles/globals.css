@@ -81,6 +81,57 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
+.changelog-sheet {
+  animation: changelog-sheet-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.changelog-layer {
+  z-index: 80;
+}
+
+.changelog-sheet-header {
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+}
+
+.changelog-sheet-footer {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.changelog-entry-list {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 640px;
+}
+
+@keyframes changelog-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 639px) {
+  @keyframes changelog-sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(1rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .changelog-sheet {
+    animation: none;
+  }
+}
+
 /* Custom utility classes */
 @layer utilities {
   .bg-gradient-subtle {

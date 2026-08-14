@@ -224,20 +224,15 @@ export function ChangelogPanel({
                     <p className="text-petrol-600 mt-2 text-sm leading-6 break-words">
                       {entry.summary}
                     </p>
-                    {entry.sourceUrl && (
-                      <a
-                        href={entry.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm font-semibold text-teal-700 transition-colors hover:text-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
-                      >
-                        View source
-                        <ExternalLink
-                          className="h-3.5 w-3.5"
-                          aria-hidden="true"
-                        />
-                      </a>
-                    )}
+                    <a
+                      href={`${CHANGELOG_ARCHIVE_URL}/?product=${feed.product.id}#change-${entry.id.toLowerCase()}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm font-semibold text-teal-700 transition-colors hover:text-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+                    >
+                      Read on the changelog
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    </a>
                   </article>
                 </li>
               ))}

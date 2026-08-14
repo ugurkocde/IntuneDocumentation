@@ -9,13 +9,16 @@ function hashIdentifier(value: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  if (!supabase) {
+    return NextResponse.json({ success: true });
+  }
+
   try {
     // Extract and log tenant information server-side only
     const tenantInfo = extractTenantFromRequest(request);
 
     // Track user access for MAU if Supabase is configured
     if (
-      supabase &&
       tenantInfo?.userPrincipalName &&
       tenantInfo?.tenantId &&
       tenantInfo.userPrincipalName !== "unknown" &&

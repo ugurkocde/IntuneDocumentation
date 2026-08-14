@@ -1,20 +1,5 @@
 import type { Configuration, PopupRequest } from "@azure/msal-browser";
 import { PublicClientApplication } from "@azure/msal-browser";
-import { env } from "~/env";
-
-export const msalConfig: Configuration = {
-  auth: {
-    clientId: env.NEXT_PUBLIC_AZURE_AD_CLIENT_ID,
-    authority: `https://login.microsoftonline.com/${env.NEXT_PUBLIC_AZURE_AD_TENANT_ID}`,
-    redirectUri: env.NEXT_PUBLIC_REDIRECT_URI,
-    postLogoutRedirectUri: env.NEXT_PUBLIC_REDIRECT_URI || "/",
-    navigateToLoginRequestUrl: true,
-  },
-  cache: {
-    cacheLocation: "sessionStorage",
-    storeAuthStateInCookie: false,
-  },
-};
 
 export const loginRequest: PopupRequest = {
   scopes: [
@@ -33,17 +18,55 @@ export const graphScopes = {
   scopes: [...loginRequest.scopes],
 };
 
-let msalInstance: PublicClientApplication | undefined;
+interface RuntimeConfig {
+  clientId: string;
+  tenantId: string;
+  error?: string;
+}
 
-export function getMsalInstance() {
+let msalInstancePromise: Promise<PublicClientApplication> | undefined;
+
+async function createMsalInstance() {
+  const response = await fetch("/api/config");
+  const runtimeConfig = (await response.json()) as RuntimeConfig;
+
+  if (!response.ok) {
+    throw new Error(
+      runtimeConfig.error ?? "Failed to load Microsoft Entra configuration.",
+    );
+  }
+
+  const redirectUri = window.location.origin;
+  const msalConfig: Configuration = {
+    auth: {
+      clientId: runtimeConfig.clientId,
+      authority: `https://login.microsoftonline.com/${runtimeConfig.tenantId}`,
+      redirectUri,
+      postLogoutRedirectUri: redirectUri,
+      navigateToLoginRequestUrl: true,
+    },
+    cache: {
+      cacheLocation: "sessionStorage",
+      storeAuthStateInCookie: false,
+    },
+  };
+
+  const msalInstance = new PublicClientApplication(msalConfig);
+  await msalInstance.initialize();
+
+  return msalInstance;
+}
+
+export async function getMsalInstance() {
   if (typeof window === "undefined") {
     return undefined;
   }
-  
-  if (!msalInstance) {
-    msalInstance = new PublicClientApplication(msalConfig);
-    void msalInstance.initialize();
-  }
-  
-  return msalInstance;
+
+  msalInstancePromise ??= createMsalInstance().catch((error: unknown) => {
+    // Do not cache failures, so a transient config fetch error can be retried.
+    msalInstancePromise = undefined;
+    throw error;
+  });
+
+  return msalInstancePromise;
 }

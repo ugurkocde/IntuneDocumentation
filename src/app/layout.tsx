@@ -135,6 +135,7 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const app = <AuthProvider>{children}</AuthProvider>;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
@@ -238,9 +239,13 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <PlausibleProvider domain="intunedocumentation.com">
-          <AuthProvider>{children}</AuthProvider>
-        </PlausibleProvider>
+        {process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (
+          <PlausibleProvider domain="intunedocumentation.com">
+            {app}
+          </PlausibleProvider>
+        ) : (
+          app
+        )}
         <CookieConsentBanner />
       </body>
     </html>

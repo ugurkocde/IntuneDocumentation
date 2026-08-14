@@ -1,0 +1,11 @@
+# Run with: docker compose up -d
+# Put AZURE_AD_CLIENT_ID and optional AZURE_AD_TENANT_ID values in a .env file next to compose.yaml.
+services:
+  intune-documentation:
+    image: ghcr.io/ugurkocde/intune-documentation:latest
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      AZURE_AD_CLIENT_ID: "${AZURE_AD_CLIENT_ID:?Set AZURE_AD_CLIENT_ID to your Entra app registration client ID}"
+      AZURE_AD_TENANT_ID: "${AZURE_AD_TENANT_ID:-common}"

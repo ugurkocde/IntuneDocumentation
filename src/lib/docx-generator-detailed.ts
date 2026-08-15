@@ -40,6 +40,10 @@ import {
 } from "./configuration-parser";
 import type { BrandingOptions } from "~/types/branding";
 import { REDACTED_VALUE } from "./intune-policy-registry";
+import {
+  buildConditionalAccessReportRows,
+  conditionalAccessStateLabel,
+} from "./conditional-access-report";
 
 // ---------------------------------------------------------------------------
 // Helper utilities
@@ -2001,14 +2005,7 @@ export async function generateDetailedDOCX(
         );
 
         // State
-        const stateLabel =
-          policy.state === "enabled"
-            ? "Enabled"
-            : policy.state === "disabled"
-              ? "Disabled"
-              : policy.state === "enabledForReportingButNotEnforced"
-                ? "Report-only"
-                : (policy.state ?? "Unknown");
+        const stateLabel = conditionalAccessStateLabel(policy.state);
 
         sectionChildren.push(
           new Paragraph({
@@ -2048,177 +2045,15 @@ export async function generateDetailedDOCX(
           );
         }
 
+        if (policy.description) {
+          sectionChildren.push(bodyText(policy.description));
+        }
+
         // Conditions table
-        const conditions: string[][] = [];
-
-        // Users
-        const userConditions = policy.conditions?.users;
-        if (userConditions) {
-          if (userConditions.includeUsers?.length) {
-            conditions.push([
-              "Include Users",
-              userConditions.includeUsers.join(", "),
-            ]);
-          }
-          if (userConditions.excludeUsers?.length) {
-            conditions.push([
-              "Exclude Users",
-              userConditions.excludeUsers.join(", "),
-            ]);
-          }
-          if (userConditions.includeGroups?.length) {
-            const resolved = userConditions.includeGroups.map(
-              (id: string) => data.groupNames?.get(id) ?? id,
-            );
-            conditions.push(["Include Groups", resolved.join(", ")]);
-          }
-          if (userConditions.excludeGroups?.length) {
-            const resolved = userConditions.excludeGroups.map(
-              (id: string) => data.groupNames?.get(id) ?? id,
-            );
-            conditions.push(["Exclude Groups", resolved.join(", ")]);
-          }
-          if (userConditions.includeRoles?.length) {
-            conditions.push([
-              "Include Roles",
-              userConditions.includeRoles.join(", "),
-            ]);
-          }
-          if (userConditions.excludeRoles?.length) {
-            conditions.push([
-              "Exclude Roles",
-              userConditions.excludeRoles.join(", "),
-            ]);
-          }
-        }
-
-        // Applications
-        const appConditions = policy.conditions?.applications;
-        if (appConditions) {
-          if (appConditions.includeApplications?.length) {
-            conditions.push([
-              "Include Applications",
-              appConditions.includeApplications.join(", "),
-            ]);
-          }
-          if (appConditions.excludeApplications?.length) {
-            conditions.push([
-              "Exclude Applications",
-              appConditions.excludeApplications.join(", "),
-            ]);
-          }
-        }
-
-        // Platforms
-        const platformConditions = policy.conditions?.platforms;
-        if (platformConditions) {
-          if (platformConditions.includePlatforms?.length) {
-            conditions.push([
-              "Include Platforms",
-              platformConditions.includePlatforms.join(", "),
-            ]);
-          }
-          if (platformConditions.excludePlatforms?.length) {
-            conditions.push([
-              "Exclude Platforms",
-              platformConditions.excludePlatforms.join(", "),
-            ]);
-          }
-        }
-
-        // Locations
-        const locationConditions = policy.conditions?.locations;
-        if (locationConditions) {
-          if (locationConditions.includeLocations?.length) {
-            conditions.push([
-              "Include Locations",
-              locationConditions.includeLocations.join(", "),
-            ]);
-          }
-          if (locationConditions.excludeLocations?.length) {
-            conditions.push([
-              "Exclude Locations",
-              locationConditions.excludeLocations.join(", "),
-            ]);
-          }
-        }
-
-        // Client app types
-        if (policy.conditions?.clientAppTypes?.length) {
-          conditions.push([
-            "Client App Types",
-            policy.conditions.clientAppTypes.join(", "),
-          ]);
-        }
-
-        // Sign-in risk levels
-        if (policy.conditions?.signInRiskLevels?.length) {
-          conditions.push([
-            "Sign-in Risk Levels",
-            policy.conditions.signInRiskLevels.join(", "),
-          ]);
-        }
-
-        // User risk levels
-        if (policy.conditions?.userRiskLevels?.length) {
-          conditions.push([
-            "User Risk Levels",
-            policy.conditions.userRiskLevels.join(", "),
-          ]);
-        }
-
-        // Grant controls
-        const grantControls = policy.grantControls;
-        if (grantControls) {
-          if (grantControls.operator) {
-            conditions.push(["Grant Operator", grantControls.operator]);
-          }
-          if (grantControls.builtInControls?.length) {
-            conditions.push([
-              "Grant Controls",
-              grantControls.builtInControls.join(", "),
-            ]);
-          }
-          if (grantControls.customAuthenticationFactors?.length) {
-            conditions.push([
-              "Custom Auth Factors",
-              grantControls.customAuthenticationFactors.join(", "),
-            ]);
-          }
-          if (grantControls.termsOfUse?.length) {
-            conditions.push([
-              "Terms of Use",
-              grantControls.termsOfUse.join(", "),
-            ]);
-          }
-        }
-
-        // Session controls
-        const sessionControls = policy.sessionControls;
-        if (sessionControls) {
-          if (sessionControls.applicationEnforcedRestrictions?.isEnabled) {
-            conditions.push(["App Enforced Restrictions", "Enabled"]);
-          }
-          if (sessionControls.cloudAppSecurity?.isEnabled) {
-            conditions.push([
-              "Cloud App Security",
-              sessionControls.cloudAppSecurity.cloudAppSecurityType ||
-                "Enabled",
-            ]);
-          }
-          if (sessionControls.signInFrequency?.isEnabled) {
-            conditions.push([
-              "Sign-in Frequency",
-              `${sessionControls.signInFrequency.value} ${sessionControls.signInFrequency.type}`,
-            ]);
-          }
-          if (sessionControls.persistentBrowser?.isEnabled) {
-            conditions.push([
-              "Persistent Browser",
-              sessionControls.persistentBrowser.mode || "Enabled",
-            ]);
-          }
-        }
+        const conditions = buildConditionalAccessReportRows(
+          policy,
+          data.groupNames,
+        ).map((row) => [row.name, row.value]);
 
         if (conditions.length > 0) {
           sectionChildren.push(

@@ -17,6 +17,10 @@ import {
   type ExportGenerationResult,
 } from "./configuration-analyzer";
 import { REDACTED_VALUE } from "./intune-policy-registry";
+import {
+  buildConditionalAccessReportRows,
+  conditionalAccessStateLabel,
+} from "./conditional-access-report";
 
 export type { PolicyExportError };
 export type PdfGenerationResult = ExportGenerationResult;
@@ -2642,77 +2646,31 @@ export async function generateDetailedPDF(
 
     totalPolicies += data.conditionalAccessPolicies.length;
 
-    const groupName = (id: string) => data.groupNames?.get(id) || id;
-
     data.conditionalAccessPolicies.forEach((policy: any) => {
       try {
         addConfigHeader(
           policy.displayName,
-          "Not assigned",
+          "Defined by policy conditions",
           policy.createdDateTime,
           policy.modifiedDateTime,
         );
 
         if (policy.state) {
-          addText(`State: ${policy.state}`, 9, "normal", [100, 100, 100]);
+          addText(
+            `State: ${conditionalAccessStateLabel(policy.state)}`,
+            9,
+            "normal",
+            [100, 100, 100],
+          );
           yPosition += 2;
         }
 
-        const users = policy?.conditions?.users || {};
-        const includeGroups: string[] = (users.includeGroups || []).map(
-          groupName,
-        );
-        const excludeGroups: string[] = (users.excludeGroups || []).map(
-          groupName,
-        );
-        const includeUsers: string[] = users.includeUsers || [];
-        const excludeUsers: string[] = users.excludeUsers || [];
-        const platforms: string[] =
-          policy?.conditions?.platforms?.includePlatforms || [];
-        const clientApps: string[] = policy?.conditions?.clientAppTypes || [];
-        const locations = policy?.conditions?.locations || {};
-        const includeLocations: string[] = locations.includeLocations || [];
-        const excludeLocations: string[] = locations.excludeLocations || [];
-        const grants: string[] = policy?.grantControls?.builtInControls || [];
-        const session = policy?.sessionControls || {};
-        const sessionEnabled = Object.keys(session).filter((k) => session[k]);
+        if (policy.description) {
+          addText(policy.description, 9, "normal", [100, 100, 100]);
+          yPosition += 2;
+        }
 
-        const info: { name: string; value: string }[] = [];
-        if (includeGroups.length)
-          info.push({
-            name: "Include Groups",
-            value: includeGroups.join(", "),
-          });
-        if (excludeGroups.length)
-          info.push({
-            name: "Exclude Groups",
-            value: excludeGroups.join(", "),
-          });
-        if (includeUsers.length)
-          info.push({ name: "Include Users", value: includeUsers.join(", ") });
-        if (excludeUsers.length)
-          info.push({ name: "Exclude Users", value: excludeUsers.join(", ") });
-        if (platforms.length)
-          info.push({ name: "Platforms", value: platforms.join(", ") });
-        if (clientApps.length)
-          info.push({ name: "Client Apps", value: clientApps.join(", ") });
-        if (includeLocations.length)
-          info.push({
-            name: "Include Locations",
-            value: includeLocations.join(", "),
-          });
-        if (excludeLocations.length)
-          info.push({
-            name: "Exclude Locations",
-            value: excludeLocations.join(", "),
-          });
-        if (grants.length)
-          info.push({ name: "Grant Controls", value: grants.join(", ") });
-        if (sessionEnabled.length)
-          info.push({
-            name: "Session Controls",
-            value: sessionEnabled.join(", "),
-          });
+        const info = buildConditionalAccessReportRows(policy, data.groupNames);
 
         if (info.length > 0) {
           addSettingsTable(info);

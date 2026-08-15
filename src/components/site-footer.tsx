@@ -159,22 +159,40 @@ export function SiteFooter() {
 
           <div>
             <h4 className="text-petrol-950 text-xs font-bold tracking-[0.16em] uppercase">
-              Related Products
+              Company
             </h4>
             <ul className="mt-4 space-y-3 text-sm">
               <li>
                 <a
-                  href="https://entradocumentation.com"
+                  href="https://ugurlabs.com/about"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="transition-colors hover:text-teal-700"
                 >
-                  EntraDocumentation
+                  About Ugurlabs
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://ugurlabs.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  All products
+                </a>
+              </li>
+              <li>
+                <a
+                  href="mailto:support@ugurlabs.com"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Contact
                 </a>
               </li>
             </ul>
             <p className="text-petrol-600 mt-4 text-xs leading-5">
-              Complete Microsoft 365 documentation ecosystem
+              Practical tools for Microsoft cloud administration
             </p>
           </div>
         </div>

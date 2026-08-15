@@ -156,14 +156,17 @@ export default function RootLayout({
     },
     author: {
       "@type": "Organization",
-      name: "Intune Documentation",
-      url: "https://intunedocumentation.com",
-      sameAs: ["https://github.com/IntuneDocumentation"],
+      name: "Ugurlabs",
+      url: "https://ugurlabs.com",
+      sameAs: [
+        "https://github.com/ugurkocde",
+        "https://www.linkedin.com/company/ugurlabs",
+      ],
     },
     publisher: {
       "@type": "Organization",
-      name: "Intune Documentation",
-      url: "https://intunedocumentation.com",
+      name: "Ugurlabs",
+      url: "https://ugurlabs.com",
     },
     softwareVersion: "1.0.0",
     dateCreated: "2024-01-01",

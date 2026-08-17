@@ -104,6 +104,10 @@ that response to mean the tenant has not enabled the feature.
   without discarding the parent policy.
 - Settings Catalog choice labels match both Graph `itemId` and legacy `name`
   option identifiers.
+- Endpoint Security policies returned by `/deviceManagement/configurationPolicies`,
+  including policies whose `technologies` value contains `microsoftSense`, stay
+  in the shared Settings Catalog collection and export chapter. They do not add
+  a Defender-specific section or permission requirement.
 - App-protection exports use schema-aware property traversal and include their
   targeted apps instead of a fixed, aging field allow-list.
 - Windows Update for Business configurations are excluded from the general

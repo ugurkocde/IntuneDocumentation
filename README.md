@@ -6,6 +6,8 @@
 
 Intune Documentation is a Next.js web app that signs you into your Microsoft Entra tenant with MSAL, reads Intune configuration through delegated, read-only Microsoft Graph permissions, and creates professional PDF and Word documentation entirely in your browser. Intune configuration data never touches the application server.
 
+Endpoint Security policies represented by Microsoft Graph as configuration policies, including policies created through Microsoft Defender for Endpoint security settings management, are handled as ordinary configuration policies. They appear in the existing Settings Catalog list and in the Settings Catalog chapter of PDF and Word exports, using the existing read-only permissions.
+
 [![CI](https://github.com/ugurkocde/IntuneDocumentation/actions/workflows/ci.yml/badge.svg)](https://github.com/ugurkocde/IntuneDocumentation/actions/workflows/ci.yml)
 [![License: Elastic-2.0](https://img.shields.io/badge/license-Elastic--2.0-blue.svg)](LICENSE)
 

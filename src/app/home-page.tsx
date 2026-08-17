@@ -31,7 +31,7 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { useUserProfile } from "~/hooks/use-user-profile";
-import { loginRequest } from "~/lib/msal-config";
+import { loginRequest, shouldUseRedirectLogin } from "~/lib/msal-config";
 import type { SiteStats } from "~/lib/site-stats";
 
 const faqs = [
@@ -402,6 +402,12 @@ export function HomePage({ stats }: { stats: SiteStats }) {
     try {
       setSigningIn(true);
       setSignInError(null);
+
+      if (shouldUseRedirectLogin()) {
+        await instance.loginRedirect(loginRequest);
+        return;
+      }
+
       await instance.loginPopup(loginRequest);
       router.push("/dashboard");
     } catch (error: any) {

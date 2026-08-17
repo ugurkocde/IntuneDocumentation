@@ -1,20 +1,13 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChangelogPanel } from "~/components/changelog-panel";
 import {
   CHANGELOG_SEEN_STORAGE_KEY,
   fetchLatestChangelog,
   type ChangelogFeed,
 } from "~/lib/changelog";
-
-const loadChangelogPanel = () => import("~/components/changelog-panel");
-
-const ChangelogPanel = dynamic(
-  () => loadChangelogPanel().then((module) => module.ChangelogPanel),
-  { ssr: false },
-);
 
 export function ChangelogBell() {
   const [isOpen, setIsOpen] = useState(false);
@@ -67,19 +60,12 @@ export function ChangelogBell() {
     if (!feed && !loading) void loadEntries();
   };
 
-  const preloadPanel = () => {
-    void loadChangelogPanel();
-  };
-
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
         onClick={openDialog}
-        onFocus={preloadPanel}
-        onPointerDown={preloadPanel}
-        onPointerEnter={preloadPanel}
         aria-label={`Open product updates${hasUnread ? ", unread updates available" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={isOpen}

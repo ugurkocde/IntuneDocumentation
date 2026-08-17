@@ -8,7 +8,7 @@ import { Github, User, LogOut, Menu, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { useEffect, useState, memo } from "react";
-import { loginRequest } from "~/lib/msal-config";
+import { loginRequest, shouldUseRedirectLogin } from "~/lib/msal-config";
 import { ChangelogBell } from "~/components/changelog-bell";
 
 interface NavLinksProps {
@@ -138,6 +138,12 @@ export function NavigationHeader() {
     try {
       setSigningIn(true);
       setSignInError(null);
+
+      if (shouldUseRedirectLogin()) {
+        await instance.loginRedirect(loginRequest);
+        return;
+      }
+
       const result = await instance.loginPopup(loginRequest);
       if (result?.account) {
         router.push("/dashboard");

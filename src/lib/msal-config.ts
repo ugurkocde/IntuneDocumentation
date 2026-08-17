@@ -18,6 +18,17 @@ export const graphScopes = {
   scopes: [...loginRequest.scopes],
 };
 
+export function shouldUseRedirectLogin() {
+  if (typeof navigator === "undefined") return false;
+
+  const userAgent = navigator.userAgent;
+  const isMobileBrowser = /Android|iPhone|iPad|iPod/i.test(userAgent);
+  const isIPadDesktopMode =
+    /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1;
+
+  return isMobileBrowser || isIPadDesktopMode;
+}
+
 interface EntraConfig {
   clientId: string;
   tenantId: string;

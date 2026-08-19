@@ -18,6 +18,7 @@ interface NavLinksProps {
   activeLink: string;
   linkBase: string;
   isAuthenticated: boolean;
+  onNavigate?: () => void;
 }
 
 const NavLinks = memo(function NavLinks({
@@ -27,6 +28,7 @@ const NavLinks = memo(function NavLinks({
   activeLink,
   linkBase,
   isAuthenticated,
+  onNavigate,
 }: NavLinksProps) {
   return (
     <nav
@@ -35,6 +37,7 @@ const NavLinks = memo(function NavLinks({
       <Link
         href="/"
         prefetch
+        onClick={onNavigate}
         className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
           pathname === "/" ? activeLink : linkBase
         }`}
@@ -43,18 +46,21 @@ const NavLinks = memo(function NavLinks({
       </Link>
       <Link
         href="/#how-it-works"
+        onClick={onNavigate}
         className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${activeSection === "how-it-works" ? activeLink : linkBase}`}
       >
         How it works
       </Link>
       <Link
         href="/#features"
+        onClick={onNavigate}
         className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${activeSection === "features" ? activeLink : linkBase}`}
       >
         Features
       </Link>
       <Link
         href="/#faq"
+        onClick={onNavigate}
         className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${activeSection === "faq" ? activeLink : linkBase}`}
       >
         FAQ
@@ -64,6 +70,7 @@ const NavLinks = memo(function NavLinks({
         target="_blank"
         rel="noopener noreferrer"
         aria-label="GitHub repository"
+        onClick={onNavigate}
         className={`inline-flex min-h-11 min-w-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${vertical ? "justify-start gap-2" : "justify-center"} ${linkBase}`}
       >
         <Github className="h-5 w-5" />
@@ -73,6 +80,7 @@ const NavLinks = memo(function NavLinks({
         <Link
           href="/dashboard"
           prefetch
+          onClick={onNavigate}
           className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
             pathname === "/dashboard" ? activeLink : linkBase
           }`}
@@ -177,16 +185,16 @@ export function NavigationHeader() {
 
   return (
     <header
-      className={`fixed top-0 right-0 left-0 z-50 transition-[background-color,border-color,box-shadow,backdrop-filter] duration-300 ${
+      className={`pointer-events-auto fixed top-0 right-0 left-0 isolate z-50 transition-[background-color,border-color,box-shadow] duration-300 ${
         scrolled
-          ? "border-petrol-950/8 border-b bg-white/85 shadow-[0_8px_30px_-24px_rgba(8,47,54,0.35)] backdrop-blur-xl"
-          : "bg-mint-50/75 border-b border-transparent backdrop-blur-sm"
+          ? "border-petrol-950/8 border-b bg-white/95 shadow-[0_8px_30px_-24px_rgba(8,47,54,0.35)]"
+          : "bg-mint-50/95 border-b border-transparent"
       }`}
     >
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Brand */}
-          <Link href="/" className="group flex items-center gap-3">
+          <Link href="/" className="group flex min-h-11 items-center gap-3">
             {/* Use fixed height with auto width to prevent logo skew */}
             <Image
               src="/logo.svg"
@@ -204,14 +212,14 @@ export function NavigationHeader() {
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden items-center gap-8 lg:flex">
+          <div className="hidden items-center gap-8 xl:flex">
             <NavLinks {...navProps} />
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-1 lg:gap-3">
+          <div className="flex items-center gap-1 xl:gap-3">
             <ChangelogBell />
-            <div className="hidden items-center gap-3 lg:flex">
+            <div className="hidden items-center gap-3 xl:flex">
               {isAuthenticated ? (
                 <>
                   <div className="flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5">
@@ -226,7 +234,7 @@ export function NavigationHeader() {
                     onClick={handleSignOut}
                     variant="ghost"
                     size="sm"
-                    className="text-petrol-700 hover:bg-mint-100 rounded-full"
+                    className="text-petrol-700 hover:bg-mint-100 min-h-11 rounded-full"
                   >
                     <LogOut className="h-4 w-4" />
                     Sign Out
@@ -239,7 +247,7 @@ export function NavigationHeader() {
                     variant="ghost"
                     size="sm"
                     disabled={signingIn}
-                    className="text-petrol-800 rounded-full px-4 hover:bg-white"
+                    className="text-petrol-800 min-h-11 rounded-full px-4 hover:bg-white"
                   >
                     Sign in
                   </Button>
@@ -247,7 +255,7 @@ export function NavigationHeader() {
                     onClick={handleSignIn}
                     size="sm"
                     loading={signingIn}
-                    className="rounded-full bg-teal-600 px-5 text-white shadow-none hover:bg-teal-700 focus:ring-teal-600"
+                    className="min-h-11 rounded-full bg-teal-600 px-5 text-white shadow-none hover:bg-teal-700 focus:ring-teal-600"
                   >
                     Get Started
                   </Button>
@@ -262,7 +270,7 @@ export function NavigationHeader() {
 
             {/* Mobile menu button */}
             <button
-              className="text-petrol-800 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none lg:hidden"
+              className="text-petrol-800 flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none xl:hidden"
               onClick={() => setMobileOpen((v) => !v)}
               aria-label="Toggle navigation menu"
               aria-expanded={mobileOpen}
@@ -282,10 +290,14 @@ export function NavigationHeader() {
       {mobileOpen && (
         <div
           id="mobile-navigation"
-          className="border-petrol-950/8 border-t bg-white/95 backdrop-blur-xl lg:hidden"
+          className="border-petrol-950/8 border-t bg-white/95 xl:hidden"
         >
           <div className="w-full space-y-4 px-4 py-4 sm:px-6 lg:px-8">
-            <NavLinks vertical {...navProps} />
+            <NavLinks
+              vertical
+              {...navProps}
+              onNavigate={() => setMobileOpen(false)}
+            />
             <div className="flex items-center gap-3">
               {isAuthenticated ? (
                 <>
@@ -301,7 +313,7 @@ export function NavigationHeader() {
                     onClick={handleSignOut}
                     variant="ghost"
                     size="sm"
-                    className="text-petrol-700 flex-shrink-0 rounded-full"
+                    className="text-petrol-700 min-h-11 flex-shrink-0 rounded-full"
                   >
                     <LogOut className="h-4 w-4" />
                     Sign Out
@@ -315,7 +327,7 @@ export function NavigationHeader() {
                       variant="ghost"
                       size="sm"
                       disabled={signingIn}
-                      className="text-petrol-800 flex-1 rounded-full"
+                      className="text-petrol-800 min-h-11 flex-1 rounded-full"
                     >
                       Sign in
                     </Button>
@@ -323,7 +335,7 @@ export function NavigationHeader() {
                       onClick={handleSignIn}
                       size="sm"
                       loading={signingIn}
-                      className="flex-1 rounded-full bg-teal-600 text-white hover:bg-teal-700 focus:ring-teal-600"
+                      className="min-h-11 flex-1 rounded-full bg-teal-600 text-white hover:bg-teal-700 focus:ring-teal-600"
                     >
                       Get Started
                     </Button>

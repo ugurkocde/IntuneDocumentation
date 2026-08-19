@@ -1,15 +1,12 @@
 # Intune Documentation Generator - Robots.txt
-# Last Updated: 2025-09-18
+# Last Updated: 2026-08-19
 
 # Allow all search engines
 User-agent: *
 Allow: /
-Allow: /dashboard
 
 # Disallow API and private routes
 Disallow: /api/
-Disallow: /_next/
-Disallow: /static/
 
 # Specific bot instructions
 User-agent: Googlebot
@@ -32,7 +29,3 @@ Disallow: /
 
 # Sitemap location
 Sitemap: https://intunedocumentation.com/sitemap.xml
-
-# Cache control hint for crawlers
-# Helps search engines understand content freshness
-Cache-Control: public, max-age=3600

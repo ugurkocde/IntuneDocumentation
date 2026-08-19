@@ -8,6 +8,14 @@ export const metadata: Metadata = {
   title: "Privacy Policy",
   description:
     "Learn how Intune Documentation Generator uses delegated read-only access, transient processing, sensitive-value redaction, and in-browser document generation.",
+  alternates: { canonical: "/privacy-policy" },
+  openGraph: {
+    title: "Privacy Policy | Intune Documentation",
+    description:
+      "Learn how Intune Documentation Generator uses delegated read-only access, transient processing, sensitive-value redaction, and in-browser document generation.",
+    url: "/privacy-policy",
+    type: "website",
+  },
 };
 
 const sections = [
@@ -34,14 +42,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Privacy Policy
           </h1>
-          <p className="mb-10 text-slate-600">
-            Effective:{" "}
-            {new Date().toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
+          <p className="mb-10 text-slate-600">Effective: August 13, 2026</p>
 
           <SectionNavigation sections={sections} />
 

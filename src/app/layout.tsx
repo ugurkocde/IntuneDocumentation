@@ -89,7 +89,6 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
-    nocache: true,
     googleBot: {
       index: true,
       follow: true,
@@ -97,13 +96,6 @@ export const metadata: Metadata = {
       "max-video-preview": -1,
       "max-image-preview": "large",
       "max-snippet": -1,
-    },
-  },
-  alternates: {
-    canonical: "https://intunedocumentation.com",
-    languages: {
-      en: "https://intunedocumentation.com",
-      "en-US": "https://intunedocumentation.com",
     },
   },
   verification: {
@@ -136,112 +128,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const app = <AuthProvider>{children}</AuthProvider>;
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "Intune Documentation Generator",
-    alternateName: "Free Microsoft Intune PDF Export Tool",
-    description:
-      "Generate comprehensive PDF documentation for Microsoft Intune configurations in minutes. Export policies, compliance settings, scripts, and security baselines automatically. Save 10+ hours per audit.",
-    url: "https://intunedocumentation.com",
-    applicationCategory: "BusinessApplication",
-    applicationSubCategory: "IT Management Software",
-    operatingSystem: "Web Browser",
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "USD",
-      availability: "https://schema.org/InStock",
-      priceValidUntil: "2030-12-31",
-    },
-    author: {
-      "@type": "Organization",
-      name: "Ugurlabs",
-      url: "https://ugurlabs.com",
-      sameAs: [
-        "https://github.com/ugurkocde",
-        "https://www.linkedin.com/company/ugurlabs",
-      ],
-    },
-    publisher: {
-      "@type": "Organization",
-      name: "Ugurlabs",
-      url: "https://ugurlabs.com",
-    },
-    softwareVersion: "1.0.0",
-    dateCreated: "2024-01-01",
-    dateModified: "2025-10-01",
-    keywords:
-      "Microsoft Intune, Documentation Generator, PDF Export, IT Management, Device Configuration, Compliance Policies, Security Baselines",
-    about: [
-      {
-        "@type": "Thing",
-        name: "Microsoft Intune",
-        description:
-          "Microsoft's cloud-based mobile device management and mobile application management service",
-      },
-      {
-        "@type": "Thing",
-        name: "IT Documentation",
-        description:
-          "Professional documentation for IT infrastructure and device management",
-      },
-      {
-        "@type": "Thing",
-        name: "PDF Export",
-        description:
-          "Export functionality to generate PDF reports and documentation",
-      },
-    ],
-    featureList: [
-      "Export Microsoft Intune configurations to PDF",
-      "Generate comprehensive policy documentation",
-      "Document compliance and security settings",
-      "Export device configuration profiles",
-      "Generate administrative template reports",
-      "Document PowerShell scripts and applications",
-      "Create audit-ready documentation",
-      "Free tool for IT professionals",
-    ],
-    screenshot: "https://intunedocumentation.com/og-image.png",
-  };
-
-  const breadcrumbSchema = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: [
-      {
-        "@type": "ListItem",
-        position: 1,
-        name: "Home",
-        item: "https://intunedocumentation.com",
-      },
-      {
-        "@type": "ListItem",
-        position: 2,
-        name: "Dashboard",
-        item: "https://intunedocumentation.com/dashboard",
-      },
-    ],
-  };
-
   return (
     <html lang="en">
       <head>
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src="/api/config/script" />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(jsonLd),
-          }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(breadcrumbSchema),
-          }}
-        />
       </head>
       <body>
         {process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (

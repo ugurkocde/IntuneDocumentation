@@ -1,0 +1,21 @@
+# Intune Documentation
+
+> Intune Documentation is a free, read-only web application that creates audit-ready PDF and Word documentation from Microsoft Intune configurations.
+
+## Primary pages
+
+- [Product overview](https://intunedocumentation.com/): Features, security model, supported configuration areas, workflow, and frequently asked questions.
+- [Privacy policy](https://intunedocumentation.com/privacy-policy): Data access, transient processing, redaction, analytics, retention, and user rights.
+- [Sample report](https://intunedocumentation.com/api/pdf/sample): Example of the generated documentation format.
+- [Source code](https://github.com/ugurkocde/IntuneDocumentation): Application source, setup instructions, and self-hosting documentation.
+- [Self-hosting guide](https://github.com/ugurkocde/IntuneDocumentation#self-host-with-docker): Run the application with your own Microsoft Entra registration.
+- [Product changelog](https://changelog.ugurlabs.com): Public release and improvement history.
+- [About Ugurlabs](https://ugurlabs.com/about): Information about the organization maintaining the service.
+
+## Important facts
+
+- The hosted application uses delegated, read-only Microsoft Graph permissions.
+- Microsoft Graph responses are processed transiently and are not persisted as tenant configuration data.
+- Sensitive values are redacted before dashboard display or document export.
+- PDF and Word documents are generated in the user's browser.
+- The project can be self-hosted with telemetry disabled by default.

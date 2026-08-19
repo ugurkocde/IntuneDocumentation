@@ -448,44 +448,11 @@ export function HomePage({ stats }: { stats: SiteStats }) {
     [],
   );
 
-  const howToJsonLd = useMemo(
-    () => ({
-      "@context": "https://schema.org",
-      "@type": "HowTo",
-      name: "Generate Microsoft Intune Documentation",
-      description:
-        "Connect with Microsoft, select configurations, and export a professional PDF or Word document.",
-      supply: [],
-      tool: [],
-      step: [
-        {
-          "@type": "HowToStep",
-          name: "Connect",
-          text: "Sign in with your Microsoft account. We request delegated, read-only Graph permissions and do not persist tenant configuration data.",
-          url: "https://intunedocumentation.com/#how-it-works",
-        },
-        {
-          "@type": "HowToStep",
-          name: "Select",
-          text: "Choose which Intune configurations to include or select all. Assignments and filters included.",
-          url: "https://intunedocumentation.com/#how-it-works",
-        },
-        {
-          "@type": "HowToStep",
-          name: "Export",
-          text: "Generate and download an audit-ready PDF or Word document including settings, ADMX values, script metadata, and group targets. Sensitive values are redacted.",
-          url: "https://intunedocumentation.com/#how-it-works",
-        },
-      ],
-    }),
-    [],
-  );
-
   return (
     <>
       <a
         href="#main-content"
-        className="text-petrol-950 sr-only fixed top-2 left-2 z-[60] rounded-lg bg-white px-3 py-2 shadow focus:not-sr-only focus:ring-2 focus:ring-teal-600 focus:outline-none"
+        className="text-petrol-950 pointer-events-none fixed top-2 left-2 z-[60] rounded-lg bg-white px-3 py-2 shadow focus:pointer-events-auto focus:not-sr-only focus:ring-2 focus:ring-teal-600 focus:outline-none"
       >
         Skip to main content
       </a>
@@ -497,11 +464,6 @@ export function HomePage({ stats }: { stats: SiteStats }) {
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
         />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(howToJsonLd) }}
-        />
-
         <section className="hero-stripes bg-mint-50 relative pt-28 pb-20 sm:pt-32 sm:pb-24 lg:min-h-[760px] lg:pt-36 lg:pb-28">
           <div className="mx-auto grid max-w-6xl items-center gap-14 px-5 sm:px-8 lg:grid-cols-[1.04fr_0.96fr] lg:gap-10 lg:px-10">
             <div className="relative z-10">
@@ -1404,9 +1366,8 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                         alt="Sign in with Microsoft"
                         width={215}
                         height={41}
-                        loading="eager"
+                        loading="lazy"
                         decoding="async"
-                        fetchPriority="high"
                         className="h-auto w-[215px] max-w-full"
                       />
                     </button>

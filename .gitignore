@@ -7,6 +7,8 @@
 
 # testing
 /coverage
+.seo-cache/
+/output/
 
 # database
 /prisma/db.sqlite

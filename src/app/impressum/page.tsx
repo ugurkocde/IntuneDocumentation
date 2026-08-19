@@ -7,6 +7,14 @@ export const metadata: Metadata = {
   title: "Legal Notice (Impressum)",
   description:
     "Legal notice (Impressum) for Intune Documentation Generator, operated by Ugurlabs UG (haftungsbeschränkt), Düsseldorf, Germany.",
+  alternates: { canonical: "/impressum" },
+  openGraph: {
+    title: "Legal Notice (Impressum) | Intune Documentation",
+    description:
+      "Legal notice for Intune Documentation Generator, operated by Ugurlabs UG (haftungsbeschränkt) in Düsseldorf, Germany.",
+    url: "/impressum",
+    type: "website",
+  },
 };
 
 export default function ImpressumPage() {

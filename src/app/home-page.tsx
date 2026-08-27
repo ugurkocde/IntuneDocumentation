@@ -452,7 +452,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
     <>
       <a
         href="#main-content"
-        className="text-petrol-950 pointer-events-none fixed top-2 left-2 z-[60] rounded-lg bg-white px-3 py-2 shadow focus:pointer-events-auto focus:not-sr-only focus:ring-2 focus:ring-teal-600 focus:outline-none"
+        className="text-petrol-950 pointer-events-none sr-only fixed top-2 left-2 z-[60] rounded-lg bg-white px-3 py-2 shadow focus:pointer-events-auto focus:not-sr-only focus:ring-2 focus:ring-teal-600 focus:outline-none"
       >
         Skip to main content
       </a>

@@ -202,6 +202,36 @@ describe("ComplianceView", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows resolved group names in evidence when a name map is provided", async () => {
+    const user = userEvent.setup();
+    const grouped = structuredClone(configurations);
+    const firstItem = grouped.sections[0]?.items[0];
+    if (firstItem) {
+      firstItem.assignments = [
+        {
+          id: "assignment-1",
+          target: {
+            "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+            groupId: "group-1",
+          },
+        },
+      ];
+    }
+    render(
+      <ComplianceView
+        configurations={grouped}
+        groupNames={new Map([["group-1", "Security Operations"]])}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "NIST SP 800-53" }));
+    const sc28Control = await screen.findByRole("button", { name: /SC-28/ });
+    await user.click(sc28Control);
+
+    expect(screen.getByText(/Security Operations/)).toBeInTheDocument();
+    expect(screen.queryByText(/group-1/)).not.toBeInTheDocument();
+  });
+
   it("distinguishes assigned and unassigned deviating configurations", async () => {
     const user = userEvent.setup();
     const counterConfigurations: IntuneConfigurations = {

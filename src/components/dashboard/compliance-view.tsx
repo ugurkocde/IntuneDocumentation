@@ -32,6 +32,7 @@ import type {
 
 interface ComplianceViewProps {
   configurations: IntuneConfigurations;
+  groupNames?: Map<string, string> | null;
 }
 
 const FRAMEWORK_STORAGE_KEY = "compliance-framework";
@@ -439,12 +440,23 @@ function ComplianceHeader({
   );
 }
 
-export function ComplianceView({ configurations }: ComplianceViewProps) {
+export function ComplianceView({
+  configurations,
+  groupNames,
+}: ComplianceViewProps) {
   const { accounts } = useMsal();
   const prefersReducedMotion = useReducedMotion();
+  const assessmentData = useMemo(
+    () =>
+      ({
+        ...configurations,
+        groupNames: groupNames ?? undefined,
+      }) as unknown as DetailedExportData,
+    [configurations, groupNames],
+  );
   const assessment = useMemo(
-    () => assessCompliance(configurations as unknown as DetailedExportData),
-    [configurations],
+    () => assessCompliance(assessmentData),
+    [assessmentData],
   );
   const [selectedFrameworkId, setSelectedFrameworkId] =
     useState<FrameworkId | null>(null);
@@ -584,9 +596,7 @@ export function ComplianceView({ configurations }: ComplianceViewProps) {
     try {
       const { generateComplianceReportPDF, complianceReportFileName } =
         await import("~/lib/compliance/report-pdf");
-      const bytes = await generateComplianceReportPDF(
-        configurations as unknown as DetailedExportData,
-        {
+      const bytes = await generateComplianceReportPDF(assessmentData, {
           frameworkId: selectedFrameworkId,
           metadata: tenantLabel ? { tenantLabel } : undefined,
         },

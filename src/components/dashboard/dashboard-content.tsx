@@ -19,6 +19,7 @@ import { DASHBOARD_VIEW_LABELS } from "~/components/dashboard/types";
 
 interface DashboardContentProps {
   configurations: IntuneConfigurations;
+  groupNames?: Map<string, string> | null;
   activeView: DashboardView;
   searchQuery: string;
   selectedConfigs: Set<string>;
@@ -192,6 +193,7 @@ function SettingsView({
 
 export function DashboardContent({
   configurations,
+  groupNames,
   activeView,
   searchQuery,
   selectedConfigs,
@@ -305,7 +307,10 @@ export function DashboardContent({
             onIncludeCAChange={onIncludeCAChange}
           />
         ) : activeView === "compliance" ? (
-          <ComplianceView configurations={configurations} />
+          <ComplianceView
+            configurations={configurations}
+            groupNames={groupNames}
+          />
         ) : (
           <>
             <SelectionToolbar

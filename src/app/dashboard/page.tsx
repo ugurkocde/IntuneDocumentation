@@ -246,6 +246,12 @@ export default function DashboardPage() {
   const isFetchingRef = useRef(false);
 
   useEffect(() => {
+    // MSAL rehydrates the signed-in account asynchronously after a hard
+    // refresh; only treat an empty account list as signed out once MSAL is
+    // idle, otherwise the refresh races straight back to the landing page.
+    if (inProgress !== "none") {
+      return;
+    }
     if (accounts.length === 0) {
       router.push("/");
     } else if (!hasFetchedRef.current && !isFetchingRef.current) {
@@ -262,7 +268,7 @@ export default function DashboardPage() {
       }
       void fetchConfigurations();
     }
-  }, [accounts, router]);
+  }, [accounts, inProgress, router]);
 
   useEffect(() => {
     if (!loading && configurations && lastFetched) {

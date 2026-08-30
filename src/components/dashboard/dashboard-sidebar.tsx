@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import {
   CheckSquare,
+  ChevronDown,
+  ChevronRight,
   Code,
   Download,
   FileText,
@@ -34,7 +37,10 @@ interface SidebarItem {
   icon: LucideIcon;
 }
 
-const CONFIGURATION_ITEMS: SidebarItem[] = [
+// Everyday policy families stay visible; the long-tail coverage families
+// live behind a collapsible "More coverage" toggle so the list stays short
+// enough that nothing below it disappears under the fold.
+const CORE_CONFIGURATION_ITEMS: SidebarItem[] = [
   { key: "settingsCatalog", icon: Settings },
   { key: "deviceConfigurations", icon: Laptop },
   { key: "administrativeTemplates", icon: FileText },
@@ -46,6 +52,9 @@ const CONFIGURATION_ITEMS: SidebarItem[] = [
   { key: "appConfigurations", icon: Package },
   { key: "windowsUpdatePolicies", icon: RefreshCw },
   { key: "enrollmentConfigurations", icon: UserCheck },
+];
+
+const EXTENDED_CONFIGURATION_ITEMS: SidebarItem[] = [
   { key: "windowsUpdateProfiles", icon: RefreshCw },
   { key: "scriptsAndRemediations", icon: Code },
   { key: "enrollmentAndProvisioning", icon: UserCheck },
@@ -55,6 +64,8 @@ const CONFIGURATION_ITEMS: SidebarItem[] = [
   { key: "connectors", icon: Laptop },
   { key: "specialistPolicies", icon: FileText },
 ];
+
+const EXTENDED_COVERAGE_STORAGE_KEY = "sidebar-extended-coverage";
 
 interface DashboardSidebarProps {
   isOpen: boolean;
@@ -78,6 +89,7 @@ interface NavButtonProps {
   icon: LucideIcon;
   label: string;
   count?: number;
+  badge?: string;
   onClick: () => void;
 }
 
@@ -87,6 +99,7 @@ function NavButton({
   icon: Icon,
   label,
   count,
+  badge,
   onClick,
 }: NavButtonProps) {
   return (
@@ -110,6 +123,11 @@ function NavButton({
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
             {label}
           </span>
+          {badge && (
+            <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[10px] font-bold text-white">
+              {badge}
+            </span>
+          )}
           {typeof count === "number" && (
             <span
               className={`min-w-7 rounded-full px-2 py-0.5 text-center text-[10px] font-bold tabular-nums ${
@@ -142,25 +160,57 @@ export function DashboardSidebar({
   onOpenExport,
   onSignOut,
 }: DashboardSidebarProps) {
-  const visibleItems = CONFIGURATION_ITEMS.filter(
-    ({ key }) =>
-      (key !== "conditionalAccessPolicies" || showConditionalAccess) &&
-      ((counts[key] || 0) > 0 ||
-        affectedFamilyKeys.includes(key) ||
-        [
-          "settingsCatalog",
-          "deviceConfigurations",
-          "administrativeTemplates",
-          "securityBaselines",
-          "compliancePolicies",
-          "appProtectionPolicies",
-          "scripts",
-          "appConfigurations",
-          "windowsUpdatePolicies",
-          "enrollmentConfigurations",
-          "conditionalAccessPolicies",
-        ].includes(key)),
-  );
+  const isVisibleItem = ({ key }: SidebarItem) =>
+    (key !== "conditionalAccessPolicies" || showConditionalAccess) &&
+    ((counts[key] || 0) > 0 ||
+      affectedFamilyKeys.includes(key) ||
+      [
+        "settingsCatalog",
+        "deviceConfigurations",
+        "administrativeTemplates",
+        "securityBaselines",
+        "compliancePolicies",
+        "appProtectionPolicies",
+        "scripts",
+        "appConfigurations",
+        "windowsUpdatePolicies",
+        "enrollmentConfigurations",
+        "conditionalAccessPolicies",
+      ].includes(key));
+
+  const visibleCoreItems = CORE_CONFIGURATION_ITEMS.filter(isVisibleItem);
+  const visibleExtendedItems =
+    EXTENDED_CONFIGURATION_ITEMS.filter(isVisibleItem);
+
+  const [showExtended, setShowExtended] = useState(false);
+  useEffect(() => {
+    try {
+      setShowExtended(
+        window.localStorage.getItem(EXTENDED_COVERAGE_STORAGE_KEY) === "true",
+      );
+    } catch {
+      // Storage unavailable; keep the collapsed default.
+    }
+  }, []);
+  // Never hide the group the user is currently inside.
+  useEffect(() => {
+    if (EXTENDED_CONFIGURATION_ITEMS.some(({ key }) => key === activeView)) {
+      setShowExtended(true);
+    }
+  }, [activeView]);
+  const toggleExtended = () => {
+    setShowExtended((value) => {
+      try {
+        window.localStorage.setItem(
+          EXTENDED_COVERAGE_STORAGE_KEY,
+          String(!value),
+        );
+      } catch {
+        // Storage unavailable; the toggle still works for this session.
+      }
+      return !value;
+    });
+  };
 
   return (
     <aside
@@ -228,14 +278,24 @@ export function DashboardSidebar({
             >
               Main
             </p>
-            <NavButton
-              isOpen={isOpen}
-              active={activeView === "overview"}
-              icon={LayoutGrid}
-              label="Overview"
-              count={totalCount}
-              onClick={() => onViewChange("overview")}
-            />
+            <div className="space-y-1">
+              <NavButton
+                isOpen={isOpen}
+                active={activeView === "overview"}
+                icon={LayoutGrid}
+                label="Overview"
+                count={totalCount}
+                onClick={() => onViewChange("overview")}
+              />
+              <NavButton
+                isOpen={isOpen}
+                active={activeView === "compliance"}
+                icon={ShieldCheck}
+                label="Compliance Evidence"
+                badge="New"
+                onClick={() => onViewChange("compliance")}
+              />
+            </div>
           </section>
 
           <section aria-labelledby="sidebar-configurations-label">
@@ -248,7 +308,7 @@ export function DashboardSidebar({
               Configurations
             </p>
             <div className="space-y-1">
-              {visibleItems.map(({ key, icon }) => (
+              {visibleCoreItems.map(({ key, icon }) => (
                 <NavButton
                   key={key}
                   isOpen={isOpen}
@@ -259,6 +319,62 @@ export function DashboardSidebar({
                   onClick={() => onViewChange(key)}
                 />
               ))}
+              {visibleExtendedItems.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={toggleExtended}
+                    aria-expanded={showExtended}
+                    aria-label={
+                      isOpen
+                        ? undefined
+                        : `More coverage (${visibleExtendedItems.length})`
+                    }
+                    title={
+                      isOpen
+                        ? undefined
+                        : `More coverage (${visibleExtendedItems.length})`
+                    }
+                    className={`text-petrol-600 hover:bg-mint-50 hover:text-petrol-950 group flex min-h-9 w-full cursor-pointer items-center rounded-xl text-left transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
+                      isOpen ? "gap-3 px-3" : "justify-center px-2"
+                    }`}
+                  >
+                    {showExtended ? (
+                      <ChevronDown
+                        className="h-[18px] w-[18px] shrink-0"
+                        strokeWidth={1.8}
+                      />
+                    ) : (
+                      <ChevronRight
+                        className="h-[18px] w-[18px] shrink-0"
+                        strokeWidth={1.8}
+                      />
+                    )}
+                    {isOpen && (
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+                        More coverage
+                      </span>
+                    )}
+                    {isOpen && !showExtended && (
+                      <span className="bg-mint-100 text-petrol-700 min-w-7 rounded-full px-2 py-0.5 text-center text-[10px] font-bold tabular-nums">
+                        {visibleExtendedItems.length}
+                      </span>
+                    )}
+                  </button>
+                  {showExtended &&
+                    visibleExtendedItems.map(({ key, icon }) => (
+                      <NavButton
+                        key={key}
+                        isOpen={isOpen}
+                        active={activeView === key}
+                        icon={icon}
+                        label={DASHBOARD_TYPE_LABELS[key]}
+                        count={counts[key]}
+                        onClick={() => onViewChange(key)}
+                      />
+                    ))}
+                </>
+              )}
             </div>
           </section>
 
@@ -269,16 +385,9 @@ export function DashboardSidebar({
                 isOpen ? "block" : "sr-only"
               }`}
             >
-              Settings
+              Workspace
             </p>
             <div className="space-y-1">
-              <NavButton
-                isOpen={isOpen}
-                active={activeView === "compliance"}
-                icon={ShieldCheck}
-                label="Compliance Evidence"
-                onClick={() => onViewChange("compliance")}
-              />
               <NavButton
                 isOpen={isOpen}
                 active={activeView === "settings"}

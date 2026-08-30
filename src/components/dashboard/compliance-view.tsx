@@ -43,6 +43,20 @@ const FRAMEWORK_OPTIONS: ReadonlyArray<{
   description: string;
 }> = [
   {
+    id: "iso-27001-2022",
+    label: "ISO/IEC 27001",
+    shortLabel: "ISO 27001",
+    description:
+      "Selected Annex A technology controls mapped to managed-device configuration evidence.",
+  },
+  {
+    id: "soc2-tsc",
+    label: "SOC 2",
+    shortLabel: "SOC 2",
+    description:
+      "Selected Trust Services Criteria mapped to managed-device configuration evidence.",
+  },
+  {
     id: "nist-800-53-r5",
     label: "NIST SP 800-53",
     shortLabel: "NIST 800-53",
@@ -652,7 +666,9 @@ export function ComplianceView({ configurations }: ComplianceViewProps) {
           <motion.div
             layout={!prefersReducedMotion}
             className={
-              selectedFrameworkId ? "grid" : "mt-8 grid gap-4 md:grid-cols-3"
+              selectedFrameworkId
+                ? "grid"
+                : "mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6"
             }
           >
             <AnimatePresence
@@ -720,7 +736,11 @@ export function ComplianceView({ configurations }: ComplianceViewProps) {
                               },
                             }
                       }
-                      className="border-petrol-950/8 shadow-card hover:bg-mint-50/35 group min-h-56 cursor-pointer touch-manipulation rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow] duration-200 hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none"
+                      className={`border-petrol-950/8 shadow-card hover:bg-mint-50/35 group min-h-56 cursor-pointer touch-manipulation rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow] duration-200 hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none lg:col-span-2 ${
+                        framework.id === "nist-csf-2"
+                          ? "lg:col-start-2 lg:row-start-2"
+                          : ""
+                      }`}
                     >
                       <motion.span
                         layoutId={

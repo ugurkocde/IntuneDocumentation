@@ -1,17 +1,25 @@
 export type FrameworkId =
   | "bsi-it-grundschutz"
   | "nist-800-53-r5"
-  | "nist-csf-2";
+  | "nist-csf-2"
+  | "iso-27001-2022"
+  | "soc2-tsc";
 
-// Text-forward wordmarks only: official government logos and insignia (the
-// NIST logotype, the BSI Bundesadler) must not be reproduced. Naming the
-// standard in our own typography is legitimate nominative use; for BSI the
-// plain national colors provide recognition without any protected emblem.
-const NIST_DETAILS: Partial<
-  Record<FrameworkId, { fill: string; variant: string }>
+// Text-forward wordmarks only: official logos, insignia, and association marks
+// must not be reproduced. The standards are named in our own typography for
+// nominative use; BSI uses plain national colors without a protected emblem.
+const WORDMARK_DETAILS: Record<
+  Exclude<FrameworkId, "bsi-it-grundschutz">,
+  { fill: string; line1: string; line2: string }
 > = {
-  "nist-800-53-r5": { fill: "#1D4ED8", variant: "SP 800-53" },
-  "nist-csf-2": { fill: "#0F766E", variant: "CSF 2.0" },
+  "iso-27001-2022": { fill: "#4338CA", line1: "ISO", line2: "27001" },
+  "soc2-tsc": { fill: "#7E22CE", line1: "SOC 2", line2: "TSC" },
+  "nist-800-53-r5": {
+    fill: "#1D4ED8",
+    line1: "NIST",
+    line2: "SP 800-53",
+  },
+  "nist-csf-2": { fill: "#0F766E", line1: "NIST", line2: "CSF 2.0" },
 };
 
 const FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif";
@@ -59,7 +67,7 @@ export function FrameworkBadge({
     );
   }
 
-  const details = NIST_DETAILS[frameworkId];
+  const details = WORDMARK_DETAILS[frameworkId];
 
   return (
     <svg
@@ -69,7 +77,7 @@ export function FrameworkBadge({
       aria-hidden="true"
       focusable="false"
     >
-      <rect width="40" height="40" rx="6" fill={details?.fill ?? "#334155"} />
+      <rect width="40" height="40" rx="6" fill={details.fill} />
       <text
         x="20"
         y="19"
@@ -80,7 +88,7 @@ export function FrameworkBadge({
         textAnchor="middle"
         letterSpacing="0.6"
       >
-        NIST
+        {details.line1}
       </text>
       <text
         x="20"
@@ -93,7 +101,7 @@ export function FrameworkBadge({
         textAnchor="middle"
         letterSpacing="0.2"
       >
-        {details?.variant ?? ""}
+        {details.line2}
       </text>
     </svg>
   );

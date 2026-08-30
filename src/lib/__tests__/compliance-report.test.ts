@@ -152,9 +152,29 @@ describe("compliance report PDF", () => {
     expect(renderedText).toContain("Configuration");
     expect(renderedText).toContain("SC-28");
     expect(renderedText).toContain("Technical configuration evidence detected");
-    expect(renderedText).toContain("neither a certification");
+    expect(renderedText).toContain("not a compliance certification");
     expect(renderedText).toContain("Appendix A: Evidence Register");
     expect(renderedText).not.toContain("Manuelle Bewertung");
+  });
+
+  it("renders English ISO 27001 and SOC 2 reports", async () => {
+    const isoReport = await generateComplianceReportPDF(createExportData(), {
+      frameworkId: "iso-27001-2022",
+    });
+    const isoText = extractPdfStreamText(isoReport);
+
+    expect(isoText).toContain("ISO/IEC 27001");
+    expect(isoText).toContain("8.24");
+    expect(isoText).toContain("Evidence");
+    expect(isoText).toContain("not a compliance certification");
+
+    const soc2Report = await generateComplianceReportPDF(createExportData(), {
+      frameworkId: "soc2-tsc",
+    });
+    const soc2Text = extractPdfStreamText(soc2Report);
+
+    expect(soc2Text).toContain("SOC 2");
+    expect(soc2Text).toContain("CC6.8");
   });
 
   it("labels assigned and unassigned counter-evidence without overstating risk", async () => {
@@ -179,6 +199,12 @@ describe("compliance report PDF", () => {
     );
     expect(complianceReportFileName("nist-csf-2")).toMatch(
       /Compliance-Report-NIST-CSF-2-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
+    expect(complianceReportFileName("iso-27001-2022")).toMatch(
+      /Compliance-Report-ISO-27001-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
+    expect(complianceReportFileName("soc2-tsc")).toMatch(
+      /Compliance-Report-SOC-2-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
     );
   });
 

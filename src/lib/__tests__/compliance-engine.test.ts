@@ -6,8 +6,10 @@ import {
   assessFramework,
   BSI_IT_GRUNDSCHUTZ,
   compareControlIds,
+  ISO_27001,
   NIST_800_53,
   NIST_CSF,
+  SOC_2,
 } from "../compliance";
 import { defenderForEndpointPolicyFixture } from "./fixtures/intune-beta";
 
@@ -551,7 +553,7 @@ describe("framework assessment", () => {
     ).toBe("evidenceFound");
   });
 
-  it("produces a full assessment with disclaimer and both frameworks", () => {
+  it("produces a full assessment with disclaimer and all frameworks", () => {
     const data = emptyExportData();
     const assessment = assessCompliance(data);
 
@@ -560,6 +562,8 @@ describe("framework assessment", () => {
       "nist-800-53-r5",
       "nist-csf-2",
       "bsi-it-grundschutz",
+      "iso-27001-2022",
+      "soc2-tsc",
     ]);
     for (const framework of assessment.frameworks) {
       expect(framework.summary.withoutEvidence).toBe(
@@ -573,7 +577,13 @@ describe("framework assessment", () => {
       assessCapabilities(emptyExportData()).map((r) => r.capability.id),
     );
 
-    for (const framework of [NIST_800_53, NIST_CSF, BSI_IT_GRUNDSCHUTZ]) {
+    for (const framework of [
+      NIST_800_53,
+      NIST_CSF,
+      BSI_IT_GRUNDSCHUTZ,
+      ISO_27001,
+      SOC_2,
+    ]) {
       for (const [capabilityId, controlIds] of Object.entries(
         framework.mappings,
       )) {

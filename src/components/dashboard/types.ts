@@ -79,7 +79,11 @@ export type ConfigurationTypeKey =
   | "tenantAndService"
   | "connectors"
   | "specialistPolicies";
-export type DashboardView = "overview" | ConfigurationTypeKey | "settings";
+export type DashboardView =
+  | "overview"
+  | ConfigurationTypeKey
+  | "compliance"
+  | "settings";
 
 export interface DashboardTypeStat {
   key: ConfigurationTypeKey;
@@ -114,6 +118,7 @@ export const DASHBOARD_TYPE_LABELS: Record<ConfigurationTypeKey, string> = {
 export const DASHBOARD_VIEW_LABELS: Record<DashboardView, string> = {
   overview: "Overview",
   ...DASHBOARD_TYPE_LABELS,
+  compliance: "Compliance Evidence",
   settings: "Settings",
 };
 

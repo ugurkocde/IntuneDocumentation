@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Settings,
   Shield,
+  ShieldCheck,
   User,
   UserCheck,
 } from "lucide-react";
@@ -271,6 +272,13 @@ export function DashboardSidebar({
               Settings
             </p>
             <div className="space-y-1">
+              <NavButton
+                isOpen={isOpen}
+                active={activeView === "compliance"}
+                icon={ShieldCheck}
+                label="Compliance Evidence"
+                onClick={() => onViewChange("compliance")}
+              />
               <NavButton
                 isOpen={isOpen}
                 active={activeView === "settings"}

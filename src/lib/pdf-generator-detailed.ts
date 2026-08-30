@@ -2645,7 +2645,7 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName || policy.name,
-          parseAssignments(policy.assignments),
+          enhanceAssignmentText(parseAssignments(policy.assignments)),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );

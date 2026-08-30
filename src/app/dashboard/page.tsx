@@ -149,7 +149,13 @@ const dashboardCache: {
   accountId: string | null;
   configurations: IntuneConfigurations | null;
   lastFetched: Date | null;
-} = { accountId: null, configurations: null, lastFetched: null };
+  groupNames: Map<string, string> | null;
+} = {
+  accountId: null,
+  configurations: null,
+  lastFetched: null,
+  groupNames: null,
+};
 
 export default function DashboardPage() {
   const { instance, accounts, inProgress } = useMsal();
@@ -168,6 +174,9 @@ export default function DashboardPage() {
   );
   const [selectAll, setSelectAll] = useState(false);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
+  const [groupNames, setGroupNames] = useState<Map<string, string> | null>(
+    null,
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [showTipBanner, setShowTipBanner] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -262,6 +271,7 @@ export default function DashboardPage() {
       ) {
         setConfigurations(dashboardCache.configurations);
         setLastFetched(dashboardCache.lastFetched);
+        setGroupNames(dashboardCache.groupNames);
         setHasCompletedInitialLoad(true);
         setLoading(false);
         return;
@@ -275,8 +285,58 @@ export default function DashboardPage() {
       dashboardCache.accountId = accounts[0]?.homeAccountId ?? null;
       dashboardCache.configurations = configurations;
       dashboardCache.lastFetched = lastFetched;
+      dashboardCache.groupNames = groupNames;
     }
-  }, [loading, configurations, lastFetched, accounts]);
+  }, [loading, configurations, lastFetched, groupNames, accounts]);
+
+  // Resolve assignment group ids to display names once a fetch settles, so
+  // the dashboard and compliance reports show real group names, not GUIDs.
+  useEffect(() => {
+    if (loading || !hasCompletedInitialLoad || !configurations) return;
+    if (groupNames !== null) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const groupIds = new Set<string>();
+        for (const section of configurations.sections ?? []) {
+          for (const item of section.items) {
+            for (const assignment of item.assignments ?? []) {
+              const groupId = assignment?.target?.groupId;
+              if (typeof groupId === "string" && groupId) {
+                groupIds.add(groupId);
+              }
+            }
+            const users = item.conditions?.users;
+            for (const id of [
+              ...(users?.includeGroups ?? []),
+              ...(users?.excludeGroups ?? []),
+            ]) {
+              if (typeof id === "string" && id) groupIds.add(id);
+            }
+          }
+        }
+        if (groupIds.size === 0) {
+          if (!cancelled) setGroupNames(new Map());
+          return;
+        }
+        const token = await getAccessToken();
+        const { GroupResolver } = await import("~/lib/group-resolver");
+        const resolver = new GroupResolver(token);
+        const resolved = await resolver.getGroupNames([...groupIds]);
+        if (!cancelled) setGroupNames(resolved);
+      } catch (error) {
+        console.error("Failed to resolve group names:", error);
+        if (!cancelled) setGroupNames(new Map());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // getAccessToken is stable in behavior but recreated per render; adding it
+    // would re-run the resolver on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, hasCompletedInitialLoad, configurations, groupNames]);
 
   useEffect(() => {
     if (window.innerWidth < 768) {
@@ -344,6 +404,7 @@ export default function DashboardPage() {
       isFetchingRef.current = true;
       setLoading(true);
       setError(null);
+      setGroupNames(null);
       // Reset selections when refreshing
       setSelectedConfigs(new Set());
       setSelectAll(false);
@@ -852,6 +913,7 @@ export default function DashboardPage() {
         />
         <DashboardContent
           configurations={configurations}
+          groupNames={groupNames}
           activeView={activeView}
           searchQuery={searchQuery}
           selectedConfigs={selectedConfigs}

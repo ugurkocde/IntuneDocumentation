@@ -1,8 +1,7 @@
 # Compliance evidence engine
 
-Maps an Intune tenant export to evidence for compliance frameworks (currently
-NIST SP 800-53 rev 5, NIST CSF 2.0, and BSI IT-Grundschutz). Not wired into
-the UI yet.
+Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
+SP 800-53 rev 5, NIST CSF 2.0, and BSI IT-Grundschutz.
 
 ## Design rules
 
@@ -24,8 +23,10 @@ the UI yet.
    (`evidenceFound` / `partialEvidence` / `noEvidence`), never "compliant".
    `COMPLIANCE_DISCLAIMER` must accompany any rendered report.
 6. **Mappings are data.** Capability-to-control tables live in `frameworks/`
-   and can be reviewed without touching detection logic. NIST is public
-   domain; BSI mobile Bausteine (SYS.3.2.1, SYS.3.2.2) are mapped at
+   and can be reviewed without touching detection logic. ISO/IEC 27001 and the
+   SOC 2 Trust Services Criteria are referenced by identifier with original
+   summaries. NIST is public domain; BSI mobile Bausteine (SYS.3.2.1,
+   SYS.3.2.2) are mapped at
    requirement level, verified against the Edition 2023 Baustein PDFs, while
    the remaining Bausteine stay at Baustein level until verified the same way.
    Only requirements with technical Intune evidence are listed as controls;

@@ -81,6 +81,12 @@ describe("ComplianceView", () => {
       }),
     ).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: "ISO/IEC 27001" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "SOC 2" }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: "NIST SP 800-53" }),
     ).toBeInTheDocument();
     expect(
@@ -89,12 +95,29 @@ describe("ComplianceView", () => {
     expect(
       screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
     ).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(5);
     expect(
       screen.queryByRole("button", { name: /Download report/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /SC-28/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("reveals ISO 27001 content from the framework picker", async () => {
+    const user = userEvent.setup();
+    render(<ComplianceView configurations={configurations} />);
+
+    await user.click(screen.getByRole("button", { name: "ISO/IEC 27001" }));
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Selected framework: ISO/IEC 27001",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /8\.24/ }),
+    ).toBeInTheDocument();
   });
 
   it("reveals the selected framework content and dropdown trigger", async () => {

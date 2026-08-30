@@ -18,7 +18,9 @@ import type {
 export type ComplianceFrameworkId =
   | "nist-800-53-r5"
   | "nist-csf-2"
-  | "bsi-it-grundschutz";
+  | "bsi-it-grundschutz"
+  | "iso-27001-2022"
+  | "soc2-tsc";
 
 type Locale = "en" | "de";
 type RgbColor = [number, number, number];
@@ -164,7 +166,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
     gapIntro:
       "No technical evidence was found. Possible implementation through these Intune settings:",
     disclaimer:
-      "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is neither a certification nor an IT Grundschutz check and does not replace an audit. Missing evidence means that no supported and effectively assigned configuration was detected in the evaluated dataset.",
+      "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is not a compliance certification or an IT Grundschutz check and does not replace an audit. Missing evidence means that no supported and effectively assigned configuration was detected in the evaluated dataset.",
     appendixHeading: "Appendix A: Evidence Register",
     appendixContinuation: "Appendix A (continued)",
     appendixHeaders: [
@@ -196,6 +198,8 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "nist-800-53-r5": "NIST-800-53-R5",
       "nist-csf-2": "NIST-CSF-2",
       "bsi-it-grundschutz": "BSI-IT-Grundschutz",
+      "iso-27001-2022": "ISO-27001",
+      "soc2-tsc": "SOC-2",
     },
   },
   de: {
@@ -319,6 +323,8 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "nist-800-53-r5": "NIST-800-53-R5",
       "nist-csf-2": "NIST-CSF-2",
       "bsi-it-grundschutz": "BSI-IT-Grundschutz",
+      "iso-27001-2022": "ISO-27001",
+      "soc2-tsc": "SOC-2",
     },
   },
 };
@@ -443,10 +449,16 @@ function tenantSlug(value: string): string {
     .slice(0, 64);
 }
 
+const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
+  "nist-800-53-r5": "N53",
+  "nist-csf-2": "CSF",
+  "bsi-it-grundschutz": "BSI",
+  "iso-27001-2022": "ISO",
+  "soc2-tsc": "SOC",
+};
+
 function frameworkReportCode(frameworkId: ComplianceFrameworkId): string {
-  if (frameworkId === "bsi-it-grundschutz") return "BSI";
-  if (frameworkId === "nist-800-53-r5") return "N53";
-  return "CSF";
+  return FRAMEWORK_REPORT_CODES[frameworkId];
 }
 
 function randomReportSuffix(): string {
@@ -554,9 +566,9 @@ function buildOverviewRows(
   const controlsByPrefix = new Map<string, ControlAssessment[]>();
   for (const control of controls) {
     const prefix =
-      frameworkId === "nist-csf-2"
-        ? control.control.id.split(".")[0]
-        : control.control.id.split("-")[0];
+      frameworkId === "nist-800-53-r5"
+        ? control.control.id.split("-")[0]
+        : control.control.id.split(".")[0];
     if (!prefix) continue;
     const existing = controlsByPrefix.get(prefix);
     if (existing) existing.push(control);
@@ -1332,6 +1344,8 @@ export async function generateComplianceReportPDF(
   const frameworkDisplay =
     options.frameworkId === "bsi-it-grundschutz"
       ? "BSI IT-Grundschutz-Kompendium, Edition 2023"
+      : options.frameworkId === "iso-27001-2022"
+        ? "ISO/IEC 27001:2022, Annex A"
       : `${framework.framework.name} ${framework.framework.version}`;
   doc.text(frameworkDisplay, pageWidth / 2, frameworkY, { align: "center" });
 

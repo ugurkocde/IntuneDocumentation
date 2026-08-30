@@ -7,12 +7,12 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz. Audit-ready evidence reports, generated from your tenant documentation.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz. Audit-ready evidence reports, generated from your tenant documentation.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz.",
     url: "/compliance",
     type: "website",
   },
@@ -20,9 +20,14 @@ export const metadata: Metadata = {
 
 const frameworks = [
   {
-    name: "BSI IT-Grundschutz",
+    name: "ISO/IEC 27001:2022",
     detail:
-      "Requirement-level mapping (A-Anforderungen) for the client Bausteine SYS.2.2.3, SYS.2.4, SYS.3.2.1, and SYS.3.2.2, verified against the Kompendium Edition 2023, with Basis, Standard, and erhöhter Schutzbedarf tiers. Only technically assessable requirements are mapped; organizational requirements remain a manual assessment.",
+      "Selected Annex A technology controls are mapped to managed-device configuration evidence by control number.",
+  },
+  {
+    name: "SOC 2",
+    detail:
+      "Selected Trust Services Criteria are mapped to managed-device configuration evidence by criterion ID.",
   },
   {
     name: "NIST SP 800-53 (Rev. 5)",
@@ -33,6 +38,11 @@ const frameworks = [
     name: "NIST Cybersecurity Framework 2.0",
     detail:
       "Evidence for Protect and Detect subcategories, from PR.DS-01 (data-at-rest protection) to DE.CM-09 (endpoint monitoring).",
+  },
+  {
+    name: "BSI IT-Grundschutz",
+    detail:
+      "Requirement-level mapping (A-Anforderungen) for the client Bausteine SYS.2.2.3, SYS.2.4, SYS.3.2.1, and SYS.3.2.2, verified against the Kompendium Edition 2023, with Basis, Standard, and erhöhter Schutzbedarf tiers. Only technically assessable requirements are mapped; organizational requirements remain a manual assessment.",
   },
 ];
 
@@ -50,7 +60,7 @@ const reportFeatures = [
   {
     title: "Results overview and key findings",
     detail:
-      "Outcomes broken down by Basis, Standard, and erhöhter Schutzbedarf tier for BSI (control family for NIST), with assigned deviations and unassigned configurations flagged up front.",
+      "Outcomes grouped by BSI requirement tier or framework control family, with assigned deviations and unassigned configurations flagged up front.",
   },
   {
     title: "Grundschutz-Check ready",
@@ -188,8 +198,10 @@ export default function CompliancePage() {
           <p className="mt-10 text-xs leading-relaxed text-slate-400">
             Compliance reports state technical evidence found in your Intune
             tenant. They are not a certification and do not replace an audit.
-            NIST publications are used with their public-domain status; BSI
-            IT-Grundschutz is referenced from the freely published Kompendium.
+            ISO/IEC 27001 and SOC 2 criteria are referenced by identifier with
+            original summaries. NIST publications are used with their
+            public-domain status; BSI IT-Grundschutz is referenced from the
+            freely published Kompendium.
           </p>
         </div>
       </main>

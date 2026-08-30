@@ -2,8 +2,10 @@ import type { DetailedExportData } from "../configuration-analyzer";
 import type { ConfigurationSettingInstance } from "../intune-detailed-client";
 import { COMPLIANCE_CAPABILITIES } from "./capabilities";
 import { BSI_IT_GRUNDSCHUTZ } from "./frameworks/bsi-it-grundschutz";
+import { ISO_27001 } from "./frameworks/iso-27001";
 import { NIST_800_53 } from "./frameworks/nist-800-53";
 import { NIST_CSF } from "./frameworks/nist-csf";
+import { SOC_2 } from "./frameworks/soc2";
 import type {
   AssignmentSummary,
   CapabilityEvidence,
@@ -424,6 +426,8 @@ export function assessCompliance(
       assessFramework(capabilities, NIST_800_53),
       assessFramework(capabilities, NIST_CSF),
       assessFramework(capabilities, BSI_IT_GRUNDSCHUTZ),
+      assessFramework(capabilities, ISO_27001),
+      assessFramework(capabilities, SOC_2),
     ],
   };
 }

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { inflateRawSync, inflateSync } from "node:zlib";
+import { inflateRawSync } from "node:zlib";
 import type { DetailedExportData } from "../configuration-analyzer";
 import { generateDetailedDOCX } from "../docx-generator-detailed";
 import { generateDetailedPDF } from "../pdf-generator-detailed";
 import { defenderForEndpointPolicyFixture } from "./fixtures/intune-beta";
+import { extractPdfStreamText } from "./helpers/pdf-text";
 
 function createExportData(): DetailedExportData {
   const policy = structuredClone(defenderForEndpointPolicyFixture);
@@ -21,44 +22,6 @@ function createExportData(): DetailedExportData {
     enrollmentConfigurations: [],
     conditionalAccessPolicies: [],
   };
-}
-
-function extractPdfStreamText(bytes: Uint8Array): string {
-  const pdf = Buffer.from(bytes);
-  const streamMarker = Buffer.from("stream\n");
-  const endStreamMarker = Buffer.from("\nendstream");
-  const dictionaryMarker = Buffer.from("<<");
-  const textChunks: string[] = [];
-  let cursor = 0;
-
-  while (cursor < pdf.length) {
-    const streamOffset = pdf.indexOf(streamMarker, cursor);
-    if (streamOffset < 0) break;
-
-    const dataOffset = streamOffset + streamMarker.length;
-    const dictionaryOffset = pdf.lastIndexOf(dictionaryMarker, streamOffset);
-    const dictionary = pdf
-      .subarray(Math.max(0, dictionaryOffset), streamOffset)
-      .toString("latin1");
-    const lengthMatch = /\/Length\s+(\d+)/.exec(dictionary);
-    const fallbackEnd = pdf.indexOf(endStreamMarker, dataOffset);
-    const dataEnd = lengthMatch
-      ? dataOffset + Number(lengthMatch[1])
-      : fallbackEnd;
-
-    if (dataEnd < dataOffset) break;
-
-    const stream = pdf.subarray(dataOffset, dataEnd);
-    if (dictionary.includes("/FlateDecode")) {
-      textChunks.push(inflateSync(stream).toString("utf8"));
-    } else {
-      textChunks.push(stream.toString("utf8"));
-    }
-
-    cursor = dataEnd + endStreamMarker.length;
-  }
-
-  return textChunks.join("\n");
 }
 
 function extractZipEntry(bytes: Uint8Array, targetName: string): string {
@@ -130,6 +93,18 @@ describe("Defender policy exports", () => {
     expect(result.successfulPolicies).toBe(1);
   });
 
+  it("includes the compliance evidence preview section in the PDF", async () => {
+    const result = await generateDetailedPDF(createExportData());
+    const renderedText = extractPdfStreamText(result.buffer);
+
+    expect(renderedText).toContain("Compliance Evidence Preview");
+    expect(renderedText).toContain("BSI IT-Grundschutz");
+    expect(renderedText).toContain("not a compliance certi");
+    expect(renderedText).toContain("intunedocumentation.com/dashboard");
+    // The exclusions-only Defender fixture must not produce evidence claims.
+    expect(renderedText).not.toContain("Evidence found");
+  });
+
   it("renders a Defender-managed policy through the ordinary Word policy path", async () => {
     const result = await generateDetailedDOCX(createExportData());
     const documentXml = extractZipEntry(result.buffer, "word/document.xml");
@@ -143,5 +118,17 @@ describe("Defender policy exports", () => {
     expect(result.errors).toEqual([]);
     expect(result.totalPolicies).toBe(1);
     expect(result.successfulPolicies).toBe(1);
+  });
+
+  it("includes the compliance evidence preview section in the Word export", async () => {
+    const result = await generateDetailedDOCX(createExportData());
+    const documentXml = extractZipEntry(result.buffer, "word/document.xml");
+
+    expect(documentXml).toContain("Compliance Evidence Preview");
+    expect(documentXml).toContain("BSI IT-Grundschutz");
+    expect(documentXml).toContain("not a compliance certification");
+    expect(documentXml).toContain("intunedocumentation.com/dashboard");
+    // The exclusions-only Defender fixture must not produce evidence claims.
+    expect(documentXml).not.toContain(">Configuration evidence<");
   });
 });

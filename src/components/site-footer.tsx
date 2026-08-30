@@ -60,6 +60,14 @@ export function SiteFooter() {
               </li>
               <li>
                 <Link
+                  href="/compliance"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Compliance Reports
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/#how-it-works"
                   className="transition-colors hover:text-teal-700"
                 >

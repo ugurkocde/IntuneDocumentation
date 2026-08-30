@@ -2,6 +2,7 @@
 
 import { CheckSquare, FileText, Info, Shield } from "lucide-react";
 import { ConfigurationSection } from "~/components/dashboard/config-section";
+import { ComplianceView } from "~/components/dashboard/compliance-view";
 import { DashboardBanners } from "~/components/dashboard/dashboard-banners";
 import { DashboardHeader } from "~/components/dashboard/dashboard-header";
 import { KpiCards } from "~/components/dashboard/kpi-cards";
@@ -303,6 +304,8 @@ export function DashboardContent({
             caConsentStatus={caConsentStatus}
             onIncludeCAChange={onIncludeCAChange}
           />
+        ) : activeView === "compliance" ? (
+          <ComplianceView configurations={configurations} />
         ) : (
           <>
             <SelectionToolbar

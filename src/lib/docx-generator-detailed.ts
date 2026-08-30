@@ -41,6 +41,11 @@ import {
 import type { BrandingOptions } from "~/types/branding";
 import { REDACTED_VALUE } from "./intune-policy-registry";
 import {
+  assessCompliance,
+  compareControlIds,
+  type ControlStatus,
+} from "./compliance";
+import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
 } from "./conditional-access-report";
@@ -939,6 +944,102 @@ export async function generateDetailedDOCX(
     } catch (e) {
       console.error("Error generating executive summary:", e);
     }
+  }
+
+  // ===== 3b. COMPLIANCE EVIDENCE PREVIEW =====
+  try {
+    const complianceAssessment = assessCompliance(data);
+    const complianceChildren: (Paragraph | Table)[] = [];
+    const statusLabels: Record<ControlStatus, string> = {
+      evidenceFound: "Configuration evidence",
+      partialEvidence: "Partial configuration evidence",
+      noEvidence: "No recognized configuration evidence",
+    };
+    const statusRank: Record<ControlStatus, number> = {
+      evidenceFound: 0,
+      partialEvidence: 1,
+      noEvidence: 2,
+    };
+
+    complianceChildren.push(heading1("Compliance Evidence Preview"));
+    complianceChildren.push(
+      bodyText(
+        "This preview maps the exported configuration to technical evidence for NIST SP 800-53 (Rev. 5), NIST CSF 2.0, and BSI IT-Grundschutz. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
+      ),
+    );
+    complianceChildren.push(spacer());
+
+    for (const framework of complianceAssessment.frameworks) {
+      complianceChildren.push(
+        heading2(`${framework.framework.name} (${framework.framework.version})`),
+      );
+      complianceChildren.push(
+        bodyText(
+          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.totalControls} technically assessable controls)`,
+        ),
+      );
+
+      const maxRows = 8;
+      const ranked = [...framework.controls].sort(
+        (a, b) =>
+          statusRank[a.status] - statusRank[b.status] ||
+          compareControlIds(a.control.id, b.control.id),
+      );
+      complianceChildren.push(
+        createSettingsTable(
+          ["Control", "Title", "Status"],
+          ranked
+            .slice(0, maxRows)
+            .map((assessed) => [
+              assessed.control.id,
+              assessed.control.tier
+                ? `${assessed.control.title} (${assessed.control.tier})`
+                : assessed.control.title,
+              statusLabels[assessed.status],
+            ]),
+          branding,
+        ),
+      );
+      if (ranked.length > maxRows) {
+        complianceChildren.push(
+          bodyText(
+            `…and ${ranked.length - maxRows} more controls in the full report.`,
+          ),
+        );
+      }
+      complianceChildren.push(spacer());
+    }
+
+    complianceChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: complianceAssessment.disclaimer,
+            font: fontName,
+            size: bodySizeHp - 2,
+            color: "6E6E6E",
+            italics: true,
+          }),
+        ],
+        spacing: { before: 120, after: 120 },
+      }),
+    );
+    complianceChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: "Generate the full requirement-level compliance report from the Compliance view in your dashboard: intunedocumentation.com/dashboard",
+            font: fontName,
+            size: bodySizeHp,
+            bold: true,
+          }),
+        ],
+      }),
+    );
+
+    pushContentSection(complianceChildren);
+  } catch (e) {
+    console.error("Skipping compliance preview section:", e);
   }
 
   if (data.fetchErrors?.length) {

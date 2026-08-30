@@ -17,6 +17,7 @@ import {
   type ExportGenerationResult,
 } from "./configuration-analyzer";
 import { REDACTED_VALUE } from "./intune-policy-registry";
+import { assessCompliance, type ControlStatus } from "./compliance";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -1208,7 +1209,105 @@ export async function generateDetailedPDF(
   };
 
   // Call the enhanced tenant overview function
+  const addComplianceOverview = () => {
+    let assessment;
+    try {
+      assessment = assessCompliance(data);
+    } catch (error) {
+      console.error("Skipping compliance preview section:", error);
+      return;
+    }
+
+    doc.addPage();
+    yPosition = calculateHeaderHeight();
+    pageNumber++;
+    addPageNumber();
+    tocEntries.push({
+      title: "Compliance Evidence Preview",
+      pageNum: pageNumber,
+    });
+    addSectionHeader("Compliance Evidence Preview");
+
+    addText(
+      "This preview maps the exported configuration to technical evidence for NIST SP 800-53 (Rev. 5), NIST CSF 2.0, and BSI IT-Grundschutz. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
+      9,
+      "normal",
+      [80, 80, 80],
+    );
+    yPosition += 5;
+
+    const statusLabels: Record<ControlStatus, string> = {
+      evidenceFound: "Configuration evidence",
+      partialEvidence: "Partial configuration evidence",
+      noEvidence: "No recognized configuration evidence",
+    };
+    const statusColors: Record<ControlStatus, [number, number, number]> = {
+      evidenceFound: [39, 174, 96],
+      partialEvidence: [230, 126, 34],
+      noEvidence: [140, 140, 140],
+    };
+    const statusRank: Record<ControlStatus, number> = {
+      evidenceFound: 0,
+      partialEvidence: 1,
+      noEvidence: 2,
+    };
+
+    for (const framework of assessment.frameworks) {
+      checkPageBreak(45);
+      addText(
+        `${framework.framework.name} (${framework.framework.version})`,
+        12,
+        "bold",
+      );
+      yPosition += 1;
+      addText(
+        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.totalControls} technically assessable controls)`,
+        9,
+        "normal",
+        [80, 80, 80],
+      );
+      yPosition += 3;
+
+      const maxRows = 8;
+      const ranked = [...framework.controls].sort(
+        (a, b) =>
+          statusRank[a.status] - statusRank[b.status] ||
+          a.control.id.localeCompare(b.control.id),
+      );
+      for (const assessed of ranked.slice(0, maxRows)) {
+        checkPageBreak(10);
+        const tier = assessed.control.tier ? ` (${assessed.control.tier})` : "";
+        addText(
+          `•  ${assessed.control.id} ${assessed.control.title}${tier}: ${statusLabels[assessed.status]}`,
+          9,
+          "normal",
+          statusColors[assessed.status],
+        );
+        yPosition += 1;
+      }
+      if (ranked.length > maxRows) {
+        addText(
+          `…and ${ranked.length - maxRows} more controls in the full report.`,
+          9,
+          "italic",
+          [120, 120, 120],
+        );
+      }
+      yPosition += 5;
+    }
+
+    checkPageBreak(30);
+    addText(assessment.disclaimer, 8, "italic", [110, 110, 110]);
+    yPosition += 5;
+    addText(
+      "Generate the full requirement-level compliance report from the Compliance view in your dashboard: intunedocumentation.com/dashboard",
+      9,
+      "bold",
+    );
+  };
+
   addTenantOverview();
+  addComplianceOverview();
 
   if (data.fetchErrors?.length) {
     doc.addPage();

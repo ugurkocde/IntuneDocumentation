@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Check,
   FileText,
@@ -70,6 +71,15 @@ export function DashboardLoading({
   steps: rawSteps,
   currentStep,
 }: DashboardLoadingProps) {
+  // Local heartbeat so the screen visibly moves even when the stream sends
+  // no events for a while (large tenants, proxy buffering).
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedSeconds((value) => value + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
   // The stream can pause between finishing one type and reporting the next,
   // which would leave every remaining row "queued" and the screen looking
   // frozen. Promote the first pending step to in-flight so the UI always
@@ -195,16 +205,32 @@ export function DashboardLoading({
             aria-valuenow={percent}
             aria-label="Overall fetch progress"
           >
+            {/* Shimmer spans the whole track, not just the filled part, so
+                the bar visibly moves even at low percentages */}
+            <span
+              className="animate-shimmer-loading absolute inset-y-0 left-0 w-full bg-gradient-to-r from-transparent via-teal-600/25 to-transparent"
+              aria-hidden="true"
+            />
             <div
               className="relative h-full overflow-hidden rounded-full bg-teal-600 transition-[width] duration-700 ease-out"
               style={{ width: `${Math.max(percent, 4)}%` }}
             >
               <span
-                className="animate-shimmer-loading absolute inset-y-0 left-0 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+                className="animate-shimmer-loading absolute inset-y-0 left-0 w-full bg-gradient-to-r from-transparent via-white/50 to-transparent"
                 aria-hidden="true"
               />
             </div>
           </div>
+          {elapsedSeconds >= 45 && (
+            <p
+              className="text-petrol-600 mt-2 text-center text-xs"
+              aria-live="polite"
+            >
+              Still working ({Math.floor(elapsedSeconds / 60)}m{" "}
+              {elapsedSeconds % 60}s). Large tenants can take several minutes;
+              your data keeps loading in the background.
+            </p>
+          )}
 
           {/* Category tiles */}
           <div className="mt-8 grid grid-cols-4 gap-3">
@@ -320,7 +346,7 @@ export function DashboardLoading({
         </div>
 
         <p className="text-petrol-600 mt-6 text-center text-xs leading-5">
-          This usually takes under a minute, depending on the size of your
+          This takes from under a minute up to a few minutes, depending on the size of your
           tenant.
         </p>
       </div>

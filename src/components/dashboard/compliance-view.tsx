@@ -1,8 +1,25 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
-import { ChevronDown, Download, LoaderCircle, ShieldCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  AnimatePresence,
+  LayoutGroup,
+  motion,
+  useReducedMotion,
+} from "framer-motion";
+import {
+  Check,
+  ChevronDown,
+  Download,
+  LoaderCircle,
+  ShieldCheck,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  FrameworkBadge,
+  type FrameworkId,
+} from "~/components/dashboard/framework-badge";
 import type { IntuneConfigurations } from "~/components/dashboard/types";
 import type { DetailedExportData } from "~/lib/configuration-analyzer";
 import { assessCompliance, compareControlIds } from "~/lib/compliance";
@@ -13,20 +30,60 @@ import type {
   ControlStatus,
 } from "~/lib/compliance/types";
 
-type FrameworkId = "bsi-it-grundschutz" | "nist-800-53-r5" | "nist-csf-2";
-
 interface ComplianceViewProps {
   configurations: IntuneConfigurations;
 }
 
-const FRAMEWORK_TABS: ReadonlyArray<{
+const FRAMEWORK_STORAGE_KEY = "compliance-framework";
+
+const FRAMEWORK_OPTIONS: ReadonlyArray<{
   id: FrameworkId;
   label: string;
+  shortLabel: string;
+  description: string;
 }> = [
-  { id: "bsi-it-grundschutz", label: "BSI IT-Grundschutz" },
-  { id: "nist-800-53-r5", label: "NIST SP 800-53" },
-  { id: "nist-csf-2", label: "NIST CSF 2.0" },
+  {
+    id: "nist-800-53-r5",
+    label: "NIST SP 800-53",
+    shortLabel: "NIST 800-53",
+    description:
+      "Security and privacy controls for information systems and organizations.",
+  },
+  {
+    id: "nist-csf-2",
+    label: "NIST CSF 2.0",
+    shortLabel: "NIST CSF",
+    description:
+      "Outcome-based guidance for managing and reducing cybersecurity risk.",
+  },
+  {
+    id: "bsi-it-grundschutz",
+    label: "BSI IT-Grundschutz",
+    shortLabel: "BSI",
+    description:
+      "Baseline safeguards for systematic information security management.",
+  },
 ];
+
+function isFrameworkId(value: string | null): value is FrameworkId {
+  return FRAMEWORK_OPTIONS.some((framework) => framework.id === value);
+}
+
+function storeFrameworkSelection(frameworkId: FrameworkId) {
+  try {
+    window.localStorage.setItem(FRAMEWORK_STORAGE_KEY, frameworkId);
+  } catch {
+    // The picker remains usable when browser storage is unavailable.
+  }
+}
+
+function clearFrameworkSelection() {
+  try {
+    window.localStorage.removeItem(FRAMEWORK_STORAGE_KEY);
+  } catch {
+    // The picker remains usable when browser storage is unavailable.
+  }
+}
 
 const CONTROL_STATUS_ORDER: Record<ControlStatus, number> = {
   evidenceFound: 0,
@@ -332,28 +389,37 @@ function SummaryCard({
   );
 }
 
-function ComplianceHeader({ disclaimer }: { disclaimer: string }) {
+function ComplianceHeader({
+  disclaimer,
+  frameworkSelector,
+}: {
+  disclaimer: string;
+  frameworkSelector?: ReactNode;
+}) {
   return (
     <div className="border-petrol-950/6 shadow-card rounded-2xl border bg-white p-5 sm:p-6">
-      <div className="flex items-start gap-4">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-          <ShieldCheck className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <h2
-            id="compliance-evidence-title"
-            className="text-petrol-950 text-lg font-semibold"
-          >
-            Compliance Evidence
-          </h2>
-          <p className="text-petrol-600 mt-1 max-w-3xl text-sm leading-6">
-            Review the technical evidence found in your loaded Intune policies
-            and assignments for each supported framework.
-          </p>
-          <p className="text-petrol-600/80 mt-3 max-w-4xl text-[11px] leading-5">
-            {disclaimer}
-          </p>
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h2
+              id="compliance-evidence-title"
+              className="text-petrol-950 text-lg font-semibold"
+            >
+              Compliance Evidence
+            </h2>
+            <p className="text-petrol-600 mt-1 max-w-3xl text-sm leading-6">
+              Review the technical evidence found in your loaded Intune policies
+              and assignments for each supported framework.
+            </p>
+            <p className="text-petrol-600/80 mt-3 max-w-4xl text-[11px] leading-5">
+              {disclaimer}
+            </p>
+          </div>
         </div>
+        {frameworkSelector}
       </div>
     </div>
   );
@@ -361,23 +427,89 @@ function ComplianceHeader({ disclaimer }: { disclaimer: string }) {
 
 export function ComplianceView({ configurations }: ComplianceViewProps) {
   const { accounts } = useMsal();
+  const prefersReducedMotion = useReducedMotion();
   const assessment = useMemo(
     () => assessCompliance(configurations as unknown as DetailedExportData),
     [configurations],
   );
   const [selectedFrameworkId, setSelectedFrameworkId] =
-    useState<FrameworkId>("bsi-it-grundschutz");
+    useState<FrameworkId | null>(null);
   const [expandedControls, setExpandedControls] = useState<Set<string>>(
     new Set(),
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [isFrameworkMenuOpen, setIsFrameworkMenuOpen] = useState(false);
+  const frameworkMenuRef = useRef<HTMLDivElement>(null);
+  const frameworkTriggerRef = useRef<HTMLButtonElement>(null);
+  const shouldFocusFrameworkTriggerRef = useRef(false);
   const tenantLabel = accounts[0]?.tenantId
     ? `${accounts[0].tenantId.slice(0, 8)}...`
     : undefined;
 
+  useEffect(() => {
+    try {
+      const storedFrameworkId = window.localStorage.getItem(
+        FRAMEWORK_STORAGE_KEY,
+      );
+      if (isFrameworkId(storedFrameworkId)) {
+        setSelectedFrameworkId(storedFrameworkId);
+      }
+    } catch {
+      // An unavailable storage implementation should not block the picker.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      selectedFrameworkId &&
+      shouldFocusFrameworkTriggerRef.current &&
+      frameworkTriggerRef.current
+    ) {
+      shouldFocusFrameworkTriggerRef.current = false;
+      frameworkTriggerRef.current.focus();
+    }
+  }, [selectedFrameworkId]);
+
+  useEffect(() => {
+    if (!isFrameworkMenuOpen) return;
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (
+        event.target instanceof Node &&
+        !frameworkMenuRef.current?.contains(event.target)
+      ) {
+        setIsFrameworkMenuOpen(false);
+        frameworkTriggerRef.current?.focus();
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsFrameworkMenuOpen(false);
+        frameworkTriggerRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("keydown", handleEscape);
+    frameworkMenuRef.current
+      ?.querySelector<HTMLButtonElement>(
+        '[role="menuitem"][data-selected="true"]',
+      )
+      ?.focus();
+
+    return () => {
+      document.removeEventListener("click", handleDocumentClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isFrameworkMenuOpen]);
+
   const selectedFramework = assessment.frameworks.find(
     (framework) => framework.framework.id === selectedFrameworkId,
+  );
+  const selectedFrameworkOption = FRAMEWORK_OPTIONS.find(
+    (framework) => framework.id === selectedFrameworkId,
   );
   const capabilitiesById = useMemo(
     () =>
@@ -404,12 +536,34 @@ export function ComplianceView({ configurations }: ComplianceViewProps) {
     configurations.sections.length === 0 &&
     !hasLegacyConfigurations(configurations);
 
-  const handleFrameworkChange = (frameworkId: FrameworkId) => {
+  const handleFrameworkChange = (
+    frameworkId: FrameworkId,
+    source: "picker" | "menu",
+  ) => {
+    if (source === "picker") {
+      shouldFocusFrameworkTriggerRef.current = true;
+    }
+    storeFrameworkSelection(frameworkId);
     setSelectedFrameworkId(frameworkId);
     setDownloadError(null);
   };
 
+  const handleMenuFrameworkChange = (frameworkId: FrameworkId) => {
+    handleFrameworkChange(frameworkId, "menu");
+    setIsFrameworkMenuOpen(false);
+    frameworkTriggerRef.current?.focus();
+  };
+
+  const handleShowAllFrameworks = () => {
+    clearFrameworkSelection();
+    setIsFrameworkMenuOpen(false);
+    setSelectedFrameworkId(null);
+    setDownloadError(null);
+  };
+
   const handleDownload = async () => {
+    if (!selectedFrameworkId) return;
+
     setIsGenerating(true);
     setDownloadError(null);
 
@@ -449,143 +603,468 @@ export function ComplianceView({ configurations }: ComplianceViewProps) {
     }
   };
 
-  if (isEmpty) {
-    return (
-      <section
-        className="space-y-5"
-        aria-labelledby="compliance-evidence-title"
-      >
-        <ComplianceHeader disclaimer={assessment.disclaimer} />
-        <div className="border-petrol-950/6 shadow-card rounded-2xl border bg-white px-6 py-12 text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-            <ShieldCheck className="h-5 w-5" />
-          </span>
-          <h3 className="text-petrol-950 mt-4 text-sm font-semibold">
-            Load tenant data to assess compliance evidence
-          </h3>
-          <p className="text-petrol-600 mx-auto mt-1 max-w-lg text-xs leading-5">
-            Compliance evidence appears after your Intune configurations and
-            assignments finish loading. Refresh the dashboard to load tenant
-            data first.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
-  if (!selectedFramework) return null;
-
   return (
-    <section className="space-y-5" aria-labelledby="compliance-evidence-title">
-      <ComplianceHeader disclaimer={assessment.disclaimer} />
-
-      <div
-        className="border-petrol-950/6 shadow-card flex flex-col gap-2 rounded-2xl border bg-white p-2 sm:flex-row"
-        aria-label="Compliance frameworks"
-      >
-        {FRAMEWORK_TABS.map((framework) => {
-          const selected = framework.id === selectedFrameworkId;
-          return (
-            <button
-              key={framework.id}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => handleFrameworkChange(framework.id)}
-              className={`min-h-11 flex-1 cursor-pointer rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
-                selected
-                  ? "bg-petrol-950 text-white"
-                  : "text-petrol-700 hover:bg-mint-50 hover:text-petrol-950"
-              }`}
-            >
-              {framework.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div
-        className="grid gap-3 sm:grid-cols-3"
-        aria-label={`${selectedFramework.framework.name} summary`}
-      >
-        <SummaryCard
-          label="Evidence"
-          count={selectedFramework.summary.withEvidence}
-          total={selectedFramework.summary.totalControls}
-          tone="green"
-        />
-        <SummaryCard
-          label="Partial"
-          count={selectedFramework.summary.partial}
-          total={selectedFramework.summary.totalControls}
-          tone="amber"
-        />
-        <SummaryCard
-          label="No evidence"
-          count={selectedFramework.summary.withoutEvidence}
-          total={selectedFramework.summary.totalControls}
-          tone="slate"
-        />
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-petrol-950 text-lg font-semibold">
-            {selectedFramework.framework.name}
-          </h2>
-          <p className="text-petrol-600 mt-1 text-xs">
-            {selectedFramework.framework.version}
-          </p>
-        </div>
-        <div className="sm:text-right">
-          <button
-            type="button"
-            onClick={() => void handleDownload()}
-            disabled={isGenerating}
-            aria-busy={isGenerating}
-            className="bg-petrol-950 hover:bg-petrol-800 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isGenerating ? (
-              <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" />
-            ) : (
-              <Download className="h-4 w-4" />
+    <section
+      aria-labelledby={
+        selectedFrameworkId
+          ? "compliance-evidence-title"
+          : "framework-picker-title"
+      }
+    >
+      <LayoutGroup id="compliance-framework-picker">
+        <motion.div
+          layout={!prefersReducedMotion}
+          className={
+            selectedFrameworkId
+              ? ""
+              : "mx-auto flex min-h-[28rem] max-w-6xl flex-col justify-center py-8 sm:py-12"
+          }
+          transition={
+            prefersReducedMotion
+              ? { duration: 0 }
+              : { type: "spring", stiffness: 360, damping: 34 }
+          }
+        >
+          <AnimatePresence initial={false}>
+            {!selectedFrameworkId && (
+              <motion.div
+                key="framework-picker-intro"
+                initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: prefersReducedMotion ? 0 : 0.16 }}
+                className="text-center"
+              >
+                <h2
+                  id="framework-picker-title"
+                  className="text-petrol-950 text-xl font-semibold tracking-[-0.02em] sm:text-2xl"
+                >
+                  Choose a compliance framework
+                </h2>
+                <p className="text-petrol-600 mx-auto mt-2 max-w-2xl text-sm leading-6">
+                  Select a framework to review the configuration evidence found
+                  in your Intune policies and assignments.
+                </p>
+              </motion.div>
             )}
-            {isGenerating ? "Generating report…" : "Download report (PDF)"}
-          </button>
-          {downloadError && (
-            <p className="mt-2 text-xs text-red-700" role="alert">
-              {downloadError}
-            </p>
-          )}
-        </div>
-      </div>
+          </AnimatePresence>
 
-      {selectedFramework.framework.note && (
-        <p className="text-petrol-600 text-xs leading-5">
-          {selectedFramework.framework.note}
-        </p>
-      )}
+          <motion.div
+            layout={!prefersReducedMotion}
+            className={
+              selectedFrameworkId ? "grid" : "mt-8 grid gap-4 md:grid-cols-3"
+            }
+          >
+            <AnimatePresence
+              initial={false}
+              custom={selectedFrameworkId}
+              mode="popLayout"
+            >
+              {!selectedFrameworkId &&
+                FRAMEWORK_OPTIONS.map((framework) => {
+                  const assessmentFramework = assessment.frameworks.find(
+                    (item) => item.framework.id === framework.id,
+                  );
 
-      <div className="space-y-3">
-        {sortedControls.map((control) => {
-          const expansionKey = `${selectedFrameworkId}:${control.control.id}`;
-          return (
-            <ControlRow
-              key={control.control.id}
-              control={control}
-              capabilitiesById={capabilitiesById}
-              expanded={expandedControls.has(expansionKey)}
-              onToggle={() =>
-                setExpandedControls((current) => {
-                  const next = new Set(current);
-                  if (next.has(expansionKey)) next.delete(expansionKey);
-                  else next.add(expansionKey);
-                  return next;
-                })
+                  return (
+                    <motion.button
+                      key={framework.id}
+                      type="button"
+                      layoutId={
+                        prefersReducedMotion
+                          ? undefined
+                          : `framework-card-${framework.id}`
+                      }
+                      aria-label={framework.label}
+                      onClick={() =>
+                        handleFrameworkChange(framework.id, "picker")
+                      }
+                      initial={
+                        prefersReducedMotion
+                          ? { opacity: 1 }
+                          : { opacity: 0, scale: 0.98 }
+                      }
+                      animate={
+                        prefersReducedMotion
+                          ? { opacity: 1 }
+                          : { opacity: 1, scale: 1 }
+                      }
+                      variants={{
+                        exit: (selectedId: FrameworkId | null) =>
+                          prefersReducedMotion
+                            ? {
+                                opacity: 1,
+                                transition: { duration: 0 },
+                              }
+                            : selectedId === framework.id
+                              ? {
+                                  opacity: 1,
+                                  scale: 1,
+                                  transition: { duration: 0.24 },
+                                }
+                              : {
+                                  opacity: 0,
+                                  scale: 0.96,
+                                  transition: { duration: 0.16 },
+                                },
+                      }}
+                      exit="exit"
+                      transition={
+                        prefersReducedMotion
+                          ? { duration: 0 }
+                          : {
+                              layout: {
+                                type: "spring",
+                                stiffness: 380,
+                                damping: 34,
+                              },
+                            }
+                      }
+                      className="border-petrol-950/8 shadow-card hover:bg-mint-50/35 group min-h-56 cursor-pointer touch-manipulation rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow] duration-200 hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none"
+                    >
+                      <motion.span
+                        layoutId={
+                          prefersReducedMotion
+                            ? undefined
+                            : `framework-badge-${framework.id}`
+                        }
+                        className="block w-fit"
+                      >
+                        <FrameworkBadge frameworkId={framework.id} />
+                      </motion.span>
+                      <span className="text-petrol-950 mt-5 block text-base font-semibold">
+                        {framework.label}
+                      </span>
+                      <span className="mt-1 block text-xs font-semibold text-teal-700">
+                        {assessmentFramework?.framework.version}
+                      </span>
+                      <span className="text-petrol-600 mt-3 block text-sm leading-6">
+                        {framework.description}
+                      </span>
+                    </motion.button>
+                  );
+                })}
+            </AnimatePresence>
+          </motion.div>
+        </motion.div>
+
+        {selectedFrameworkId && selectedFramework && (
+          <div className="space-y-5">
+            <ComplianceHeader
+              disclaimer={assessment.disclaimer}
+              frameworkSelector={
+                <div
+                  ref={frameworkMenuRef}
+                  className="relative ml-auto shrink-0"
+                >
+                  <motion.button
+                    ref={frameworkTriggerRef}
+                    type="button"
+                    layoutId={
+                      prefersReducedMotion
+                        ? undefined
+                        : `framework-card-${selectedFrameworkId}`
+                    }
+                    aria-label={`Selected framework: ${
+                      selectedFrameworkOption?.label ??
+                      selectedFramework.framework.name
+                    }`}
+                    aria-haspopup="menu"
+                    aria-expanded={isFrameworkMenuOpen}
+                    onClick={() =>
+                      setIsFrameworkMenuOpen((current) => !current)
+                    }
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0 }
+                        : {
+                            layout: {
+                              type: "spring",
+                              stiffness: 380,
+                              damping: 34,
+                            },
+                          }
+                    }
+                    className="border-petrol-950/10 text-petrol-950 hover:bg-mint-50 inline-flex min-h-11 cursor-pointer touch-manipulation items-center gap-2 rounded-xl border bg-white px-2.5 py-1.5 text-xs font-semibold shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  >
+                    <motion.span
+                      layoutId={
+                        prefersReducedMotion
+                          ? undefined
+                          : `framework-badge-${selectedFrameworkId}`
+                      }
+                      className="block shrink-0"
+                    >
+                      <FrameworkBadge
+                        frameworkId={selectedFrameworkId}
+                        size={20}
+                      />
+                    </motion.span>
+                    <span>
+                      {selectedFrameworkOption?.shortLabel ??
+                        selectedFramework.framework.name}
+                    </span>
+                    <ChevronDown
+                      className={`text-petrol-600 h-4 w-4 transition-transform duration-200 motion-reduce:transition-none ${
+                        isFrameworkMenuOpen && !prefersReducedMotion
+                          ? "rotate-180"
+                          : ""
+                      }`}
+                      aria-hidden="true"
+                    />
+                  </motion.button>
+
+                  <AnimatePresence>
+                    {isFrameworkMenuOpen && (
+                      <motion.div
+                        role="menu"
+                        aria-label="Choose a compliance framework"
+                        initial={
+                          prefersReducedMotion
+                            ? { opacity: 1 }
+                            : { opacity: 0, y: -6, scale: 0.98 }
+                        }
+                        animate={
+                          prefersReducedMotion
+                            ? { opacity: 1 }
+                            : { opacity: 1, y: 0, scale: 1 }
+                        }
+                        exit={
+                          prefersReducedMotion
+                            ? { opacity: 0 }
+                            : { opacity: 0, y: -4, scale: 0.98 }
+                        }
+                        transition={{
+                          duration: prefersReducedMotion ? 0 : 0.16,
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            !["ArrowDown", "ArrowUp", "Home", "End"].includes(
+                              event.key,
+                            )
+                          ) {
+                            return;
+                          }
+
+                          event.preventDefault();
+                          const menuItems = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                              '[role="menuitem"]',
+                            ),
+                          );
+                          const currentIndex = menuItems.indexOf(
+                            document.activeElement as HTMLButtonElement,
+                          );
+                          const nextIndex =
+                            event.key === "Home"
+                              ? 0
+                              : event.key === "End"
+                                ? menuItems.length - 1
+                                : event.key === "ArrowDown"
+                                  ? (currentIndex + 1) % menuItems.length
+                                  : (currentIndex - 1 + menuItems.length) %
+                                    menuItems.length;
+                          menuItems[nextIndex]?.focus();
+                        }}
+                        className="border-petrol-950/10 shadow-card absolute top-[calc(100%+0.5rem)] right-0 z-30 w-72 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl border bg-white p-1.5"
+                      >
+                        {FRAMEWORK_OPTIONS.map((framework) => {
+                          const selected = framework.id === selectedFrameworkId;
+                          const assessmentFramework =
+                            assessment.frameworks.find(
+                              (item) => item.framework.id === framework.id,
+                            );
+
+                          return (
+                            <button
+                              key={framework.id}
+                              type="button"
+                              role="menuitem"
+                              data-selected={selected ? "true" : undefined}
+                              onClick={() =>
+                                handleMenuFrameworkChange(framework.id)
+                              }
+                              className={`flex min-h-12 w-full cursor-pointer touch-manipulation items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
+                                selected
+                                  ? "bg-mint-50 text-petrol-950"
+                                  : "text-petrol-700 hover:bg-mint-50/70 hover:text-petrol-950"
+                              }`}
+                            >
+                              <FrameworkBadge
+                                frameworkId={framework.id}
+                                size={20}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-xs font-semibold">
+                                  {framework.label}
+                                  {selected && (
+                                    <span className="sr-only">
+                                      , currently selected
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="text-petrol-600 mt-0.5 block text-[10px]">
+                                  {assessmentFramework?.framework.version}
+                                </span>
+                              </span>
+                              {selected && (
+                                <Check
+                                  className="h-4 w-4 shrink-0 text-teal-700"
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </button>
+                          );
+                        })}
+                        <div className="border-petrol-950/8 mt-1 border-t pt-1">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={handleShowAllFrameworks}
+                            className="text-petrol-700 hover:bg-mint-50 hover:text-petrol-950 min-h-11 w-full cursor-pointer touch-manipulation rounded-xl px-3 text-left text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+                          >
+                            Show all frameworks
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               }
             />
-          );
-        })}
-      </div>
+
+            {isEmpty ? (
+              <div className="border-petrol-950/6 shadow-card rounded-2xl border bg-white px-6 py-12 text-center">
+                <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                  <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <h3 className="text-petrol-950 mt-4 text-sm font-semibold">
+                  Load tenant data to assess compliance evidence
+                </h3>
+                <p className="text-petrol-600 mx-auto mt-1 max-w-lg text-xs leading-5">
+                  Compliance evidence appears after your Intune configurations
+                  and assignments finish loading. Refresh the dashboard to load
+                  tenant data first.
+                </p>
+              </div>
+            ) : (
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={selectedFrameworkId}
+                  initial={
+                    prefersReducedMotion
+                      ? { opacity: 1 }
+                      : { opacity: 0, y: 10 }
+                  }
+                  animate={
+                    prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }
+                  }
+                  exit={
+                    prefersReducedMotion
+                      ? { opacity: 0 }
+                      : { opacity: 0, y: -6 }
+                  }
+                  transition={{
+                    duration: prefersReducedMotion ? 0 : 0.2,
+                    ease: "easeOut",
+                  }}
+                  className="space-y-5"
+                >
+                  <div
+                    className="grid gap-3 sm:grid-cols-3"
+                    aria-label={`${selectedFramework.framework.name} summary`}
+                  >
+                    <SummaryCard
+                      label="Evidence"
+                      count={selectedFramework.summary.withEvidence}
+                      total={selectedFramework.summary.totalControls}
+                      tone="green"
+                    />
+                    <SummaryCard
+                      label="Partial"
+                      count={selectedFramework.summary.partial}
+                      total={selectedFramework.summary.totalControls}
+                      tone="amber"
+                    />
+                    <SummaryCard
+                      label="No evidence"
+                      count={selectedFramework.summary.withoutEvidence}
+                      total={selectedFramework.summary.totalControls}
+                      tone="slate"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-petrol-950 text-lg font-semibold">
+                        {selectedFramework.framework.name}
+                      </h2>
+                      <p className="text-petrol-600 mt-1 text-xs">
+                        {selectedFramework.framework.version}
+                      </p>
+                    </div>
+                    <div className="sm:text-right">
+                      <button
+                        type="button"
+                        onClick={() => void handleDownload()}
+                        disabled={isGenerating}
+                        aria-busy={isGenerating}
+                        className="bg-petrol-950 hover:bg-petrol-800 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isGenerating ? (
+                          <LoaderCircle
+                            className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Download className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {isGenerating
+                          ? "Generating report…"
+                          : "Download report (PDF)"}
+                      </button>
+                      {downloadError && (
+                        <p className="mt-2 text-xs text-red-700" role="alert">
+                          {downloadError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedFramework.framework.note && (
+                    <p className="text-petrol-600 text-xs leading-5">
+                      {selectedFramework.framework.note}
+                    </p>
+                  )}
+
+                  <div className="space-y-3">
+                    {sortedControls.map((control) => {
+                      const expansionKey = `${selectedFrameworkId}:${control.control.id}`;
+                      return (
+                        <ControlRow
+                          key={control.control.id}
+                          control={control}
+                          capabilitiesById={capabilitiesById}
+                          expanded={expandedControls.has(expansionKey)}
+                          onToggle={() =>
+                            setExpandedControls((current) => {
+                              const next = new Set(current);
+                              if (next.has(expansionKey))
+                                next.delete(expansionKey);
+                              else next.add(expansionKey);
+                              return next;
+                            })
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            )}
+          </div>
+        )}
+      </LayoutGroup>
     </section>
   );
 }

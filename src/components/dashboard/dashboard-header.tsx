@@ -22,10 +22,7 @@ export function DashboardHeader({
   return (
     <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
       <div className="min-w-52 shrink-0">
-        <p className="text-petrol-600 text-[10px] font-bold tracking-[0.14em] uppercase">
-          Intune workspace
-        </p>
-        <h1 className="text-petrol-950 mt-1 text-2xl font-semibold tracking-[-0.035em] sm:text-[28px]">
+        <h1 className="text-petrol-950 text-2xl font-semibold tracking-[-0.035em] sm:text-[28px]">
           {title}
         </h1>
       </div>

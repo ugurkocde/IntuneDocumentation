@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ComplianceView } from "../compliance-view";
 import type { IntuneConfigurations } from "../types";
 
@@ -63,14 +63,22 @@ const configurations: IntuneConfigurations = {
 };
 
 describe("ComplianceView", () => {
-  afterEach(cleanup);
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
 
-  it("switches frameworks and expands control evidence", async () => {
-    const user = userEvent.setup();
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+  });
+
+  it("shows only the framework picker when no selection is stored", () => {
     render(<ComplianceView configurations={configurations} />);
 
     expect(
-      screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
+      screen.getByRole("heading", {
+        name: "Choose a compliance framework",
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "NIST SP 800-53" }),
@@ -79,12 +87,88 @@ describe("ComplianceView", () => {
       screen.getByRole("button", { name: "NIST CSF 2.0" }),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByText("Partial configuration evidence").length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Download report/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /SC-28/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reveals the selected framework content and dropdown trigger", async () => {
+    const user = userEvent.setup();
+    render(<ComplianceView configurations={configurations} />);
 
     await user.click(screen.getByRole("button", { name: "NIST SP 800-53" }));
 
-    const sc28Control = screen.getByRole("button", { name: /SC-28/ });
+    const trigger = await screen.findByRole("button", {
+      name: "Selected framework: NIST SP 800-53",
+    });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Download report (PDF)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Partial configuration evidence").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("persists and restores a framework selection", async () => {
+    const user = userEvent.setup();
+    const firstRender = render(
+      <ComplianceView configurations={configurations} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "NIST SP 800-53" }));
+    expect(window.localStorage.getItem("compliance-framework")).toBe(
+      "nist-800-53-r5",
+    );
+
+    firstRender.unmount();
+    render(<ComplianceView configurations={configurations} />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Selected framework: NIST SP 800-53",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Download report (PDF)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("returns to the picker and clears the stored selection", async () => {
+    const user = userEvent.setup();
+    render(<ComplianceView configurations={configurations} />);
+
+    await user.click(screen.getByRole("button", { name: "NIST SP 800-53" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Selected framework: NIST SP 800-53",
+      }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: "Show all frameworks" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Choose a compliance framework",
+      }),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("compliance-framework")).toBeNull();
+  });
+
+  it("expands control evidence inside the selected framework", async () => {
+    const user = userEvent.setup();
+    render(<ComplianceView configurations={configurations} />);
+
+    await user.click(screen.getByRole("button", { name: "NIST SP 800-53" }));
+
+    const sc28Control = await screen.findByRole("button", { name: /SC-28/ });
     expect(sc28Control).toHaveAttribute("aria-expanded", "false");
 
     await user.click(sc28Control);
@@ -132,6 +216,9 @@ describe("ComplianceView", () => {
     };
 
     render(<ComplianceView configurations={counterConfigurations} />);
+    await user.click(
+      screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
+    );
     await user.click(screen.getByRole("button", { name: /NET.3.2/ }));
 
     expect(
@@ -174,6 +261,9 @@ describe("ComplianceView", () => {
     };
 
     render(<ComplianceView configurations={minimumVersionConfigurations} />);
+    await user.click(
+      screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
+    );
     await user.click(screen.getByRole("button", { name: /OPS.1.1.3/ }));
 
     expect(

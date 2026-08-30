@@ -292,7 +292,7 @@ export function DashboardContent({
         )}
 
         <DashboardBanners
-          showTip={showTipBanner && !searchQuery}
+          showTip={showTipBanner && !searchQuery && activeView !== "compliance"}
           permissionErrors={configurations.permissionErrors ?? []}
           fetchErrors={configurations.fetchErrors ?? []}
           onDismissTip={onDismissTip}

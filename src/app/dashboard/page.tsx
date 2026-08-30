@@ -143,6 +143,14 @@ function mergeConfigurationSection(
   return next;
 }
 
+// Module-scope cache so browser back/forward navigation does not refetch the
+// whole tenant. Only the explicit refresh action bypasses it.
+const dashboardCache: {
+  accountId: string | null;
+  configurations: IntuneConfigurations | null;
+  lastFetched: Date | null;
+} = { accountId: null, configurations: null, lastFetched: null };
+
 export default function DashboardPage() {
   const { instance, accounts, inProgress } = useMsal();
   const router = useRouter();
@@ -242,9 +250,27 @@ export default function DashboardPage() {
       router.push("/");
     } else if (!hasFetchedRef.current && !isFetchingRef.current) {
       hasFetchedRef.current = true;
+      if (
+        dashboardCache.configurations &&
+        dashboardCache.accountId === (accounts[0]?.homeAccountId ?? null)
+      ) {
+        setConfigurations(dashboardCache.configurations);
+        setLastFetched(dashboardCache.lastFetched);
+        setHasCompletedInitialLoad(true);
+        setLoading(false);
+        return;
+      }
       void fetchConfigurations();
     }
   }, [accounts, router]);
+
+  useEffect(() => {
+    if (!loading && configurations && lastFetched) {
+      dashboardCache.accountId = accounts[0]?.homeAccountId ?? null;
+      dashboardCache.configurations = configurations;
+      dashboardCache.lastFetched = lastFetched;
+    }
+  }, [loading, configurations, lastFetched, accounts]);
 
   useEffect(() => {
     if (window.innerWidth < 768) {

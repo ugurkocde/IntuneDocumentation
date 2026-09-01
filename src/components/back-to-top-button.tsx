@@ -24,12 +24,14 @@ export function BackToTopButton() {
   return (
     <button
       onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-      className={`fixed bottom-6 right-6 z-40 p-3 bg-slate-900 text-white rounded-full shadow-lg hover:bg-slate-800 transition-all cursor-pointer ${
-        showBackToTop ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
+      className={`back-to-top-button fixed right-6 bottom-6 z-40 cursor-pointer rounded-full bg-slate-900 p-3 text-white shadow-lg transition-all hover:bg-slate-800 ${
+        showBackToTop
+          ? "translate-y-0 opacity-100"
+          : "pointer-events-none translate-y-4 opacity-0"
       }`}
       aria-label="Back to top"
     >
-      <ArrowUp className="w-5 h-5" />
+      <ArrowUp className="h-5 w-5" />
     </button>
   );
 }

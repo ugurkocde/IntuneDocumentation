@@ -517,6 +517,12 @@ button:focus-visible {
   }
 }
 
+/* Keep existing floating controls clear of the hosted Crisp support button. */
+.crisp-chat-enabled .back-to-top-button,
+.crisp-chat-enabled .floating-export-notification {
+  bottom: 6rem;
+}
+
 /* Respect reduced motion preferences */
 @media (prefers-reduced-motion: reduce) {
   *,

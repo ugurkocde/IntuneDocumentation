@@ -63,7 +63,7 @@ export function FloatingExportNotification({
 
   return (
     <div
-      className={`border-petrol-950/8 shadow-soft fixed right-4 bottom-4 left-4 z-50 transform rounded-2xl border bg-white transition-[transform,opacity] duration-300 ease-in-out motion-reduce:transition-none sm:right-6 sm:bottom-6 sm:left-auto sm:w-80 ${
+      className={`floating-export-notification border-petrol-950/8 shadow-soft fixed right-4 bottom-4 left-4 z-50 transform rounded-2xl border bg-white transition-[transform,opacity,bottom] duration-300 ease-in-out motion-reduce:transition-none sm:right-6 sm:bottom-6 sm:left-auto sm:w-80 ${
         isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       }`}
     >

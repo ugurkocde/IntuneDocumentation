@@ -88,7 +88,7 @@ npm run test
 
 Intune configuration data is fetched, processed, and exported in the browser. It is never sent to or stored by the application server.
 
-The hosted site collects anonymized usage statistics through Plausible Analytics and stores hashed tenant and user identifiers to calculate monthly active users. Self-hosted deployments disable all telemetry by default because Supabase is not configured and the analytics flag is off.
+The hosted site collects anonymized usage statistics through Plausible Analytics, stores hashed tenant and user identifiers to calculate monthly active users, and provides a Crisp support-chat widget. Self-hosted deployments disable all telemetry and support chat by default because Supabase and Crisp are not configured and the analytics flag is off.
 
 ## Contributing
 

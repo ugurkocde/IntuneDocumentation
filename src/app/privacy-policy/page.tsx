@@ -23,6 +23,7 @@ const sections = [
   { id: "what-we-access", label: "What We Access" },
   { id: "how-we-process-data", label: "How We Process Data" },
   { id: "analytics-cookies", label: "Analytics & Cookies" },
+  { id: "support-chat", label: "Support Chat" },
   { id: "data-sharing", label: "Data Sharing" },
   { id: "security", label: "Security" },
   { id: "data-retention", label: "Data Retention" },
@@ -42,7 +43,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Privacy Policy
           </h1>
-          <p className="mb-10 text-slate-600">Effective: August 13, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: September 1, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -182,6 +183,42 @@ export default function PrivacyPolicyPage() {
             </ul>
 
             <h2
+              id="support-chat"
+              className="scroll-mt-24 text-xl font-semibold text-slate-900"
+            >
+              Support Chat
+            </h2>
+            <p>
+              The hosted Service uses Crisp IM SAS (&quot;Crisp&quot;) to
+              provide the support-chat widget. Self-hosted deployments do not
+              load Crisp unless the operator explicitly configures a Crisp
+              workspace ID.
+            </p>
+            <ul className="mt-3 list-disc space-y-2 pl-6">
+              <li>
+                When you use the support chat, Crisp may process your IP
+                address, browser and device information, the page where you
+                opened the chat, message content, and any contact details or
+                attachments you voluntarily provide.
+              </li>
+              <li>
+                Crisp uses functional session cookies to maintain the
+                conversation and restore message history. With Total Privacy
+                Mode enabled, Crisp initializes the session only after you open
+                the chat widget.
+              </li>
+              <li>
+                We do not automatically send Microsoft access tokens, Intune
+                configuration responses, generated documents, tenant IDs, or
+                user principal names to Crisp.
+              </li>
+              <li>
+                Do not submit access tokens, passwords, unredacted tenant
+                exports, or other secrets through the support chat.
+              </li>
+            </ul>
+
+            <h2
               id="data-sharing"
               className="scroll-mt-24 text-xl font-semibold text-slate-900"
             >
@@ -190,7 +227,8 @@ export default function PrivacyPolicyPage() {
             <p>
               We do not sell or share your configuration data with third
               parties. Data accessed from Microsoft Graph is used solely to
-              generate your documentation.
+              generate your documentation. Crisp processes only the support
+              information described above on our behalf when you use the chat.
             </p>
 
             <h2
@@ -228,7 +266,10 @@ export default function PrivacyPolicyPage() {
               export counts are retained for service measurement and
               administration. Operational logs may exist within hosting-provider
               systems, but the Service does not intentionally write Microsoft
-              Graph response bodies or access tokens to those logs.
+              Graph response bodies or access tokens to those logs. Support
+              conversations and voluntarily submitted attachments are retained
+              in Crisp until they are deleted under our support-data retention
+              practices or in response to an applicable deletion request.
             </p>
 
             <h2

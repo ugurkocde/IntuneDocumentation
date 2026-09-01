@@ -1,10 +1,13 @@
 import "~/styles/globals.css";
 
 import { type Metadata } from "next";
+import Script from "next/script";
 // Removed Google Fonts to allow offline builds in restricted environments
 import { AuthProvider } from "~/components/auth-provider";
 import PlausibleProvider from "next-plausible";
 import { CookieConsentBanner } from "~/components/cookie-consent-banner";
+
+const PRODUCTION_CRISP_WEBSITE_ID = "d8cf4fcb-0dbe-42ee-b94c-3bbc415d58f4";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://intunedocumentation.com"),
@@ -127,6 +130,11 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const crispWebsiteId =
+    process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ??
+    (process.env.VERCEL_ENV === "production"
+      ? PRODUCTION_CRISP_WEBSITE_ID
+      : undefined);
   const app = <AuthProvider>{children}</AuthProvider>;
   return (
     <html lang="en">
@@ -134,7 +142,7 @@ export default function RootLayout({
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src="/api/config/script" />
       </head>
-      <body>
+      <body className={crispWebsiteId ? "crisp-chat-enabled" : undefined}>
         {process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (
           <PlausibleProvider domain="intunedocumentation.com">
             {app}
@@ -143,6 +151,18 @@ export default function RootLayout({
           app
         )}
         <CookieConsentBanner />
+        {crispWebsiteId ? (
+          <>
+            <Script id="crisp-chat-config" strategy="beforeInteractive">
+              {`window.$crisp = []; window.CRISP_WEBSITE_ID = ${JSON.stringify(crispWebsiteId)};`}
+            </Script>
+            <Script
+              id="crisp-chat-loader"
+              src="https://client.crisp.chat/l.js"
+              strategy="lazyOnload"
+            />
+          </>
+        ) : null}
       </body>
     </html>
   );

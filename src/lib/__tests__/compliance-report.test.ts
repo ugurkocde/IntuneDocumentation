@@ -250,6 +250,108 @@ describe("compliance report PDF", () => {
     expect(nist171Text).toContain("3.13.16");
   });
 
+  it.each([
+    {
+      frameworkId: "cyber-essentials-v3" as const,
+      disabledSettingId: "device_vendor_msft_bitlocker_requiredeviceencryption",
+      disabledValue: "device_vendor_msft_bitlocker_requiredeviceencryption_0",
+      unassignedSettings: { fileVaultEnabled: true },
+    },
+    {
+      frameworkId: "def-stan-05-138-i4" as const,
+      disabledSettingId:
+        "vendor_msft_firewall_mdmstore_domainprofile_enablefirewall",
+      disabledValue:
+        "vendor_msft_firewall_mdmstore_domainprofile_enablefirewall_false",
+      unassignedSettings: { firewallEnabled: true },
+    },
+  ])(
+    "scopes summary counters to mapped capabilities for $frameworkId",
+    async ({
+      frameworkId,
+      disabledSettingId,
+      disabledValue,
+      unassignedSettings,
+    }) => {
+      const data = createExportData();
+      data.compliancePolicies = [];
+      data.fetchErrors = [];
+      data.settingsCatalog = [
+        {
+          id: "unmapped-deviation",
+          name: "Unmapped assigned deviation",
+          assignments: allDevicesAssignment,
+          settings: [
+            {
+              settingInstance: {
+                settingDefinitionId: disabledSettingId,
+                choiceSettingValue: { value: disabledValue },
+              },
+            },
+          ],
+        },
+      ];
+      data.deviceConfigurations = [
+        {
+          id: "unmapped-unassigned",
+          displayName: "Unmapped unassigned configuration",
+          "@odata.type": "#microsoft.graph.macOSEndpointProtectionConfiguration",
+          ...unassignedSettings,
+          assignments: [],
+        },
+      ];
+
+      const unmappedText = extractPdfStreamText(
+        await generateComplianceReportPDF(data, { frameworkId }),
+      );
+      expect(unmappedText).toContain("Assigned deviating configurations: 0");
+      expect(unmappedText).toContain(
+        "Compliant configurations without assignment: 0",
+      );
+      expect(unmappedText).toContain("No prioritized findings were identified.");
+      expect(unmappedText).not.toContain("Unmapped assigned deviation");
+      expect(unmappedText).not.toContain("Unmapped unassigned configuration");
+
+      // Relevant signals must still appear when mixed with excluded capabilities.
+      data.settingsCatalog.push({
+        id: "mapped-deviation",
+        name: "Mapped assigned deviation",
+        assignments: allDevicesAssignment,
+        settings: [
+          {
+            settingInstance: {
+              settingDefinitionId:
+                "device_vendor_msft_policy_config_defender_allowrealtimemonitoring",
+              choiceSettingValue: {
+                value:
+                  "device_vendor_msft_policy_config_defender_allowrealtimemonitoring_0",
+              },
+            },
+          },
+        ],
+      });
+      data.deviceConfigurations.push({
+        id: "mapped-unassigned",
+        displayName: "Mapped unassigned configuration",
+        "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
+        microsoftAccountBlocked: true,
+        assignments: [],
+      });
+
+      const mixedText = extractPdfStreamText(
+        await generateComplianceReportPDF(data, { frameworkId }),
+      );
+      expect(mixedText).toContain("Assigned deviating configurations: 1.");
+      expect(mixedText).toContain(
+        "Compliant configurations without assignment: 1.",
+      );
+      expect(mixedText).toContain("Mapped assigned deviation");
+      expect(mixedText).toContain("Mapped unassigned configuration");
+      expect(mixedText).not.toContain("Unmapped assigned deviation");
+      expect(mixedText).not.toContain("Unmapped unassigned configuration");
+    },
+  );
+
   it("includes every body evidence reference in the appendix", async () => {
     const report = await generateComplianceReportPDF(createExportData(), {
       frameworkId: "bsi-it-grundschutz",

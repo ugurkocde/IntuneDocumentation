@@ -614,6 +614,112 @@ describe("framework assessment", () => {
     ]);
   });
 
+  it("does not infer default-deny rules from enabled firewalls", () => {
+    const data = emptyExportData();
+    data.deviceConfigurations = [
+      {
+        id: "windows-firewall",
+        "@odata.type":
+          "#microsoft.graph.windows10EndpointProtectionConfiguration",
+        firewallProfileDomain: {
+          firewallEnabled: "allowed",
+          inboundConnectionsBlocked: false,
+          outboundConnectionsBlocked: false,
+        },
+        assignments: allDevicesAssignment,
+      },
+      {
+        id: "macos-firewall",
+        "@odata.type": "#microsoft.graph.macOSEndpointProtectionConfiguration",
+        firewallEnabled: true,
+        firewallBlockAllIncoming: false,
+        assignments: allDevicesAssignment,
+      },
+    ];
+
+    const capabilities = assessCapabilities(data);
+    const nist = assessFramework(capabilities, NIST_800_171);
+    expect(nist.controls.find((c) => c.control.id === "3.13.1")?.status).toBe(
+      "evidenceFound",
+    );
+    expect(nist.controls.find((c) => c.control.id === "3.13.6")).toBeUndefined();
+    const defStan = assessFramework(capabilities, DEF_STAN_05_138);
+    expect(
+      defStan.controls.filter((c) => ["2429", "2507"].includes(c.control.id)),
+    ).toEqual([]);
+    expect(defStan.summary.partial + defStan.summary.withEvidence).toBe(0);
+  });
+
+  it("does not infer credential quality from password presence", () => {
+    const data = emptyExportData();
+    data.deviceConfigurations = [
+      {
+        "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
+        passwordRequired: true,
+      },
+      {
+        "@odata.type": "#microsoft.graph.macOSGeneralDeviceConfiguration",
+        passwordRequired: true,
+      },
+      {
+        "@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration",
+        passcodeRequired: true,
+      },
+      {
+        "@odata.type": "#microsoft.graph.androidGeneralDeviceConfiguration",
+        passwordRequired: true,
+      },
+    ].map((policy, index) => ({
+      ...policy,
+      id: `password-required-${index}`,
+      assignments: allDevicesAssignment,
+    }));
+
+    const capabilities = assessCapabilities(data);
+    const defStan = assessFramework(capabilities, DEF_STAN_05_138);
+    expect(defStan.controls.find((c) => c.control.id === "2213")).toBeUndefined();
+    // Password presence still supports authentication and mobile protection.
+    expect(
+      assessFramework(capabilities, NIST_800_171).controls.find(
+        (c) => c.control.id === "3.5.2",
+      )?.status,
+    ).toBe("evidenceFound");
+    expect(defStan.controls.find((c) => c.control.id === "2309")?.status).toBe(
+      "partialEvidence",
+    );
+  });
+
+  it("maps app sources to installation restrictions, not execution allow lists", () => {
+    const data = emptyExportData();
+    data.deviceConfigurations = [
+      {
+        id: "macos-app-sources",
+        "@odata.type": "#microsoft.graph.macOSEndpointProtectionConfiguration",
+        gatekeeperAllowedAppSource: "macAppStoreAndIdentifiedDevelopers",
+        assignments: allDevicesAssignment,
+      },
+      {
+        id: "android-personal-app-sources",
+        "@odata.type":
+          "#microsoft.graph.androidWorkProfileGeneralDeviceConfiguration",
+        workProfileBlockPersonalAppInstallsFromUnknownSources: true,
+        assignments: allDevicesAssignment,
+      },
+    ];
+
+    const capabilities = assessCapabilities(data);
+    const nist = assessFramework(capabilities, NIST_800_171);
+    expect(nist.controls.find((c) => c.control.id === "3.4.8")).toBeUndefined();
+    expect(nist.controls.find((c) => c.control.id === "3.4.9")?.status).toBe(
+      "evidenceFound",
+    );
+    expect(
+      assessFramework(capabilities, DEF_STAN_05_138).controls.find(
+        (c) => c.control.id === "2409",
+      ),
+    ).toBeUndefined();
+  });
+
   it("keeps capability catalog and framework mappings consistent", () => {
     const capabilityIds = new Set(
       assessCapabilities(emptyExportData()).map((r) => r.capability.id),

@@ -7,6 +7,10 @@ import type { FrameworkDefinition } from "../types";
 // Cyber Risk Profile levels (Level 0 to Level 3) at which the control applies.
 // Only controls with technical Intune evidence are listed; governance,
 // personnel, physical and incident-response controls are intentionally absent.
+// Also omitted until dedicated detectors exist: credential quality (2213),
+// executable allow lists (2409), and default-deny traffic rules (2429, 2507).
+// Password presence, app-source restrictions and firewall activation do not
+// demonstrate those controls.
 
 /** Control family labels keyed by the first two digits of the control id. */
 export const DEF_STAN_FAMILIES: Readonly<Record<string, string>> = {
@@ -30,13 +34,6 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
       summary:
         "Devices that access the network are known and trusted through integrity checks on managed platforms.",
       tier: "Level 2 to Level 3",
-    },
-    "2213": {
-      id: "2213",
-      title: "Credential quality controls",
-      summary:
-        "Technical controls require a credential before a managed device can be used.",
-      tier: "Level 1 to Level 3",
     },
     "2309": {
       id: "2309",
@@ -72,13 +69,6 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
         "Operating system updates are applied automatically and minimum supported versions are enforced.",
       tier: "Level 1 to Level 3",
     },
-    "2409": {
-      id: "2409",
-      title: "Authorised software",
-      summary:
-        "Software installation is restricted to trusted sources on managed platforms.",
-      tier: "Level 1 to Level 3",
-    },
     "2418": {
       id: "2418",
       title: "Managed hardening baselines",
@@ -93,32 +83,18 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
         "Real-time anti-malware protection is enforced on managed endpoints.",
       tier: "Level 1 to Level 3",
     },
-    "2429": {
-      id: "2429",
-      title: "Inbound connections blocked by default",
-      summary:
-        "Host firewalls block unauthorised inbound connections on managed devices.",
-      tier: "Level 1 to Level 3",
-    },
-    "2507": {
-      id: "2507",
-      title: "Default-deny host firewall rules",
-      summary:
-        "Host firewalls deny network traffic that is not explicitly allowed.",
-      tier: "Level 1 to Level 3",
-    },
   },
   mappings: {
     "windows-disk-encryption": ["2317"],
     "macos-disk-encryption": ["2317"],
     "android-storage-encryption": ["2317", "2309"],
     "windows-realtime-antimalware": ["2426"],
-    "windows-firewall": ["2429", "2507"],
-    "macos-firewall": ["2429", "2507"],
-    "windows-password-required": ["2213"],
-    "macos-password-required": ["2213"],
-    "ios-passcode-required": ["2213", "2309", "2322"],
-    "android-password-required": ["2213", "2322"],
+    "windows-firewall": [],
+    "macos-firewall": [],
+    "windows-password-required": [],
+    "macos-password-required": [],
+    "ios-passcode-required": ["2309", "2322"],
+    "android-password-required": ["2322"],
     "windows-automatic-updates": ["2405"],
     "windows-minimum-os-version": ["2405"],
     "macos-minimum-os-version": ["2405"],
@@ -132,7 +108,7 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     "windows-microsoft-account-blocked": ["2418"],
     "ios-jailbreak-block": ["2202", "2322"],
     "android-device-integrity": ["2202", "2322"],
-    "macos-gatekeeper": ["2409"],
-    "android-app-source-restriction": ["2409", "2322"],
+    "macos-gatekeeper": [],
+    "android-app-source-restriction": ["2322"],
   },
 };

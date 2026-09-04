@@ -38,6 +38,16 @@ UK MOD Def Stan 05-138 Issue 4, and NCSC Cyber Essentials.
    the five themes serve as identifiers because the document has none, and the
    logo is excluded from the licence. Do not add frameworks that require a
    commercial license (for example CIS Benchmarks or CIS Controls).
+7. **Match the control's technical requirement.** Firewall activation is not
+   evidence of default-deny rules, password presence is not evidence of
+   credential quality, and app-source restrictions are not evidence of an
+   executable allow/block list. Def Stan controls 2213, 2409, 2429 and 2507,
+   and NIST SP 800-171 requirements 3.4.8 and 3.13.6, are omitted until suitable
+   detectors exist. App-source restrictions map to NIST 3.4.9 instead.
+8. **Keep findings within the selected framework.** Report deviation and
+   unassigned-configuration counts include only capabilities mapped to that
+   framework's listed controls. Unmapped capabilities, such as encryption for
+   Cyber Essentials, must not affect those counts.
 
 ## Adding a signal
 

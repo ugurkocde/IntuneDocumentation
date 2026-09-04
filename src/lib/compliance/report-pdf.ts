@@ -1544,13 +1544,24 @@ export async function generateComplianceReportPDF(
     [96, 28, 28, 28],
   );
 
-  const assignedDeviations = assessment.capabilities.filter((result) =>
+  const controlIdsByCapability = new Map<string, string[]>();
+  for (const control of controls) {
+    for (const capabilityId of control.capabilityIds) {
+      const ids = controlIdsByCapability.get(capabilityId);
+      if (ids) ids.push(control.control.id);
+      else controlIdsByCapability.set(capabilityId, [control.control.id]);
+    }
+  }
+  const frameworkCapabilities = assessment.capabilities.filter((result) =>
+    controlIdsByCapability.has(result.capability.id),
+  );
+  const assignedDeviations = frameworkCapabilities.filter((result) =>
     result.evidence.some(
       (item) =>
         item.verdict === "disabled" && item.assignment.state === "assigned",
     ),
   );
-  const unassignedCompliant = assessment.capabilities.filter(
+  const unassignedCompliant = frameworkCapabilities.filter(
     (result) => result.status === "configuredNotAssigned",
   );
   drawWrappedText(
@@ -1591,14 +1602,6 @@ export async function generateComplianceReportPDF(
     lineHeight: 4.5,
     after: 1,
   });
-  const controlIdsByCapability = new Map<string, string[]>();
-  for (const control of controls) {
-    for (const capabilityId of control.capabilityIds) {
-      const ids = controlIdsByCapability.get(capabilityId);
-      if (ids) ids.push(control.control.id);
-      else controlIdsByCapability.set(capabilityId, [control.control.id]);
-    }
-  }
   const capabilityName = (result: CapabilityResult) =>
     locale === "de"
       ? (GERMAN_CAPABILITY_NAMES[result.capability.id] ??

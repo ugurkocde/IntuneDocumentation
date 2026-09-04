@@ -5,6 +5,9 @@ import type { FrameworkDefinition } from "../types";
 // DFARS 252.204-7012 reference that revision. Revision 2 requirements carry
 // no titles, so short titles and summaries are original descriptions written
 // for this device-management evidence mapping.
+// Firewall activation does not establish default-deny traffic rules (3.13.6).
+// App-source restrictions support user-installed software controls (3.4.9),
+// not executable allow/block lists (3.4.8).
 export const NIST_800_171: FrameworkDefinition = {
   id: "nist-800-171-r2",
   name: "NIST SP 800-171",
@@ -35,9 +38,9 @@ export const NIST_800_171: FrameworkDefinition = {
       summary:
         "Non-essential functions and data collection are restricted on managed devices.",
     },
-    "3.4.8": {
-      id: "3.4.8",
-      title: "Software execution policy",
+    "3.4.9": {
+      id: "3.4.9",
+      title: "User-installed software restrictions",
       summary:
         "Software installation is restricted to trusted sources on managed platforms.",
     },
@@ -52,12 +55,6 @@ export const NIST_800_171: FrameworkDefinition = {
       title: "Boundary protection",
       summary:
         "Host firewalls monitor and control communications at the device boundary.",
-    },
-    "3.13.6": {
-      id: "3.13.6",
-      title: "Deny by default, allow by exception",
-      summary:
-        "Host firewalls deny network traffic that is not explicitly allowed.",
     },
     "3.13.16": {
       id: "3.13.16",
@@ -88,8 +85,8 @@ export const NIST_800_171: FrameworkDefinition = {
     "macos-disk-encryption": ["3.1.19", "3.13.16"],
     "android-storage-encryption": ["3.1.19", "3.13.16"],
     "windows-realtime-antimalware": ["3.14.2", "3.14.5"],
-    "windows-firewall": ["3.13.1", "3.13.6"],
-    "macos-firewall": ["3.13.1", "3.13.6"],
+    "windows-firewall": ["3.13.1"],
+    "macos-firewall": ["3.13.1"],
     "windows-password-required": ["3.5.2"],
     "macos-password-required": ["3.5.2"],
     "ios-passcode-required": ["3.5.2"],
@@ -107,7 +104,7 @@ export const NIST_800_171: FrameworkDefinition = {
     "windows-microsoft-account-blocked": ["3.4.1"],
     "ios-jailbreak-block": ["3.4.2"],
     "android-device-integrity": ["3.4.2"],
-    "macos-gatekeeper": ["3.4.8"],
-    "android-app-source-restriction": ["3.4.8"],
+    "macos-gatekeeper": ["3.4.9"],
+    "android-app-source-restriction": ["3.4.9"],
   },
 };

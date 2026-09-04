@@ -10,12 +10,12 @@ import type { FrameworkDefinition } from "../types";
 
 /** Control family labels keyed by the first two digits of the control id. */
 export const DEF_STAN_FAMILIES: Readonly<Record<string, string>> = {
-  "22": "Identity and access control (22xx)",
-  "23": "Data security (23xx)",
-  "24": "System security (24xx)",
-  "25": "Resilient networks and systems (25xx)",
-  "31": "Security monitoring (31xx)",
-  "32": "Proactive security event discovery (32xx)",
+  "22": "Accounts, identities and access (22xx)",
+  "23": "Protecting stored and transmitted data (23xx)",
+  "24": "Hardening and system protection (24xx)",
+  "25": "Network and service resilience (25xx)",
+  "31": "Monitoring for security events (31xx)",
+  "32": "Finding threats proactively (32xx)",
 };
 
 export const DEF_STAN_05_138: FrameworkDefinition = {
@@ -26,7 +26,7 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
   controls: {
     "2202": {
       id: "2202",
-      title: "Device management",
+      title: "Trusted managed devices",
       summary:
         "Devices that access the network are known and trusted through integrity checks on managed platforms.",
       tier: "Level 2 to Level 3",
@@ -47,7 +47,7 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     },
     "2317": {
       id: "2317",
-      title: "Endpoint encryption",
+      title: "Full disk encryption on endpoints",
       summary: "Full disk encryption is enforced on managed endpoints.",
       tier: "Level 1 to Level 3",
     },
@@ -60,14 +60,14 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     },
     "2401": {
       id: "2401",
-      title: "Secure configuration",
+      title: "Platform integrity protections",
       summary:
         "Platform integrity protections such as Secure Boot, code integrity and System Integrity Protection are enforced.",
       tier: "Level 1 to Level 3",
     },
     "2405": {
       id: "2405",
-      title: "Patch management",
+      title: "Operating system update enforcement",
       summary:
         "Operating system updates are applied automatically and minimum supported versions are enforced.",
       tier: "Level 1 to Level 3",
@@ -81,14 +81,14 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     },
     "2418": {
       id: "2418",
-      title: "Baseline configuration and hardening",
+      title: "Managed hardening baselines",
       summary:
         "Hardening settings that reduce unnecessary functionality are applied through managed baselines.",
       tier: "Level 1 to Level 3",
     },
     "2426": {
       id: "2426",
-      title: "Anti-malware capabilities",
+      title: "Real-time anti-malware protection",
       summary:
         "Real-time anti-malware protection is enforced on managed endpoints.",
       tier: "Level 1 to Level 3",
@@ -102,7 +102,7 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     },
     "2507": {
       id: "2507",
-      title: "Deny traffic by default",
+      title: "Default-deny host firewall rules",
       summary:
         "Host firewalls deny network traffic that is not explicitly allowed.",
       tier: "Level 1 to Level 3",

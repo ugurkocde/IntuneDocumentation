@@ -95,7 +95,16 @@ describe("ComplianceView", () => {
     expect(
       screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("button")).toHaveLength(5);
+    expect(
+      screen.getByRole("button", { name: "Def Stan 05-138" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cyber Essentials" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "NIST SP 800-171" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(8);
     expect(
       screen.queryByRole("button", { name: /Download report/ }),
     ).not.toBeInTheDocument();

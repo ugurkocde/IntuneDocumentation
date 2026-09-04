@@ -10,6 +10,9 @@ import {
   NIST_800_53,
   NIST_CSF,
   SOC_2,
+  CYBER_ESSENTIALS,
+  DEF_STAN_05_138,
+  NIST_800_171,
 } from "../compliance";
 import { defenderForEndpointPolicyFixture } from "./fixtures/intune-beta";
 
@@ -564,12 +567,51 @@ describe("framework assessment", () => {
       "bsi-it-grundschutz",
       "iso-27001-2022",
       "soc2-tsc",
+      "def-stan-05-138-i4",
+      "cyber-essentials-v3",
+      "nist-800-171-r2",
     ]);
     for (const framework of assessment.frameworks) {
       expect(framework.summary.withoutEvidence).toBe(
         framework.summary.totalControls,
       );
     }
+  });
+
+  it("assesses Def Stan 05-138 controls with their risk profile levels", () => {
+    const assessment = assessCompliance(emptyExportData());
+    const defStan = assessment.frameworks.find(
+      (framework) => framework.framework.id === "def-stan-05-138-i4",
+    );
+    expect(defStan).toBeDefined();
+    const encryption = defStan?.controls.find(
+      (control) => control.control.id === "2317",
+    );
+    expect(encryption?.control.tier).toBe("Level 1 to Level 3");
+    expect(encryption?.capabilityIds).toEqual([
+      "windows-disk-encryption",
+      "macos-disk-encryption",
+      "android-storage-encryption",
+    ]);
+    expect(defStan?.controls.every((control) => control.control.tier)).toBe(
+      true,
+    );
+  });
+
+  it("uses the five Cyber Essentials themes as control identifiers", () => {
+    const assessment = assessCompliance(emptyExportData());
+    const cyberEssentials = assessment.frameworks.find(
+      (framework) => framework.framework.id === "cyber-essentials-v3",
+    );
+    expect(
+      cyberEssentials?.controls.map((control) => control.control.id),
+    ).toEqual([
+      "Firewalls",
+      "Malware protection",
+      "Secure configuration",
+      "Security update management",
+      "User access control",
+    ]);
   });
 
   it("keeps capability catalog and framework mappings consistent", () => {
@@ -583,6 +625,9 @@ describe("framework assessment", () => {
       BSI_IT_GRUNDSCHUTZ,
       ISO_27001,
       SOC_2,
+      DEF_STAN_05_138,
+      CYBER_ESSENTIALS,
+      NIST_800_171,
     ]) {
       for (const [capabilityId, controlIds] of Object.entries(
         framework.mappings,

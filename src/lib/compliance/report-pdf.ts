@@ -6,6 +6,7 @@ import {
   compareControlIds,
   COMPLIANCE_RULESET_VERSION,
 } from "./engine";
+import { DEF_STAN_FAMILIES } from "./frameworks/def-stan-05-138";
 import type {
   CapabilityEvidence,
   CapabilityResult,
@@ -20,7 +21,10 @@ export type ComplianceFrameworkId =
   | "nist-csf-2"
   | "bsi-it-grundschutz"
   | "iso-27001-2022"
-  | "soc2-tsc";
+  | "soc2-tsc"
+  | "def-stan-05-138-i4"
+  | "cyber-essentials-v3"
+  | "nist-800-171-r2";
 
 type Locale = "en" | "de";
 type RgbColor = [number, number, number];
@@ -200,6 +204,9 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "bsi-it-grundschutz": "BSI-IT-Grundschutz",
       "iso-27001-2022": "ISO-27001",
       "soc2-tsc": "SOC-2",
+      "def-stan-05-138-i4": "Def-Stan-05-138",
+      "cyber-essentials-v3": "Cyber-Essentials",
+      "nist-800-171-r2": "NIST-800-171-R2",
     },
   },
   de: {
@@ -325,6 +332,9 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "bsi-it-grundschutz": "BSI-IT-Grundschutz",
       "iso-27001-2022": "ISO-27001",
       "soc2-tsc": "SOC-2",
+      "def-stan-05-138-i4": "Def-Stan-05-138",
+      "cyber-essentials-v3": "Cyber-Essentials",
+      "nist-800-171-r2": "NIST-800-171-R2",
     },
   },
 };
@@ -455,6 +465,9 @@ const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "bsi-it-grundschutz": "BSI",
   "iso-27001-2022": "ISO",
   "soc2-tsc": "SOC",
+  "def-stan-05-138-i4": "DEF",
+  "cyber-essentials-v3": "CE",
+  "nist-800-171-r2": "N171",
 };
 
 function frameworkReportCode(frameworkId: ComplianceFrameworkId): string {
@@ -568,7 +581,12 @@ function buildOverviewRows(
     const prefix =
       frameworkId === "nist-800-53-r5"
         ? control.control.id.split("-")[0]
-        : control.control.id.split(".")[0];
+        : frameworkId === "nist-800-171-r2"
+          ? control.control.id.split(".").slice(0, 2).join(".")
+          : frameworkId === "def-stan-05-138-i4"
+            ? (DEF_STAN_FAMILIES[control.control.id.slice(0, 2)] ??
+              control.control.id.slice(0, 2))
+            : control.control.id.split(".")[0];
     if (!prefix) continue;
     const existing = controlsByPrefix.get(prefix);
     if (existing) existing.push(control);

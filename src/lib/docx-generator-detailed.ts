@@ -964,7 +964,7 @@ export async function generateDetailedDOCX(
     complianceChildren.push(heading1("Compliance Evidence Preview"));
     complianceChildren.push(
       bodyText(
-        "This preview maps the exported configuration to technical evidence for NIST SP 800-53 (Rev. 5), NIST CSF 2.0, and BSI IT-Grundschutz. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
+        "This preview maps the exported configuration to technical evidence for each supported compliance framework. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
       ),
     );
     complianceChildren.push(spacer());

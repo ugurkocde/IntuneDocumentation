@@ -1,7 +1,8 @@
 # Compliance evidence engine
 
 Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
-SP 800-53 rev 5, NIST CSF 2.0, and BSI IT-Grundschutz.
+SP 800-53 rev 5, NIST SP 800-171 rev 2, NIST CSF 2.0, BSI IT-Grundschutz,
+UK MOD Def Stan 05-138 Issue 4, and NCSC Cyber Essentials.
 
 ## Design rules
 
@@ -30,8 +31,13 @@ SP 800-53 rev 5, NIST CSF 2.0, and BSI IT-Grundschutz.
    requirement level, verified against the Edition 2023 Baustein PDFs, while
    the remaining Bausteine stay at Baustein level until verified the same way.
    Only requirements with technical Intune evidence are listed as controls;
-   organizational requirements are intentionally absent. Do not add frameworks
-   that require a commercial license (for example CIS Benchmarks).
+   organizational requirements are intentionally absent. Def Stan 05-138 is
+   marked "Copying Only as Agreed with DStan", so it is referenced by control
+   identifier with original titles and summaries, never the official wording.
+   Cyber Essentials is Crown copyright under the Open Government Licence v3.0;
+   the five themes serve as identifiers because the document has none, and the
+   logo is excluded from the licence. Do not add frameworks that require a
+   commercial license (for example CIS Benchmarks or CIS Controls).
 
 ## Adding a signal
 

@@ -78,6 +78,27 @@ const FRAMEWORK_OPTIONS: ReadonlyArray<{
     description:
       "Baseline safeguards for systematic information security management.",
   },
+  {
+    id: "def-stan-05-138-i4",
+    label: "Def Stan 05-138",
+    shortLabel: "Def Stan",
+    description:
+      "UK MOD supplier controls under DEFCON 658, with the Cyber Risk Profile levels at which each applies.",
+  },
+  {
+    id: "cyber-essentials-v3",
+    label: "Cyber Essentials",
+    shortLabel: "Cyber Essentials",
+    description:
+      "The five NCSC control themes mapped to managed-device configuration evidence.",
+  },
+  {
+    id: "nist-800-171-r2",
+    label: "NIST SP 800-171",
+    shortLabel: "NIST 800-171",
+    description:
+      "Requirements for protecting controlled unclassified information, as referenced by CMMC 2.0 Level 2.",
+  },
 ];
 
 function isFrameworkId(value: string | null): value is FrameworkId {

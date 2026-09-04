@@ -206,6 +206,48 @@ describe("compliance report PDF", () => {
     expect(complianceReportFileName("soc2-tsc")).toMatch(
       /Compliance-Report-SOC-2-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
     );
+    expect(complianceReportFileName("def-stan-05-138-i4")).toMatch(
+      /Compliance-Report-Def-Stan-05-138-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
+    expect(complianceReportFileName("cyber-essentials-v3")).toMatch(
+      /Compliance-Report-Cyber-Essentials-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
+    expect(complianceReportFileName("nist-800-171-r2")).toMatch(
+      /Compliance-Report-NIST-800-171-R2-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
+  });
+
+  it("renders English Def Stan 05-138, Cyber Essentials and NIST 800-171 reports", async () => {
+    const defStanReport = await generateComplianceReportPDF(
+      createExportData(),
+      {
+        frameworkId: "def-stan-05-138-i4",
+      },
+    );
+    const defStanText = extractPdfStreamText(defStanReport);
+    expect(defStanText).toContain("Def Stan 05-138");
+    expect(defStanText).toContain("2317");
+    expect(defStanText).toContain("Level 1 to Level 3");
+    expect(defStanText).toContain("not a compliance certification");
+
+    const cyberEssentialsReport = await generateComplianceReportPDF(
+      createExportData(),
+      { frameworkId: "cyber-essentials-v3" },
+    );
+    const cyberEssentialsText = extractPdfStreamText(cyberEssentialsReport);
+    expect(cyberEssentialsText).toContain("Cyber Essentials");
+    expect(cyberEssentialsText).toContain("Security update management");
+    expect(cyberEssentialsText).toContain("Open Government Licence");
+
+    const nist171Report = await generateComplianceReportPDF(
+      createExportData(),
+      {
+        frameworkId: "nist-800-171-r2",
+      },
+    );
+    const nist171Text = extractPdfStreamText(nist171Report);
+    expect(nist171Text).toContain("NIST SP 800-171");
+    expect(nist171Text).toContain("3.13.16");
   });
 
   it("includes every body evidence reference in the appendix", async () => {

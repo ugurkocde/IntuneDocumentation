@@ -132,7 +132,7 @@ describe("compliance report PDF", () => {
       "Technischer Konfigurationsnachweis erkannt",
     );
     expect(renderedText).toContain("SYS.3.2.2.A17");
-    expect(renderedText).toContain("Kein technischer Nachweis gefunden");
+    expect(renderedText).toContain("Nicht bewertet");
     expect(renderedText).toContain("ersetzt keine");
     expect(renderedText).toContain("Assigned BitLocker evidence policy");
     expect(renderedText).toContain("Einstellungskatalog");
@@ -295,7 +295,8 @@ describe("compliance report PDF", () => {
         {
           id: "unmapped-unassigned",
           displayName: "Unmapped unassigned configuration",
-          "@odata.type": "#microsoft.graph.macOSEndpointProtectionConfiguration",
+          "@odata.type":
+            "#microsoft.graph.macOSEndpointProtectionConfiguration",
           ...unassignedSettings,
           assignments: [],
         },
@@ -306,9 +307,11 @@ describe("compliance report PDF", () => {
       );
       expect(unmappedText).toContain("Assigned deviating configurations: 0");
       expect(unmappedText).toContain(
-        "Compliant configurations without assignment: 0",
+        "Configured settings without assignment: 0",
       );
-      expect(unmappedText).toContain("No prioritized findings were identified.");
+      expect(unmappedText).toContain(
+        "No prioritized findings were identified.",
+      );
       expect(unmappedText).not.toContain("Unmapped assigned deviation");
       expect(unmappedText).not.toContain("Unmapped unassigned configuration");
 
@@ -342,9 +345,7 @@ describe("compliance report PDF", () => {
         await generateComplianceReportPDF(data, { frameworkId }),
       );
       expect(mixedText).toContain("Assigned deviating configurations: 1.");
-      expect(mixedText).toContain(
-        "Compliant configurations without assignment: 1.",
-      );
+      expect(mixedText).toContain("Configured settings without assignment: 1.");
       expect(mixedText).toContain("Mapped assigned deviation");
       expect(mixedText).toContain("Mapped unassigned configuration");
       expect(mixedText).not.toContain("Unmapped assigned deviation");
@@ -398,8 +399,14 @@ describe("compliance report PDF", () => {
     });
 
     for (const ordering of [
-      [policy("zzz-policy", "Zebra Baseline"), policy("aaa-policy", "Alpha Baseline")],
-      [policy("aaa-policy", "Alpha Baseline"), policy("zzz-policy", "Zebra Baseline")],
+      [
+        policy("zzz-policy", "Zebra Baseline"),
+        policy("aaa-policy", "Alpha Baseline"),
+      ],
+      [
+        policy("aaa-policy", "Alpha Baseline"),
+        policy("zzz-policy", "Zebra Baseline"),
+      ],
     ]) {
       const data = { ...createExportData(), settingsCatalog: ordering };
       const bytes = await generateComplianceReportPDF(data, {
@@ -435,5 +442,27 @@ describe("compliance report PDF", () => {
     for (const capability of COMPLIANCE_CAPABILITIES) {
       expect(GERMAN_CAPABILITY_NAMES[capability.id]).toBeTruthy();
     }
+  });
+
+  it("does not label counter-evidence with an unreadable assignment as unassigned", async () => {
+    const data = createExportData();
+    data.deviceConfigurations = [
+      {
+        id: "unknown-firewall",
+        displayName: "Unknown firewall assignment",
+        "@odata.type":
+          "#microsoft.graph.windows10EndpointProtectionConfiguration",
+        firewallProfileDomain: { firewallEnabled: "blocked" },
+        assignments: [],
+        collectionStatus: { assignments: "incomplete" },
+      },
+    ];
+    const text = extractPdfStreamText(
+      await generateComplianceReportPDF(data, {
+        frameworkId: "iso-27001-2022",
+      }),
+    );
+    expect(text).toContain("blocked \\(assignment unknown\\)");
+    expect(text).not.toContain("blocked \\(not assigned\\)");
   });
 });

@@ -7,6 +7,7 @@ export {
   COMPLIANCE_RULESET_VERSION,
 } from "./engine";
 export { COMPLIANCE_CAPABILITIES } from "./capabilities";
+export { createEvidenceManifest } from "./manifest";
 export { NIST_800_53 } from "./frameworks/nist-800-53";
 export { NIST_CSF } from "./frameworks/nist-csf";
 export { BSI_IT_GRUNDSCHUTZ } from "./frameworks/bsi-it-grundschutz";
@@ -18,7 +19,11 @@ export {
 } from "./frameworks/def-stan-05-138";
 export { CYBER_ESSENTIALS } from "./frameworks/cyber-essentials";
 export { NIST_800_171 } from "./frameworks/nist-800-171";
+export { NIST_800_171_R3 } from "./frameworks/nist-800-171-r3";
 export type {
+  AssessmentScope,
+  CollectionCoverage,
+  CompliancePlatform,
   CapabilityEvidence,
   CapabilityResult,
   CapabilityStatus,

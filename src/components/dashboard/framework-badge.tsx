@@ -6,7 +6,8 @@ export type FrameworkId =
   | "soc2-tsc"
   | "def-stan-05-138-i4"
   | "cyber-essentials-v3"
-  | "nist-800-171-r2";
+  | "nist-800-171-r2"
+  | "nist-800-171-r3";
 
 // Text-forward wordmarks only: official logos, insignia, and association marks
 // must not be reproduced. The standards are named in our own typography for
@@ -36,7 +37,12 @@ const WORDMARK_DETAILS: Record<
   "nist-800-171-r2": {
     fill: "#1E40AF",
     line1: "NIST",
-    line2: "SP 800-171",
+    line2: "171 Rev. 2",
+  },
+  "nist-800-171-r3": {
+    fill: "#1E3A8A",
+    line1: "NIST",
+    line2: "171 Rev. 3",
   },
 };
 

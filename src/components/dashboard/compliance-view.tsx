@@ -22,6 +22,13 @@ import {
 } from "~/components/dashboard/framework-badge";
 import type { IntuneConfigurations } from "~/components/dashboard/types";
 import type { DetailedExportData } from "~/lib/configuration-analyzer";
+import { ComplianceContext } from "./compliance-context";
+import { assignmentDetails } from "~/lib/compliance/assignments";
+import {
+  CAPABILITY_STATUS_LABELS,
+  frameworkCoverageLabel,
+} from "~/lib/compliance/presentation";
+import type { AssessmentScope } from "~/lib/compliance/types";
 import { assessCompliance, compareControlIds } from "~/lib/compliance";
 import type {
   CapabilityResult,
@@ -94,10 +101,17 @@ const FRAMEWORK_OPTIONS: ReadonlyArray<{
   },
   {
     id: "nist-800-171-r2",
-    label: "NIST SP 800-171",
-    shortLabel: "NIST 800-171",
+    label: "NIST SP 800-171 Rev. 2",
+    shortLabel: "NIST 171 R2",
     description:
       "Requirements for protecting controlled unclassified information, as referenced by CMMC 2.0 Level 2.",
+  },
+  {
+    id: "nist-800-171-r3",
+    label: "NIST SP 800-171 Rev. 3",
+    shortLabel: "NIST 171 R3",
+    description:
+      "May 2024 requirements for protecting controlled unclassified information. Organization-defined parameters need separate review. Select Revision 2 for CMMC Level 2.",
   },
 ];
 
@@ -122,6 +136,9 @@ function clearFrameworkSelection() {
 }
 
 const CONTROL_STATUS_ORDER: Record<ControlStatus, number> = {
+  notApplicable: 5,
+  notAssessed: -1,
+  conflictingEvidence: -2,
   evidenceFound: 0,
   partialEvidence: 1,
   noEvidence: 2,
@@ -131,6 +148,21 @@ const CONTROL_STATUS_DETAILS: Record<
   ControlStatus,
   { label: string; chipClassName: string; dotClassName: string }
 > = {
+  notApplicable: {
+    label: "Outside selected scope",
+    chipClassName: "bg-slate-100 text-slate-700",
+    dotClassName: "bg-slate-500",
+  },
+  notAssessed: {
+    label: "Not assessed",
+    chipClassName: "bg-amber-50 text-amber-800",
+    dotClassName: "bg-amber-600",
+  },
+  conflictingEvidence: {
+    label: "Mixed policy evidence",
+    chipClassName: "bg-red-50 text-red-800",
+    dotClassName: "bg-red-600",
+  },
   evidenceFound: {
     label: "Configuration evidence",
     chipClassName: "bg-emerald-50 text-emerald-800",
@@ -146,13 +178,6 @@ const CONTROL_STATUS_DETAILS: Record<
     chipClassName: "bg-slate-100 text-slate-700",
     dotClassName: "bg-slate-500",
   },
-};
-
-const CAPABILITY_STATUS_LABELS: Record<CapabilityStatus, string> = {
-  enforced: "Compliant configuration assigned",
-  configuredNotAssigned: "Configured, not assigned",
-  disabledByPolicy: "Deviating configuration detected",
-  noEvidence: "No evidence",
 };
 
 function hasLegacyConfigurations(configurations: IntuneConfigurations) {
@@ -208,7 +233,9 @@ function EvidenceList({ capability }: { capability: CapabilityResult }) {
   if (capability.evidence.length === 0) {
     return (
       <p className="text-petrol-600 mt-3 text-xs">
-        No matching Intune policy detected.
+        {capability.status === "collectionIncomplete"
+          ? "Relevant policy data is incomplete. Evidence could not be assessed."
+          : "No recognized setting detected in the available policy data."}
       </p>
     );
   }
@@ -265,7 +292,7 @@ function EvidenceList({ capability }: { capability: CapabilityResult }) {
               </div>
               <div className="min-w-0">
                 <p className="text-[9px] font-bold tracking-[0.12em] uppercase opacity-65">
-                  Observed value
+                  Configured value
                 </p>
                 <p className="mt-1 font-mono text-[10px] leading-4 break-all">
                   {isAssignedCounterEvidence
@@ -277,10 +304,19 @@ function EvidenceList({ capability }: { capability: CapabilityResult }) {
                 <p className="text-[9px] font-bold tracking-[0.12em] uppercase opacity-65">
                   Assignment
                 </p>
-                <p className="mt-1 text-xs break-words">{assignment}</p>
+                <p className="mt-1 text-xs break-words">
+                  {assignmentDetails(evidence.assignment).join("; ") ||
+                    assignment}
+                  . Effective coverage unverified.
+                </p>
               </div>
             </div>
 
+            <p className="mt-2 text-[11px]">
+              Evidence type: {evidence.kind}. Policy version:{" "}
+              {evidence.policyVersion ?? "unknown"}. Last modified:{" "}
+              {evidence.policyModifiedAt ?? "unknown"}.
+            </p>
             {(isCounterEvidence || evidence.note) && (
               <div className="mt-3 flex flex-wrap items-start gap-2 border-t border-current/10 pt-3">
                 {isCounterEvidence && (
@@ -291,7 +327,9 @@ function EvidenceList({ capability }: { capability: CapabilityResult }) {
                   >
                     {isAssignedCounterEvidence
                       ? "Deviating configuration detected and assigned (risk)"
-                      : "Deviating configuration detected, but not assigned"}
+                      : evidence.assignment.state === "unknown"
+                        ? "Non-enforcing setting; assignment unknown"
+                        : "Deviating configuration detected, but not assigned"}
                   </span>
                 )}
                 {evidence.note && (
@@ -331,6 +369,7 @@ function ControlRow({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={panelId}
+        aria-label={`${control.control.id} ${control.control.title}: ${CONTROL_STATUS_DETAILS[control.status].label}`}
         className="hover:bg-mint-50/60 flex min-h-16 w-full cursor-pointer items-start gap-3 px-4 py-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none focus-visible:ring-inset sm:items-center sm:px-5"
       >
         <ChevronDown
@@ -362,6 +401,16 @@ function ControlRow({
           id={panelId}
           className="border-petrol-950/6 divide-petrol-950/6 divide-y border-t bg-slate-50/55 px-4 sm:px-5"
         >
+          {control.unassessedAspects.length > 0 && (
+            <div className="py-4 text-xs text-amber-900">
+              <p className="font-semibold">Still to assess</p>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                {control.unassessedAspects.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {control.capabilityIds.map((capabilityId) => {
             const capability = capabilitiesById.get(capabilityId);
             if (!capability) return null;
@@ -419,7 +468,7 @@ function SummaryCard({
         {count.toLocaleString()}
       </p>
       <p className="text-petrol-600 mt-1 text-[11px] tabular-nums">
-        of {total.toLocaleString()} assessable controls
+        of {total.toLocaleString()} controls in scope
       </p>
     </div>
   );
@@ -467,13 +516,15 @@ export function ComplianceView({
 }: ComplianceViewProps) {
   const { accounts } = useMsal();
   const prefersReducedMotion = useReducedMotion();
+  const [scope, setScope] = useState<AssessmentScope>({});
   const assessmentData = useMemo(
     () =>
       ({
         ...configurations,
+        assessmentScope: scope,
         groupNames: groupNames ?? undefined,
       }) as unknown as DetailedExportData,
-    [configurations, groupNames],
+    [configurations, groupNames, scope],
   );
   const assessment = useMemo(
     () => assessCompliance(assessmentData),
@@ -618,10 +669,9 @@ export function ComplianceView({
       const { generateComplianceReportPDF, complianceReportFileName } =
         await import("~/lib/compliance/report-pdf");
       const bytes = await generateComplianceReportPDF(assessmentData, {
-          frameworkId: selectedFrameworkId,
-          metadata: tenantLabel ? { tenantLabel } : undefined,
-        },
-      );
+        frameworkId: selectedFrameworkId,
+        metadata: tenantLabel ? { tenantLabel } : undefined,
+      });
       const blob = new Blob([new Uint8Array(bytes)], {
         type: "application/pdf",
       });
@@ -767,11 +817,7 @@ export function ComplianceView({
                               },
                             }
                       }
-                      className={`border-petrol-950/8 shadow-card hover:bg-mint-50/35 group min-h-56 cursor-pointer touch-manipulation rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow] duration-200 hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none lg:col-span-2 ${
-                        framework.id === "cyber-essentials-v3"
-                          ? "lg:col-start-2 lg:row-start-3"
-                          : ""
-                      }`}
+                      className="border-petrol-950/8 shadow-card hover:bg-mint-50/35 group min-h-56 cursor-pointer touch-manipulation rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow] duration-200 hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none motion-reduce:transition-none lg:col-span-2"
                     >
                       <motion.span
                         layoutId={
@@ -792,6 +838,14 @@ export function ComplianceView({
                       <span className="text-petrol-600 mt-3 block text-sm leading-6">
                         {framework.description}
                       </span>
+                      {assessmentFramework?.framework.totalRequirements !==
+                        undefined && (
+                        <span className="mt-3 block text-xs font-semibold text-teal-700">
+                          {assessmentFramework.summary.totalControls} of{" "}
+                          {assessmentFramework.framework.totalRequirements}{" "}
+                          requirements mapped; supporting evidence only.
+                        </span>
+                      )}
                     </motion.button>
                   );
                 })}
@@ -984,6 +1038,14 @@ export function ComplianceView({
               }
             />
 
+            <ComplianceContext
+              assessment={assessment}
+              data={assessmentData}
+              scope={scope}
+              onScopeChange={setScope}
+              showRiskLevel={selectedFrameworkId === "def-stan-05-138-i4"}
+            />
+
             {isEmpty ? (
               <div className="border-petrol-950/6 shadow-card rounded-2xl border bg-white px-6 py-12 text-center">
                 <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
@@ -1028,22 +1090,36 @@ export function ComplianceView({
                     <SummaryCard
                       label="Evidence"
                       count={selectedFramework.summary.withEvidence}
-                      total={selectedFramework.summary.totalControls}
+                      total={selectedFramework.summary.applicableControls}
                       tone="green"
                     />
                     <SummaryCard
                       label="Partial"
                       count={selectedFramework.summary.partial}
-                      total={selectedFramework.summary.totalControls}
+                      total={selectedFramework.summary.applicableControls}
                       tone="amber"
                     />
                     <SummaryCard
                       label="No evidence"
                       count={selectedFramework.summary.withoutEvidence}
-                      total={selectedFramework.summary.totalControls}
+                      total={selectedFramework.summary.applicableControls}
                       tone="slate"
                     />
                   </div>
+
+                  <p className="text-xs text-slate-600">
+                    {selectedFramework.summary.conflicting} mixed evidence;{" "}
+                    {selectedFramework.summary.notAssessed} not assessed;{" "}
+                    {selectedFramework.summary.notApplicable} outside scope.
+                    Counts refer to selected mapped entries, not full framework
+                    coverage.
+                  </p>
+                  {selectedFramework.framework.totalRequirements !==
+                    undefined && (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+                      {frameworkCoverageLabel(selectedFramework)}
+                    </p>
+                  )}
 
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -1085,6 +1161,21 @@ export function ComplianceView({
                   {selectedFramework.framework.note && (
                     <p className="text-petrol-600 text-xs leading-5">
                       {selectedFramework.framework.note}
+                    </p>
+                  )}
+
+                  {selectedFramework.framework.source && (
+                    <p className="text-petrol-600 text-xs">
+                      <a
+                        href={selectedFramework.framework.source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-teal-700 underline underline-offset-2"
+                      >
+                        Official publisher reference
+                      </a>{" "}
+                      (reference reviewed{" "}
+                      {selectedFramework.framework.source.verifiedAt})
                     </p>
                   )}
 

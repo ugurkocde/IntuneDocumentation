@@ -1,3 +1,5 @@
+import { LEGACY_SIGNALS } from "./legacy-signals";
+import { ADDITIONAL_CAPABILITIES } from "./additional-capabilities";
 import type { ComplianceCapability } from "./types";
 
 // Every signal asserts a concrete Intune setting with the value that actually
@@ -5,7 +7,7 @@ import type { ComplianceCapability } from "./types";
 // non-enforcing value is recorded as counter-evidence via disabledWhen.
 // Settings not listed here are never counted, in either direction.
 
-export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
+const CORE_CAPABILITIES: readonly ComplianceCapability[] = [
   {
     id: "windows-disk-encryption",
     platform: "windows",
@@ -77,13 +79,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
       {
         source: "graphProperty",
         odataTypes: ["windows10CompliancePolicy"],
-        propertyPath: "defenderEnabled",
-        enforcedWhen: { kind: "equals", value: true },
-      },
-      {
-        source: "graphProperty",
-        odataTypes: ["windows10CompliancePolicy"],
-        propertyPath: "antivirusRequired",
+        propertyPath: "rtpEnabled",
         enforcedWhen: { kind: "equals", value: true },
       },
     ],
@@ -92,6 +88,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
     id: "windows-firewall",
     platform: "windows",
     name: "Host firewall (Windows Firewall)",
+    requiredGroups: ["domain", "private", "public"],
     description:
       "The Windows Firewall is required to be active on managed devices.",
     signals: [
@@ -100,6 +97,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
         source: "settingsCatalog",
         settingDefinitionId:
           "vendor_msft_firewall_mdmstore_domainprofile_enablefirewall",
+        requirementGroup: "domain",
         enforcedWhen: {
           kind: "equals",
           value:
@@ -115,6 +113,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
         source: "settingsCatalog",
         settingDefinitionId:
           "vendor_msft_firewall_mdmstore_privateprofile_enablefirewall",
+        requirementGroup: "private",
         enforcedWhen: {
           kind: "equals",
           value:
@@ -130,6 +129,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
         source: "settingsCatalog",
         settingDefinitionId:
           "vendor_msft_firewall_mdmstore_publicprofile_enablefirewall",
+        requirementGroup: "public",
         enforcedWhen: {
           kind: "equals",
           value:
@@ -147,6 +147,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
         source: "graphProperty",
         odataTypes: ["windows10EndpointProtectionConfiguration"],
         propertyPath: "firewallProfileDomain.firewallEnabled",
+        requirementGroup: "domain",
         enforcedWhen: { kind: "equals", value: "allowed" },
         disabledWhen: { kind: "equals", value: "blocked" },
       },
@@ -154,6 +155,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
         source: "graphProperty",
         odataTypes: ["windows10EndpointProtectionConfiguration"],
         propertyPath: "firewallProfilePrivate.firewallEnabled",
+        requirementGroup: "private",
         enforcedWhen: { kind: "equals", value: "allowed" },
         disabledWhen: { kind: "equals", value: "blocked" },
       },
@@ -161,6 +163,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
         source: "graphProperty",
         odataTypes: ["windows10EndpointProtectionConfiguration"],
         propertyPath: "firewallProfilePublic.firewallEnabled",
+        requirementGroup: "public",
         enforcedWhen: { kind: "equals", value: "allowed" },
         disabledWhen: { kind: "equals", value: "blocked" },
       },
@@ -533,7 +536,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
   {
     id: "ios-jailbreak-block",
     platform: "ios",
-    name: "Jailbroken devices blocked",
+    name: "Jailbreak compliance requirement",
     description: "Jailbroken iOS devices are marked noncompliant.",
     signals: [
       {
@@ -616,13 +619,14 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
     platform: "android",
     name: "Device integrity (Android)",
     description:
-      "Rooted Android devices are blocked or Play Integrity attestation is required.",
+      "Android compliance policy requires an unrooted device or basic integrity attestation.",
     signals: [
       {
         source: "graphProperty",
         odataTypes: [
           "androidCompliancePolicy",
           "androidWorkProfileCompliancePolicy",
+          "androidDeviceOwnerCompliancePolicy",
         ],
         propertyPath: "securityBlockJailbrokenDevices",
         enforcedWhen: { kind: "equals", value: true },
@@ -632,6 +636,7 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
         odataTypes: [
           "androidCompliancePolicy",
           "androidWorkProfileCompliancePolicy",
+          "androidDeviceOwnerCompliancePolicy",
         ],
         propertyPath: "securityRequireSafetyNetAttestationBasicIntegrity",
         enforcedWhen: { kind: "equals", value: true },
@@ -684,4 +689,11 @@ export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] = [
       },
     ],
   },
+  ...ADDITIONAL_CAPABILITIES,
 ];
+
+export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] =
+  CORE_CAPABILITIES.map((capability) => ({
+    ...capability,
+    signals: [...capability.signals, ...(LEGACY_SIGNALS[capability.id] ?? [])],
+  }));

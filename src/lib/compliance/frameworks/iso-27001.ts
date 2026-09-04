@@ -7,57 +7,93 @@ export const ISO_27001: FrameworkDefinition = {
   name: "ISO/IEC 27001",
   version: "2022, Annex A",
   note: "Device-management evidence for selected technological (Annex A clause 8) controls, referenced by control number with original summaries. Organizational, people, and physical controls are out of scope for an Intune tenant export.",
+  source: {
+    url: "https://www.iso.org/standard/27001",
+    verifiedAt: "2026-09-04",
+  },
   controls: {
     "8.1": {
       id: "8.1",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "User endpoint devices",
       summary:
         "Endpoint devices that handle organizational information are secured through managed protections.",
     },
     "8.5": {
       id: "8.5",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "Secure authentication",
       summary:
         "Authentication is required before users can access managed devices, including through device-unlock controls.",
     },
     "8.7": {
       id: "8.7",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "Protection against malware",
       summary:
         "Antimalware protections are implemented and maintained on managed endpoints.",
     },
     "8.8": {
       id: "8.8",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "Technical vulnerability management",
       summary:
         "Technical vulnerabilities are addressed through timely operating system updates and enforced minimum versions.",
     },
     "8.9": {
       id: "8.9",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "Configuration management",
       summary:
         "Secure device configurations are defined and enforced across managed platforms.",
     },
     "8.19": {
       id: "8.19",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "Software installation control",
       summary:
         "Software installation on managed systems is limited to approved sources and trusted applications.",
     },
     "8.20": {
       id: "8.20",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "Network security",
       summary:
         "Managed device network connections are protected with enforced host firewall controls.",
     },
     "8.24": {
       id: "8.24",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
       title: "Use of cryptography",
       summary:
         "Cryptographic safeguards protect information stored on managed devices.",
     },
   },
   mappings: {
+    "windows-virtualization-security": [],
+    "windows-credential-theft-protection": [],
+
+    "windows-antivirus-required": ["8.7"],
+    "windows-periodic-antimalware-scan": ["8.7"],
+    "windows-quality-update-deadline": ["8.8"],
+    "windows-application-control": ["8.19"],
+    "windows-behavior-monitoring": ["8.7"],
+    "windows-network-inspection": ["8.7"],
+    "windows-memory-integrity": ["8.9"],
+    "windows-credential-guard": ["8.5"],
+    "tenant-mfa-required": ["8.5"],
+    "tenant-compliant-device-required": ["8.1"],
+    "ios-app-data-transfer": ["8.1"],
+    "android-app-data-transfer": ["8.1"],
+
     "windows-disk-encryption": ["8.1", "8.24"],
     "macos-disk-encryption": ["8.1", "8.24"],
     "android-storage-encryption": ["8.1", "8.24"],

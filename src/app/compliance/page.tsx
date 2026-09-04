@@ -52,7 +52,12 @@ const frameworks = [
   {
     name: "NIST SP 800-171 (Rev. 2)",
     detail:
-      "Requirements for protecting controlled unclassified information, in the revision incorporated into CMMC 2.0 Level 2, such as 3.13.16 (CUI at rest) and 3.14.2 (malicious code protection).",
+      "Supporting Intune evidence for 11 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
+  },
+  {
+    name: "NIST SP 800-171 (Rev. 3)",
+    detail:
+      "Supporting Intune evidence for 11 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
   },
   {
     name: "BSI IT-Grundschutz",

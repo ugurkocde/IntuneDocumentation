@@ -98,6 +98,9 @@ export function useExportHandler({
 
       const selectedSections = getSelectedSections();
       const selectedData = {
+        collectedAt: configurations?.collectedAt,
+        collectionStartedAt: configurations?.collectionStartedAt,
+        collectionSkippedFamilies: configurations?.collectionSkippedFamilies,
         sections: selectedSections,
         fetchErrors: getRelevantFetchErrors(selectedSections),
         settingsCatalog:

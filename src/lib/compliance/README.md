@@ -118,6 +118,14 @@ Policy-level assignment status survives exported data, so a failed request
 cannot become a confirmed empty assignment. Security baselines now collect
 their actual `/settings` relation separately from category metadata.
 
+Compliance scheduled actions are read by expanding the parent policy with
+`scheduledActionsForRule($expand=scheduledActionConfigurations)`, avoiding the
+direct relation GET rejected by some Intune backends. Both expanded collections
+follow continuation links. Missing or failed action reads are explicitly marked
+incomplete; successfully collected policy settings, assignments and partial
+action results are retained. This request pattern is also used by
+[Microsoft365DSC](https://github.com/microsoft/Microsoft365DSC/blob/Dev/Modules/Microsoft365DSC/DscResources/MSFT_IntuneDeviceCompliancePolicyWindows10/MSFT_IntuneDeviceCompliancePolicyWindows10.psm1).
+
 Supported adapters are Settings Catalog values, exact Graph properties,
 verified OMA-URIs, Administrative Template definition IDs and security baseline
 definition IDs. The last two require individually verified identifier bindings;

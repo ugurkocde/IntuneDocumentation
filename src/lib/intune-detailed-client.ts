@@ -187,6 +187,71 @@ export class DetailedIntuneService {
   private client: ReturnType<typeof createGraphClient>;
   private permissionErrors: PermissionError[] = [];
   private fetchErrors: FetchError[] = [];
+  private async readComplianceScheduledActions(policy: any) {
+    // Some Intune backends reject GET on the scheduledActionsForRule relation.
+    // Read the parent policy with both navigation collections expanded instead.
+    const endpoint = `/deviceManagement/deviceCompliancePolicies/${encodeURIComponent(policy.id)}`;
+    const expand =
+      "scheduledActionsForRule($expand=scheduledActionConfigurations)";
+    const errors: unknown[] = [];
+    let items: any[] = [];
+    try {
+      const response = await this.retryWithBackoff(() =>
+        this.client.api(endpoint).version("beta").expand(expand).get(),
+      );
+      if (!Array.isArray(response?.scheduledActionsForRule))
+        throw new Error(
+          "Graph omitted the expanded scheduledActionsForRule collection",
+        );
+      const rules = await collectAllPagesWithStatus<any>(
+        this.client as unknown as Client,
+        {
+          value: response.scheduledActionsForRule,
+          "@odata.nextLink": response["scheduledActionsForRule@odata.nextLink"],
+        },
+      );
+      if (!rules.complete) errors.push(rules.error);
+      items = await Promise.all(
+        rules.items.map(async (rule: any) => {
+          if (!Array.isArray(rule?.scheduledActionConfigurations)) {
+            errors.push(
+              new Error(
+                "Graph omitted an expanded scheduledActionConfigurations collection",
+              ),
+            );
+            return rule;
+          }
+          const actions = await collectAllPagesWithStatus<any>(
+            this.client as unknown as Client,
+            {
+              value: rule.scheduledActionConfigurations,
+              "@odata.nextLink":
+                rule["scheduledActionConfigurations@odata.nextLink"],
+            },
+          );
+          if (!actions.complete) errors.push(actions.error);
+          return { ...rule, scheduledActionConfigurations: actions.items };
+        }),
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+    for (const error of errors) {
+      const details = this.graphError(error);
+      this.fetchErrors.push({
+        policyId: policy.id,
+        policyName: policy.displayName ?? policy.id,
+        policyType: "Compliance Policies",
+        familyKey: "compliancePolicies",
+        endpoint: `${endpoint}?$expand=${expand}`,
+        error: `Scheduled noncompliance actions could not be fully collected: ${details.message}`,
+        statusCode: details.statusCode,
+        errorCode: details.errorCode,
+        partial: true,
+      });
+    }
+    return { items, complete: errors.length === 0 };
+  }
   private async readPolicyDetails(
     policy: any,
     familyKey: string,
@@ -1296,12 +1361,8 @@ export class DetailedIntuneService {
             );
             const assignments = assignmentResult.items;
 
-            const actionsResult = await this.readPolicyRelation(
-              policy,
-              "compliancePolicies",
-              `/deviceManagement/deviceCompliancePolicies('${policy.id}')/scheduledActionsForRule`,
-              "scheduledActionConfigurations",
-            );
+            const actionsResult =
+              await this.readComplianceScheduledActions(policy);
             const scheduledActionsAll = actionsResult.items;
 
             return {
@@ -1310,6 +1371,9 @@ export class DetailedIntuneService {
               scheduledActionsForRule: scheduledActionsAll || [],
               assignments: assignments || [],
               collectionStatus: {
+                scheduledActionsForRule: actionsResult.complete
+                  ? "complete"
+                  : "incomplete",
                 assignments: assignmentResult.complete
                   ? "complete"
                   : "incomplete",

@@ -1753,7 +1753,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName || policy.name,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -1838,7 +1843,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -1889,7 +1899,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           template.displayName,
-          enhanceAssignmentText(parseAssignments(template.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              template.assignments,
+              template.collectionStatus?.assignments,
+            ),
+          ),
           template.createdDateTime,
           template.lastModifiedDateTime,
         );
@@ -1956,7 +1971,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2015,7 +2035,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2218,7 +2243,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           baseline.displayName,
-          enhanceAssignmentText(parseAssignments(baseline.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              baseline.assignments,
+              baseline.collectionStatus?.assignments,
+            ),
+          ),
           baseline.createdDateTime,
           baseline.lastModifiedDateTime,
         );
@@ -2228,9 +2258,21 @@ export async function generateDetailedPDF(
           yPosition += 2;
         }
 
+        if (baseline.collectionStatus?.settings === "incomplete") {
+          addText(
+            "Baseline settings collection incomplete",
+            9,
+            "normal",
+            [150, 150, 150],
+          );
+          yPosition += 5;
+        }
         // Parse and display baseline settings
-        if (baseline.categories && baseline.categories.length > 0) {
-          const categories = parseSecurityBaseline(baseline.categories);
+        if (baseline.settings?.length || baseline.categories?.length) {
+          const categories = parseSecurityBaseline(
+            baseline.categories || [],
+            baseline.settings,
+          );
           categories.forEach((category) => {
             if (category.settings.length > 0) {
               addText(category.category, 10, "bold");
@@ -2239,7 +2281,14 @@ export async function generateDetailedPDF(
             }
           });
         } else {
-          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          addText(
+            baseline.collectionStatus?.settings === "incomplete"
+              ? "Settings unavailable"
+              : "No settings configured",
+            9,
+            "normal",
+            [150, 150, 150],
+          );
           yPosition += 5;
         }
 
@@ -2279,7 +2328,12 @@ export async function generateDetailedPDF(
         try {
           addConfigHeader(
             script.displayName,
-            enhanceAssignmentText(parseAssignments(script.assignments)),
+            enhanceAssignmentText(
+              parseAssignments(
+                script.assignments,
+                script.collectionStatus?.assignments,
+              ),
+            ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
@@ -2381,7 +2435,12 @@ export async function generateDetailedPDF(
         try {
           addConfigHeader(
             script.displayName,
-            enhanceAssignmentText(parseAssignments(script.assignments)),
+            enhanceAssignmentText(
+              parseAssignments(
+                script.assignments,
+                script.collectionStatus?.assignments,
+              ),
+            ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
@@ -2488,7 +2547,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName || config.name,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -2642,7 +2706,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName || policy.name,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2817,7 +2886,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName || config.name,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -3001,7 +3075,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           item.displayName || item.name || section.label,
-          enhanceAssignmentText(parseAssignments(item.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              item.assignments,
+              item.collectionStatus?.assignments,
+            ),
+          ),
           item.createdDateTime,
           item.lastModifiedDateTime || item.modifiedDateTime,
         );

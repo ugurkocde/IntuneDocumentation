@@ -140,3 +140,51 @@ describe("Defender policy exports", () => {
     expect(documentXml).not.toContain(">Configuration evidence<");
   });
 });
+
+it.each(["PDF", "Word"])(
+  "preserves parsed baseline and list values in %s output",
+  async (format) => {
+    const data = createExportData();
+    data.settingsCatalog = [];
+    data.securityBaselines = [
+      {
+        id: "baseline",
+        displayName: "Baseline example",
+        settings: [
+          { definitionId: "sample", valueJson: '"baseline-value-example"' },
+        ],
+        categories: [{ id: "category", displayName: "Security" }],
+        assignments: [],
+        collectionStatus: { assignments: "incomplete" },
+      },
+    ] as any;
+    data.administrativeTemplates = [
+      {
+        id: "template",
+        displayName: "List example",
+        assignments: [],
+        definitionValues: [
+          {
+            enabled: true,
+            definition: { displayName: "Sites" },
+            presentationValues: [
+              { values: [{ name: "Site", value: "list-value-example" }] },
+            ],
+          },
+        ],
+      },
+    ] as any;
+    const result =
+      format === "PDF"
+        ? await generateDetailedPDF(data)
+        : await generateDetailedDOCX(data);
+    const text =
+      format === "PDF"
+        ? extractPdfStreamText(result.buffer)
+        : extractZipEntry(result.buffer, "word/document.xml");
+    expect(text).toContain("baseline-value-example");
+    expect(text).toContain("list-value-example");
+    expect(text).toContain("Assignments unavailable");
+    expect(result.errors).toEqual([]);
+  },
+);

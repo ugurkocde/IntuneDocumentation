@@ -1089,7 +1089,10 @@ export async function generateDetailedDOCX(
     }
 
     // Assignments
-    const rawAssignment = parseAssignments(policy.assignments);
+    const rawAssignment = parseAssignments(
+      policy.assignments,
+      policy.collectionStatus?.assignments,
+    );
     const assignmentText = enhanceAssignmentText(
       rawAssignment,
       data.groupNames,
@@ -1496,7 +1499,15 @@ export async function generateDetailedDOCX(
         );
         sectionChildren.push(...policyMeta(baseline));
 
-        const cats = parseSecurityBaseline(baseline.categories || []);
+        if (baseline.collectionStatus?.settings === "incomplete") {
+          sectionChildren.push(
+            bodyText("Baseline settings collection incomplete"),
+          );
+        }
+        const cats = parseSecurityBaseline(
+          baseline.categories || [],
+          baseline.settings,
+        );
         for (const cat of cats) {
           if (cat.settings.length === 0) continue;
           sectionChildren.push(heading3(cat.category));

@@ -1,4 +1,9 @@
 import {
+  CONTROL_STATUS_LABELS,
+  CONTROL_STATUS_ORDER,
+  frameworkCoverageLabel,
+} from "./compliance/presentation";
+import {
   AlignmentType,
   BorderStyle,
   Document,
@@ -40,11 +45,7 @@ import {
 } from "./configuration-parser";
 import type { BrandingOptions } from "~/types/branding";
 import { REDACTED_VALUE } from "./intune-policy-registry";
-import {
-  assessCompliance,
-  compareControlIds,
-  type ControlStatus,
-} from "./compliance";
+import { assessCompliance, compareControlIds } from "./compliance";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -950,32 +951,28 @@ export async function generateDetailedDOCX(
   try {
     const complianceAssessment = assessCompliance(data);
     const complianceChildren: (Paragraph | Table)[] = [];
-    const statusLabels: Record<ControlStatus, string> = {
-      evidenceFound: "Configuration evidence",
-      partialEvidence: "Partial configuration evidence",
-      noEvidence: "No recognized configuration evidence",
-    };
-    const statusRank: Record<ControlStatus, number> = {
-      evidenceFound: 0,
-      partialEvidence: 1,
-      noEvidence: 2,
-    };
+    const statusLabels = CONTROL_STATUS_LABELS;
+    const statusRank = CONTROL_STATUS_ORDER;
 
     complianceChildren.push(heading1("Compliance Evidence Preview"));
     complianceChildren.push(
       bodyText(
-        "This preview maps the exported configuration to technical evidence for NIST SP 800-53 (Rev. 5), NIST CSF 2.0, and BSI IT-Grundschutz. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
+        "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
       ),
     );
     complianceChildren.push(spacer());
 
     for (const framework of complianceAssessment.frameworks) {
       complianceChildren.push(
-        heading2(`${framework.framework.name} (${framework.framework.version})`),
+        heading2(
+          `${framework.framework.name} (${framework.framework.version})`,
+        ),
       );
+      const coverageLabel = frameworkCoverageLabel(framework);
+      if (coverageLabel) complianceChildren.push(bodyText(coverageLabel));
       complianceChildren.push(
         bodyText(
-          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.totalControls} technically assessable controls)`,
+          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} mapped entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
         ),
       );
 
@@ -1092,7 +1089,10 @@ export async function generateDetailedDOCX(
     }
 
     // Assignments
-    const rawAssignment = parseAssignments(policy.assignments);
+    const rawAssignment = parseAssignments(
+      policy.assignments,
+      policy.collectionStatus?.assignments,
+    );
     const assignmentText = enhanceAssignmentText(
       rawAssignment,
       data.groupNames,
@@ -1499,7 +1499,15 @@ export async function generateDetailedDOCX(
         );
         sectionChildren.push(...policyMeta(baseline));
 
-        const cats = parseSecurityBaseline(baseline.categories || []);
+        if (baseline.collectionStatus?.settings === "incomplete") {
+          sectionChildren.push(
+            bodyText("Baseline settings collection incomplete"),
+          );
+        }
+        const cats = parseSecurityBaseline(
+          baseline.categories || [],
+          baseline.settings,
+        );
         for (const cat of cats) {
           if (cat.settings.length === 0) continue;
           sectionChildren.push(heading3(cat.category));

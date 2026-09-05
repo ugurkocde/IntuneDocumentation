@@ -7,12 +7,12 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz. Audit-ready evidence reports, generated from your tenant documentation.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, and Cyber Essentials. Audit-ready evidence reports, generated from your tenant documentation.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, and Cyber Essentials.",
     url: "/compliance",
     type: "website",
   },
@@ -38,6 +38,26 @@ const frameworks = [
     name: "NIST Cybersecurity Framework 2.0",
     detail:
       "Evidence for Protect and Detect subcategories, from PR.DS-01 (data-at-rest protection) to DE.CM-09 (endpoint monitoring).",
+  },
+  {
+    name: "UK MOD Def Stan 05-138 (Issue 4)",
+    detail:
+      "Selected Objective B controls for defence suppliers under DEFCON 658, referenced by control identifier with the Cyber Risk Profile levels at which each applies.",
+  },
+  {
+    name: "NCSC Cyber Essentials",
+    detail:
+      "The five control themes (firewalls, secure configuration, security update management, user access control, malware protection) mapped to managed-device configuration evidence.",
+  },
+  {
+    name: "NIST SP 800-171 (Rev. 2)",
+    detail:
+      "Supporting Intune evidence for 11 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
+  },
+  {
+    name: "NIST SP 800-171 (Rev. 3)",
+    detail:
+      "Supporting Intune evidence for 11 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
   },
   {
     name: "BSI IT-Grundschutz",
@@ -201,7 +221,10 @@ export default function CompliancePage() {
             ISO/IEC 27001 and SOC 2 criteria are referenced by identifier with
             original summaries. NIST publications are used with their
             public-domain status; BSI IT-Grundschutz is referenced from the
-            freely published Kompendium.
+            freely published Kompendium. Def Stan 05-138 is referenced by
+            control identifier with original summaries. Cyber Essentials content
+            is used under the Open Government Licence v3.0, and evidence never
+            indicates certification.
           </p>
         </div>
       </main>

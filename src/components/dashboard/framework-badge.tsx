@@ -3,7 +3,11 @@ export type FrameworkId =
   | "nist-800-53-r5"
   | "nist-csf-2"
   | "iso-27001-2022"
-  | "soc2-tsc";
+  | "soc2-tsc"
+  | "def-stan-05-138-i4"
+  | "cyber-essentials-v3"
+  | "nist-800-171-r2"
+  | "nist-800-171-r3";
 
 // Text-forward wordmarks only: official logos, insignia, and association marks
 // must not be reproduced. The standards are named in our own typography for
@@ -20,6 +24,26 @@ const WORDMARK_DETAILS: Record<
     line2: "SP 800-53",
   },
   "nist-csf-2": { fill: "#0F766E", line1: "NIST", line2: "CSF 2.0" },
+  "def-stan-05-138-i4": {
+    fill: "#9F1239",
+    line1: "DEF STAN",
+    line2: "05-138",
+  },
+  "cyber-essentials-v3": {
+    fill: "#0E7490",
+    line1: "CYBER",
+    line2: "ESSENTIALS",
+  },
+  "nist-800-171-r2": {
+    fill: "#1E40AF",
+    line1: "NIST",
+    line2: "171 Rev. 2",
+  },
+  "nist-800-171-r3": {
+    fill: "#1E3A8A",
+    line1: "NIST",
+    line2: "171 Rev. 3",
+  },
 };
 
 const FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif";

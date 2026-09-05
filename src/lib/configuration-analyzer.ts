@@ -1,7 +1,17 @@
+import type { AssessmentScope } from "./compliance/types";
 import type { BrandingOptions } from "~/types/branding";
 import type { ConfigurationSectionData } from "./configuration-sections";
 
 export interface DetailedExportData {
+  collectedAt?: string;
+  collectionStartedAt?: string;
+  collectionSkippedFamilies?: string[];
+  assessmentScope?: AssessmentScope;
+  permissionErrors?: Array<{
+    resource: string;
+    message: string;
+    requiredPermission: string;
+  }>;
   sections?: ConfigurationSectionData[];
   fetchErrors?: Array<{
     policyId: string;

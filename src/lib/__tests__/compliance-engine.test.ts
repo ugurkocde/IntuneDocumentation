@@ -10,6 +10,10 @@ import {
   NIST_800_53,
   NIST_CSF,
   SOC_2,
+  CYBER_ESSENTIALS,
+  DEF_STAN_05_138,
+  NIST_800_171,
+  NIST_800_171_R3,
 } from "../compliance";
 import { defenderForEndpointPolicyFixture } from "./fixtures/intune-beta";
 
@@ -258,10 +262,10 @@ describe("compliance engine", () => {
     ];
 
     expect(capabilityResult(data, "windows-disk-encryption").status).toBe(
-      "enforced",
+      "requirementAssigned",
     );
     expect(capabilityResult(data, "windows-minimum-os-version").status).toBe(
-      "enforced",
+      "requirementAssigned",
     );
 
     // Graph returns false for unset compliance booleans, so false is
@@ -271,7 +275,9 @@ describe("compliance engine", () => {
     expect(antimalware.evidence).toHaveLength(0);
 
     const encryption = capabilityResult(data, "windows-disk-encryption");
-    expect(encryption.evidence[0]?.note).toContain("block action");
+    expect(encryption.evidence[0]?.note).toContain(
+      "Marks noncompliant after 0 hours",
+    );
 
     // Same properties on a different policy type must not match.
     const crossType = emptyExportData();
@@ -303,10 +309,10 @@ describe("compliance engine", () => {
     ];
 
     expect(capabilityResult(data, "windows-secure-boot").status).toBe(
-      "enforced",
+      "requirementAssigned",
     );
     expect(capabilityResult(data, "windows-code-integrity").status).toBe(
-      "enforced",
+      "requirementAssigned",
     );
     expect(
       assessCapabilities(data).some(
@@ -370,7 +376,9 @@ describe("compliance engine", () => {
       },
     ];
 
-    expect(capabilityResult(data, "windows-firewall").status).toBe("enforced");
+    expect(capabilityResult(data, "windows-firewall").status).toBe(
+      "partialConfiguration",
+    );
   });
 
   it("treats an empty osMinimumVersion as no evidence", () => {
@@ -497,7 +505,7 @@ describe("framework assessment", () => {
 
     // SYS.3.2.1.A8 is fully evidenced (only the Android capability maps to it).
     const a8 = bsi.controls.find((c) => c.control.id === "SYS.3.2.1.A8");
-    expect(a8?.status).toBe("evidenceFound");
+    expect(a8?.status).toBe("partialEvidence");
     expect(a8?.control.tier).toBe("Basis-Anforderung");
 
     // SYS.3.2.2.A17 needs both iOS and Android integrity; only iOS is enforced.
@@ -550,7 +558,7 @@ describe("framework assessment", () => {
     ).toBe("partialEvidence");
     expect(
       bsi.controls.find((c) => c.control.id === "SYS.2.4.A4")?.status,
-    ).toBe("evidenceFound");
+    ).toBe("partialEvidence");
   });
 
   it("produces a full assessment with disclaimer and all frameworks", () => {
@@ -564,12 +572,162 @@ describe("framework assessment", () => {
       "bsi-it-grundschutz",
       "iso-27001-2022",
       "soc2-tsc",
+      "def-stan-05-138-i4",
+      "cyber-essentials-v3",
+      "nist-800-171-r2",
+      "nist-800-171-r3",
     ]);
     for (const framework of assessment.frameworks) {
       expect(framework.summary.withoutEvidence).toBe(
         framework.summary.totalControls,
       );
     }
+  });
+
+  it("assesses Def Stan 05-138 controls with their risk profile levels", () => {
+    const assessment = assessCompliance(emptyExportData());
+    const defStan = assessment.frameworks.find(
+      (framework) => framework.framework.id === "def-stan-05-138-i4",
+    );
+    expect(defStan).toBeDefined();
+    const encryption = defStan?.controls.find(
+      (control) => control.control.id === "2317",
+    );
+    expect(encryption?.control.tier).toBe("Level 1 to Level 3");
+    expect(encryption?.capabilityIds).toEqual([
+      "windows-disk-encryption",
+      "macos-disk-encryption",
+      "android-storage-encryption",
+    ]);
+    expect(defStan?.controls.every((control) => control.control.tier)).toBe(
+      true,
+    );
+  });
+
+  it("uses the five Cyber Essentials themes as control identifiers", () => {
+    const assessment = assessCompliance(emptyExportData());
+    const cyberEssentials = assessment.frameworks.find(
+      (framework) => framework.framework.id === "cyber-essentials-v3",
+    );
+    expect(
+      cyberEssentials?.controls.map((control) => control.control.id),
+    ).toEqual([
+      "Firewalls",
+      "Malware protection",
+      "Secure configuration",
+      "Security update management",
+      "User access control",
+    ]);
+  });
+
+  it("does not infer default-deny rules from enabled firewalls", () => {
+    const data = emptyExportData();
+    data.deviceConfigurations = [
+      {
+        id: "windows-firewall",
+        "@odata.type":
+          "#microsoft.graph.windows10EndpointProtectionConfiguration",
+        firewallProfileDomain: {
+          firewallEnabled: "allowed",
+          inboundConnectionsBlocked: false,
+          outboundConnectionsBlocked: false,
+        },
+        assignments: allDevicesAssignment,
+      },
+      {
+        id: "macos-firewall",
+        "@odata.type": "#microsoft.graph.macOSEndpointProtectionConfiguration",
+        firewallEnabled: true,
+        firewallBlockAllIncoming: false,
+        assignments: allDevicesAssignment,
+      },
+    ];
+
+    const capabilities = assessCapabilities(data);
+    const nist = assessFramework(capabilities, NIST_800_171);
+    expect(nist.controls.find((c) => c.control.id === "3.13.1")?.status).toBe(
+      "partialEvidence",
+    );
+    expect(
+      nist.controls.find((c) => c.control.id === "3.13.6"),
+    ).toBeUndefined();
+    const defStan = assessFramework(capabilities, DEF_STAN_05_138);
+    expect(
+      defStan.controls.filter((c) => ["2429", "2507"].includes(c.control.id)),
+    ).toEqual([]);
+    expect(defStan.summary.partial + defStan.summary.withEvidence).toBe(0);
+  });
+
+  it("does not infer credential quality from password presence", () => {
+    const data = emptyExportData();
+    data.deviceConfigurations = [
+      {
+        "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
+        passwordRequired: true,
+      },
+      {
+        "@odata.type": "#microsoft.graph.macOSGeneralDeviceConfiguration",
+        passwordRequired: true,
+      },
+      {
+        "@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration",
+        passcodeRequired: true,
+      },
+      {
+        "@odata.type": "#microsoft.graph.androidGeneralDeviceConfiguration",
+        passwordRequired: true,
+      },
+    ].map((policy, index) => ({
+      ...policy,
+      id: `password-required-${index}`,
+      assignments: allDevicesAssignment,
+    }));
+
+    const capabilities = assessCapabilities(data);
+    const defStan = assessFramework(capabilities, DEF_STAN_05_138);
+    expect(
+      defStan.controls.find((c) => c.control.id === "2213"),
+    ).toBeUndefined();
+    // Password presence still supports authentication and mobile protection.
+    expect(
+      assessFramework(capabilities, NIST_800_171).controls.find(
+        (c) => c.control.id === "3.5.2",
+      )?.status,
+    ).toBe("partialEvidence");
+    expect(defStan.controls.find((c) => c.control.id === "2309")?.status).toBe(
+      "partialEvidence",
+    );
+  });
+
+  it("maps app sources to installation restrictions, not execution allow lists", () => {
+    const data = emptyExportData();
+    data.deviceConfigurations = [
+      {
+        id: "macos-app-sources",
+        "@odata.type": "#microsoft.graph.macOSEndpointProtectionConfiguration",
+        gatekeeperAllowedAppSource: "macAppStoreAndIdentifiedDevelopers",
+        assignments: allDevicesAssignment,
+      },
+      {
+        id: "android-personal-app-sources",
+        "@odata.type":
+          "#microsoft.graph.androidWorkProfileGeneralDeviceConfiguration",
+        workProfileBlockPersonalAppInstallsFromUnknownSources: true,
+        assignments: allDevicesAssignment,
+      },
+    ];
+
+    const capabilities = assessCapabilities(data);
+    const nist = assessFramework(capabilities, NIST_800_171);
+    expect(nist.controls.find((c) => c.control.id === "3.4.8")).toBeUndefined();
+    expect(nist.controls.find((c) => c.control.id === "3.4.9")?.status).toBe(
+      "partialEvidence",
+    );
+    expect(
+      assessFramework(capabilities, DEF_STAN_05_138).controls.find(
+        (c) => c.control.id === "2409",
+      ),
+    ).toBeUndefined();
   });
 
   it("keeps capability catalog and framework mappings consistent", () => {
@@ -583,6 +741,10 @@ describe("framework assessment", () => {
       BSI_IT_GRUNDSCHUTZ,
       ISO_27001,
       SOC_2,
+      DEF_STAN_05_138,
+      CYBER_ESSENTIALS,
+      NIST_800_171,
+      NIST_800_171_R3,
     ]) {
       for (const [capabilityId, controlIds] of Object.entries(
         framework.mappings,

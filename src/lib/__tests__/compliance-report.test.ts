@@ -132,7 +132,7 @@ describe("compliance report PDF", () => {
       "Technischer Konfigurationsnachweis erkannt",
     );
     expect(renderedText).toContain("SYS.3.2.2.A17");
-    expect(renderedText).toContain("Kein technischer Nachweis gefunden");
+    expect(renderedText).toContain("Nicht bewertet");
     expect(renderedText).toContain("ersetzt keine");
     expect(renderedText).toContain("Assigned BitLocker evidence policy");
     expect(renderedText).toContain("Einstellungskatalog");
@@ -206,7 +206,152 @@ describe("compliance report PDF", () => {
     expect(complianceReportFileName("soc2-tsc")).toMatch(
       /Compliance-Report-SOC-2-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
     );
+    expect(complianceReportFileName("def-stan-05-138-i4")).toMatch(
+      /Compliance-Report-Def-Stan-05-138-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
+    expect(complianceReportFileName("cyber-essentials-v3")).toMatch(
+      /Compliance-Report-Cyber-Essentials-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
+    expect(complianceReportFileName("nist-800-171-r2")).toMatch(
+      /Compliance-Report-NIST-800-171-R2-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    );
   });
+
+  it("renders English Def Stan 05-138, Cyber Essentials and NIST 800-171 reports", async () => {
+    const defStanReport = await generateComplianceReportPDF(
+      createExportData(),
+      {
+        frameworkId: "def-stan-05-138-i4",
+      },
+    );
+    const defStanText = extractPdfStreamText(defStanReport);
+    expect(defStanText).toContain("Def Stan 05-138");
+    expect(defStanText).toContain("2317");
+    expect(defStanText).toContain("Level 1 to Level 3");
+    expect(defStanText).toContain("not a compliance certification");
+
+    const cyberEssentialsReport = await generateComplianceReportPDF(
+      createExportData(),
+      { frameworkId: "cyber-essentials-v3" },
+    );
+    const cyberEssentialsText = extractPdfStreamText(cyberEssentialsReport);
+    expect(cyberEssentialsText).toContain("Cyber Essentials");
+    expect(cyberEssentialsText).toContain("Security update management");
+    expect(cyberEssentialsText).toContain("Open Government Licence");
+
+    const nist171Report = await generateComplianceReportPDF(
+      createExportData(),
+      {
+        frameworkId: "nist-800-171-r2",
+      },
+    );
+    const nist171Text = extractPdfStreamText(nist171Report);
+    expect(nist171Text).toContain("NIST SP 800-171");
+    expect(nist171Text).toContain("3.13.16");
+  });
+
+  it.each([
+    {
+      frameworkId: "cyber-essentials-v3" as const,
+      disabledSettingId: "device_vendor_msft_bitlocker_requiredeviceencryption",
+      disabledValue: "device_vendor_msft_bitlocker_requiredeviceencryption_0",
+      unassignedSettings: { fileVaultEnabled: true },
+    },
+    {
+      frameworkId: "def-stan-05-138-i4" as const,
+      disabledSettingId:
+        "vendor_msft_firewall_mdmstore_domainprofile_enablefirewall",
+      disabledValue:
+        "vendor_msft_firewall_mdmstore_domainprofile_enablefirewall_false",
+      unassignedSettings: { firewallEnabled: true },
+    },
+  ])(
+    "scopes summary counters to mapped capabilities for $frameworkId",
+    async ({
+      frameworkId,
+      disabledSettingId,
+      disabledValue,
+      unassignedSettings,
+    }) => {
+      const data = createExportData();
+      data.compliancePolicies = [];
+      data.fetchErrors = [];
+      data.settingsCatalog = [
+        {
+          id: "unmapped-deviation",
+          name: "Unmapped assigned deviation",
+          assignments: allDevicesAssignment,
+          settings: [
+            {
+              settingInstance: {
+                settingDefinitionId: disabledSettingId,
+                choiceSettingValue: { value: disabledValue },
+              },
+            },
+          ],
+        },
+      ];
+      data.deviceConfigurations = [
+        {
+          id: "unmapped-unassigned",
+          displayName: "Unmapped unassigned configuration",
+          "@odata.type":
+            "#microsoft.graph.macOSEndpointProtectionConfiguration",
+          ...unassignedSettings,
+          assignments: [],
+        },
+      ];
+
+      const unmappedText = extractPdfStreamText(
+        await generateComplianceReportPDF(data, { frameworkId }),
+      );
+      expect(unmappedText).toContain("Assigned deviating configurations: 0");
+      expect(unmappedText).toContain(
+        "Configured settings without assignment: 0",
+      );
+      expect(unmappedText).toContain(
+        "No prioritized findings were identified.",
+      );
+      expect(unmappedText).not.toContain("Unmapped assigned deviation");
+      expect(unmappedText).not.toContain("Unmapped unassigned configuration");
+
+      // Relevant signals must still appear when mixed with excluded capabilities.
+      data.settingsCatalog.push({
+        id: "mapped-deviation",
+        name: "Mapped assigned deviation",
+        assignments: allDevicesAssignment,
+        settings: [
+          {
+            settingInstance: {
+              settingDefinitionId:
+                "device_vendor_msft_policy_config_defender_allowrealtimemonitoring",
+              choiceSettingValue: {
+                value:
+                  "device_vendor_msft_policy_config_defender_allowrealtimemonitoring_0",
+              },
+            },
+          },
+        ],
+      });
+      data.deviceConfigurations.push({
+        id: "mapped-unassigned",
+        displayName: "Mapped unassigned configuration",
+        "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
+        microsoftAccountBlocked: true,
+        assignments: [],
+      });
+
+      const mixedText = extractPdfStreamText(
+        await generateComplianceReportPDF(data, { frameworkId }),
+      );
+      expect(mixedText).toContain("Assigned deviating configurations: 1.");
+      expect(mixedText).toContain("Configured settings without assignment: 1.");
+      expect(mixedText).toContain("Mapped assigned deviation");
+      expect(mixedText).toContain("Mapped unassigned configuration");
+      expect(mixedText).not.toContain("Unmapped assigned deviation");
+      expect(mixedText).not.toContain("Unmapped unassigned configuration");
+    },
+  );
 
   it("includes every body evidence reference in the appendix", async () => {
     const report = await generateComplianceReportPDF(createExportData(), {
@@ -254,8 +399,14 @@ describe("compliance report PDF", () => {
     });
 
     for (const ordering of [
-      [policy("zzz-policy", "Zebra Baseline"), policy("aaa-policy", "Alpha Baseline")],
-      [policy("aaa-policy", "Alpha Baseline"), policy("zzz-policy", "Zebra Baseline")],
+      [
+        policy("zzz-policy", "Zebra Baseline"),
+        policy("aaa-policy", "Alpha Baseline"),
+      ],
+      [
+        policy("aaa-policy", "Alpha Baseline"),
+        policy("zzz-policy", "Zebra Baseline"),
+      ],
     ]) {
       const data = { ...createExportData(), settingsCatalog: ordering };
       const bytes = await generateComplianceReportPDF(data, {
@@ -291,5 +442,27 @@ describe("compliance report PDF", () => {
     for (const capability of COMPLIANCE_CAPABILITIES) {
       expect(GERMAN_CAPABILITY_NAMES[capability.id]).toBeTruthy();
     }
+  });
+
+  it("does not label counter-evidence with an unreadable assignment as unassigned", async () => {
+    const data = createExportData();
+    data.deviceConfigurations = [
+      {
+        id: "unknown-firewall",
+        displayName: "Unknown firewall assignment",
+        "@odata.type":
+          "#microsoft.graph.windows10EndpointProtectionConfiguration",
+        firewallProfileDomain: { firewallEnabled: "blocked" },
+        assignments: [],
+        collectionStatus: { assignments: "incomplete" },
+      },
+    ];
+    const text = extractPdfStreamText(
+      await generateComplianceReportPDF(data, {
+        frameworkId: "iso-27001-2022",
+      }),
+    );
+    expect(text).toContain("blocked \\(assignment unknown\\)");
+    expect(text).not.toContain("blocked \\(not assigned\\)");
   });
 });

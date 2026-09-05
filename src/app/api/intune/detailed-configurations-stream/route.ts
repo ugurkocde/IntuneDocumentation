@@ -150,6 +150,9 @@ export async function GET(request: NextRequest) {
         // Send final data
         sendEvent("complete", {
           data: {
+            collectedAt: configurations.collectedAt,
+            collectionStartedAt: configurations.collectionStartedAt,
+            collectionSkippedFamilies: configurations.collectionSkippedFamilies,
             permissionErrors: configurations.permissionErrors,
             fetchErrors: configurations.fetchErrors,
             summary: configurations.summary,

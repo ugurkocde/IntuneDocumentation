@@ -1,3 +1,10 @@
+import { compareControlIds } from "./compliance/engine";
+import {
+  CONTROL_STATUS_LABELS,
+  CONTROL_STATUS_ORDER,
+  CONTROL_STATUS_COLORS,
+  frameworkCoverageLabel,
+} from "./compliance/presentation";
 import jsPDF from "jspdf";
 import {
   extractSettingValue,
@@ -17,7 +24,7 @@ import {
   type ExportGenerationResult,
 } from "./configuration-analyzer";
 import { REDACTED_VALUE } from "./intune-policy-registry";
-import { assessCompliance, type ControlStatus } from "./compliance";
+import { assessCompliance } from "./compliance";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -1229,28 +1236,16 @@ export async function generateDetailedPDF(
     addSectionHeader("Compliance Evidence Preview");
 
     addText(
-      "This preview maps the exported configuration to technical evidence for NIST SP 800-53 (Rev. 5), NIST CSF 2.0, and BSI IT-Grundschutz. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
+      "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
       9,
       "normal",
       [80, 80, 80],
     );
     yPosition += 5;
 
-    const statusLabels: Record<ControlStatus, string> = {
-      evidenceFound: "Configuration evidence",
-      partialEvidence: "Partial configuration evidence",
-      noEvidence: "No recognized configuration evidence",
-    };
-    const statusColors: Record<ControlStatus, [number, number, number]> = {
-      evidenceFound: [39, 174, 96],
-      partialEvidence: [230, 126, 34],
-      noEvidence: [140, 140, 140],
-    };
-    const statusRank: Record<ControlStatus, number> = {
-      evidenceFound: 0,
-      partialEvidence: 1,
-      noEvidence: 2,
-    };
+    const statusLabels = CONTROL_STATUS_LABELS;
+    const statusColors = CONTROL_STATUS_COLORS;
+    const statusRank = CONTROL_STATUS_ORDER;
 
     for (const framework of assessment.frameworks) {
       checkPageBreak(45);
@@ -1260,8 +1255,10 @@ export async function generateDetailedPDF(
         "bold",
       );
       yPosition += 1;
+      const coverageLabel = frameworkCoverageLabel(framework);
+      if (coverageLabel) addText(coverageLabel, 9, "normal", [80, 80, 80]);
       addText(
-        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.totalControls} technically assessable controls)`,
+        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} mapped entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
         9,
         "normal",
         [80, 80, 80],
@@ -1272,7 +1269,7 @@ export async function generateDetailedPDF(
       const ranked = [...framework.controls].sort(
         (a, b) =>
           statusRank[a.status] - statusRank[b.status] ||
-          a.control.id.localeCompare(b.control.id),
+          compareControlIds(a.control.id, b.control.id),
       );
       for (const assessed of ranked.slice(0, maxRows)) {
         checkPageBreak(10);
@@ -1756,7 +1753,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName || policy.name,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -1841,7 +1843,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -1892,7 +1899,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           template.displayName,
-          enhanceAssignmentText(parseAssignments(template.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              template.assignments,
+              template.collectionStatus?.assignments,
+            ),
+          ),
           template.createdDateTime,
           template.lastModifiedDateTime,
         );
@@ -1959,7 +1971,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2018,7 +2035,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2221,7 +2243,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           baseline.displayName,
-          enhanceAssignmentText(parseAssignments(baseline.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              baseline.assignments,
+              baseline.collectionStatus?.assignments,
+            ),
+          ),
           baseline.createdDateTime,
           baseline.lastModifiedDateTime,
         );
@@ -2231,9 +2258,21 @@ export async function generateDetailedPDF(
           yPosition += 2;
         }
 
+        if (baseline.collectionStatus?.settings === "incomplete") {
+          addText(
+            "Baseline settings collection incomplete",
+            9,
+            "normal",
+            [150, 150, 150],
+          );
+          yPosition += 5;
+        }
         // Parse and display baseline settings
-        if (baseline.categories && baseline.categories.length > 0) {
-          const categories = parseSecurityBaseline(baseline.categories);
+        if (baseline.settings?.length || baseline.categories?.length) {
+          const categories = parseSecurityBaseline(
+            baseline.categories || [],
+            baseline.settings,
+          );
           categories.forEach((category) => {
             if (category.settings.length > 0) {
               addText(category.category, 10, "bold");
@@ -2242,7 +2281,14 @@ export async function generateDetailedPDF(
             }
           });
         } else {
-          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          addText(
+            baseline.collectionStatus?.settings === "incomplete"
+              ? "Settings unavailable"
+              : "No settings configured",
+            9,
+            "normal",
+            [150, 150, 150],
+          );
           yPosition += 5;
         }
 
@@ -2282,7 +2328,12 @@ export async function generateDetailedPDF(
         try {
           addConfigHeader(
             script.displayName,
-            enhanceAssignmentText(parseAssignments(script.assignments)),
+            enhanceAssignmentText(
+              parseAssignments(
+                script.assignments,
+                script.collectionStatus?.assignments,
+              ),
+            ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
@@ -2384,7 +2435,12 @@ export async function generateDetailedPDF(
         try {
           addConfigHeader(
             script.displayName,
-            enhanceAssignmentText(parseAssignments(script.assignments)),
+            enhanceAssignmentText(
+              parseAssignments(
+                script.assignments,
+                script.collectionStatus?.assignments,
+              ),
+            ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
@@ -2491,7 +2547,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName || config.name,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -2645,7 +2706,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName || policy.name,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2820,7 +2886,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName || config.name,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -3004,7 +3075,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           item.displayName || item.name || section.label,
-          enhanceAssignmentText(parseAssignments(item.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              item.assignments,
+              item.collectionStatus?.assignments,
+            ),
+          ),
           item.createdDateTime,
           item.lastModifiedDateTime || item.modifiedDateTime,
         );

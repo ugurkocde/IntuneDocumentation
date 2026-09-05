@@ -83,9 +83,7 @@ describe("ComplianceView", () => {
     expect(
       screen.getByRole("button", { name: "ISO/IEC 27001" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "SOC 2" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "SOC 2" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "NIST SP 800-53" }),
     ).toBeInTheDocument();
@@ -95,7 +93,19 @@ describe("ComplianceView", () => {
     expect(
       screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("button")).toHaveLength(5);
+    expect(
+      screen.getByRole("button", { name: "Def Stan 05-138" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cyber Essentials" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "NIST SP 800-171 Rev. 2" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "NIST SP 800-171 Rev. 3" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(9);
     expect(
       screen.queryByRole("button", { name: /Download report/ }),
     ).not.toBeInTheDocument();
@@ -118,6 +128,42 @@ describe("ComplianceView", () => {
     expect(
       await screen.findByRole("button", { name: /8\.24/ }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the stored Revision 2 selection and switches to an independent Revision 3 assessment", async () => {
+    window.localStorage.setItem("compliance-framework", "nist-800-171-r2");
+    const user = userEvent.setup();
+    render(<ComplianceView configurations={configurations} />);
+    const selector = await screen.findByRole("button", {
+      name: "Selected framework: NIST SP 800-171 Rev. 2",
+    });
+    expect(
+      screen.getByText(/11 of 110 published requirements/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /3\.13\.16/ }),
+    ).toBeInTheDocument();
+    await user.click(selector);
+    await user.click(
+      screen.getByRole("menuitem", { name: /NIST SP 800-171 Rev\. 3/ }),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Selected framework: NIST SP 800-171 Rev. 3",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/11 of 97 published requirements/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /03\.13\.08/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /3\.13\.16/ }),
+    ).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("compliance-framework")).toBe(
+      "nist-800-171-r3",
+    );
   });
 
   it("reveals the selected framework content and dropdown trigger", async () => {
@@ -275,7 +321,7 @@ describe("ComplianceView", () => {
     await user.click(screen.getByRole("button", { name: /NET.3.2/ }));
 
     expect(
-      screen.getByText("Deviating configuration detected"),
+      screen.getByText("Non-enforcing setting detected"),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Deviating configuration detected and assigned (risk)"),
@@ -324,5 +370,60 @@ describe("ComplianceView", () => {
         "A minimum version is configured; whether it is current is not assessed.",
       ).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("ComplianceView assessment scope", () => {
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+  });
+  it("lets users exclude platforms and preserves assessment limitations", async () => {
+    window.localStorage.setItem("compliance-framework", "bsi-it-grundschutz");
+    const user = userEvent.setup();
+    render(<ComplianceView configurations={configurations} />);
+    await user.click(await screen.findByRole("checkbox", { name: "macOS" }));
+    expect(
+      screen.getByRole("button", { name: /SYS.2.4.A6/ }),
+    ).toHaveTextContent("Outside selected scope");
+    expect(
+      screen.getByRole("button", { name: "Download evidence record (JSON)" }),
+    ).toBeInTheDocument();
+  });
+  it("applies the selected Def Stan risk level", async () => {
+    window.localStorage.setItem("compliance-framework", "def-stan-05-138-i4");
+    const user = userEvent.setup();
+    render(<ComplianceView configurations={configurations} />);
+    await user.selectOptions(
+      await screen.findByRole("combobox", {
+        name: "Def Stan Cyber Risk Profile",
+      }),
+      "0",
+    );
+    expect(screen.getByRole("button", { name: /2317/ })).toHaveTextContent(
+      "Outside selected scope",
+    );
+  });
+  it("makes incomplete collection visible before opening individual controls", async () => {
+    window.localStorage.setItem("compliance-framework", "iso-27001-2022");
+    render(
+      <ComplianceView
+        configurations={{
+          ...configurations,
+          fetchErrors: [
+            {
+              policyId: "failed",
+              policyName: "Policy",
+              policyType: "Settings Catalog",
+              familyKey: "settingsCatalog",
+              error: "Forbidden",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Collection is incomplete",
+    );
   });
 });

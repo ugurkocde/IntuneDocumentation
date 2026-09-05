@@ -103,6 +103,10 @@ describe("Defender policy exports", () => {
     expect(renderedText).toContain("intunedocumentation.com/dashboard");
     // The exclusions-only Defender fixture must not produce evidence claims.
     expect(renderedText).not.toContain("Evidence found");
+    expect(renderedText).toContain("Rev. 2");
+    expect(renderedText).toContain("Rev. 3");
+    expect(renderedText).toContain("11 of 110 published requirements");
+    expect(renderedText).toContain("11 of 97 published requirements");
   });
 
   it("renders a Defender-managed policy through the ordinary Word policy path", async () => {
@@ -125,6 +129,10 @@ describe("Defender policy exports", () => {
     const documentXml = extractZipEntry(result.buffer, "word/document.xml");
 
     expect(documentXml).toContain("Compliance Evidence Preview");
+    expect(documentXml).toContain("Rev. 2");
+    expect(documentXml).toContain("Rev. 3");
+    expect(documentXml).toContain("11 of 110 published requirements");
+    expect(documentXml).toContain("11 of 97 published requirements");
     expect(documentXml).toContain("BSI IT-Grundschutz");
     expect(documentXml).toContain("not a compliance certification");
     expect(documentXml).toContain("intunedocumentation.com/dashboard");
@@ -132,3 +140,51 @@ describe("Defender policy exports", () => {
     expect(documentXml).not.toContain(">Configuration evidence<");
   });
 });
+
+it.each(["PDF", "Word"])(
+  "preserves parsed baseline and list values in %s output",
+  async (format) => {
+    const data = createExportData();
+    data.settingsCatalog = [];
+    data.securityBaselines = [
+      {
+        id: "baseline",
+        displayName: "Baseline example",
+        settings: [
+          { definitionId: "sample", valueJson: '"baseline-value-example"' },
+        ],
+        categories: [{ id: "category", displayName: "Security" }],
+        assignments: [],
+        collectionStatus: { assignments: "incomplete" },
+      },
+    ] as any;
+    data.administrativeTemplates = [
+      {
+        id: "template",
+        displayName: "List example",
+        assignments: [],
+        definitionValues: [
+          {
+            enabled: true,
+            definition: { displayName: "Sites" },
+            presentationValues: [
+              { values: [{ name: "Site", value: "list-value-example" }] },
+            ],
+          },
+        ],
+      },
+    ] as any;
+    const result =
+      format === "PDF"
+        ? await generateDetailedPDF(data)
+        : await generateDetailedDOCX(data);
+    const text =
+      format === "PDF"
+        ? extractPdfStreamText(result.buffer)
+        : extractZipEntry(result.buffer, "word/document.xml");
+    expect(text).toContain("baseline-value-example");
+    expect(text).toContain("list-value-example");
+    expect(text).toContain("Assignments unavailable");
+    expect(result.errors).toEqual([]);
+  },
+);

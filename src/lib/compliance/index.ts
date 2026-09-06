@@ -36,3 +36,5 @@ export type {
   FrameworkControl,
   FrameworkDefinition,
 } from "./types";
+
+export { essentialEightFramework } from "./frameworks/essential-eight";

@@ -972,7 +972,7 @@ export async function generateDetailedDOCX(
       if (coverageLabel) complianceChildren.push(bodyText(coverageLabel));
       complianceChildren.push(
         bodyText(
-          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} mapped entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
+          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
         ),
       );
 
@@ -989,9 +989,11 @@ export async function generateDetailedDOCX(
             .slice(0, maxRows)
             .map((assessed) => [
               assessed.control.id,
-              assessed.control.tier
-                ? `${assessed.control.title} (${assessed.control.tier})`
-                : assessed.control.title,
+              framework.framework.id === "essential-eight"
+                ? `${assessed.control.title}: ${assessed.control.summary}`
+                : assessed.control.tier
+                  ? `${assessed.control.title} (${assessed.control.tier})`
+                  : assessed.control.title,
               statusLabels[assessed.status],
             ]),
           branding,

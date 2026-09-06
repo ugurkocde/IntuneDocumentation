@@ -51,6 +51,13 @@ const FRAMEWORK_OPTIONS: ReadonlyArray<{
   description: string;
 }> = [
   {
+    id: "essential-eight",
+    label: "ASD Essential Eight",
+    shortLabel: "Essential Eight",
+    description:
+      "Australian enterprise IT requirements with target Maturity Levels 1, 2 and 3. Configuration evidence only.",
+  },
+  {
     id: "iso-27001-2022",
     label: "ISO/IEC 27001",
     shortLabel: "ISO 27001",
@@ -388,6 +395,11 @@ function ControlRow({
             </p>
             <ControlStatusChip status={control.status} />
           </div>
+          {/^ML[123]-/.test(control.control.id) && (
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              {control.control.summary}
+            </p>
+          )}
           {control.control.tier && (
             <p className="text-petrol-600 mt-1 text-xs">
               {control.control.tier}
@@ -681,6 +693,7 @@ export function ComplianceView({
       link.download = complianceReportFileName(
         selectedFrameworkId,
         tenantLabel,
+        scope.essentialEightMaturityLevel ?? 1,
       );
       document.body.appendChild(link);
       try {
@@ -841,9 +854,15 @@ export function ComplianceView({
                       {assessmentFramework?.framework.totalRequirements !==
                         undefined && (
                         <span className="mt-3 block text-xs font-semibold text-teal-700">
-                          {assessmentFramework.summary.totalControls} of{" "}
-                          {assessmentFramework.framework.totalRequirements}{" "}
-                          requirements mapped; supporting evidence only.
+                          {framework.id === "essential-eight" ? (
+                            frameworkCoverageLabel(assessmentFramework)
+                          ) : (
+                            <>
+                              {assessmentFramework.summary.totalControls} of{" "}
+                              {assessmentFramework.framework.totalRequirements}{" "}
+                              requirements mapped; supporting evidence only.
+                            </>
+                          )}
                         </span>
                       )}
                     </motion.button>
@@ -1043,6 +1062,9 @@ export function ComplianceView({
               data={assessmentData}
               scope={scope}
               onScopeChange={setScope}
+              showEssentialEightLevel={
+                selectedFrameworkId === "essential-eight"
+              }
               showRiskLevel={selectedFrameworkId === "def-stan-05-138-i4"}
             />
 

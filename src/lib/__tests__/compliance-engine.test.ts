@@ -576,11 +576,12 @@ describe("framework assessment", () => {
       "cyber-essentials-v3",
       "nist-800-171-r2",
       "nist-800-171-r3",
+      "essential-eight",
     ]);
     for (const framework of assessment.frameworks) {
-      expect(framework.summary.withoutEvidence).toBe(
-        framework.summary.totalControls,
-      );
+      expect(
+        framework.summary.withoutEvidence + framework.summary.notAssessed,
+      ).toBe(framework.summary.totalControls);
     }
   });
 

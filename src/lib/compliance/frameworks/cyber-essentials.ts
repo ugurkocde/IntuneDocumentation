@@ -70,6 +70,12 @@ export const CYBER_ESSENTIALS: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-office-macro-win32-block": [],
+    "windows-office-child-process-block": [],
+    "windows-office-executable-block": [],
+    "windows-office-injection-block": [],
+    "windows-adobe-child-process-block": [],
+
     "windows-behavior-monitoring": [],
     "windows-network-inspection": [],
     "windows-memory-integrity": [],

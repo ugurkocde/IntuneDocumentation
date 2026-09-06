@@ -2,7 +2,8 @@
 
 Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
 SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0, BSI IT-Grundschutz,
-UK MOD Def Stan 05-138 Issue 4, and NCSC Cyber Essentials.
+UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, and ASD Essential Eight
+with target Maturity Levels 1, 2 and 3.
 
 ## Design rules
 
@@ -158,3 +159,43 @@ where a non-enforcing value exists, `disabledWhen`. Verify the exact
 `settingDefinitionId` or Graph property against a real tenant export or the
 Microsoft Graph documentation before adding it, and cover it in
 `src/lib/__tests__/compliance-engine.test.ts`.
+
+## ASD Essential Eight target levels (ruleset 2026.09.3)
+
+Essential Eight is one framework with target Maturity Levels 1, 2 and 3.
+The default target is Level 1. `assessmentScope.essentialEightMaturityLevel`
+selects the target for the engine, JSON manifest, framework PDF and full
+PDF/Word previews. The dashboard selector passes this scope into its PDF and
+JSON downloads. Full documentation generated without scope uses the labelled
+Level 1 default. This is a target evidence review, never an achieved maturity
+rating or a percentage maturity score.
+
+The checked-in `frameworks/essential-eight-requirements.json` reproduces all
+requirement entries from Appendices A, B and C of ASD's November 2023 model:
+48, 107 and 149 entries, respectively, across all eight strategies. Local
+`ML1-PA-01` style identifiers preserve appendix, strategy and row position;
+they are not official ISM identifiers. Repeated requirements in different
+strategies remain separate. No runtime download or website dependency is needed.
+
+Sources verified 6 September 2026:
+
+- [ASD Essential Eight maturity model](https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model), November 2023.
+- [ASD assessment process guide](https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-assessment-process-guide), for assessment boundaries and effectiveness requirements.
+- [ASD ISM mapping](https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model-and-ism-mapping), October 2024. This implementation uses the model's own appendix entries, not ISM control numbering.
+- [ASD consultation on evolution](https://www.cyber.gov.au/about-us/view-all-content/news/consultation-on-evolution-of-essential-eight), June 2026. The proposed Essentials series is not substituted for the published model.
+- [Microsoft endpoint-protection schema](https://learn.microsoft.com/en-us/graph/api/resources/intune-deviceconfig-windows10endpointprotectionconfiguration?view=graph-rest-beta), for Office/Adobe ASR enums. `block` for attack-surface enums and `enable` for the Adobe protection enum are blocking values; audit and warning modes do not count.
+
+Requirements are reproduced under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+attributed to the Australian Signals Directorate, © Commonwealth of Australia
+2026, in accordance with [ASD's copyright notice](https://www.cyber.gov.au/about-us/copyright).
+Local identifiers, mappings and limitation notes are additions by this project.
+No official logos or endorsement claims are included.
+
+Only exact, verified detector-to-requirement bindings produce supporting evidence.
+A 14-day Windows update configuration is not evidence for the separate 48-hour
+patch requirement, nor application patching. Generic MFA does not prove phishing
+resistance. Credential Guard does not prove Remote Credential Guard or LSA
+protection. Memory integrity compliance requirements do not prove device state.
+Adobe Reader protection does not establish protection of every PDF application.
+Backups, recovery exercises, incident response, access reviews, rule validation,
+central logging and other unmapped requirements remain explicitly unassessed.

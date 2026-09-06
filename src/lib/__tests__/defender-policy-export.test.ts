@@ -188,3 +188,26 @@ it.each(["PDF", "Word"])(
     expect(result.errors).toEqual([]);
   },
 );
+
+it.each(["PDF", "Word"])(
+  "carries Essential Eight Level 3 into the full %s preview",
+  async (format) => {
+    const data = createExportData();
+    data.assessmentScope = { essentialEightMaturityLevel: 3 };
+    const result =
+      format === "PDF"
+        ? await generateDetailedPDF(data)
+        : await generateDetailedDOCX(data);
+    const text =
+      format === "PDF"
+        ? extractPdfStreamText(result.buffer)
+        : extractZipEntry(result.buffer, "word/document.xml");
+    expect(text).toContain("target Maturity Level 3");
+    expect(text).toContain("149 published requirement entries");
+    expect(text).toContain(
+      "Application control is implemented on internet-facing servers.",
+    );
+    expect(text).not.toContain("target Maturity Level 1");
+    expect(result.errors).toEqual([]);
+  },
+);

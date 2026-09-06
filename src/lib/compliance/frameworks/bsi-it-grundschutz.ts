@@ -250,6 +250,12 @@ export const BSI_IT_GRUNDSCHUTZ: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-office-macro-win32-block": [],
+    "windows-office-child-process-block": [],
+    "windows-office-executable-block": [],
+    "windows-office-injection-block": [],
+    "windows-adobe-child-process-block": [],
+
     "windows-network-inspection": [],
     "windows-virtualization-security": [],
     "windows-credential-theft-protection": [],

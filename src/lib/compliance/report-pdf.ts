@@ -30,7 +30,8 @@ export type ComplianceFrameworkId =
   | "def-stan-05-138-i4"
   | "cyber-essentials-v3"
   | "nist-800-171-r2"
-  | "nist-800-171-r3";
+  | "nist-800-171-r3"
+  | "essential-eight";
 
 type Locale = "en" | "de";
 type RgbColor = [number, number, number];
@@ -217,6 +218,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "soc2-tsc": "SOC-2",
       "def-stan-05-138-i4": "Def-Stan-05-138",
       "cyber-essentials-v3": "Cyber-Essentials",
+      "essential-eight": "Essential-Eight",
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
     },
@@ -358,6 +360,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "soc2-tsc": "SOC-2",
       "def-stan-05-138-i4": "Def-Stan-05-138",
       "cyber-essentials-v3": "Cyber-Essentials",
+      "essential-eight": "Essential-Eight",
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
     },
@@ -365,6 +368,14 @@ const STRINGS: Record<Locale, ReportStrings> = {
 };
 
 export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
+  "windows-office-macro-win32-block":
+    "Win32-Aufrufe durch Office-Makros blockiert",
+  "windows-office-child-process-block": "Unterprozesse von Office blockiert",
+  "windows-office-executable-block": "Ausführbare Office-Inhalte blockiert",
+  "windows-office-injection-block": "Prozessinjektion durch Office blockiert",
+  "windows-adobe-child-process-block":
+    "Unterprozesse von Adobe Reader blockiert",
+
   "windows-antivirus-required": "Antivirenschutz als Konformitätsanforderung",
   "windows-periodic-antimalware-scan": "Regelmäßige Schadsoftwareprüfungen",
   "windows-quality-update-deadline": "Qualitätsupdate-Frist bis 14 Tage",
@@ -533,6 +544,7 @@ const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "soc2-tsc": "SOC",
   "def-stan-05-138-i4": "DEF",
   "cyber-essentials-v3": "CE",
+  "essential-eight": "E8",
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
 };
@@ -660,14 +672,17 @@ function buildOverviewRows(
   const controlsByPrefix = new Map<string, ControlAssessment[]>();
   for (const control of controls) {
     const prefix =
-      frameworkId === "nist-800-53-r5"
-        ? control.control.id.split("-")[0]
-        : frameworkId === "nist-800-171-r2" || frameworkId === "nist-800-171-r3"
-          ? control.control.id.split(".").slice(0, 2).join(".")
-          : frameworkId === "def-stan-05-138-i4"
-            ? (DEF_STAN_FAMILIES[control.control.id.slice(0, 2)] ??
-              control.control.id.slice(0, 2))
-            : control.control.id.split(".")[0];
+      frameworkId === "essential-eight"
+        ? control.control.title
+        : frameworkId === "nist-800-53-r5"
+          ? control.control.id.split("-")[0]
+          : frameworkId === "nist-800-171-r2" ||
+              frameworkId === "nist-800-171-r3"
+            ? control.control.id.split(".").slice(0, 2).join(".")
+            : frameworkId === "def-stan-05-138-i4"
+              ? (DEF_STAN_FAMILIES[control.control.id.slice(0, 2)] ??
+                control.control.id.slice(0, 2))
+              : control.control.id.split(".")[0];
     if (!prefix) continue;
     const existing = controlsByPrefix.get(prefix);
     if (existing) existing.push(control);
@@ -756,9 +771,14 @@ function implementationSignals(results: readonly CapabilityResult[]): string[] {
 export function complianceReportFileName(
   frameworkId: ComplianceFrameworkId,
   tenantLabel?: string,
+  essentialEightMaturityLevel: 1 | 2 | 3 = 1,
 ): string {
   const now = new Date();
-  const frameworkLabel = STRINGS.en.fileFrameworkLabels[frameworkId];
+  const frameworkLabel =
+    STRINGS.en.fileFrameworkLabels[frameworkId] +
+    (frameworkId === "essential-eight"
+      ? `-ML${essentialEightMaturityLevel}`
+      : "");
   const slug = tenantLabel ? tenantSlug(tenantLabel) : "";
   const tenantPart = slug ? `-${slug}` : "";
   return `Compliance-Report-${frameworkLabel}${tenantPart}-${localIsoDate(now)}-${localTime(now)}.pdf`;
@@ -2004,9 +2024,17 @@ export async function generateComplianceReportPDF(
         6
       );
     };
+    const requirementText =
+      options.frameworkId === "essential-eight"
+        ? control.control.summary
+        : undefined;
+    const requirementHeight = requirementText
+      ? wrap(requirementText, contentWidth, 9, "normal").length * 4 + 3
+      : 0;
     const firstCapability = mappedCapabilities[0];
     const minimumControlStartHeight =
       controlHeadingHeight +
+      requirementHeight +
       controlStatusHeight +
       (firstCapability
         ? wrap(capabilityName(firstCapability), contentWidth, 9.5, "bold")
@@ -2021,6 +2049,7 @@ export async function generateComplianceReportPDF(
       );
       const fullControlHeight =
         controlHeadingHeight +
+        requirementHeight +
         controlStatusHeight +
         capabilityHeight +
         gapHeight;
@@ -2056,6 +2085,13 @@ export async function generateComplianceReportPDF(
         controlId: control.control.id,
       },
     );
+
+    if (requirementText)
+      drawWrappedText(requirementText, {
+        fontSize: 9,
+        lineHeight: 4,
+        after: 3,
+      });
 
     for (const aspect of control.unassessedAspects)
       drawWrappedText(

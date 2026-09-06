@@ -1,0 +1,1833 @@
+{
+  "source": "https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model",
+  "version": "November 2023",
+  "verifiedAt": "2026-09-06",
+  "attribution": "Australian Signals Directorate, © Commonwealth of Australia 2026. CC BY 4.0. Requirement text reproduced from Appendices A–C; local identifiers added by IntuneDocumentation and are not official ISM identifiers.",
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "requirements": [
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-01",
+      "requirement": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-02",
+      "requirement": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-03",
+      "requirement": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in online services."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-04",
+      "requirement": "A vulnerability scanner is used at least weekly to identify missing patches or updates for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-05",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-06",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within two weeks of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-07",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within two weeks of release."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-08",
+      "requirement": "Online services that are no longer supported by vendors are removed."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch applications",
+      "id": "ML1-PA-09",
+      "requirement": "Office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-01",
+      "requirement": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-02",
+      "requirement": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-03",
+      "requirement": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-04",
+      "requirement": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-05",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-06",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within two weeks of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-07",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices are applied within one month of release."
+    },
+    {
+      "level": 1,
+      "strategy": "Patch operating systems",
+      "id": "ML1-PO-08",
+      "requirement": "Operating systems that are no longer supported by vendors are replaced."
+    },
+    {
+      "level": 1,
+      "strategy": "Multi-factor authentication",
+      "id": "ML1-MFA-01",
+      "requirement": "Multi-factor authentication is used to authenticate users to their organisation’s online services that process, store or communicate their organisation’s sensitive data."
+    },
+    {
+      "level": 1,
+      "strategy": "Multi-factor authentication",
+      "id": "ML1-MFA-02",
+      "requirement": "Multi-factor authentication is used to authenticate users to third-party online services that process, store or communicate their organisation’s sensitive data."
+    },
+    {
+      "level": 1,
+      "strategy": "Multi-factor authentication",
+      "id": "ML1-MFA-03",
+      "requirement": "Multi-factor authentication (where available) is used to authenticate users to third-party online services that process, store or communicate their organisation’s non-sensitive data."
+    },
+    {
+      "level": 1,
+      "strategy": "Multi-factor authentication",
+      "id": "ML1-MFA-04",
+      "requirement": "Multi-factor authentication is used to authenticate users to their organisation’s online customer services that process, store or communicate their organisation’s sensitive customer data."
+    },
+    {
+      "level": 1,
+      "strategy": "Multi-factor authentication",
+      "id": "ML1-MFA-05",
+      "requirement": "Multi-factor authentication is used to authenticate users to third-party online customer services that process, store or communicate their organisation’s sensitive customer data."
+    },
+    {
+      "level": 1,
+      "strategy": "Multi-factor authentication",
+      "id": "ML1-MFA-06",
+      "requirement": "Multi-factor authentication is used to authenticate customers to online customer services that process, store or communicate sensitive customer data."
+    },
+    {
+      "level": 1,
+      "strategy": "Multi-factor authentication",
+      "id": "ML1-MFA-07",
+      "requirement": "Multi-factor authentication uses either: something users have and something users know, or something users have that is unlocked by something users know or are."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML1-RAP-01",
+      "requirement": "Requests for privileged access to systems, applications and data repositories are validated when first requested."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML1-RAP-02",
+      "requirement": "Privileged users are assigned a dedicated privileged user account to be used solely for duties requiring privileged access."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML1-RAP-03",
+      "requirement": "Privileged user accounts (excluding those explicitly authorised to access online services) are prevented from accessing the internet, email and web services."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML1-RAP-04",
+      "requirement": "Privileged user accounts explicitly authorised to access online services are strictly limited to only what is required for users and services to undertake their duties."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML1-RAP-05",
+      "requirement": "Privileged users use separate privileged and unprivileged operating environments."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML1-RAP-06",
+      "requirement": "Unprivileged user accounts cannot logon to privileged operating environments."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML1-RAP-07",
+      "requirement": "Privileged user accounts (excluding local administrator accounts) cannot logon to unprivileged operating environments."
+    },
+    {
+      "level": 1,
+      "strategy": "Application control",
+      "id": "ML1-AC-01",
+      "requirement": "Application control is implemented on workstations."
+    },
+    {
+      "level": 1,
+      "strategy": "Application control",
+      "id": "ML1-AC-02",
+      "requirement": "Application control is applied to user profiles and temporary folders used by operating systems, web browsers and email clients."
+    },
+    {
+      "level": 1,
+      "strategy": "Application control",
+      "id": "ML1-AC-03",
+      "requirement": "Application control restricts the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML1-MAC-01",
+      "requirement": "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML1-MAC-02",
+      "requirement": "Microsoft Office macros in files originating from the internet are blocked."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML1-MAC-03",
+      "requirement": "Microsoft Office macro antivirus scanning is enabled."
+    },
+    {
+      "level": 1,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML1-MAC-04",
+      "requirement": "Microsoft Office macro security settings cannot be changed by users."
+    },
+    {
+      "level": 1,
+      "strategy": "User application hardening",
+      "id": "ML1-UAH-01",
+      "requirement": "Internet Explorer 11 is disabled or removed."
+    },
+    {
+      "level": 1,
+      "strategy": "User application hardening",
+      "id": "ML1-UAH-02",
+      "requirement": "Web browsers do not process Java from the internet."
+    },
+    {
+      "level": 1,
+      "strategy": "User application hardening",
+      "id": "ML1-UAH-03",
+      "requirement": "Web browsers do not process web advertisements from the internet."
+    },
+    {
+      "level": 1,
+      "strategy": "User application hardening",
+      "id": "ML1-UAH-04",
+      "requirement": "Web browser security settings cannot be changed by users."
+    },
+    {
+      "level": 1,
+      "strategy": "Regular backups",
+      "id": "ML1-BK-01",
+      "requirement": "Backups of data, applications and settings are performed and retained in accordance with business criticality and business continuity requirements."
+    },
+    {
+      "level": 1,
+      "strategy": "Regular backups",
+      "id": "ML1-BK-02",
+      "requirement": "Backups of data, applications and settings are synchronised to enable restoration to a common point in time."
+    },
+    {
+      "level": 1,
+      "strategy": "Regular backups",
+      "id": "ML1-BK-03",
+      "requirement": "Backups of data, applications and settings are retained in a secure and resilient manner."
+    },
+    {
+      "level": 1,
+      "strategy": "Regular backups",
+      "id": "ML1-BK-04",
+      "requirement": "Restoration of data, applications and settings from backups to a common point in time is tested as part of disaster recovery exercises."
+    },
+    {
+      "level": 1,
+      "strategy": "Regular backups",
+      "id": "ML1-BK-05",
+      "requirement": "Unprivileged user accounts cannot access backups belonging to other user accounts."
+    },
+    {
+      "level": 1,
+      "strategy": "Regular backups",
+      "id": "ML1-BK-06",
+      "requirement": "Unprivileged user accounts are prevented from modifying and deleting backups."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-01",
+      "requirement": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-02",
+      "requirement": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-03",
+      "requirement": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in online services."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-04",
+      "requirement": "A vulnerability scanner is used at least weekly to identify missing patches or updates for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-05",
+      "requirement": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, and security products."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-06",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-07",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within two weeks of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-08",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within two weeks of release."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-09",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within one month of release."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-10",
+      "requirement": "Online services that are no longer supported by vendors are removed."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch applications",
+      "id": "ML2-PA-11",
+      "requirement": "Office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-01",
+      "requirement": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-02",
+      "requirement": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-03",
+      "requirement": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-04",
+      "requirement": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-05",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-06",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within two weeks of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-07",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices are applied within one month of release."
+    },
+    {
+      "level": 2,
+      "strategy": "Patch operating systems",
+      "id": "ML2-PO-08",
+      "requirement": "Operating systems that are no longer supported by vendors are replaced."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-01",
+      "requirement": "Multi-factor authentication is used to authenticate users to their organisation’s online services that process, store or communicate their organisation’s sensitive data."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-02",
+      "requirement": "Multi-factor authentication is used to authenticate users to third-party online services that process, store or communicate their organisation’s sensitive data."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-03",
+      "requirement": "Multi-factor authentication (where available) is used to authenticate users to third-party online services that process, store or communicate their organisation’s non-sensitive data."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-04",
+      "requirement": "Multi-factor authentication is used to authenticate users to their organisation’s online customer services that process, store or communicate their organisation’s sensitive customer data."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-05",
+      "requirement": "Multi-factor authentication is used to authenticate users to third-party online customer services that process, store or communicate their organisation’s sensitive customer data."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-06",
+      "requirement": "Multi-factor authentication is used to authenticate customers to online customer services that process, store or communicate sensitive customer data."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-07",
+      "requirement": "Multi-factor authentication is used to authenticate privileged users of systems."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-08",
+      "requirement": "Multi-factor authentication is used to authenticate unprivileged users of systems."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-09",
+      "requirement": "Multi-factor authentication uses either: something users have and something users know, or something users have that is unlocked by something users know or are."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-10",
+      "requirement": "Multi-factor authentication used for authenticating users of online services is phishing-resistant."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-11",
+      "requirement": "Multi-factor authentication used for authenticating customers of online customer services provides a phishing-resistant option."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-12",
+      "requirement": "Multi-factor authentication used for authenticating users of systems is phishing-resistant."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-13",
+      "requirement": "Successful and unsuccessful multi-factor authentication events are centrally logged."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-14",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-15",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-16",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-17",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-18",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "Multi-factor authentication",
+      "id": "ML2-MFA-19",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-01",
+      "requirement": "Requests for privileged access to systems, applications and data repositories are validated when first requested."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-02",
+      "requirement": "Privileged access to systems, applications and data repositories is disabled after 12 months unless revalidated."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-03",
+      "requirement": "Privileged access to systems and applications is disabled after 45 days of inactivity."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-04",
+      "requirement": "Privileged users are assigned a dedicated privileged user account to be used solely for duties requiring privileged access."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-05",
+      "requirement": "Privileged user accounts (excluding those explicitly authorised to access online services) are prevented from accessing the internet, email and web services."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-06",
+      "requirement": "Privileged user accounts explicitly authorised to access online services are strictly limited to only what is required for users and services to undertake their duties."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-07",
+      "requirement": "Privileged users use separate privileged and unprivileged operating environments."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-08",
+      "requirement": "Privileged operating environments are not virtualised within unprivileged operating environments."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-09",
+      "requirement": "Unprivileged user accounts cannot logon to privileged operating environments."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-10",
+      "requirement": "Privileged user accounts (excluding local administrator accounts) cannot logon to unprivileged operating environments."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-11",
+      "requirement": "Administrative activities are conducted through jump servers."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-12",
+      "requirement": "Credentials for break glass accounts, local administrator accounts and service accounts are long, unique, unpredictable and managed."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-13",
+      "requirement": "Privileged access events are centrally logged."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-14",
+      "requirement": "Privileged user account and security group management events are centrally logged."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-15",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-16",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-17",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-18",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-19",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML2-RAP-20",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-01",
+      "requirement": "Application control is implemented on workstations."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-02",
+      "requirement": "Application control is implemented on internet-facing servers."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-03",
+      "requirement": "Application control is applied to user profiles and temporary folders used by operating systems, web browsers and email clients."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-04",
+      "requirement": "Application control is applied to all locations other than user profiles and temporary folders used by operating systems, web browsers and email clients."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-05",
+      "requirement": "Application control restricts the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-06",
+      "requirement": "Microsoft’s recommended application blocklist is implemented."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-07",
+      "requirement": "Application control rulesets are validated on an annual or more frequent basis."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-08",
+      "requirement": "Allowed and blocked application control events are centrally logged."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-09",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-10",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-11",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-12",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-13",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "Application control",
+      "id": "ML2-AC-14",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML2-MAC-01",
+      "requirement": "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML2-MAC-02",
+      "requirement": "Microsoft Office macros in files originating from the internet are blocked."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML2-MAC-03",
+      "requirement": "Microsoft Office macro antivirus scanning is enabled."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML2-MAC-04",
+      "requirement": "Microsoft Office macros are blocked from making Win32 API calls."
+    },
+    {
+      "level": 2,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML2-MAC-05",
+      "requirement": "Microsoft Office macro security settings cannot be changed by users."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-01",
+      "requirement": "Internet Explorer 11 is disabled or removed."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-02",
+      "requirement": "Web browsers do not process Java from the internet."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-03",
+      "requirement": "Web browsers do not process web advertisements from the internet."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-04",
+      "requirement": "Web browsers are hardened using ASD and vendor hardening guidance, with the most restrictive guidance taking precedence when conflicts occur."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-05",
+      "requirement": "Web browser security settings cannot be changed by users."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-06",
+      "requirement": "Microsoft Office is blocked from creating child processes."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-07",
+      "requirement": "Microsoft Office is blocked from creating executable content."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-08",
+      "requirement": "Microsoft Office is blocked from injecting code into other processes."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-09",
+      "requirement": "Microsoft Office is configured to prevent activation of Object Linking and Embedding packages."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-10",
+      "requirement": "Office productivity suites are hardened using ASD and vendor hardening guidance, with the most restrictive guidance taking precedence when conflicts occur."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-11",
+      "requirement": "Office productivity suite security settings cannot be changed by users."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-12",
+      "requirement": "PDF software is blocked from creating child processes."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-13",
+      "requirement": "PDF software is hardened using ASD and vendor hardening guidance, with the most restrictive guidance taking precedence when conflicts occur."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-14",
+      "requirement": "PDF software security settings cannot be changed by users."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-15",
+      "requirement": "PowerShell module logging, script block logging and transcription events are centrally logged."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-16",
+      "requirement": "Command line process creation events are centrally logged."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-17",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-18",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-19",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-20",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-21",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 2,
+      "strategy": "User application hardening",
+      "id": "ML2-UAH-22",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-01",
+      "requirement": "Backups of data, applications and settings are performed and retained in accordance with business criticality and business continuity requirements."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-02",
+      "requirement": "Backups of data, applications and settings are synchronised to enable restoration to a common point in time."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-03",
+      "requirement": "Backups of data, applications and settings are retained in a secure and resilient manner."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-04",
+      "requirement": "Restoration of data, applications and settings from backups to a common point in time is tested as part of disaster recovery exercises."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-05",
+      "requirement": "Unprivileged user accounts cannot access backups belonging to other user accounts."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-06",
+      "requirement": "Privileged user accounts (excluding backup administrator accounts) cannot access backups belonging to other user accounts."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-07",
+      "requirement": "Unprivileged user accounts are prevented from modifying and deleting backups."
+    },
+    {
+      "level": 2,
+      "strategy": "Regular backups",
+      "id": "ML2-BK-08",
+      "requirement": "Privileged user accounts (excluding backup administrator accounts) are prevented from modifying and deleting backups."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-01",
+      "requirement": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-02",
+      "requirement": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-03",
+      "requirement": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in online services."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-04",
+      "requirement": "A vulnerability scanner is used at least weekly to identify missing patches or updates for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-05",
+      "requirement": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, and security products."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-06",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-07",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in online services are applied within two weeks of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-08",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-09",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within two weeks of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-10",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, and security products are applied within one month of release."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-11",
+      "requirement": "Online services that are no longer supported by vendors are removed."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-12",
+      "requirement": "Office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch applications",
+      "id": "ML3-PA-13",
+      "requirement": "Applications other than office productivity suites, web browsers and their extensions, email clients, PDF software, Adobe Flash Player, and security products that are no longer supported by vendors are removed."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-01",
+      "requirement": "An automated method of asset discovery is used at least fortnightly to support the detection of assets for subsequent vulnerability scanning activities."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-02",
+      "requirement": "A vulnerability scanner with an up-to-date vulnerability database is used for vulnerability scanning activities."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-03",
+      "requirement": "A vulnerability scanner is used at least daily to identify missing patches or updates for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-04",
+      "requirement": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-05",
+      "requirement": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in drivers."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-06",
+      "requirement": "A vulnerability scanner is used at least fortnightly to identify missing patches or updates for vulnerabilities in firmware."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-07",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-08",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of internet-facing servers and internet-facing network devices are applied within two weeks of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-09",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-10",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in operating systems of workstations, non-internet-facing servers and non-internet-facing network devices are applied within one month of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-11",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in drivers are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-12",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in drivers are applied within one month of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-13",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in firmware are applied within 48 hours of release when vulnerabilities are assessed as critical by vendors or when working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-14",
+      "requirement": "Patches, updates or other vendor mitigations for vulnerabilities in firmware are applied within one month of release when vulnerabilities are assessed as non-critical by vendors and no working exploits exist."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-15",
+      "requirement": "The latest release, or the previous release, of operating systems are used."
+    },
+    {
+      "level": 3,
+      "strategy": "Patch operating systems",
+      "id": "ML3-PO-16",
+      "requirement": "Operating systems that are no longer supported by vendors are replaced."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-01",
+      "requirement": "Multi-factor authentication is used to authenticate users to their organisation’s online services that process, store or communicate their organisation’s sensitive data."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-02",
+      "requirement": "Multi-factor authentication is used to authenticate users to third-party online services that process, store or communicate their organisation’s sensitive data."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-03",
+      "requirement": "Multi-factor authentication (where available) is used to authenticate users to third-party online services that process, store or communicate their organisation’s non-sensitive data."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-04",
+      "requirement": "Multi-factor authentication is used to authenticate users to their organisation’s online customer services that process, store or communicate their organisation’s sensitive customer data."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-05",
+      "requirement": "Multi-factor authentication is used to authenticate users to third-party online customer services that process, store or communicate their organisation’s sensitive customer data."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-06",
+      "requirement": "Multi-factor authentication is used to authenticate customers to online customer services that process, store or communicate sensitive customer data."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-07",
+      "requirement": "Multi-factor authentication is used to authenticate privileged users of systems."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-08",
+      "requirement": "Multi-factor authentication is used to authenticate unprivileged users of systems."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-09",
+      "requirement": "Multi-factor authentication is used to authenticate users of data repositories."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-10",
+      "requirement": "Multi-factor authentication uses either: something users have and something users know, or something users have that is unlocked by something users know or are."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-11",
+      "requirement": "Multi-factor authentication used for authenticating users of online services is phishing-resistant."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-12",
+      "requirement": "Multi-factor authentication used for authenticating customers of online customer services is phishing-resistant."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-13",
+      "requirement": "Multi-factor authentication used for authenticating users of systems is phishing-resistant."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-14",
+      "requirement": "Multi-factor authentication used for authenticating users of data repositories is phishing-resistant."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-15",
+      "requirement": "Successful and unsuccessful multi-factor authentication events are centrally logged."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-16",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-17",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-18",
+      "requirement": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-19",
+      "requirement": "Event logs from workstations are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-20",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-21",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-22",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "Multi-factor authentication",
+      "id": "ML3-MFA-23",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-01",
+      "requirement": "Requests for privileged access to systems, applications and data repositories are validated when first requested."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-02",
+      "requirement": "Privileged access to systems, applications and data repositories is disabled after 12 months unless revalidated."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-03",
+      "requirement": "Privileged access to systems and applications is disabled after 45 days of inactivity."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-04",
+      "requirement": "Privileged users are assigned a dedicated privileged user account to be used solely for duties requiring privileged access."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-05",
+      "requirement": "Privileged access to systems, applications and data repositories is limited to only what is required for users and services to undertake their duties."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-06",
+      "requirement": "Privileged user accounts (excluding those explicitly authorised to access online services) are prevented from accessing the internet, email and web services."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-07",
+      "requirement": "Privileged user accounts explicitly authorised to access online services are strictly limited to only what is required for users and services to undertake their duties."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-08",
+      "requirement": "Secure Admin Workstations are used in the performance of administrative activities."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-09",
+      "requirement": "Privileged users use separate privileged and unprivileged operating environments."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-10",
+      "requirement": "Privileged operating environments are not virtualised within unprivileged operating environments."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-11",
+      "requirement": "Unprivileged user accounts cannot logon to privileged operating environments."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-12",
+      "requirement": "Privileged user accounts (excluding local administrator accounts) cannot logon to unprivileged operating environments."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-13",
+      "requirement": "Just-in-time administration is used for administering systems and applications."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-14",
+      "requirement": "Administrative activities are conducted through jump servers."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-15",
+      "requirement": "Credentials for break glass accounts, local administrator accounts and service accounts are long, unique, unpredictable and managed."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-16",
+      "requirement": "Memory integrity functionality is enabled."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-17",
+      "requirement": "Local Security Authority protection functionality is enabled."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-18",
+      "requirement": "Credential Guard functionality is enabled."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-19",
+      "requirement": "Remote Credential Guard functionality is enabled."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-20",
+      "requirement": "Privileged access events are centrally logged."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-21",
+      "requirement": "Privileged user account and security group management events are centrally logged."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-22",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-23",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-24",
+      "requirement": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-25",
+      "requirement": "Event logs from workstations are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-26",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-27",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-28",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict administrative privileges",
+      "id": "ML3-RAP-29",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-01",
+      "requirement": "Application control is implemented on workstations."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-02",
+      "requirement": "Application control is implemented on internet-facing servers."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-03",
+      "requirement": "Application control is implemented on non-internet-facing servers."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-04",
+      "requirement": "Application control is applied to user profiles and temporary folders used by operating systems, web browsers and email clients."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-05",
+      "requirement": "Application control is applied to all locations other than user profiles and temporary folders used by operating systems, web browsers and email clients."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-06",
+      "requirement": "Application control restricts the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-07",
+      "requirement": "Application control restricts the execution of drivers to an organisation-approved set."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-08",
+      "requirement": "Microsoft’s recommended application blocklist is implemented."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-09",
+      "requirement": "Microsoft’s vulnerable driver blocklist is implemented."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-10",
+      "requirement": "Application control rulesets are validated on an annual or more frequent basis."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-11",
+      "requirement": "Allowed and blocked application control events are centrally logged."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-12",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-13",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-14",
+      "requirement": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-15",
+      "requirement": "Event logs from workstations are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-16",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-17",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-18",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "Application control",
+      "id": "ML3-AC-19",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-01",
+      "requirement": "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-02",
+      "requirement": "Only Microsoft Office macros running from within a sandboxed environment, a Trusted Location or that are digitally signed by a trusted publisher are allowed to execute."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-03",
+      "requirement": "Microsoft Office macros are checked to ensure they are free of malicious code before being digitally signed or placed within Trusted Locations."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-04",
+      "requirement": "Only privileged users responsible for checking that Microsoft Office macros are free of malicious code can write to and modify content within Trusted Locations."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-05",
+      "requirement": "Microsoft Office macros digitally signed by an untrusted publisher cannot be enabled via the Message Bar or Backstage View."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-06",
+      "requirement": "Microsoft Office macros digitally signed by signatures other than V3 signatures cannot be enabled via the Message Bar or Backstage View."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-07",
+      "requirement": "Microsoft Office’s list of trusted publishers is validated on an annual or more frequent basis."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-08",
+      "requirement": "Microsoft Office macros in files originating from the internet are blocked."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-09",
+      "requirement": "Microsoft Office macro antivirus scanning is enabled."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-10",
+      "requirement": "Microsoft Office macros are blocked from making Win32 API calls."
+    },
+    {
+      "level": 3,
+      "strategy": "Restrict Microsoft Office macros",
+      "id": "ML3-MAC-11",
+      "requirement": "Microsoft Office macro security settings cannot be changed by users."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-01",
+      "requirement": "Internet Explorer 11 is disabled or removed."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-02",
+      "requirement": "Web browsers do not process Java from the internet."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-03",
+      "requirement": "Web browsers do not process web advertisements from the internet."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-04",
+      "requirement": "Web browsers are hardened using ASD and vendor hardening guidance, with the most restrictive guidance taking precedence when conflicts occur."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-05",
+      "requirement": "Web browser security settings cannot be changed by users."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-06",
+      "requirement": "Microsoft Office is blocked from creating child processes."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-07",
+      "requirement": "Microsoft Office is blocked from creating executable content."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-08",
+      "requirement": "Microsoft Office is blocked from injecting code into other processes."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-09",
+      "requirement": "Microsoft Office is configured to prevent activation of Object Linking and Embedding packages."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-10",
+      "requirement": "Office productivity suites are hardened using ASD and vendor hardening guidance, with the most restrictive guidance taking precedence when conflicts occur."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-11",
+      "requirement": "Office productivity suite security settings cannot be changed by users."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-12",
+      "requirement": "PDF software is blocked from creating child processes."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-13",
+      "requirement": "PDF software is hardened using ASD and vendor hardening guidance, with the most restrictive guidance taking precedence when conflicts occur."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-14",
+      "requirement": "PDF software security settings cannot be changed by users."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-15",
+      "requirement": ".NET Framework 3.5 (includes .NET 2.0 and 3.0) is disabled or removed."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-16",
+      "requirement": "Windows PowerShell 2.0 is disabled or removed."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-17",
+      "requirement": "PowerShell is configured to use Constrained Language Mode."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-18",
+      "requirement": "PowerShell module logging, script block logging and transcription events are centrally logged."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-19",
+      "requirement": "Command line process creation events are centrally logged."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-20",
+      "requirement": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-21",
+      "requirement": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-22",
+      "requirement": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-23",
+      "requirement": "Event logs from workstations are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-24",
+      "requirement": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-25",
+      "requirement": "Cyber security incidents are reported to the chief information security officer, or one of their delegates, as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-26",
+      "requirement": "Cyber security incidents are reported to ASD as soon as possible after they occur or are discovered."
+    },
+    {
+      "level": 3,
+      "strategy": "User application hardening",
+      "id": "ML3-UAH-27",
+      "requirement": "Following the identification of a cyber security incident, the cyber security incident response plan is enacted."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-01",
+      "requirement": "Backups of data, applications and settings are performed and retained in accordance with business criticality and business continuity requirements."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-02",
+      "requirement": "Backups of data, applications and settings are synchronised to enable restoration to a common point in time."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-03",
+      "requirement": "Backups of data, applications and settings are retained in a secure and resilient manner."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-04",
+      "requirement": "Restoration of data, applications and settings from backups to a common point in time is tested as part of disaster recovery exercises."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-05",
+      "requirement": "Unprivileged user accounts cannot access backups belonging to other user accounts."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-06",
+      "requirement": "Unprivileged user accounts cannot access their own backups."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-07",
+      "requirement": "Privileged user accounts (excluding backup administrator accounts) cannot access backups belonging to other user accounts."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-08",
+      "requirement": "Privileged user accounts (excluding backup administrator accounts) cannot access their own backups."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-09",
+      "requirement": "Unprivileged user accounts are prevented from modifying and deleting backups."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-10",
+      "requirement": "Privileged user accounts (excluding backup administrator accounts) are prevented from modifying and deleting backups."
+    },
+    {
+      "level": 3,
+      "strategy": "Regular backups",
+      "id": "ML3-BK-11",
+      "requirement": "Backup administrator accounts are prevented from modifying and deleting backups during their retention period."
+    }
+  ]
+}

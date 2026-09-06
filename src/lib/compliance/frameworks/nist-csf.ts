@@ -81,6 +81,12 @@ export const NIST_CSF: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-office-macro-win32-block": [],
+    "windows-office-child-process-block": [],
+    "windows-office-executable-block": [],
+    "windows-office-injection-block": [],
+    "windows-adobe-child-process-block": [],
+
     "windows-credential-guard": [],
     "windows-credential-theft-protection": [],
     "ios-app-data-transfer": [],

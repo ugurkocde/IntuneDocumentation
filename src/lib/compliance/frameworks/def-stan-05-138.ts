@@ -113,6 +113,12 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-office-macro-win32-block": [],
+    "windows-office-child-process-block": [],
+    "windows-office-executable-block": [],
+    "windows-office-injection-block": [],
+    "windows-adobe-child-process-block": [],
+
     "windows-antivirus-required": [],
     "windows-periodic-antimalware-scan": [],
     "windows-quality-update-deadline": [],

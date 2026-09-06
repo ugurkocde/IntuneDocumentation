@@ -105,7 +105,7 @@ describe("ComplianceView", () => {
     expect(
       screen.getByRole("button", { name: "NIST SP 800-171 Rev. 3" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("button")).toHaveLength(9);
+    expect(screen.getAllByRole("button")).toHaveLength(10);
     expect(
       screen.queryByRole("button", { name: /Download report/ }),
     ).not.toBeInTheDocument();
@@ -426,4 +426,31 @@ describe("ComplianceView assessment scope", () => {
       "Collection is incomplete",
     );
   });
+});
+
+it("selects each Essential Eight target and updates its requirement set", async () => {
+  window.localStorage.clear();
+  const user = userEvent.setup();
+  render(<ComplianceView configurations={configurations} />);
+  await user.click(screen.getByRole("button", { name: "ASD Essential Eight" }));
+  const selector = await screen.findByRole("combobox", {
+    name: "Essential Eight target maturity level",
+  });
+  expect(selector).toHaveValue("1");
+  expect(
+    screen.getAllByText(/48 published requirement entries/).length,
+  ).toBeGreaterThan(0);
+  await user.selectOptions(selector, "2");
+  expect(
+    screen.getAllByText(/107 published requirement entries/).length,
+  ).toBeGreaterThan(0);
+  await user.selectOptions(selector, "3");
+  expect(
+    screen.getAllByText(/149 published requirement entries/).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.getByText(/no achieved maturity level is calculated/),
+  ).toBeInTheDocument();
+  cleanup();
+  window.localStorage.clear();
 });

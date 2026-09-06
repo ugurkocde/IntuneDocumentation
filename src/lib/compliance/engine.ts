@@ -1,3 +1,7 @@
+import {
+  essentialEightFramework,
+  essentialEightLevel,
+} from "./frameworks/essential-eight";
 import type { DetailedExportData } from "../configuration-analyzer";
 import type { ConfigurationSettingInstance } from "../intune-detailed-client";
 import { summarizeAssignments } from "./assignments";
@@ -40,7 +44,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.09.2";
+export const COMPLIANCE_RULESET_VERSION = "2026.09.3";
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -570,6 +574,12 @@ export function assessCompliance(
   data: ComplianceExportData,
   scope: AssessmentScope = data.assessmentScope ?? {},
 ): ComplianceAssessment {
+  scope = {
+    ...scope,
+    essentialEightMaturityLevel: essentialEightLevel(
+      scope.essentialEightMaturityLevel,
+    ),
+  };
   const capabilities = assessCapabilities(data, COMPLIANCE_CAPABILITIES, scope);
   return {
     generatedAt: new Date().toISOString(),
@@ -594,6 +604,11 @@ export function assessCompliance(
       assessFramework(capabilities, CYBER_ESSENTIALS, scope),
       assessFramework(capabilities, NIST_800_171, scope),
       assessFramework(capabilities, NIST_800_171_R3, scope),
+      assessFramework(
+        capabilities,
+        essentialEightFramework(scope.essentialEightMaturityLevel),
+        scope,
+      ),
     ],
   };
 }

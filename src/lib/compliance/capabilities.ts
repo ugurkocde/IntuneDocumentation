@@ -1,3 +1,4 @@
+import { ESSENTIAL_EIGHT_CAPABILITIES } from "./essential-eight-capabilities";
 import { LEGACY_SIGNALS } from "./legacy-signals";
 import { ADDITIONAL_CAPABILITIES } from "./additional-capabilities";
 import type { ComplianceCapability } from "./types";
@@ -690,6 +691,7 @@ const CORE_CAPABILITIES: readonly ComplianceCapability[] = [
     ],
   },
   ...ADDITIONAL_CAPABILITIES,
+  ...ESSENTIAL_EIGHT_CAPABILITIES,
 ];
 
 export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] =

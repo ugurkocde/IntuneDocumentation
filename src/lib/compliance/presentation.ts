@@ -7,6 +7,12 @@ import type {
 export function frameworkCoverageLabel(
   assessment: FrameworkAssessment,
 ): string | undefined {
+  if (assessment.framework.id === "essential-eight") {
+    const mapped = assessment.controls.filter(
+      (row) => row.capabilityIds.length || row.excludedCapabilityIds.length,
+    ).length;
+    return `${assessment.summary.totalControls} published requirement entries across all eight strategies; ${mapped} have supporting Intune evidence mappings. Target level only; achieved maturity is not assessed.`;
+  }
   const total = assessment.framework.totalRequirements;
   if (total === undefined) return undefined;
   return `${assessment.summary.totalControls} of ${total} published requirements have Intune evidence mappings. Supporting evidence only; this is not a full assessment or compliance score.`;

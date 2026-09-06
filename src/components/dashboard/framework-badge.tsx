@@ -7,7 +7,8 @@ export type FrameworkId =
   | "def-stan-05-138-i4"
   | "cyber-essentials-v3"
   | "nist-800-171-r2"
-  | "nist-800-171-r3";
+  | "nist-800-171-r3"
+  | "essential-eight";
 
 // Text-forward wordmarks only: official logos, insignia, and association marks
 // must not be reproduced. The standards are named in our own typography for
@@ -16,6 +17,7 @@ const WORDMARK_DETAILS: Record<
   Exclude<FrameworkId, "bsi-it-grundschutz">,
   { fill: string; line1: string; line2: string }
 > = {
+  "essential-eight": { fill: "#047857", line1: "ESSENTIAL", line2: "EIGHT" },
   "iso-27001-2022": { fill: "#4338CA", line1: "ISO", line2: "27001" },
   "soc2-tsc": { fill: "#7E22CE", line1: "SOC 2", line2: "TSC" },
   "nist-800-53-r5": {

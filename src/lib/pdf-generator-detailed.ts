@@ -1258,7 +1258,7 @@ export async function generateDetailedPDF(
       const coverageLabel = frameworkCoverageLabel(framework);
       if (coverageLabel) addText(coverageLabel, 9, "normal", [80, 80, 80]);
       addText(
-        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} mapped entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
+        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
         9,
         "normal",
         [80, 80, 80],
@@ -1280,6 +1280,8 @@ export async function generateDetailedPDF(
           "normal",
           statusColors[assessed.status],
         );
+        if (framework.framework.id === "essential-eight")
+          addText(assessed.control.summary, 9, "normal", [80, 80, 80]);
         yPosition += 1;
       }
       if (ranked.length > maxRows) {

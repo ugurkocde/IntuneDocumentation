@@ -15,12 +15,14 @@ export function ComplianceContext({
   scope,
   onScopeChange,
   showRiskLevel,
+  showEssentialEightLevel = false,
 }: {
   assessment: ComplianceAssessment;
   data: DetailedExportData;
   scope: AssessmentScope;
   onScopeChange: (scope: AssessmentScope) => void;
   showRiskLevel: boolean;
+  showEssentialEightLevel?: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -98,6 +100,36 @@ export function ComplianceContext({
           ))}
         </div>
       </fieldset>
+      {showEssentialEightLevel && (
+        <div>
+          <label className="flex flex-wrap items-center gap-3">
+            Essential Eight target maturity level
+            <select
+              className="rounded border border-slate-300 p-2"
+              value={scope.essentialEightMaturityLevel ?? 1}
+              onChange={(event) =>
+                onScopeChange({
+                  ...scope,
+                  essentialEightMaturityLevel: Number(event.target.value) as
+                    | 1
+                    | 2
+                    | 3,
+                })
+              }
+            >
+              {[1, 2, 3].map((level) => (
+                <option key={level} value={level}>
+                  Maturity Level {level}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-2 text-xs">
+            Evidence against the selected target. The tool does not calculate an
+            achieved maturity level. Default target: Level 1.
+          </p>
+        </div>
+      )}
       {showRiskLevel && (
         <label className="flex flex-wrap items-center gap-3">
           Def Stan Cyber Risk Profile

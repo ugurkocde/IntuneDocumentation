@@ -8,6 +8,7 @@ export type CompliancePlatform =
 export interface AssessmentScope {
   /** Explicit scope. Omitted means all supported platforms, never inferred from policy absence. */
   platforms?: CompliancePlatform[];
+  essentialEightMaturityLevel?: 1 | 2 | 3;
   defStanRiskLevel?: 0 | 1 | 2 | 3;
 }
 

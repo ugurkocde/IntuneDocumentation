@@ -139,6 +139,12 @@ export const NIST_800_171_R3: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-office-macro-win32-block": [],
+    "windows-office-child-process-block": [],
+    "windows-office-executable-block": [],
+    "windows-office-injection-block": [],
+    "windows-adobe-child-process-block": [],
+
     "windows-disk-encryption": ["03.01.18", "03.13.08"],
     "macos-disk-encryption": ["03.01.18", "03.13.08"],
     "android-storage-encryption": ["03.01.18", "03.13.08"],

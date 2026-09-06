@@ -284,13 +284,44 @@ export class DetailedIntuneService {
     familyKey: string,
     endpoint: string,
     expand?: string,
+    expandedParent?: { endpoint: string; relation: string },
   ) {
     let items: any[] = [];
     try {
-      const response = await this.retryWithBackoff(() => {
-        const request = this.client.api(endpoint).version("beta");
-        return (expand ? request.expand(expand) : request).get();
-      });
+      let response;
+      try {
+        response = await this.retryWithBackoff(() => {
+          const request = this.client.api(endpoint).version("beta");
+          return (expand ? request.expand(expand) : request).get();
+        });
+      } catch (error) {
+        const details = this.graphError(error);
+        if (
+          !expandedParent ||
+          details.statusCode !== 400 ||
+          !/No OData route exists/i.test(details.message)
+        )
+          throw error;
+        // Compatibility fallback for backends rejecting navigation GET requests.
+        endpoint = `${expandedParent.endpoint}?$expand=${expandedParent.relation}`;
+        const parent = await this.retryWithBackoff(() =>
+          this.client
+            .api(expandedParent.endpoint)
+            .version("beta")
+            .expand(expandedParent.relation)
+            .get(),
+        );
+        if (!Array.isArray(parent?.[expandedParent.relation])) {
+          throw new Error(
+            `Graph omitted the expanded ${expandedParent.relation} collection`,
+          );
+        }
+        response = {
+          value: parent[expandedParent.relation],
+          "@odata.nextLink":
+            parent[`${expandedParent.relation}@odata.nextLink`],
+        };
+      }
       const pages = await collectAllPagesWithStatus<any>(
         this.client as unknown as Client,
         response,
@@ -1666,7 +1697,7 @@ export class DetailedIntuneService {
       const detailedScripts = await Promise.all(
         (allScripts || []).map(async (script: any) => {
           try {
-            const endpoint = `/deviceManagement/deviceManagementScripts('${script.id}')`;
+            const endpoint = `/deviceManagement/deviceManagementScripts/${encodeURIComponent(script.id)}`;
             const [details, assignments] = await Promise.all([
               this.readPolicyDetails(
                 script,
@@ -1678,6 +1709,8 @@ export class DetailedIntuneService {
                 script,
                 "scripts",
                 `${endpoint}/assignments`,
+                undefined,
+                { endpoint, relation: "assignments" },
               ),
             ]);
             const scriptContent = details.item;
@@ -1757,7 +1790,7 @@ export class DetailedIntuneService {
       const detailedScripts = await Promise.all(
         (allScripts || []).map(async (script: any) => {
           try {
-            const endpoint = `/deviceManagement/deviceShellScripts('${script.id}')`;
+            const endpoint = `/deviceManagement/deviceShellScripts/${encodeURIComponent(script.id)}`;
             const [details, assignments] = await Promise.all([
               this.readPolicyDetails(
                 script,
@@ -1769,6 +1802,8 @@ export class DetailedIntuneService {
                 script,
                 "scripts",
                 `${endpoint}/assignments`,
+                undefined,
+                { endpoint, relation: "assignments" },
               ),
             ]);
             const scriptContent = details.item;

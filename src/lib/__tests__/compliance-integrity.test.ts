@@ -516,6 +516,10 @@ describe("collection and reproducibility", () => {
   ])(
     "retains detail and assignment failures in %s",
     async (method, endpoint) => {
+      const resource =
+        method === "getAppConfigurationsDetailed"
+          ? `${endpoint}('policy')`
+          : `${endpoint}/policy`;
       const service = new DetailedIntuneService("test-token") as any;
       service.retryWithBackoff = (action: () => Promise<unknown>) => action();
       service.client = {
@@ -543,11 +547,11 @@ describe("collection and reproducibility", () => {
         expect.arrayContaining([
           expect.objectContaining({
             statusCode: 403,
-            endpoint: `${endpoint}('policy')/assignments`,
+            endpoint: `${resource}/assignments`,
           }),
           expect.objectContaining({
             statusCode: 403,
-            endpoint: `${endpoint}('policy')`,
+            endpoint: resource,
           }),
         ]),
       );

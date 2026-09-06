@@ -7,18 +7,23 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, and Cyber Essentials. Audit-ready evidence reports, generated from your tenant documentation.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Audit-ready evidence reports, generated from your tenant documentation.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, and Cyber Essentials.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3.",
     url: "/compliance",
     type: "website",
   },
 };
 
 const frameworks = [
+  {
+    name: "ASD Essential Eight (Maturity Levels 1, 2 and 3)",
+    detail:
+      "Choose a target maturity level in the dashboard. All eight strategies are included, with 48, 107 and 149 requirement entries for Levels 1, 2 and 3 respectively, based on ASD’s November 2023 model. Supporting Intune evidence is mapped to 3, 8 and 10 requirements respectively. Other requirements remain explicitly unassessed; the tool does not calculate an achieved maturity level.",
+  },
   {
     name: "ISO/IEC 27001:2022",
     detail:
@@ -205,7 +210,9 @@ export default function CompliancePage() {
             <p className="mb-5 text-sm leading-relaxed text-slate-600">
               The compliance evidence view is available in the dashboard for
               every signed-in user. Review framework controls and download full
-              requirement-level reports as PDF.
+              requirement-level reports as PDF. For ASD Essential Eight, select
+              Maturity Level 1, 2 or 3 to review evidence against that target
+              and include it in your PDF report and JSON evidence record.
             </p>
             <Link
               href="/dashboard"
@@ -224,7 +231,24 @@ export default function CompliancePage() {
             freely published Kompendium. Def Stan 05-138 is referenced by
             control identifier with original summaries. Cyber Essentials content
             is used under the Open Government Licence v3.0, and evidence never
-            indicates certification.
+            indicates certification. Essential Eight requirement text is
+            attributed to the Australian Signals Directorate, © Commonwealth of
+            Australia 2026, under CC BY 4.0. Local requirement identifiers and
+            evidence mappings are additions by Intune Documentation.{" "}
+            <a
+              href="https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model"
+              className="underline"
+            >
+              ASD maturity model
+            </a>
+            {" · "}
+            <a
+              href="https://creativecommons.org/licenses/by/4.0/"
+              className="underline"
+            >
+              CC BY 4.0 licence
+            </a>
+            .
           </p>
         </div>
       </main>

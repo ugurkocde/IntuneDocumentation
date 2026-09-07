@@ -9,7 +9,7 @@ import { evaluatePolicyCheck } from "./policy-checks";
 import {
   buildCollectionCoverage,
   collectConfigurations,
-  isCapabilityCollectionIncomplete,
+  capabilityCollectionGaps,
 } from "./coverage";
 import { COMPLIANCE_CAPABILITIES } from "./capabilities";
 import { BSI_IT_GRUNDSCHUTZ } from "./frameworks/bsi-it-grundschutz";
@@ -422,7 +422,8 @@ export function assessCapabilities(
 
   return capabilities.map((capability) => {
     const evidence = evidenceByCapability.get(capability.id) ?? [];
-    const incomplete = isCapabilityCollectionIncomplete(data, capability);
+    const collectionGaps = capabilityCollectionGaps(data, capability);
+    const incomplete = collectionGaps.length > 0;
     let status = capabilityStatus(evidence, capability);
     if (status === "noEvidence" && incomplete) status = "collectionIncomplete";
     if (
@@ -446,6 +447,12 @@ export function assessCapabilities(
               "Relevant policy collection is incomplete; additional or contradictory evidence may be missing.",
             ]
           : []),
+        ...collectionGaps.map((row) =>
+          row.family === "conditionalAccessPolicies" &&
+          row.status === "notCollected"
+            ? "Conditional Access policies were not collected. Enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies to assess MFA and access requirements."
+            : `${row.family}: ${row.status === "notCollected" ? "not collected" : "collection incomplete"}. Refresh the policies to retry collection. See collection coverage for the API error details.`,
+        ),
         ...(status === "conflictingEvidence"
           ? [
               "Mixed policy evidence. Review profile settings and targeting overlap; a device conflict has not been established.",

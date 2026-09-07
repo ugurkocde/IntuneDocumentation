@@ -193,6 +193,13 @@ export function isCapabilityCollectionIncomplete(
   data: Omit<DetailedExportData, "groupNames">,
   capability: ComplianceCapability,
 ): boolean {
+  return capabilityCollectionGaps(data, capability).length > 0;
+}
+
+export function capabilityCollectionGaps(
+  data: Omit<DetailedExportData, "groupNames">,
+  capability: ComplianceCapability,
+): CollectionCoverage[] {
   const relevant =
     capability.platform === "tenant"
       ? ["conditionalAccessPolicies"]
@@ -209,7 +216,7 @@ export function isCapabilityCollectionIncomplete(
             ? ["appProtectionPolicies"]
             : []),
         ];
-  return buildCollectionCoverage(data, [], true).some(
+  return buildCollectionCoverage(data, [], true).filter(
     (row) =>
       relevant.includes(row.family) &&
       ["incomplete", "notCollected"].includes(row.status),

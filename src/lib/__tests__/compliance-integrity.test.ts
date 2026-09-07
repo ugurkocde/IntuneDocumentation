@@ -37,6 +37,56 @@ function capability(exportData: DetailedExportData, id: string) {
 }
 
 describe("evidence integrity regressions", () => {
+  it("evaluates technical checks in every framework and explains skipped Conditional Access", () => {
+    const exportData = data();
+    exportData.collectionSkippedFamilies = ["conditionalAccessPolicies"];
+    const result = assessCompliance(exportData);
+    const mfa = result.capabilities.find(
+      (row) => row.capability.id === "tenant-mfa-required",
+    )!;
+    expect(mfa.status).toBe("collectionIncomplete");
+    expect(mfa.limitations.join(" ")).toContain(
+      "Enable Include Conditional Access in Settings",
+    );
+    const evaluatedIds = new Set(
+      result.capabilities.map((row) => row.capability.id),
+    );
+    for (const framework of result.frameworks) {
+      for (const control of framework.controls) {
+        for (const id of control.capabilityIds)
+          expect(evaluatedIds.has(id)).toBe(true);
+        if (control.capabilityIds.includes("tenant-mfa-required")) {
+          expect(control.unassessedAspects.join(" ")).toContain(
+            "Conditional Access policies were not collected",
+          );
+        }
+      }
+    }
+    expect(
+      result.capabilities.find(
+        (row) => row.capability.id === "windows-firewall",
+      )?.status,
+    ).toBe("noEvidence");
+  });
+
+  it("does not invalidate technical checks when only legacy WIP collection fails", () => {
+    const exportData = data();
+    exportData.fetchErrors = [
+      {
+        policyId: "windowsInformationProtectionPolicies",
+        policyName: "Windows Information Protection (legacy)",
+        policyType: "applications",
+        familyKey: "applications",
+        error: "Graph omitted the collection value array",
+      },
+    ];
+    expect(
+      assessCapabilities(exportData).some(
+        (row) => row.status === "collectionIncomplete",
+      ),
+    ).toBe(false);
+  });
+
   it("surfaces contradictory behavior-monitoring settings across assigned policies", () => {
     const enabled = policy("windows10GeneralConfiguration", {
       defenderRequireBehaviorMonitoring: true,

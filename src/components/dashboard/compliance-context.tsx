@@ -157,8 +157,21 @@ export function ComplianceContext({
       )}
       {incomplete && (
         <p role="status" className="rounded-lg bg-amber-50 p-3 text-amber-900">
-          Collection is incomplete or a relevant source was not collected.
-          Missing evidence may reflect unavailable data.
+          Collection is incomplete or a source was not collected. All supported
+          technical checks run against the available data. Only checks that need
+          missing data are affected; expand collection coverage below for
+          details.
+          {assessment.collectionCoverage.some(
+            (row) =>
+              row.family === "conditionalAccessPolicies" &&
+              row.status === "notCollected",
+          ) && (
+            <span className="mt-2 block">
+              Conditional Access was not collected. Enable Include Conditional
+              Access in Settings, complete sign-in or consent if requested, and
+              refresh the policies to assess MFA and access requirements.
+            </span>
+          )}
         </p>
       )}
       <p className="text-xs">

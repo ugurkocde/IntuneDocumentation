@@ -459,7 +459,15 @@ function translateEvidenceNote(value: string, locale: Locale): string {
 }
 
 function translateAssessmentLimitation(text: string): string {
+  const sourceGap =
+    /^(\w+): (not collected|collection incomplete)\. Refresh the policies to retry collection\. See collection coverage for the API error details\.$/.exec(
+      text,
+    );
+  if (sourceGap)
+    return `${sourceGap[1]}: ${sourceGap[2] === "not collected" ? "nicht erhoben" : "Datenerhebung unvollständig"}. Richtlinien aktualisieren, um die Erhebung erneut zu versuchen. API-Fehlerdetails stehen im Abschnitt zur Datenerhebung.`;
   const translations: Record<string, string> = {
+    "Conditional Access policies were not collected. Enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies to assess MFA and access requirements.":
+      "Richtlinien für bedingten Zugriff wurden nicht erhoben. In den Einstellungen den bedingten Zugriff einschließen, gegebenenfalls Anmeldung oder Zustimmung abschließen und die Richtlinien aktualisieren, um MFA- und Zugriffsanforderungen zu bewerten.",
     "Assignment data is unavailable for some matching policies; effective targeting remains unknown.":
       "Für einige passende Richtlinien fehlen Zuweisungsdaten; der tatsächliche Zielumfang bleibt unbekannt.",
     "These settings support part of this control. Remaining technical and organizational requirements need separate assessment.":

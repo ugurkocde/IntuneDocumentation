@@ -204,7 +204,13 @@ function hasLegacyConfigurations(configurations: IntuneConfigurations) {
   );
 }
 
-function ControlStatusChip({ status }: { status: ControlStatus }) {
+function ControlStatusChip({
+  status,
+  label,
+}: {
+  status: ControlStatus;
+  label?: string;
+}) {
   const details = CONTROL_STATUS_DETAILS[status];
 
   return (
@@ -212,7 +218,7 @@ function ControlStatusChip({ status }: { status: ControlStatus }) {
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${details.chipClassName}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${details.dotClassName}`} />
-      {details.label}
+      {label ?? details.label}
     </span>
   );
 }
@@ -364,6 +370,24 @@ function ControlRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const pendingCapabilities = control.capabilityIds
+    .map((id) => capabilitiesById.get(id))
+    .filter(
+      (result) =>
+        result?.status === "collectionIncomplete" ||
+        result?.status === "assignmentUnknown",
+    );
+  const statusLabel =
+    control.status === "notAssessed"
+      ? control.capabilityIds.length === 0
+        ? "No automated check"
+        : "Assessment incomplete"
+      : CONTROL_STATUS_DETAILS[control.status].label;
+  const pendingReasons = [
+    ...new Set(
+      pendingCapabilities.flatMap((result) => result?.limitations ?? []),
+    ),
+  ];
   const panelId = `compliance-control-${control.control.id.replace(
     /[^a-z0-9]/gi,
     "-",
@@ -376,7 +400,7 @@ function ControlRow({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={panelId}
-        aria-label={`${control.control.id} ${control.control.title}: ${CONTROL_STATUS_DETAILS[control.status].label}`}
+        aria-label={`${control.control.id} ${control.control.title}: ${statusLabel}`}
         className="hover:bg-mint-50/60 flex min-h-16 w-full cursor-pointer items-start gap-3 px-4 py-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none focus-visible:ring-inset sm:items-center sm:px-5"
       >
         <ChevronDown
@@ -393,8 +417,16 @@ function ControlRow({
               </span>
               {control.control.title}
             </p>
-            <ControlStatusChip status={control.status} />
+            <ControlStatusChip status={control.status} label={statusLabel} />
           </div>
+          {control.status === "notAssessed" && (
+            <span className="mt-2 block text-xs leading-5 text-amber-900">
+              {control.capabilityIds.length === 0
+                ? "This control has no automated check in the selected platform scope. Separate evidence is needed."
+                : pendingReasons.join(" ") ||
+                  "Required technical evidence is unavailable. Expand this control to review its checks."}
+            </span>
+          )}
           {/^ML[123]-/.test(control.control.id) && (
             <p className="mt-2 text-sm leading-6 text-slate-700">
               {control.control.summary}
@@ -1131,7 +1163,8 @@ export function ComplianceView({
 
                   <p className="text-xs text-slate-600">
                     {selectedFramework.summary.conflicting} mixed evidence;{" "}
-                    {selectedFramework.summary.notAssessed} not assessed;{" "}
+                    {selectedFramework.summary.notAssessed} incomplete or
+                    without automated checks;{" "}
                     {selectedFramework.summary.notApplicable} outside scope.
                     Counts refer to selected mapped entries, not full framework
                     coverage.

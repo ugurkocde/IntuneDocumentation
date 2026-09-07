@@ -426,6 +426,36 @@ describe("ComplianceView assessment scope", () => {
       "Collection is incomplete",
     );
   });
+  it("explains skipped access checks on the collapsed Cyber Essentials control", async () => {
+    window.localStorage.setItem("compliance-framework", "cyber-essentials-v3");
+    render(
+      <ComplianceView
+        configurations={{
+          ...configurations,
+          sections: [
+            {
+              key: "conditionalAccessPolicies",
+              familyKey: "conditionalAccessPolicies",
+              label: "Conditional Access",
+              selectionPrefix: "ca",
+              items: [],
+            },
+          ],
+          collectionSkippedFamilies: ["conditionalAccessPolicies"],
+        }}
+      />,
+    );
+    const control = await screen.findByRole("button", {
+      name: /User access control.*Assessment incomplete/,
+    });
+    expect(control).toHaveAttribute("aria-expanded", "false");
+    expect(control).toHaveTextContent(
+      "Enable Include Conditional Access in Settings",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Conditional Access was not collected",
+    );
+  });
 });
 
 it("selects each Essential Eight target and updates its requirement set", async () => {

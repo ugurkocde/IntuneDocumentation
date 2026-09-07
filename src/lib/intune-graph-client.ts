@@ -1,14 +1,9 @@
-import { Client } from "@microsoft/microsoft-graph-client";
+import type { Client } from "@microsoft/microsoft-graph-client";
 import "isomorphic-fetch";
-import { collectAllPages } from "./graph-paging";
+import { collectAllPages, GraphPaginationError } from "./graph-paging";
 
-export function createGraphClient(accessToken: string) {
-  return Client.init({
-    authProvider: (done) => {
-      done(null, accessToken);
-    },
-  });
-}
+import { createGraphClient } from "./graph-client";
+export { createGraphClient } from "./graph-client";
 
 // Generic configuration type
 export interface BaseConfiguration {
@@ -26,6 +21,22 @@ export interface BaseConfiguration {
 }
 
 export class IntuneConfigurationService {
+  private collectionErrors: Array<{
+    source: string;
+    message: string;
+    statusCode?: number;
+  }> = [];
+  getFetchErrors() {
+    return [...this.collectionErrors];
+  }
+  private captureError(error: any) {
+    this.collectionErrors.push({
+      source: "Legacy Graph collection",
+      message: error?.message ?? "Graph read failed",
+      statusCode: error?.statusCode ?? error?.cause?.statusCode,
+    });
+  }
+
   private client: ReturnType<typeof createGraphClient>;
 
   constructor(accessToken: string) {
@@ -38,22 +49,28 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/configurationPolicies")
         .version("beta")
-        .select("id,name,description,platforms,technologies,createdDateTime,lastModifiedDateTime,settingCount,roleScopeTagIds")
+        .select(
+          "id,name,description,platforms,technologies,createdDateTime,lastModifiedDateTime,settingCount,roleScopeTagIds",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       // Map the response to our standard format
       return items.map((policy: any) => ({
         ...policy,
         displayName: policy.name || policy.displayName,
         "@odata.type": "#microsoft.graph.deviceManagementConfigurationPolicy",
         platformType: policy.platforms,
-        configType: "Settings Catalog"
+        configType: "Settings Catalog",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching configuration policies:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -61,11 +78,14 @@ export class IntuneConfigurationService {
   async getConfigurationPolicySettings(policyId: string): Promise<any> {
     try {
       const response = await this.client
-        .api(`/deviceManagement/configurationPolicies('${policyId}')?$expand=settings`)
+        .api(
+          `/deviceManagement/configurationPolicies('${policyId}')?$expand=settings`,
+        )
         .version("beta")
         .get();
       return response;
     } catch (error) {
+      this.captureError(error);
       console.error(`Error fetching settings for policy ${policyId}:`, error);
       return null;
     }
@@ -77,18 +97,24 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/deviceConfigurations")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,version")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,version",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((config: any) => ({
         ...config,
-        configType: "Device Configuration (Template)"
+        configType: "Device Configuration (Template)",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching device configurations:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -98,20 +124,26 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/groupPolicyConfigurations")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,roleScopeTagIds")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,roleScopeTagIds",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((config: any) => ({
         ...config,
         "@odata.type": "#microsoft.graph.groupPolicyConfiguration",
         configType: "Administrative Template",
-        version: 1 // Group Policy configs don't have version field
+        version: 1, // Group Policy configs don't have version field
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching group policy configurations:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -121,19 +153,25 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/intents")
         .version("beta")
-        .select("id,displayName,description,lastModifiedDateTime,isAssigned,templateId,roleScopeTagIds")
+        .select(
+          "id,displayName,description,lastModifiedDateTime,isAssigned,templateId,roleScopeTagIds",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((intent: any) => ({
         ...intent,
         "@odata.type": "#microsoft.graph.deviceManagementIntent",
-        configType: "Security Baseline/Endpoint Security"
+        configType: "Security Baseline/Endpoint Security",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching device management intents:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -141,13 +179,16 @@ export class IntuneConfigurationService {
   async getIntentSettings(intentId: string): Promise<any> {
     try {
       const response = await this.client
-        .api(`/deviceManagement/intents/${intentId}/categories?$expand=settings`)
+        .api(
+          `/deviceManagement/intents/${intentId}/categories?$expand=settings`,
+        )
         .version("beta")
         .get();
       return response.value || [];
     } catch (error) {
+      this.captureError(error);
       console.error(`Error fetching intent settings for ${intentId}:`, error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -157,18 +198,24 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/deviceCompliancePolicies")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,version")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,version",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((policy: any) => ({
         ...policy,
-        configType: "Compliance Policy"
+        configType: "Compliance Policy",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching compliance policies:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -178,20 +225,26 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/deviceShellScripts")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,scriptContent,runAsAccount")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,scriptContent,runAsAccount",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((script: any) => ({
         ...script,
         "@odata.type": "#microsoft.graph.deviceShellScript",
         configType: "Shell Script (macOS)",
-        platformType: "macOS"
+        platformType: "macOS",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching shell scripts:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -201,20 +254,26 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/deviceManagementScripts")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,runAsAccount,enforceSignatureCheck,runAs32Bit")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,fileName,runAsAccount,enforceSignatureCheck,runAs32Bit",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((script: any) => ({
         ...script,
         "@odata.type": "#microsoft.graph.deviceManagementScript",
         configType: "PowerShell Script (Windows)",
-        platformType: "Windows"
+        platformType: "Windows",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching PowerShell scripts:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -225,18 +284,24 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceAppManagement/targetedManagedAppConfigurations")
         .version("beta")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,version")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,version",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((config: any) => ({
         ...config,
-        configType: "App Configuration Policy"
+        configType: "App Configuration Policy",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching app configuration policies:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -247,19 +312,25 @@ export class IntuneConfigurationService {
         .api("/deviceManagement/deviceConfigurations")
         .version("beta")
         .filter("isof('microsoft.graph.windowsUpdateForBusinessConfiguration')")
-        .select("id,displayName,description,createdDateTime,lastModifiedDateTime,version")
+        .select(
+          "id,displayName,description,createdDateTime,lastModifiedDateTime,version",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((policy: any) => ({
         ...policy,
         configType: "Windows Update Policy",
-        platformType: "Windows"
+        platformType: "Windows",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching Windows Update policies:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -269,18 +340,24 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/deviceEnrollmentConfigurations")
         .version("beta")
-        .select("id,displayName,description,priority,createdDateTime,lastModifiedDateTime,version")
+        .select(
+          "id,displayName,description,priority,createdDateTime,lastModifiedDateTime,version",
+        )
         .top(999)
         .get();
-      
-      const items = await collectAllPages<any>(this.client as unknown as Client, response);
+
+      const items = await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
       return items.map((config: any) => ({
         ...config,
-        configType: "Enrollment Configuration"
+        configType: "Enrollment Configuration",
       }));
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching enrollment configurations:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
@@ -290,31 +367,37 @@ export class IntuneConfigurationService {
       const response = await this.client
         .api("/deviceManagement/templates")
         .version("beta")
-        .select("id,displayName,description,publishedDateTime,platformType,templateType")
+        .select(
+          "id,displayName,description,publishedDateTime,platformType,templateType",
+        )
         .top(999)
         .get();
-      return await collectAllPages<any>(this.client as unknown as Client, response);
+      return await collectAllPages<any>(
+        this.client as unknown as Client,
+        response,
+      );
     } catch (error) {
+      this.captureError(error);
       console.error("Error fetching templates:", error);
-      return [];
+      return error instanceof GraphPaginationError ? error.items : [];
     }
   }
 
   // Main method to get ALL configurations
   async getAllDeviceConfigurations() {
     console.log("Fetching all Intune device configurations...");
-    
+
     const [
-      configurationPolicies,     // Settings Catalog
-      deviceConfigurations,       // Traditional templates
-      groupPolicyConfigs,         // Administrative templates
-      intents,                    // Security baselines & endpoint security
-      compliancePolicies,        // Compliance
-      shellScripts,              // macOS scripts
-      powerShellScripts,         // Windows scripts
-      appConfigs,                // App configuration
-      windowsUpdatePolicies,     // Windows Update
-      enrollmentConfigs          // Enrollment
+      configurationPolicies, // Settings Catalog
+      deviceConfigurations, // Traditional templates
+      groupPolicyConfigs, // Administrative templates
+      intents, // Security baselines & endpoint security
+      compliancePolicies, // Compliance
+      shellScripts, // macOS scripts
+      powerShellScripts, // Windows scripts
+      appConfigs, // App configuration
+      windowsUpdatePolicies, // Windows Update
+      enrollmentConfigs, // Enrollment
     ] = await Promise.all([
       this.getConfigurationPolicies(),
       this.getDeviceConfigurations(),
@@ -325,7 +408,7 @@ export class IntuneConfigurationService {
       this.getDeviceManagementScripts(),
       this.getManagedAppPolicies(),
       this.getWindowsUpdatePolicies(),
-      this.getEnrollmentConfigurations()
+      this.getEnrollmentConfigurations(),
     ]);
 
     // Optionally fetch detailed settings for Settings Catalog policies (currently disabled)
@@ -337,6 +420,10 @@ export class IntuneConfigurationService {
     // );
 
     return {
+      fetchErrors: this.getFetchErrors(),
+      collectionStatus: this.collectionErrors.length
+        ? "incomplete"
+        : "complete",
       settingsCatalog: configurationPolicies,
       deviceConfigurations,
       administrativeTemplates: groupPolicyConfigs,
@@ -344,19 +431,19 @@ export class IntuneConfigurationService {
       compliancePolicies,
       scripts: {
         macOS: shellScripts,
-        windows: powerShellScripts
+        windows: powerShellScripts,
       },
       appConfigurations: appConfigs,
       windowsUpdatePolicies,
       enrollmentConfigurations: enrollmentConfigs,
-      
+
       // Summary
       summary: {
-        totalConfigurations: 
-          configurationPolicies.length + 
-          deviceConfigurations.length + 
-          groupPolicyConfigs.length + 
-          intents.length + 
+        totalConfigurations:
+          configurationPolicies.length +
+          deviceConfigurations.length +
+          groupPolicyConfigs.length +
+          intents.length +
           compliancePolicies.length +
           shellScripts.length +
           powerShellScripts.length +
@@ -372,22 +459,28 @@ export class IntuneConfigurationService {
           scripts: shellScripts.length + powerShellScripts.length,
           appConfigurations: appConfigs.length,
           windowsUpdatePolicies: windowsUpdatePolicies.length,
-          enrollmentConfigurations: enrollmentConfigs.length
-        }
-      }
+          enrollmentConfigurations: enrollmentConfigs.length,
+        },
+      },
     };
   }
 
   // Get configurations by platform
-  async getConfigurationsByPlatform(platform: 'Windows' | 'macOS' | 'iOS' | 'Android') {
+  async getConfigurationsByPlatform(
+    platform: "Windows" | "macOS" | "iOS" | "Android",
+  ) {
     const allConfigs = await this.getAllDeviceConfigurations();
-    
+
     // Filter configurations by platform
     const filteredConfigs = {
-      settingsCatalog: allConfigs.settingsCatalog.filter(c => 
-        c.platformType?.includes(platform) || c.platforms?.includes(platform.toLowerCase())
+      fetchErrors: allConfigs.fetchErrors,
+      collectionStatus: allConfigs.collectionStatus,
+      settingsCatalog: allConfigs.settingsCatalog.filter(
+        (c) =>
+          c.platformType?.includes(platform) ||
+          c.platforms?.includes(platform.toLowerCase()),
       ),
-      deviceConfigurations: allConfigs.deviceConfigurations.filter(c => {
+      deviceConfigurations: allConfigs.deviceConfigurations.filter((c) => {
         const type = c["@odata.type"]?.toLowerCase() || "";
         return type.includes(platform.toLowerCase());
       }),

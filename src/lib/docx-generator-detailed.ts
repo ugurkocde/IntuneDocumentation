@@ -840,7 +840,7 @@ export async function generateDetailedDOCX(
       if (analytics.assignmentNotApplicableConfigs)
         summaryChildren.push(
           bodyText(
-            `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations use another targeting model. Assignment coverage excludes these configurations.`,
+            `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from assignment coverage.`,
           ),
         );
       // Assignment coverage

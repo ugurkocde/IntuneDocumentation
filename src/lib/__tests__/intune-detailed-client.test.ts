@@ -38,8 +38,12 @@ describe("Settings Catalog definition enrichment", () => {
   it("does not cache a failed batch as a permanent miss", async () => {
     const get = vi
       .fn()
-      .mockRejectedValueOnce(new Error("temporary failure"))
-      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("temporary failure"), { statusCode: 503 }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error("temporary failure"), { statusCode: 503 }),
+      )
       .mockResolvedValueOnce({
         value: [{ id: "retryable", displayName: "Recovered" }],
       });

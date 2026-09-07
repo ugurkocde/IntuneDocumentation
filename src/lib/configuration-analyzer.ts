@@ -1,3 +1,4 @@
+import { INTUNE_POLICY_REGISTRY } from "./intune-policy-registry";
 import { summarizeAssignments } from "./compliance/assignments";
 import type { AssessmentScope } from "./compliance/types";
 import type { BrandingOptions } from "~/types/branding";
@@ -75,11 +76,23 @@ export function analyzeConfigurations(data: DetailedExportData) {
         ...(data.conditionalAccessPolicies || []),
       ];
 
-  // Conditional Access uses conditions rather than an Intune assignment relation.
+  // Registry types without an assignment relationship have no assignment coverage to assess.
+  const nonAssignableKeys = new Set(
+    INTUNE_POLICY_REGISTRY.filter(
+      (entry) =>
+        !entry.childCollections?.some(
+          (child) => child.property === "assignments",
+        ),
+    ).map((entry) => entry.key),
+  );
   const nonAssignable = new Set([
     ...(data.conditionalAccessPolicies ?? []),
     ...(data.sections ?? [])
-      .filter((section) => section.familyKey === "conditionalAccessPolicies")
+      .filter(
+        (section) =>
+          section.familyKey === "conditionalAccessPolicies" ||
+          nonAssignableKeys.has(section.key),
+      )
       .flatMap((section) => section.items),
   ]);
   const uniqueGroups = new Set<string>();
@@ -89,6 +102,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
   let unknownCount = 0;
   const assignmentState = (config: any) =>
     nonAssignable.has(config) ||
+    nonAssignableKeys.has(config.registryKey) ||
     config["@odata.type"] === "#microsoft.graph.conditionalAccessPolicy"
       ? "notApplicable"
       : summarizeAssignments(

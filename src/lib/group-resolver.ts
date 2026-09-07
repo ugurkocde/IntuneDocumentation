@@ -1,15 +1,22 @@
-import { Client } from "@microsoft/microsoft-graph-client";
+import { createGraphClient } from "./graph-client";
+import {
+  graphStatus,
+  isTransientGraphError,
+  retryAfterMs,
+  waitForGraph,
+} from "./graph-request";
+import type { Client } from "@microsoft/microsoft-graph-client";
 
 export class GroupResolver {
   private client: Client;
+  private warnings: string[] = [];
+  getWarnings() {
+    return [...this.warnings];
+  }
   private groupCache = new Map<string, string>();
 
   constructor(accessToken: string) {
-    this.client = Client.init({
-      authProvider: (done) => {
-        done(null, accessToken);
-      },
-    });
+    this.client = createGraphClient(accessToken);
   }
 
   // Fetch a single group name by ID
@@ -26,68 +33,86 @@ export class GroupResolver {
         .select("id,displayName")
         .get();
 
-      const displayName = group.displayName || `Group ${groupId}`;
+      const displayName = group.displayName || groupId;
       this.groupCache.set(groupId, displayName);
       return displayName;
     } catch (error) {
+      this.warnings.push(
+        `Could not resolve group ${groupId}; retaining its identifier.`,
+      );
       console.error(`Error fetching group ${groupId}:`, error);
-      return `Group ${groupId}`;
+      return groupId;
     }
   }
 
   // Batch fetch multiple group names
   async getGroupNames(groupIds: string[]): Promise<Map<string, string>> {
     const result = new Map<string, string>();
-    const uncachedIds: string[] = [];
-
-    // Check cache first
-    for (const id of groupIds) {
-      if (this.groupCache.has(id)) {
-        result.set(id, this.groupCache.get(id)!);
-      } else {
-        uncachedIds.push(id);
+    const uncached = [...new Set(groupIds)].filter((id) => {
+      const cached = this.groupCache.get(id);
+      if (cached) {
+        result.set(id, cached);
+        return false;
       }
-    }
-
-    // Batch fetch uncached groups
-    if (uncachedIds.length > 0) {
-      try {
-        // Use $batch endpoint for efficient fetching
-        const batchRequests = uncachedIds.map((id, index) => ({
-          id: index.toString(),
-          method: "GET",
-          url: `/groups/${id}?$select=id,displayName`,
-        }));
-
-        // Process in batches of 20 (Graph API limit)
-        const batchSize = 20;
-        for (let i = 0; i < batchRequests.length; i += batchSize) {
-          const batch = batchRequests.slice(i, i + batchSize);
-
-          const batchResponse = await this.client
+      return true;
+    });
+    const unresolved = (id: string, status: unknown) => {
+      result.set(id, id);
+      this.warnings.push(
+        `Could not resolve group ${id} (HTTP ${typeof status === "number" ? status : "unknown"}); retaining its identifier.`,
+      );
+    };
+    for (let offset = 0; offset < uncached.length; offset += 20) {
+      let pending = uncached
+        .slice(offset, offset + 20)
+        .map((groupId, index) => ({ id: String(index), groupId }));
+      for (let attempt = 0; pending.length > 0; attempt++) {
+        let response;
+        try {
+          response = await this.client
             .api("/$batch")
             .version("beta")
-            .post({ requests: batch });
-
-          for (const response of batchResponse.responses) {
-            if (response.status === 200 && response.body) {
-              const group = response.body;
-              const displayName = group.displayName || `Group ${group.id}`;
-              this.groupCache.set(group.id, displayName);
-              result.set(group.id, displayName);
-            }
+            .post({
+              requests: pending.map(({ id, groupId }) => ({
+                id,
+                method: "GET",
+                url: `/groups/${groupId}?$select=id,displayName`,
+              })),
+            });
+        } catch (error: any) {
+          pending.forEach(({ groupId }) =>
+            unresolved(groupId, graphStatus(error)),
+          );
+          break;
+        }
+        const responses = new Map<string, any>(
+          (Array.isArray(response?.responses) ? response.responses : []).map(
+            (item: any) => [item.id, item],
+          ),
+        );
+        const retry: typeof pending = [];
+        let delay = 0;
+        for (const item of pending) {
+          const entry = responses.get(item.id);
+          if (entry?.status === 200 && entry.body?.id === item.groupId) {
+            const name = entry.body.displayName || item.groupId;
+            this.groupCache.set(item.groupId, name);
+            result.set(item.groupId, name);
+            continue;
           }
+          const error = {
+            statusCode: entry?.status === 200 ? 502 : (entry?.status ?? 502),
+            headers: entry?.headers,
+          };
+          if (attempt < 2 && isTransientGraphError(error)) {
+            retry.push(item);
+            delay = Math.max(delay, retryAfterMs(error) ?? 1000 * 2 ** attempt);
+          } else unresolved(item.groupId, entry?.status);
         }
-      } catch (error) {
-        console.error("Error batch fetching groups:", error);
-        // Fallback to individual fetching
-        for (const id of uncachedIds) {
-          const name = await this.getGroupName(id);
-          result.set(id, name);
-        }
+        pending = retry;
+        if (pending.length) await waitForGraph(delay);
       }
     }
-
     return result;
   }
 
@@ -129,12 +154,10 @@ export class GroupResolver {
       } else if (type?.includes("allLicensedUsersAssignmentTarget")) {
         resolvedTargets.push("All Users");
       } else if (type?.includes("exclusionGroupAssignmentTarget")) {
-        const groupName =
-          groupNames.get(target.groupId) || `Group ${target.groupId}`;
+        const groupName = groupNames.get(target.groupId) || target.groupId;
         resolvedTargets.push(`Excluded: ${groupName}`);
       } else if (type?.includes("groupAssignmentTarget")) {
-        const groupName =
-          groupNames.get(target.groupId) || `Group ${target.groupId}`;
+        const groupName = groupNames.get(target.groupId) || target.groupId;
         resolvedTargets.push(groupName);
       } else {
         resolvedTargets.push("Custom Assignment");

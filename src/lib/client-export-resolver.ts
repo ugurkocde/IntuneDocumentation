@@ -37,6 +37,7 @@ interface SelectedData {
 
 export interface ResolvedExportData extends SelectedData {
   groupNames: Map<string, string>;
+  resolutionWarnings?: string[];
   deviceCounts: Record<string, number>;
 }
 
@@ -51,6 +52,7 @@ export async function resolveExportData(
 ): Promise<ResolvedExportData> {
   // Resolve group names
   let groupNames = new Map<string, string>();
+  const resolutionWarnings: string[] = [];
   try {
     onProgress?.({ stage: "groups", message: "Resolving group names..." });
 
@@ -101,6 +103,12 @@ export async function resolveExportData(
 
     if (allGroupIds.size > 0) {
       groupNames = await groupResolver.getGroupNames(Array.from(allGroupIds));
+      resolutionWarnings.push(...groupResolver.getWarnings());
+      if (resolutionWarnings.length)
+        onProgress?.({
+          stage: "groups",
+          message: `${resolutionWarnings.length} group names could not be resolved; identifiers are preserved.`,
+        });
 
       data.sections
         ?.find((section) => section.key === "roleAssignments")
@@ -148,7 +156,23 @@ export async function resolveExportData(
 
   return {
     ...data,
+    fetchErrors: [
+      ...(data.fetchErrors ?? []),
+      ...(resolutionWarnings.length
+        ? [
+            {
+              policyId: "group-name-resolution",
+              policyName: "Group name resolution",
+              policyType: "Group names",
+              familyKey: "groupNames",
+              error: resolutionWarnings.join(" "),
+              partial: true,
+            },
+          ]
+        : []),
+    ],
     groupNames,
     deviceCounts,
+    resolutionWarnings,
   };
 }

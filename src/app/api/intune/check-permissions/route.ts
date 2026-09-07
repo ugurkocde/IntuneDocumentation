@@ -7,6 +7,7 @@ interface PermissionCheck {
   permission: string;
   resource: string;
   hasAccess: boolean;
+  status: "granted" | "denied" | "unavailable";
   error?: string;
 }
 
@@ -36,41 +37,49 @@ export async function GET(request: NextRequest) {
         permission: "DeviceManagementConfiguration.Read.All",
         resource: "Device Configurations",
         hasAccess: false,
+        status: "unavailable",
       },
       {
         permission: "DeviceManagementScripts.Read.All",
         resource: "PowerShell/Shell Scripts",
         hasAccess: false,
+        status: "unavailable",
       },
       {
         permission: "DeviceManagementApps.Read.All",
         resource: "App Configurations",
         hasAccess: false,
+        status: "unavailable",
       },
       {
         permission: "DeviceManagementManagedDevices.Read.All",
         resource: "Managed Devices",
         hasAccess: false,
+        status: "unavailable",
       },
       {
         permission: "DeviceManagementRBAC.Read.All",
         resource: "RBAC Settings",
         hasAccess: false,
+        status: "unavailable",
       },
       {
         permission: "DeviceManagementServiceConfig.Read.All",
         resource: "Service Configuration",
         hasAccess: false,
+        status: "unavailable",
       },
       {
         permission: "Group.Read.All",
         resource: "Group Information",
         hasAccess: false,
+        status: "unavailable",
       },
       {
         permission: "Policy.Read.All",
         resource: "Conditional Access Policies",
         hasAccess: false,
+        status: "unavailable",
       },
     ];
 
@@ -86,6 +95,7 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
 
           case "DeviceManagementScripts.Read.All":
@@ -96,6 +106,7 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
 
           case "DeviceManagementApps.Read.All":
@@ -106,6 +117,7 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
 
           case "DeviceManagementManagedDevices.Read.All":
@@ -116,6 +128,7 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
 
           case "DeviceManagementRBAC.Read.All":
@@ -126,6 +139,7 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
 
           case "DeviceManagementServiceConfig.Read.All":
@@ -135,6 +149,7 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
 
           case "Group.Read.All":
@@ -145,6 +160,7 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
 
           case "Policy.Read.All":
@@ -155,11 +171,13 @@ export async function GET(request: NextRequest) {
               .select("id")
               .get();
             check.hasAccess = true;
+            check.status = "granted";
             break;
         }
       } catch (error: any) {
         if (error?.statusCode === 403 || error?.code === "Forbidden") {
           check.hasAccess = false;
+          check.status = "denied";
           check.error = "Insufficient permissions";
         } else {
           // Other errors might be transient
@@ -176,7 +194,8 @@ export async function GET(request: NextRequest) {
     const summary = {
       totalPermissions: results.length,
       granted: results.filter((r) => r.hasAccess).length,
-      denied: results.filter((r) => !r.hasAccess).length,
+      denied: results.filter((r) => r.status === "denied").length,
+      unavailable: results.filter((r) => r.status === "unavailable").length,
       requiredForFullAccess: [
         "DeviceManagementConfiguration.Read.All",
         "DeviceManagementScripts.Read.All",

@@ -213,3 +213,15 @@ Conditional Access is excluded from Intune assignment coverage because it uses
 conditions rather than an assignment relation. The Word contents are populated
 section links and do not request field refresh on open. Oversized PDF evidence
 register rows continue across pages without omitting condition values.
+
+### Graph collection reliability (ruleset 2026.09.5)
+
+Baseline category reads fall back to parent expansion on the observed OData route rejection. Category-only failures remain visible in collection coverage without invalidating settings or assignment evidence. App-protection paging preserves each platform independently, including partial pages, before enriching retained policies.
+
+Registry entries now collect assignment relations supported by Microsoft's published beta metadata, including update profiles, apps, scripts, scope tags and policy sets. Every collected child has an explicit completeness status. A partial assignment read is unknown, even when its first page is empty or contains an inclusion.
+
+Paging rejects malformed collection responses and repeated continuation links while retaining retrieved items. Valid empty pages with a continuation link remain supported. A shared Graph request policy bounds each client's GET and batch concurrency to six, retries transient HTTP and SDK-wrapped network failures with Retry-After support, and prevents nested retry multiplication. Detailed collection has a 105-second budget inside the 120-second API route limit; disconnects cancel collection, and exhausted budgets produce partial-result diagnostics. This is a per-request-client limit, not a tenant-wide limit across concurrent exports.
+
+The two legacy collection APIs retain their existing payload fields and now include `fetchErrors` and `collectionStatus`. Permission probes distinguish denied access from unavailable probes. Streaming completion reports incomplete results instead of claiming all reads succeeded. Group-name batch failures preserve group identifiers and expose resolution warnings; assignment targeting never depends on successful name resolution. Transient inner batch failures are retried together after one shared wait per retry pass, with at most two retry passes per batch. Only batches containing exclusively GET requests receive automatic envelope retries. Registry types without an assignment relation are excluded from assignment coverage as not applicable. Update-ring detail failures retain collected assignments and explicit incomplete-detail markers.
+
+Validation includes fault-injection regression tests and sampled read-only Greybeard lab calls against the actual modified collector methods. Empty lab families, every subtype, and large-tenant load are not covered by that sample. Microsoft beta schemas are referenced at https://github.com/microsoftgraph/msgraph-metadata/blob/master/schemas/beta-Prod.csdl.

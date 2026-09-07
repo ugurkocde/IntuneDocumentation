@@ -107,7 +107,9 @@ export function buildCollectionCoverage(
           ([part, status]) =>
             status === "incomplete" &&
             (!evidenceOnly ||
-              !["scheduledActionsForRule", "apps"].includes(part)),
+              !["scheduledActionsForRule", "apps", "categories"].includes(
+                part,
+              )),
         )
         .map(([part]) => part);
       if (
@@ -116,7 +118,9 @@ export function buildCollectionCoverage(
             !Object.entries(item.collectionStatus ?? {}).some(
               ([part, status]) =>
                 status === "incomplete" &&
-                ["scheduledActionsForRule", "apps"].includes(part),
+                ["scheduledActionsForRule", "apps", "categories"].includes(
+                  part,
+                ),
             ))) ||
         incompleteParts.length
       )
@@ -131,7 +135,7 @@ export function buildCollectionCoverage(
     // do not invalidate settings or assignment evidence already collected.
     if (
       evidenceOnly &&
-      /scheduledActionsForRule|scheduledActionConfigurations|\/apps(?:[/?]|$)/i.test(
+      /scheduledActionsForRule|scheduledActionConfigurations|\/(?:apps|categories)(?:[/?]|$)|[?&]\$expand=categories(?:&|$)/i.test(
         error.endpoint ?? "",
       )
     )

@@ -1,0 +1,1393 @@
+{
+  "verifiedAt": "2026-09-07",
+  "source": "Microsoft Graph beta /deviceManagement/configurationSettings and /deviceManagement/groupPolicyDefinitions; public setting definitions, no tenant policy data.",
+  "catalog": [
+    {
+      "id": "user_vendor_msft_policy_config_office16v8~policy~l_microsoftofficesystem~l_securitysettings~l_trustcenter241_l_onlytrustvbasignaturev3",
+      "name": "Only trust VBA macros that use V3 signatures (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_office16v8~policy~l_microsoftofficesystem~l_securitysettings~l_trustcenter241_l_onlytrustvbasignaturev3_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_office16v8~policy~l_microsoftofficesystem~l_securitysettings~l_trustcenter241_l_onlytrustvbasignaturev3_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy",
+      "name": "VBA Macro Notification Settings (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_l_empty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy",
+      "name": "VBA Macro Notification Settings (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "com.apple.managedclient.preferences_visualbasicmacroexecutionstate",
+      "name": "Visual Basic macro policy",
+      "options": [
+        {
+          "id": "com.apple.managedclient.preferences_visualbasicmacroexecutionstate_0",
+          "label": "Macros disabled by default, with warning to enable",
+          "value": "DisabledWithWarnings",
+          "children": []
+        },
+        {
+          "id": "com.apple.managedclient.preferences_visualbasicmacroexecutionstate_1",
+          "label": "Disable all macros",
+          "value": "DisabledWithoutWarnings",
+          "children": []
+        },
+        {
+          "id": "com.apple.managedclient.preferences_visualbasicmacroexecutionstate_2",
+          "label": "Always allow macros to run (potentially dangerous)",
+          "value": "EnabledWithoutWarnings",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet",
+      "name": "Block macros from running in Office files from the Internet (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy",
+      "name": "VBA Macro Notification Settings (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_l_empty0"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions",
+      "name": "Java permissions",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_iz_partname1c00"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_disablevbaforofficeapplications319",
+      "name": "Disable VBA for Office applications (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_disablevbaforofficeapplications319_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_disablevbaforofficeapplications319_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy",
+      "name": "VBA Macro Notification Settings (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy",
+      "name": "VBA Macro Notification Settings (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_office16v2~policy~l_microsoftofficemachine~l_securitysettingsmachine_l_disablevbaforofficeapplications",
+      "name": "Disable VBA for Office applications",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_office16v2~policy~l_microsoftofficemachine~l_securitysettingsmachine_l_disablevbaforofficeapplications_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_office16v2~policy~l_microsoftofficemachine~l_securitysettingsmachine_l_disablevbaforofficeapplications_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy",
+      "name": "VBA Macro Notification Settings (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty4"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope",
+      "name": "Macro Runtime Scan Scope (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope_l_macroruntimescanscopeenum"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy",
+      "name": "VBA Macro Notification Settings (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty19"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet",
+      "name": "Block macros from running in Office files from the Internet (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp",
+      "name": "[Deprecated] Disable Internet Explorer 11 as a standalone browser",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet",
+      "name": "Block macros from running in Office files from the Internet (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_blockmacroexecutionfrominternet_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2",
+      "name": "Disable Internet Explorer 11 as a standalone browser",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2_notifydisableieoptions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "com.apple.managedclient.preferences_visualbasicentirelydisabled",
+      "name": "Prevent all Visual Basic macros from executing",
+      "options": [
+        {
+          "id": "com.apple.managedclient.preferences_visualbasicentirelydisabled_false",
+          "label": "False",
+          "value": "false",
+          "children": []
+        },
+        {
+          "id": "com.apple.managedclient.preferences_visualbasicentirelydisabled_true",
+          "label": "True",
+          "value": "true",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions",
+      "name": "Java permissions",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_iz_partname1c00"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_l_empty0",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_l_empty0_2",
+          "label": "Disable all with notification",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_l_empty0_3",
+          "label": "Disable all except digitally signed macros",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_l_empty0_4",
+          "label": "Disable all without notification",
+          "value": "4",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_pub16v2~policy~l_microsoftofficepublisher~l_security~l_trustcenter_l_vbawarningspolicy_l_empty0_1",
+          "label": "Enable all macros (not recommended)",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_2",
+          "label": "Disable all with notification",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_3",
+          "label": "Disable all except digitally signed macros",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_4",
+          "label": "Disable all without notification",
+          "value": "4",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_proj16v2~policy~l_proj~l_projectoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_1",
+          "label": "Enable all macros (not recommended)",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty4",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty4_2",
+          "label": "Disable all with notification",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty4_3",
+          "label": "Disable all except digitally signed macros",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty4_4",
+          "label": "Disable all without notification",
+          "value": "4",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_excel16v2~policy~l_microsoftofficeexcel~l_exceloptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty4_1",
+          "label": "Enable all macros (not recommended)",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope_l_macroruntimescanscopeenum",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope_l_macroruntimescanscopeenum_0",
+          "label": "Disable for all documents",
+          "value": "0",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope_l_macroruntimescanscopeenum_1",
+          "label": "Enable for low trust documents",
+          "value": "1",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_office16v2~policy~l_microsoftofficesystem~l_securitysettings_l_macroruntimescanscope_l_macroruntimescanscopeenum_2",
+          "label": "Enable for all documents",
+          "value": "2",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty3",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty3_2",
+          "label": "Disable all with notification",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty3_3",
+          "label": "Disable all except digitally signed macros",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty3_4",
+          "label": "Disable all without notification",
+          "value": "4",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_ppt16v2~policy~l_microsoftofficepowerpoint~l_powerpointoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty3_1",
+          "label": "Enable all macros (not recommended)",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_iz_partname1c00",
+      "name": "Java permissions",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_iz_partname1c00_65536",
+          "label": "High safety",
+          "value": "65536",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_iz_partname1c00_131072",
+          "label": "Medium safety",
+          "value": "131072",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_iz_partname1c00_196608",
+          "label": "Low safety",
+          "value": "196608",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_iz_partname1c00_8388608",
+          "label": "Custom",
+          "value": "8388608",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_internetzonejavapermissions_iz_partname1c00_0",
+          "label": "Disable Java",
+          "value": "0",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2_notifydisableieoptions",
+      "name": "Notify that Internet Explorer 11 browser is disabled",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2_notifydisableieoptions_0",
+          "label": "Never",
+          "value": "0",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2_notifydisableieoptions_1",
+          "label": "Always",
+          "value": "1",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp_v2_notifydisableieoptions_2",
+          "label": "Once per user",
+          "value": "2",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_l_empty",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_2",
+          "label": "Disable all with notification",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_3",
+          "label": "Disable all except digitally signed macros",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_4",
+          "label": "Disable all without notification",
+          "value": "4",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_access16v2~policy~l_microsoftofficeaccess~l_applicationsettings~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_1",
+          "label": "Enable all macros (not recommended)",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_2",
+          "label": "Disable all with notification",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_3",
+          "label": "Disable all except digitally signed macros",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_4",
+          "label": "Disable all without notification",
+          "value": "4",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_visio16v2~policy~l_microsoftvisio~l_visiooptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty_1",
+          "label": "Enable all macros (not recommended)",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty19",
+      "name": "",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty19_2",
+          "label": "Disable all with notification",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty19_3",
+          "label": "Disable all except digitally signed macros",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty19_4",
+          "label": "Disable all without notification",
+          "value": "4",
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_word16v2~policy~l_microsoftofficeword~l_wordoptions~l_security~l_trustcenter_l_vbawarningspolicy_l_empty19_1",
+          "label": "Enable all macros (not recommended)",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_iz_partname1c00",
+      "name": "Java permissions",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_iz_partname1c00_65536",
+          "label": "High safety",
+          "value": "65536",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_iz_partname1c00_131072",
+          "label": "Medium safety",
+          "value": "131072",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_iz_partname1c00_196608",
+          "label": "Low safety",
+          "value": "196608",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_iz_partname1c00_8388608",
+          "label": "Custom",
+          "value": "8388608",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_internetexplorer_lockeddowninternetzonejavapermissions_iz_partname1c00_0",
+          "label": "Disable Java",
+          "value": "0",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros",
+      "name": "Block Win32 API calls from Office macros",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros_off",
+          "label": "Off",
+          "value": "92E97FA1-2EDF-4476-BDD6-9DD0B4DDDC7B=0",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros_block",
+          "label": "Block",
+          "value": "92E97FA1-2EDF-4476-BDD6-9DD0B4DDDC7B=1",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros_audit",
+          "label": "Audit",
+          "value": "92E97FA1-2EDF-4476-BDD6-9DD0B4DDDC7B=2",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros_warn",
+          "label": "Warn",
+          "value": "92E97FA1-2EDF-4476-BDD6-9DD0B4DDDC7B=6",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockwin32apicallsfromofficemacros_perruleexclusions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem",
+      "name": "Block credential stealing from the Windows local security authority subsystem",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem_off",
+          "label": "Off",
+          "value": "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2=0",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem_block",
+          "label": "Block",
+          "value": "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2=1",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem_audit",
+          "label": "Audit",
+          "value": "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2=2",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem_warn",
+          "label": "Warn",
+          "value": "9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2=6",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockcredentialstealingfromwindowslocalsecurityauthoritysubsystem_perruleexclusions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent",
+      "name": "Block Office applications from creating executable content",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent_off",
+          "label": "Off",
+          "value": "3B576869-A4EC-4529-8536-B80A7769E899=0",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent_block",
+          "label": "Block",
+          "value": "3B576869-A4EC-4529-8536-B80A7769E899=1",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent_audit",
+          "label": "Audit",
+          "value": "3B576869-A4EC-4529-8536-B80A7769E899=2",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent_warn",
+          "label": "Warn",
+          "value": "3B576869-A4EC-4529-8536-B80A7769E899=6",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfromcreatingexecutablecontent_perruleexclusions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses",
+      "name": "Block Adobe Reader from creating child processes",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses_off",
+          "label": "Off",
+          "value": "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c=0",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses_block",
+          "label": "Block",
+          "value": "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c=1",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses_audit",
+          "label": "Audit",
+          "value": "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c=2",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses_warn",
+          "label": "Warn",
+          "value": "7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c=6",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockadobereaderfromcreatingchildprocesses_perruleexclusions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_virtualizationbasedtechnology_hypervisorenforcedcodeintegrity",
+      "name": "Hypervisor Enforced Code Integrity",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_virtualizationbasedtechnology_hypervisorenforcedcodeintegrity_0",
+          "label": "(Disabled) Turns off Hypervisor-Protected Code Integrity remotely if configured previously without UEFI Lock.",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_virtualizationbasedtechnology_hypervisorenforcedcodeintegrity_1",
+          "label": "(Enabled with UEFI lock) Turns on Hypervisor-Protected Code Integrity with UEFI lock.",
+          "value": 1,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_virtualizationbasedtechnology_hypervisorenforcedcodeintegrity_2",
+          "label": "(Enabled without lock) Turns on Hypervisor-Protected Code Integrity without UEFI lock.",
+          "value": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_deviceguard_lsacfgflags",
+      "name": "Credential Guard",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_deviceguard_lsacfgflags_0",
+          "label": "(Disabled) Turns off Credential Guard remotely if configured previously without UEFI Lock.",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_deviceguard_lsacfgflags_1",
+          "label": "(Enabled with UEFI lock) Turns on Credential Guard with UEFI lock.",
+          "value": 1,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_deviceguard_lsacfgflags_2",
+          "label": "(Enabled without lock) Turns on Credential Guard without UEFI lock.",
+          "value": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses",
+      "name": "Block Office applications from injecting code into other processes",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses_off",
+          "label": "Off",
+          "value": "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84=0",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses_block",
+          "label": "Block",
+          "value": "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84=1",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses_audit",
+          "label": "Audit",
+          "value": "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84=2",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses_warn",
+          "label": "Warn",
+          "value": "75668C1F-73B5-4CF0-BB93-3ECF5CB7CC84=6",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockofficeapplicationsfrominjectingcodeintootherprocesses_perruleexclusions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses",
+      "name": "Block all Office applications from creating child processes",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses_off",
+          "label": "Off",
+          "value": "D4F940AB-401B-4EFC-AADC-AD5F3C50688A=0",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses_block",
+          "label": "Block",
+          "value": "D4F940AB-401B-4EFC-AADC-AD5F3C50688A=1",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses_audit",
+          "label": "Audit",
+          "value": "D4F940AB-401B-4EFC-AADC-AD5F3C50688A=2",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses_perruleexclusions"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses_warn",
+          "label": "Warn",
+          "value": "D4F940AB-401B-4EFC-AADC-AD5F3C50688A=6",
+          "children": [
+            "device_vendor_msft_policy_config_defender_attacksurfacereductionrules_blockallofficeapplicationsfromcreatingchildprocesses_perruleexclusions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "com.apple.managedclient.preferences_adssettingforintrusiveadssites",
+      "name": "Ads setting for sites with intrusive ads",
+      "options": [
+        {
+          "id": "com.apple.managedclient.preferences_adssettingforintrusiveadssites_0",
+          "label": "Allow ads on all sites",
+          "value": 1,
+          "children": []
+        },
+        {
+          "id": "com.apple.managedclient.preferences_adssettingforintrusiveadssites_1",
+          "label": "Block ads on sites with intrusive ads. (Default value)",
+          "value": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_chromeintunev1~policy~googlechrome_adssettingforintrusiveadssites_adssettingforintrusiveadssites",
+      "name": "Ads setting for sites with intrusive ads (Device)",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_chromeintunev1~policy~googlechrome_adssettingforintrusiveadssites_adssettingforintrusiveadssites_1",
+          "label": "Allow ads on all sites",
+          "value": "1",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_chromeintunev1~policy~googlechrome_adssettingforintrusiveadssites_adssettingforintrusiveadssites_2",
+          "label": "Do not allow ads on sites with intrusive ads",
+          "value": "2",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_microsoft_edgev78diff~policy~microsoft_edge_adssettingforintrusiveadssites",
+      "name": "Ads setting for sites with intrusive ads",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_microsoft_edgev78diff~policy~microsoft_edge_adssettingforintrusiveadssites_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_microsoft_edgev78diff~policy~microsoft_edge_adssettingforintrusiveadssites_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_microsoft_edgev78diff~policy~microsoft_edge_adssettingforintrusiveadssites_adssettingforintrusiveadssites"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_microsoft_edgev78diff~policy~microsoft_edge_adssettingforintrusiveadssites_adssettingforintrusiveadssites",
+      "name": "Ads setting for sites with intrusive ads (Device)",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_microsoft_edgev78diff~policy~microsoft_edge_adssettingforintrusiveadssites_adssettingforintrusiveadssites_1",
+          "label": "Allow ads on all sites",
+          "value": "1",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_microsoft_edgev78diff~policy~microsoft_edge_adssettingforintrusiveadssites_adssettingforintrusiveadssites_2",
+          "label": "Block ads on sites with intrusive ads. (Default value)",
+          "value": "2",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_chromeintunev1~policy~googlechrome_adssettingforintrusiveadssites",
+      "name": "Ads setting for sites with intrusive ads",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_chromeintunev1~policy~googlechrome_adssettingforintrusiveadssites_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_chromeintunev1~policy~googlechrome_adssettingforintrusiveadssites_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_chromeintunev1~policy~googlechrome_adssettingforintrusiveadssites_adssettingforintrusiveadssites"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting",
+      "name": "Turn on PowerShell Transcription (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_outputdirectory",
+            "user_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_enableinvocationheader"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging",
+      "name": "Turn on PowerShell Script Block Logging",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging_enablescriptblockinvocationlogging"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting",
+      "name": "Turn on PowerShell Transcription",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_outputdirectory",
+            "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enabletranscripting_enableinvocationheader"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "user_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging",
+      "name": "Turn on PowerShell Script Block Logging (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "user_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging_enablescriptblockinvocationlogging"
+          ]
+        }
+      ]
+    }
+  ],
+  "administrativeTemplates": [
+    {
+      "id": "08955ec2-bbba-4946-8e79-f95afb56ddb7",
+      "displayName": "VBA Macro Notification Settings",
+      "categoryPath": "\\Microsoft PowerPoint 2016\\PowerPoint Options\\Security\\Trust Center",
+      "classType": "user",
+      "presentations": [
+        {
+          "id": "92512052-1026-402a-99df-9bd53fe660fc",
+          "items": [
+            {
+              "displayName": "Disable all with notification",
+              "value": "2"
+            },
+            {
+              "displayName": "Disable all except digitally signed macros",
+              "value": "3"
+            },
+            {
+              "displayName": "Disable all without notification",
+              "value": "4"
+            },
+            {
+              "displayName": "Enable all macros (not recommended)",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3aab9919-b73b-4f2b-8a60-77c2c348e825",
+      "displayName": "Disable VBA for Office applications",
+      "categoryPath": "\\Microsoft Office 2016\\Security Settings",
+      "classType": "user",
+      "presentations": []
+    },
+    {
+      "id": "3aff273e-f47d-4622-acd5-5c62aea1c628",
+      "displayName": "Disable VBA for Office applications",
+      "categoryPath": "\\Microsoft Office 2016 (Machine)\\Security Settings",
+      "classType": "machine",
+      "presentations": []
+    },
+    {
+      "id": "3f3fba34-b645-4b86-abdd-45f17b1f041a",
+      "displayName": "VBA Macro Notification Settings",
+      "categoryPath": "\\Microsoft Access 2016\\Application Settings\\Security\\Trust Center",
+      "classType": "user",
+      "presentations": [
+        {
+          "id": "ba06d46f-3f6e-40db-a1c0-90f6c5f5bcfa",
+          "items": [
+            {
+              "displayName": "Disable all with notification",
+              "value": "2"
+            },
+            {
+              "displayName": "Disable all except digitally signed macros",
+              "value": "3"
+            },
+            {
+              "displayName": "Disable all without notification",
+              "value": "4"
+            },
+            {
+              "displayName": "Enable all macros (not recommended)",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4f2c0a1a-26ea-484e-94d4-9165209a57ab",
+      "displayName": "VBA Macro Notification Settings",
+      "categoryPath": "\\Microsoft Visio 2016\\Visio Options\\Security\\Trust Center",
+      "classType": "user",
+      "presentations": [
+        {
+          "id": "6d50a957-4217-453a-8ad7-1f59e96a4620",
+          "items": [
+            {
+              "displayName": "Disable all with notification",
+              "value": "2"
+            },
+            {
+              "displayName": "Disable all except digitally signed macros",
+              "value": "3"
+            },
+            {
+              "displayName": "Disable all without notification",
+              "value": "4"
+            },
+            {
+              "displayName": "Enable all macros (not recommended)",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "52b5cba1-3b1f-44ec-9593-bbd734679b26",
+      "displayName": "VBA Macro Notification Settings",
+      "categoryPath": "\\Microsoft Publisher 2016\\Security\\Trust Center",
+      "classType": "user",
+      "presentations": [
+        {
+          "id": "5e9a0710-de3a-407a-80ca-10821076115c",
+          "items": [
+            {
+              "displayName": "Disable all with notification",
+              "value": "2"
+            },
+            {
+              "displayName": "Disable all except digitally signed macros",
+              "value": "3"
+            },
+            {
+              "displayName": "Disable all without notification",
+              "value": "4"
+            },
+            {
+              "displayName": "Enable all macros (not recommended)",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "760a68e7-e246-4ad4-9f32-711a28d36f5d",
+      "displayName": "Macro Runtime Scan Scope",
+      "categoryPath": "\\Microsoft Office 2016\\Security Settings",
+      "classType": "user",
+      "presentations": [
+        {
+          "id": "15bd4201-bf0c-4809-b63f-6305a91141d5",
+          "items": [
+            {
+              "displayName": "Disable for all documents",
+              "value": "0"
+            },
+            {
+              "displayName": "Enable for low trust documents",
+              "value": "1"
+            },
+            {
+              "displayName": "Enable for all documents",
+              "value": "2"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c2a54448-21f7-438c-9132-467f1ca57f37",
+      "displayName": "VBA Macro Notification Settings",
+      "categoryPath": "\\Microsoft Project 2016\\Project Options\\Security\\Trust Center",
+      "classType": "user",
+      "presentations": [
+        {
+          "id": "653ed6ce-6ee9-4023-8a20-8f83ceae21eb",
+          "items": [
+            {
+              "displayName": "Disable all with notification",
+              "value": "2"
+            },
+            {
+              "displayName": "Disable all except digitally signed macros",
+              "value": "3"
+            },
+            {
+              "displayName": "Disable all without notification",
+              "value": "4"
+            },
+            {
+              "displayName": "Enable all macros (not recommended)",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "e92ea21b-8d97-4cc3-80c9-dd396c3d61e4",
+      "displayName": "VBA Macro Notification Settings",
+      "categoryPath": "\\Microsoft Word 2016\\Word Options\\Security\\Trust Center",
+      "classType": "user",
+      "presentations": [
+        {
+          "id": "e3040ad3-0f64-4b3b-8a39-20cca3793183",
+          "items": [
+            {
+              "displayName": "Disable all with notification",
+              "value": "2"
+            },
+            {
+              "displayName": "Disable all except digitally signed macros",
+              "value": "3"
+            },
+            {
+              "displayName": "Disable all without notification",
+              "value": "4"
+            },
+            {
+              "displayName": "Enable all macros (not recommended)",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "45eae1fe-a9e1-480a-b647-35c8b8e2bf66",
+      "displayName": "Disable Internet Explorer 11 as a standalone browser",
+      "categoryPath": "\\Windows Components\\Internet Explorer",
+      "classType": "machine",
+      "presentations": []
+    },
+    {
+      "id": "d34324d3-2769-4216-98f2-a7569d835e3f",
+      "displayName": "Disable Internet Explorer 11 as a standalone browser",
+      "categoryPath": "\\Windows Components\\Internet Explorer",
+      "classType": "user",
+      "presentations": []
+    }
+  ]
+}

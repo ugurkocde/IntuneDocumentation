@@ -13,6 +13,122 @@ export function essentialEightLevel(
 // Exact requirement text from the versioned ASD snapshot. No keyword-based evidence detection.
 const bindings: ReadonlyArray<readonly [string, string, string]> = [
   [
+    "Microsoft Office macros digitally signed by signatures other than V3 signatures cannot be enabled via the Message Bar or Backstage View.",
+    "windows-office-v3-signatures",
+    "Policy requires V3 signatures; publisher trust, signing processes and effective Office coverage require verification.",
+  ],
+  [
+    "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement.",
+    "windows-office-macros-disabled",
+    "Review business exceptions, assigned users and coverage of every Office application; only the detected settings are evidenced.",
+  ],
+  [
+    "Microsoft Office macros are disabled for users that do not have a demonstrated business requirement.",
+    "macos-office-macros-disabled",
+    "Review macOS profile coverage, business exceptions and installed Office applications.",
+  ],
+  [
+    "Microsoft Office macros in files originating from the internet are blocked.",
+    "windows-office-internet-macros-blocked",
+    "Evidence covers only the Office applications listed. Trusted Locations, bypasses and effective user coverage require verification.",
+  ],
+  [
+    "Microsoft Office macro antivirus scanning is enabled.",
+    "windows-office-macro-antivirus",
+    "Policy enables runtime scanning. Scanner health, signatures and actual macro scanning require device or security telemetry.",
+  ],
+  [
+    "Microsoft Office macro security settings cannot be changed by users.",
+    "windows-office-macro-settings-managed",
+    "The detected settings are enforced through policy. Review all other Trust Center settings, exceptions and effective user permissions.",
+  ],
+  [
+    "Only Microsoft Office macros running from within a sandboxed environment, a Trusted Location or that are digitally signed by a trusted publisher are allowed to execute.",
+    "windows-office-signed-macros",
+    "Signed-macro policy is supporting evidence only. Review publisher trust, Trusted Locations, sandboxing and actual Office application coverage.",
+  ],
+  [
+    "Internet Explorer 11 is disabled or removed.",
+    "windows-ie-disabled",
+    "The standalone browser is disabled by policy; removal, IE mode, COM activation and effective device state require review.",
+  ],
+  [
+    "Web browsers do not process Java from the internet.",
+    "windows-browser-java-blocked",
+    "The detector checks the specified Internet Explorer zone policies. Other browsers, plugins and effective enforcement require review; JavaScript is not Java.",
+  ],
+  [
+    "Web browsers do not process web advertisements from the internet.",
+    "windows-browser-intrusive-ads-blocked",
+    "Intrusive-ad blocking is only partial evidence. Blocking all advertisements, every browser and extension enforcement require separate verification.",
+  ],
+  [
+    "Web browsers do not process web advertisements from the internet.",
+    "macos-browser-intrusive-ads-blocked",
+    "Intrusive-ad blocking is partial evidence only. Review full advertisement filtering and all browser coverage.",
+  ],
+  [
+    "Web browser security settings cannot be changed by users.",
+    "windows-browser-security-settings-managed",
+    "Detected restrictions are mandatory policy settings. Other settings, browsers and effective user permissions need review.",
+  ],
+  [
+    "PowerShell module logging, script block logging and transcription events are centrally logged.",
+    "windows-powershell-scriptblock-logging",
+    "Local script block logging supports this requirement. Module logging, forwarding, central ingestion and retention require log-platform evidence.",
+  ],
+  [
+    "PowerShell module logging, script block logging and transcription events are centrally logged.",
+    "windows-powershell-transcription",
+    "Transcription policy supports local logging only. Module logging, forwarding and actual central collection require verification.",
+  ],
+  [
+    "Multi-factor authentication uses either: something users have and something users know, or something users have that is unlocked by something users know or are.",
+    "tenant-mfa-required",
+    "An enforced MFA grant or authentication strength is supporting configuration evidence. Verify actual factors, exclusions and user/service coverage.",
+  ],
+  [
+    "Multi-factor authentication is used to authenticate users to third-party online services that process, store or communicate their organisation’s sensitive data.",
+    "tenant-mfa-all-apps",
+    "The policy requires MFA for all Entra-integrated cloud apps in its user scope. Service inventory, privileged-user coverage, exclusions, non-Entra services and effective sign-ins require verification.",
+  ],
+  [
+    "Multi-factor authentication (where available) is used to authenticate users to third-party online services that process, store or communicate their organisation’s non-sensitive data.",
+    "tenant-mfa-all-apps",
+    "The policy requires MFA for all Entra-integrated cloud apps in its user scope. Service inventory, privileged-user coverage, exclusions, non-Entra services and effective sign-ins require verification.",
+  ],
+  [
+    "Multi-factor authentication is used to authenticate users of data repositories.",
+    "tenant-mfa-all-apps",
+    "The policy requires MFA for all Entra-integrated cloud apps in its user scope. Service inventory, privileged-user coverage, exclusions, non-Entra services and effective sign-ins require verification.",
+  ],
+  [
+    "Multi-factor authentication is used to authenticate privileged users of systems.",
+    "tenant-mfa-all-apps",
+    "The policy requires MFA for all Entra-integrated cloud apps in its user scope. Service inventory, privileged-user coverage, exclusions, non-Entra services and effective sign-ins require verification.",
+  ],
+  [
+    "Multi-factor authentication is used to authenticate unprivileged users of systems.",
+    "tenant-mfa-all-apps",
+    "The policy requires MFA for all Entra-integrated cloud apps in its user scope. Service inventory, privileged-user coverage, exclusions, non-Entra services and effective sign-ins require verification.",
+  ],
+  [
+    "Multi-factor authentication used for authenticating users of online services is phishing-resistant.",
+    "tenant-phishing-resistant-mfa",
+    "A phishing-resistant strength is required for the policy targets. Confirm coverage of the named service category, users, exclusions and actual sign-ins.",
+  ],
+  [
+    "Multi-factor authentication used for authenticating users of data repositories is phishing-resistant.",
+    "tenant-phishing-resistant-mfa",
+    "A phishing-resistant strength is required for the policy targets. Confirm coverage of the named service category, users, exclusions and actual sign-ins.",
+  ],
+  [
+    "Multi-factor authentication used for authenticating users of systems is phishing-resistant.",
+    "tenant-phishing-resistant-mfa",
+    "A phishing-resistant strength is required for the policy targets. Confirm coverage of the named service category, users, exclusions and actual sign-ins.",
+  ],
+
+  [
     "Application control is implemented on workstations.",
     "windows-application-control",
     "Approved executables, rule coverage, exceptions and actual workstation enforcement require verification.",
@@ -69,6 +185,35 @@ const bindings: ReadonlyArray<readonly [string, string, string]> = [
   ],
 ];
 
+function externalEvidenceNeeded(strategy: string, requirement: string): string {
+  if (strategy === "Regular backups") {
+    if (requirement.includes("tested"))
+      return "Requires backup restoration test reports showing a successful restore to a common point in time. Intune policy exports contain no backup recovery results.";
+    if (/access|modifying|deleting/.test(requirement))
+      return "Requires backup-platform access rules, account roles, immutable-storage settings and effective access tests. These are not present in the collected Intune or Conditional Access policies.";
+    return "Requires backup-job configuration and execution records, retention settings and recovery-point evidence from the backup platform. Intune configuration does not report backup completion or recoverability.";
+  }
+  if (
+    strategy === "Patch applications" ||
+    strategy === "Patch operating systems"
+  ) {
+    if (/scanner|scanning|discovery/.test(requirement))
+      return "Requires asset inventory, vulnerability-scanner configuration, database-update status and timestamped scan results. This export collects management policies, not vulnerability-management telemetry.";
+    if (requirement.includes("no longer supported"))
+      return "Requires installed product/version inventory and vendor support-lifecycle data. A minimum-version policy cannot establish that every installed product is supported.";
+    return "Requires per-device patch installation records, vendor release dates and vulnerability severity/exploit data to verify the stated deadline. Deployment policy configuration alone does not establish installation time.";
+  }
+  if (strategy === "Restrict administrative privileges")
+    return "Requires privileged-account and device classifications, access approvals and effective sign-in/authorization evidence. Policy assignments alone do not identify every privileged environment or prove separation of duties.";
+  if (strategy === "Multi-factor authentication")
+    return "Requires the named customer/service identity configuration, service inventory and actual authentication evidence. Collected workforce Conditional Access policies cannot establish coverage of external customer identity systems or unrelated services.";
+  if (strategy === "Application control")
+    return "Requires the deployed application-control rule set, approved application inventory, rule-path/type coverage and enforcement tests. A policy that enables application control does not establish this rule-level requirement.";
+  if (strategy === "Restrict Microsoft Office macros")
+    return "Requires trusted-publisher certificates, macro-signing/review records, Trusted Location permissions or signature-version evidence for this requirement. Basic macro-block policies do not establish those details.";
+  return "Requires the specific device state, application settings or operational evidence described in this requirement. The collected management-policy fields do not establish those facts; review device results and the relevant application/security platform.";
+}
+
 export function essentialEightFramework(
   target: EssentialEightMaturityLevel = 1,
 ): FrameworkDefinition {
@@ -77,10 +222,22 @@ export function essentialEightFramework(
   const mappings: Record<string, string[]> = {};
   const controls = Object.fromEntries(
     requirements.map((row) => {
-      const binding = bindings.find(
+      const matchedBindings = bindings.filter(
         ([requirement]) => requirement === row.requirement,
       );
-      if (binding) (mappings[binding[1]] ??= []).push(row.id);
+      for (const binding of matchedBindings)
+        (mappings[binding[1]] ??= []).push(row.id);
+      const platforms = [
+        ...new Set(
+          matchedBindings.map((binding) =>
+            binding[1].startsWith("windows-")
+              ? ("windows" as const)
+              : binding[1].startsWith("macos-")
+                ? ("macos" as const)
+                : ("tenant" as const),
+          ),
+        ),
+      ];
       return [
         row.id,
         {
@@ -90,13 +247,10 @@ export function essentialEightFramework(
           tier: `Target Maturity Level ${level}`,
           granularity: "requirement" as const,
           evidenceStrength: "supporting" as const,
-          ...(binding && binding[1].startsWith("windows-")
-            ? { platforms: ["windows" as const] }
-            : {}),
-          unassessedAspects: [
-            binding?.[2] ??
-              "This requirement needs separate technical or operational assessment; no verified detector is available in this export.",
-          ],
+          ...(platforms.length ? { platforms } : {}),
+          unassessedAspects: matchedBindings.length
+            ? [...new Set(matchedBindings.map((binding) => binding[2]))]
+            : [externalEvidenceNeeded(row.strategy, row.requirement)],
         },
       ];
     }),

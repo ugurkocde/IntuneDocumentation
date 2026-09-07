@@ -380,7 +380,7 @@ function ControlRow({
   const statusLabel =
     control.status === "notAssessed"
       ? control.capabilityIds.length === 0
-        ? "No automated check"
+        ? "Additional evidence needed"
         : "Assessment incomplete"
       : CONTROL_STATUS_DETAILS[control.status].label;
   const pendingReasons = [
@@ -422,7 +422,8 @@ function ControlRow({
           {control.status === "notAssessed" && (
             <span className="mt-2 block text-xs leading-5 text-amber-900">
               {control.capabilityIds.length === 0
-                ? "This control has no automated check in the selected platform scope. Separate evidence is needed."
+                ? control.unassessedAspects.join(" ") ||
+                  "This requirement needs evidence outside the collected settings or a supported platform in scope."
                 : pendingReasons.join(" ") ||
                   "Required technical evidence is unavailable. Expand this control to review its checks."}
             </span>
@@ -1163,8 +1164,8 @@ export function ComplianceView({
 
                   <p className="text-xs text-slate-600">
                     {selectedFramework.summary.conflicting} mixed evidence;{" "}
-                    {selectedFramework.summary.notAssessed} incomplete or
-                    without automated checks;{" "}
+                    {selectedFramework.summary.notAssessed} need additional
+                    evidence or have incomplete collection;{" "}
                     {selectedFramework.summary.notApplicable} outside scope.
                     Counts refer to selected mapped entries, not full framework
                     coverage.

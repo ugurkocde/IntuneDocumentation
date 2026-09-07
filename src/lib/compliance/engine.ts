@@ -44,7 +44,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.09.5";
+export const COMPLIANCE_RULESET_VERSION = "2026.09.6";
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -202,10 +202,23 @@ function legacyValues(
   config: Record<string, any>,
   signal: Extract<DetectionSignal, { settingId: string }>,
 ): unknown[] {
-  if (signal.source === "administrativeTemplate")
-    return (config.definitionValues ?? [])
-      .filter((value: any) => value?.definition?.id === signal.settingId)
-      .map((value: any) => value.enabled);
+  if (signal.source === "administrativeTemplate") {
+    const definitions = Array.isArray(config.definitionValues)
+      ? config.definitionValues
+      : [];
+    return definitions
+      .filter((row: any) => row?.definition?.id === signal.settingId)
+      .flatMap((row: any) => {
+        if (!signal.presentationId)
+          return typeof row.enabled === "boolean" ? [row.enabled] : [];
+        if (row.enabled !== true || row.presentationFetchError) return [];
+        return (row.presentationValues ?? [])
+          .filter(
+            (value: any) => value?.presentation?.id === signal.presentationId,
+          )
+          .map((value: any) => value.value);
+      });
+  }
   if (signal.source === "omaUri")
     return (config.omaSettings ?? [])
       .filter((value: any) => value?.omaUri === signal.settingId)
@@ -294,6 +307,17 @@ function evaluateConfiguration(
       } else {
         if (signal.source === "settingsCatalog") {
           settingId = signal.settingDefinitionId;
+          if (
+            signal.prerequisites?.some((required) => {
+              const selected =
+                catalogValues.get(required.settingDefinitionId) ?? [];
+              return (
+                selected.length !== 1 ||
+                !required.values.includes(String(selected[0]))
+              );
+            })
+          )
+            continue;
           values = catalogValues.get(settingId) ?? [];
         } else if (signal.source === "graphProperty") {
           if (
@@ -305,7 +329,9 @@ function evaluateConfiguration(
           if (value === undefined || value === null) continue;
           values = [value];
         } else {
-          settingId = signal.settingId;
+          settingId = signal.presentationId
+            ? `${signal.settingId}/${signal.presentationId}`
+            : signal.settingId;
           values = legacyValues(config, signal);
         }
         matches = verdictsFor(values, signal);
@@ -522,9 +548,10 @@ export function assessFramework(
       if (outsidePlatformScope || outsideRiskScope) status = "notApplicable";
       else if (!capabilityIds.length) {
         status = "notAssessed";
-        unassessedAspects.push(
-          "No detector is available for this control in the selected platform scope.",
-        );
+        if (!unassessedAspects.length)
+          unassessedAspects.push(
+            "This requirement needs evidence outside the collected settings or a supported platform in scope.",
+          );
       } else if (
         relevant.some((result) => result.status === "conflictingEvidence")
       )

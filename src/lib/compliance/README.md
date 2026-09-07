@@ -160,6 +160,36 @@ where a non-enforcing value exists, `disabledWhen`. Verify the exact
 Microsoft Graph documentation before adding it, and cover it in
 `src/lib/__tests__/compliance-engine.test.ts`.
 
+## Expanded technical detectors (ruleset 2026.09.6)
+
+Every exposed framework uses working setting detectors. The regression matrix in
+`framework-detectors.test.ts` exercises an assigned, enforcing Office policy and
+its disabled counterpart through all ten framework assessments.
+
+`technical-capabilities.ts` adds Office VBA restrictions and scanning, signed
+macros, Internet Explorer disablement, browser Java and intrusive-ad restrictions,
+PowerShell logging, all-cloud-app MFA and phishing-resistant authentication
+strengths. Existing ASR, Credential Guard and memory-integrity checks also recognize
+their actual Settings Catalog choice identifiers. ADMX dropdowns require an enabled
+parent on the same policy; Administrative Template dropdowns match both definition
+and presentation IDs. Audit, warning, unassigned and optional OR-grant configurations
+do not become enforced evidence.
+
+Exact setting definitions and options were read from Microsoft Graph beta on
+7 September 2026 using Greybeard. `verified-technical-settings.json` contains public
+definition metadata, not tenant policy data. Assessment runs locally against the
+already collected snapshot and adds no server-side retention or runtime metadata
+requests.
+
+Essential Eight now has supporting detectors for 14 of 48 Level 1 entries, 24 of
+107 Level 2 entries and 30 of 149 Level 3 entries. These counts describe technical
+mapping coverage, not passed requirements. The other entries explain the necessary
+external evidence, such as backup restoration reports, patch installation times,
+vulnerability scans and access approvals. Collection completeness is separate from
+detector coverage and operational effectiveness. Blocking intrusive advertisements
+does not establish blocking all advertisements; a logging policy does not establish
+central ingestion; an MFA policy does not prove every service or user is covered.
+
 ## ASD Essential Eight target levels (ruleset 2026.09.3)
 
 Essential Eight is one framework with target Maturity Levels 1, 2 and 3.

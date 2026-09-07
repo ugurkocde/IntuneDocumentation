@@ -27,6 +27,11 @@ export type ValueExpectation =
 export interface SettingsCatalogSignal {
   source: "settingsCatalog";
   settingDefinitionId: string;
+  /** A child option is valid only while its exact parent option is enabled. */
+  prerequisites?: readonly {
+    settingDefinitionId: string;
+    values: readonly string[];
+  }[];
   enforcedWhen: ValueExpectation;
   disabledWhen?: ValueExpectation;
   requirementGroup?: string;
@@ -47,6 +52,8 @@ export interface GraphPropertySignal {
 export interface LegacySettingSignal {
   source: "administrativeTemplate" | "securityBaseline" | "omaUri";
   settingId: string;
+  /** Exact Graph presentation identifier, never a display label. */
+  presentationId?: string;
   enforcedWhen: ValueExpectation;
   disabledWhen?: ValueExpectation;
   requirementGroup?: string;
@@ -57,6 +64,8 @@ export interface PolicyCheckSignal {
   check:
     | "scheduledAntivirusScan"
     | "qualityUpdateDeadline"
+    | "conditionalAccessMfaAllApps"
+    | "conditionalAccessPhishingResistantMfa"
     | "conditionalAccessMfa"
     | "conditionalAccessCompliantDevice";
   requirementGroup?: string;

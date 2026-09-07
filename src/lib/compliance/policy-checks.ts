@@ -88,24 +88,73 @@ export function evaluatePolicyCheck(
   }
   if (type !== "conditionalaccesspolicy") return;
   const controls = config.grantControls;
-  const required = check === "conditionalAccessMfa" ? "mfa" : "compliantDevice";
+  if (!controls || !["AND", "OR"].includes(controls.operator)) return;
+  const builtIn = Array.isArray(controls.builtInControls)
+    ? controls.builtInControls
+    : [];
+  if (builtIn.includes("block")) return;
+  const strength = controls.authenticationStrength;
+  // Microsoft built-in strength IDs, verified through Graph beta on 2026-09-07.
+  const mfaStrengthIds = [
+    "00000000-0000-0000-0000-000000000002",
+    "00000000-0000-0000-0000-000000000003",
+    "00000000-0000-0000-0000-000000000004",
+  ];
+  const requiresMfa = Boolean(
+    strength &&
+      (mfaStrengthIds.includes(strength.id) ||
+        strength.requirementsSatisfied === "mfa"),
+  );
+  const resistantMethods = [
+    "windowsHelloForBusiness",
+    "fido2",
+    "x509CertificateMultiFactor",
+  ];
+  const resistant = Boolean(
+    strength &&
+      (strength.id === mfaStrengthIds[2] ||
+        (Array.isArray(strength.allowedCombinations) &&
+          strength.allowedCombinations.length > 0 &&
+          strength.allowedCombinations.every(
+            (method: unknown) =>
+              typeof method === "string" && resistantMethods.includes(method),
+          ))),
+  );
+  const required =
+    check === "conditionalAccessCompliantDevice" ? "compliantDevice" : "mfa";
+  const branchResults = [
+    ...builtIn.map((value: string) =>
+      check === "conditionalAccessPhishingResistantMfa"
+        ? false
+        : value === required,
+    ),
+    ...(strength
+      ? [
+          check === "conditionalAccessPhishingResistantMfa"
+            ? resistant
+            : required === "mfa" && requiresMfa,
+        ]
+      : []),
+    ...(controls.customAuthenticationFactors ?? []).map(() => false),
+    ...(controls.termsOfUse ?? []).map(() => false),
+  ];
+  // AND needs at least one relevant enforced grant; every OR alternative must
+  // require the capability. MFA OR compliant-device is never evidence of MFA.
   if (
-    !Array.isArray(controls?.builtInControls) ||
-    !controls.builtInControls.includes(required) ||
-    controls.builtInControls.includes("block")
+    !branchResults.length ||
+    !(controls.operator === "AND"
+      ? branchResults.some(Boolean)
+      : branchResults.every(Boolean))
   )
     return;
-  const alternatives =
-    controls.builtInControls.length +
-    (controls.customAuthenticationFactors?.length ?? 0) +
-    (controls.termsOfUse?.length ?? 0) +
-    (controls.authenticationStrength ? 1 : 0);
-  // OR with another grant does not require this particular control.
-  if (
-    controls.operator !== "AND" &&
-    !(controls.operator === "OR" && alternatives === 1)
-  )
-    return;
+  if (check === "conditionalAccessMfaAllApps") {
+    const apps = config.conditions?.applications;
+    if (
+      !apps?.includeApplications?.includes("All") ||
+      (apps.excludeApplications?.length ?? 0) > 0
+    )
+      return;
+  }
   if (config.state !== "enabled") return;
   const users = config.conditions?.users;
   const apps = config.conditions?.applications;
@@ -119,6 +168,6 @@ export function evaluatePolicyCheck(
     return;
   return {
     verdict: "enforced",
-    observed: `${required} required; enabled; configured conditions apply`,
+    observed: `${check === "conditionalAccessPhishingResistantMfa" ? "phishing-resistant MFA" : required} required; enabled; configured conditions apply`,
   };
 }

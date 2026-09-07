@@ -368,6 +368,30 @@ const STRINGS: Record<Locale, ReportStrings> = {
 };
 
 export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
+  "windows-office-v3-signatures": "VBA-V3-Signaturen erforderlich",
+  "windows-office-macros-disabled": "Office-VBA-Makros deaktiviert",
+  "windows-office-internet-macros-blocked":
+    "Office-Makros aus dem Internet blockiert",
+  "windows-office-macro-antivirus": "Laufzeitprüfung von Office-Makros",
+  "windows-office-signed-macros": "Nur signierte Office-Makros zugelassen",
+  "windows-office-macro-settings-managed":
+    "Office-Makroeinstellungen durch Richtlinien verwaltet",
+  "macos-office-macros-disabled": "Office-VBA-Makros unter macOS deaktiviert",
+  "windows-ie-disabled": "Internet Explorer 11 deaktiviert",
+  "windows-browser-java-blocked": "Java in der Internetzone blockiert",
+  "windows-browser-intrusive-ads-blocked":
+    "Aufdringliche Browserwerbung blockiert",
+  "macos-browser-intrusive-ads-blocked":
+    "Aufdringliche Browserwerbung unter macOS blockiert",
+  "windows-browser-security-settings-managed":
+    "Browsersicherheitseinstellungen durch Richtlinien verwaltet",
+  "windows-powershell-scriptblock-logging":
+    "PowerShell-Skriptblockprotokollierung aktiviert",
+  "windows-powershell-transcription": "PowerShell-Transkription aktiviert",
+  "tenant-mfa-all-apps":
+    "MFA für alle Cloud-Apps im Richtlinienumfang erforderlich",
+  "tenant-phishing-resistant-mfa": "Phishingresistente MFA erforderlich",
+
   "windows-office-macro-win32-block":
     "Win32-Aufrufe durch Office-Makros blockiert",
   "windows-office-child-process-block": "Unterprozesse von Office blockiert",

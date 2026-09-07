@@ -160,19 +160,18 @@ describe("Essential Eight target maturity", () => {
   );
 });
 
-it("keeps urgent patches, phishing resistance and backups explicitly unmapped", () => {
+it("keeps operational patch and backup requirements separate from expanded technical checks", () => {
   for (const level of [1, 2, 3] as const) {
     const framework = essentialEightFramework(level);
     const mapped = new Set(Object.values(framework.mappings).flat());
     for (const control of Object.values(framework.controls)) {
       if (
         control.summary.includes("48 hours") ||
-        control.summary.includes("phishing-resistant") ||
         control.title === "Regular backups"
       )
         expect(mapped.has(control.id)).toBe(false);
     }
-    expect(mapped.size).toBe({ 1: 3, 2: 8, 3: 10 }[level]);
+    expect(mapped.size).toBe({ 1: 14, 2: 24, 3: 30 }[level]);
   }
 });
 it("preserves conflicting ASR policies and explicit platform scope", () => {

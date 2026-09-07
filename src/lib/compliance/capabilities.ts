@@ -1,3 +1,7 @@
+import {
+  TECHNICAL_CAPABILITIES,
+  VERIFIED_CATALOG_SIGNALS,
+} from "./technical-capabilities";
 import { ESSENTIAL_EIGHT_CAPABILITIES } from "./essential-eight-capabilities";
 import { LEGACY_SIGNALS } from "./legacy-signals";
 import { ADDITIONAL_CAPABILITIES } from "./additional-capabilities";
@@ -690,6 +694,7 @@ const CORE_CAPABILITIES: readonly ComplianceCapability[] = [
       },
     ],
   },
+  ...TECHNICAL_CAPABILITIES,
   ...ADDITIONAL_CAPABILITIES,
   ...ESSENTIAL_EIGHT_CAPABILITIES,
 ];
@@ -697,5 +702,9 @@ const CORE_CAPABILITIES: readonly ComplianceCapability[] = [
 export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] =
   CORE_CAPABILITIES.map((capability) => ({
     ...capability,
-    signals: [...capability.signals, ...(LEGACY_SIGNALS[capability.id] ?? [])],
+    signals: [
+      ...capability.signals,
+      ...(LEGACY_SIGNALS[capability.id] ?? []),
+      ...(VERIFIED_CATALOG_SIGNALS[capability.id] ?? []),
+    ],
   }));

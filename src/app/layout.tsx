@@ -2,6 +2,8 @@ import "~/styles/globals.css";
 
 import { type Metadata } from "next";
 import Script from "next/script";
+import { headers } from "next/headers";
+import { SiteBoundaryProvider } from "~/components/site-boundary-provider";
 // Removed Google Fonts to allow offline builds in restricted environments
 import { AuthProvider } from "~/components/auth-provider";
 import PlausibleProvider from "next-plausible";
@@ -127,36 +129,67 @@ export const metadata: Metadata = {
 
 // Using system fonts; add custom fonts via local files if needed
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const requestHeaders = await headers();
+  const nonce = requestHeaders.get("x-nonce") ?? "";
+  const publicSite = requestHeaders.get("x-site-mode") === "public";
+  const appOrigin = requestHeaders.get("x-app-origin") ?? "";
   const crispWebsiteId =
-    process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ??
-    (process.env.VERCEL_ENV === "production"
-      ? PRODUCTION_CRISP_WEBSITE_ID
-      : undefined);
-  const app = <AuthProvider>{children}</AuthProvider>;
+    publicSite &&
+    (process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ??
+      (process.env.VERCEL_ENV === "production"
+        ? PRODUCTION_CRISP_WEBSITE_ID
+        : undefined));
+  const app = (
+    <SiteBoundaryProvider
+      publicSite={publicSite}
+      appOrigin={appOrigin}
+      nonce={nonce}
+    >
+      {publicSite ? children : <AuthProvider>{children}</AuthProvider>}
+    </SiteBoundaryProvider>
+  );
   return (
     <html lang="en">
       <head>
-        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
-        <script src="/api/config/script" />
+        {publicSite ? (
+          <script
+            nonce={nonce}
+            dangerouslySetInnerHTML={{
+              __html: `try { sessionStorage.clear(); } catch {} if (/[#?](?:code|id_token|access_token|error)=/.test(location.href)) history.replaceState(null, "", location.pathname);`,
+            }}
+          />
+        ) : (
+          // The public configuration must exist before MSAL initializes.
+          // eslint-disable-next-line @next/next/no-sync-scripts
+          <script nonce={nonce} src="/api/config/script" />
+        )}
       </head>
       <body className={crispWebsiteId ? "crisp-chat-enabled" : undefined}>
-        {process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (
-          <PlausibleProvider domain="intunedocumentation.com">
+        {publicSite && process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (
+          <PlausibleProvider
+            domain="intunedocumentation.com"
+            scriptProps={{ nonce }}
+          >
             {app}
           </PlausibleProvider>
         ) : (
           app
         )}
-        <CookieConsentBanner />
+        {publicSite ? <CookieConsentBanner /> : null}
         {crispWebsiteId ? (
           <>
-            <Script id="crisp-chat-config" strategy="beforeInteractive">
+            <Script
+              nonce={nonce}
+              id="crisp-chat-config"
+              strategy="afterInteractive"
+            >
               {`window.$crisp = []; window.CRISP_WEBSITE_ID = ${JSON.stringify(crispWebsiteId)};`}
             </Script>
             <Script
+              nonce={nonce}
               id="crisp-chat-loader"
               src="https://client.crisp.chat/l.js"
               strategy="lazyOnload"

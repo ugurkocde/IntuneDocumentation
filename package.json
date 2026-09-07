@@ -1,6 +1,6 @@
 {
   "name": "intune-documentation",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Generate professional documentation of your Microsoft Intune tenant",
   "private": true,
   "license": "Elastic-2.0",

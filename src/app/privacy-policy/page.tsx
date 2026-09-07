@@ -135,12 +135,19 @@ export default function PrivacyPolicyPage() {
               <li>
                 The dashboard saves a compressed configuration snapshot and
                 resolved assignment group names in your browser tab&apos;s
-                sessionStorage so a page reload can restore your work. This
-                snapshot is scoped to your signed-in account, tenant, and
-                collection options. Signing out clears it; closing the tab ends
-                its browser session. It is not stored on our server, in
-                localStorage, or in IndexedDB. If session storage is unavailable
-                or full, the dashboard works without saving a snapshot.
+                sessionStorage so a page reload can restore your work. Stored
+                snapshots expire one hour after collection and are checked
+                before restoration and when a tab resumes. Expiry removes the
+                stored copy; an already open report remains usable. Signing out
+                signals other open app tabs to clear their sessions without
+                sending tenant data. This snapshot is scoped to your signed-in
+                account, tenant, and collection options. Signing out clears it;
+                closing the tab normally ends its browser session. Browsers may
+                restore session storage when restoring tabs, so expired
+                snapshots are rejected even after a browser restart. It is not
+                stored on our server, in localStorage, or in IndexedDB. If
+                session storage is unavailable or full, the dashboard works
+                without saving a snapshot.
               </li>
               <li>
                 Access tokens are managed in your browser session by MSAL and
@@ -156,10 +163,10 @@ export default function PrivacyPolicyPage() {
               Analytics & Cookies
             </h2>
             <p>
-              We use privacy-friendly analytics (Plausible) to understand
-              aggregate website usage without cookies or personal identifiers.
-              We also maintain service-level usage counters to understand active
-              organizations and document exports.
+              We use privacy-friendly analytics (Plausible) on the public site
+              only to understand aggregate website usage without cookies or
+              personal identifiers. We also maintain service-level usage
+              counters to understand active organizations and document exports.
             </p>
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>
@@ -200,9 +207,10 @@ export default function PrivacyPolicyPage() {
             </h2>
             <p>
               The hosted Service uses Crisp IM SAS (&quot;Crisp&quot;) to
-              provide the support-chat widget. Self-hosted deployments do not
-              load Crisp unless the operator explicitly configures a Crisp
-              workspace ID.
+              provide the support-chat widget on intunedocumentation.com only.
+              The authenticated app at app.intunedocumentation.com does not load
+              chat or analytics scripts. Self-hosted deployments require a
+              separate public origin to enable these scripts.
             </p>
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>

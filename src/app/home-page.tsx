@@ -1,5 +1,6 @@
 "use client";
 
+import { useSiteBoundary } from "~/components/site-boundary-provider";
 import { useMsal } from "@azure/msal-react";
 import { clearDashboardSession } from "~/lib/dashboard-session-cache";
 import { motion, useReducedMotion } from "framer-motion";
@@ -341,6 +342,7 @@ function SpotIllustrationShield() {
 }
 
 export function HomePage({ stats }: { stats: SiteStats }) {
+  const { publicSite, appOrigin, nonce } = useSiteBoundary();
   const { instance, accounts } = useMsal();
   const router = useRouter();
   const { userProfile } = useUserProfile();
@@ -400,6 +402,10 @@ export function HomePage({ stats }: { stats: SiteStats }) {
   }, [showSecurity, showPermissions]);
 
   const handleSignIn = async () => {
+    if (publicSite) {
+      window.location.assign(`${appOrigin}/sign-in`);
+      return;
+    }
     try {
       setSigningIn(true);
       setSignInError(null);
@@ -463,6 +469,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
 
       <main id="main-content" className="bg-mint-50 overflow-hidden">
         <script
+          nonce={nonce}
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
         />

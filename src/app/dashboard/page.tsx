@@ -267,7 +267,7 @@ export default function DashboardPage() {
     // idle, otherwise the refresh races straight back to the landing page.
     if (settledAccountKey === undefined) return;
     if (!account || !accountKey) {
-      clearDashboardSession();
+      clearDashboardSession(false);
       router.push("/");
       return;
     }

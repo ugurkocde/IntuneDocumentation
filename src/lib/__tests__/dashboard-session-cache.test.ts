@@ -15,6 +15,9 @@ describe("browser session snapshots", () => {
     removeItem: ReturnType<typeof vi.fn>;
   };
   beforeEach(async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-09-07T12:30:00.000Z"),
+    );
     entries = new Map();
     session = {
       getItem: vi.fn((key: string) => entries.get(key) ?? null),
@@ -36,6 +39,7 @@ describe("browser session snapshots", () => {
   afterEach(() => {
     clearDashboardSession();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("round trips a compressed snapshot with original dates, warnings, groups and consent", async () => {
@@ -88,13 +92,11 @@ describe("browser session snapshots", () => {
     expect(entries.size).toBe(0);
   });
 
-  it("keeps old timestamps usable without extending their freshness", async () => {
+  it("rejects old timestamps without extending their lifetime", async () => {
     const snapshot = sessionSnapshot();
     snapshot.lastFetched = "2020-01-01T00:00:00.000Z";
     await saveDashboardSession(sessionScope, snapshot);
-    expect((await readDashboardSession(sessionScope))?.lastFetched).toBe(
-      snapshot.lastFetched,
-    );
+    expect(await readDashboardSession(sessionScope)).toBeNull();
   });
 
   it("handles quota failure without retaining an outdated snapshot", async () => {

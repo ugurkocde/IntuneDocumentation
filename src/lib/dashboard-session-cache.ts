@@ -4,6 +4,8 @@ import type { IntuneConfigurations } from "~/components/dashboard/types";
 // sessionStorage. Never add a server, localStorage, or IndexedDB fallback.
 export const DASHBOARD_SESSION_KEY = "intune-dashboard-session:v1";
 export const SNAPSHOT_FRESHNESS_MS = 30 * 60 * 1000;
+export const SNAPSHOT_MAX_AGE_MS = 60 * 60 * 1000;
+export const DASHBOARD_LOGOUT_CHANNEL = "intune-dashboard-logout";
 
 export interface DashboardSessionScope {
   accountId: string;
@@ -20,6 +22,7 @@ export interface DashboardSessionSnapshot {
 
 let revision = 0;
 let writesEnabled = true;
+let expiryTimer: ReturnType<typeof setTimeout> | undefined;
 
 function storage(): Storage | null {
   try {
@@ -29,14 +32,91 @@ function storage(): Storage | null {
   }
 }
 
-export function clearDashboardSession(): void {
+export function clearDashboardSession(broadcast = true): void {
   revision++;
   writesEnabled = false;
+  clearTimeout(expiryTimer);
   try {
     storage()?.removeItem(DASHBOARD_SESSION_KEY);
   } catch {
     // Sign-out must work even when browser storage is blocked.
   }
+  if (broadcast && typeof window !== "undefined" && window.BroadcastChannel) {
+    try {
+      const channel = new window.BroadcastChannel(DASHBOARD_LOGOUT_CHANNEL);
+      channel.postMessage("clear");
+      channel.close();
+    } catch {
+      /* Logout must work even if cross-tab messaging is unavailable. */
+    }
+  }
+}
+
+function validExpiry(expiresAt: unknown): expiresAt is number {
+  return (
+    typeof expiresAt === "number" &&
+    Number.isFinite(expiresAt) &&
+    expiresAt > Date.now() &&
+    expiresAt <= Date.now() + SNAPSHOT_MAX_AGE_MS
+  );
+}
+
+// Expiry purges the stored snapshot, not the currently visible report. A later
+// reload must collect fresh data. Browser suspension is handled on focus/resume.
+export function enforceDashboardSessionExpiry(): void {
+  clearTimeout(expiryTimer);
+  try {
+    const raw = storage()?.getItem(DASHBOARD_SESSION_KEY);
+    if (!raw) return;
+    const envelope = JSON.parse(raw);
+    if (envelope.version !== 2 || !validExpiry(envelope.expiresAt)) {
+      revision++;
+      storage()?.removeItem(DASHBOARD_SESSION_KEY);
+      return;
+    }
+    expiryTimer = setTimeout(
+      enforceDashboardSessionExpiry,
+      envelope.expiresAt - Date.now(),
+    );
+  } catch {
+    try {
+      storage()?.removeItem(DASHBOARD_SESSION_KEY);
+    } catch {
+      /* unavailable */
+    }
+  }
+}
+
+export function observeDashboardSession(
+  onRemoteLogout: () => void,
+): () => void {
+  enforceDashboardSessionExpiry();
+  let channel: BroadcastChannel | undefined;
+  try {
+    if (window.BroadcastChannel) {
+      channel = new window.BroadcastChannel(DASHBOARD_LOGOUT_CHANNEL);
+      channel.onmessage = (event: MessageEvent<unknown>) => {
+        if (event.data !== "clear") return;
+        clearDashboardSession(false);
+        onRemoteLogout();
+      };
+    }
+  } catch {
+    /* The expiry guard still runs if messaging is blocked. */
+  }
+  window.addEventListener("focus", enforceDashboardSessionExpiry);
+  window.addEventListener("pageshow", enforceDashboardSessionExpiry);
+  document.addEventListener("visibilitychange", enforceDashboardSessionExpiry);
+  return () => {
+    channel?.close();
+    clearTimeout(expiryTimer);
+    window.removeEventListener("focus", enforceDashboardSessionExpiry);
+    window.removeEventListener("pageshow", enforceDashboardSessionExpiry);
+    document.removeEventListener(
+      "visibilitychange",
+      enforceDashboardSessionExpiry,
+    );
+  };
 }
 
 function validSnapshot(value: any): value is DashboardSessionSnapshot {
@@ -108,7 +188,8 @@ export async function readDashboardSession(
     if (!raw) return null;
     const envelope = JSON.parse(raw);
     if (
-      envelope.version !== 1 ||
+      envelope.version !== 2 ||
+      !validExpiry(envelope.expiresAt) ||
       envelope.scope?.accountId !== scope.accountId ||
       envelope.scope?.tenantId !== scope.tenantId ||
       envelope.scope?.includeCA !== scope.includeCA
@@ -133,6 +214,13 @@ export async function readDashboardSession(
     if (revision !== readRevision) return null;
     const snapshot: unknown = JSON.parse(json);
     if (!validSnapshot(snapshot)) throw new Error("Invalid dashboard snapshot");
+    if (
+      Date.parse(snapshot.lastFetched) + SNAPSHOT_MAX_AGE_MS !==
+        envelope.expiresAt ||
+      !validExpiry(envelope.expiresAt)
+    )
+      throw new Error("Expired dashboard snapshot");
+    enforceDashboardSessionExpiry();
     return snapshot;
   } catch {
     if (revision === readRevision) {
@@ -151,6 +239,11 @@ export async function saveDashboardSession(
   snapshot: DashboardSessionSnapshot,
 ): Promise<"saved" | "unavailable" | "cancelled"> {
   if (!writesEnabled) return "cancelled";
+  const expiresAt = Date.parse(snapshot.lastFetched) + SNAPSHOT_MAX_AGE_MS;
+  if (!validExpiry(expiresAt)) {
+    enforceDashboardSessionExpiry();
+    return "cancelled";
+  }
   const writeRevision = ++revision;
   const session = storage();
   if (!session) return "unavailable";
@@ -163,11 +256,13 @@ export async function saveDashboardSession(
       caConsentStatus: snapshot.caConsentStatus,
     });
     const encoded = await encode(json);
-    if (revision !== writeRevision || !writesEnabled) return "cancelled";
+    if (revision !== writeRevision || !writesEnabled || !validExpiry(expiresAt))
+      return "cancelled";
     session.setItem(
       DASHBOARD_SESSION_KEY,
-      JSON.stringify({ version: 1, scope, ...encoded }),
+      JSON.stringify({ version: 2, scope, expiresAt, ...encoded }),
     );
+    enforceDashboardSessionExpiry();
     return "saved";
   } catch {
     if (revision !== writeRevision) return "cancelled";

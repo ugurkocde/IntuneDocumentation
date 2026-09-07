@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { getSiteStats } from "~/lib/site-stats";
 import { HomePage } from "./home-page";
@@ -57,9 +58,11 @@ export const revalidate = 300;
 
 export default async function Page() {
   const stats = await getSiteStats();
+  const nonce = (await headers()).get("x-nonce") ?? "";
   return (
     <>
       <script
+        nonce={nonce}
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(webApplicationSchema),

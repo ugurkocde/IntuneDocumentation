@@ -13,29 +13,10 @@ const config = {
   // even when a lockfile exists in a parent directory.
   outputFileTracingRoot: import.meta.dirname,
   async headers() {
-    const contentSecurityPolicy = [
-      "default-src 'self'",
-      "base-uri 'self'",
-      "object-src 'none'",
-      "frame-ancestors 'none'",
-      "form-action 'self' https://login.microsoftonline.com",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://plausible.io https://client.crisp.chat",
-      "style-src 'self' 'unsafe-inline' https://client.crisp.chat",
-      "img-src 'self' data: blob: https:",
-      "font-src 'self' data: https://client.crisp.chat",
-      "media-src 'self' blob: https://*.crisp.chat",
-      "connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://*.supabase.co https://plausible.io https://changelog.ugurlabs.com https://*.crisp.chat wss://*.relay.crisp.chat wss://*.relay.rescue.crisp.chat",
-      "frame-src 'self' https://login.microsoftonline.com https://*.crisp.chat",
-      "worker-src 'self' blob: https://*.crisp.chat",
-      "manifest-src 'self'",
-      "upgrade-insecure-requests",
-    ].join("; ");
-
     return [
       {
         source: "/(.*)",
         headers: [
-          { key: "Content-Security-Policy", value: contentSecurityPolicy },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

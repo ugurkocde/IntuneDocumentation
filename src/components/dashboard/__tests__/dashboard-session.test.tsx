@@ -101,7 +101,7 @@ function collectionResponse(name = "Fresh policy", complete = true) {
             event: "complete",
             data: {
               data: {
-                collectedAt: "2026-09-07T13:00:00.000Z",
+                collectedAt: "2026-09-07T12:30:00.000Z",
                 summary: {
                   totalConfigurations: 1,
                   byType: { settingsCatalog: 1 },
@@ -126,6 +126,9 @@ function collectionResponse(name = "Fresh policy", complete = true) {
 describe("dashboard session restore", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-09-07T12:30:00.000Z"),
+    );
     window.sessionStorage.clear();
     window.localStorage.clear();
     vi.stubGlobal("CompressionStream", undefined);

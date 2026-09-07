@@ -1,5 +1,6 @@
 "use client";
 
+import { useSiteBoundary } from "~/components/site-boundary-provider";
 import { useMsal } from "@azure/msal-react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -94,6 +95,7 @@ const NavLinks = memo(function NavLinks({
 });
 
 export function NavigationHeader() {
+  const { publicSite, appOrigin } = useSiteBoundary();
   const { instance, accounts } = useMsal();
   const pathname = usePathname();
   const router = useRouter();
@@ -145,6 +147,10 @@ export function NavigationHeader() {
   };
 
   const handleSignIn = async () => {
+    if (publicSite) {
+      window.location.assign(`${appOrigin}/sign-in`);
+      return;
+    }
     try {
       setSigningIn(true);
       setSignInError(null);

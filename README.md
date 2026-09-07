@@ -88,7 +88,7 @@ npm run test
 
 The application server retrieves, normalizes, and redacts Graph responses during the active collection request without persisting configuration data or access tokens. PDF and Word exports are generated in the browser.
 
-The dashboard keeps one compressed snapshot in the browser tab's `sessionStorage`, scoped to the signed-in account, tenant, and collection options. Browser reloads restore this snapshot after authentication settles. Only **Refresh data** initiates a new collection; after 30 minutes, the dashboard recommends refreshing without doing it automatically. A failed refresh preserves the previous snapshot and its original collection timestamp. Sign-out clears the snapshot. If session storage is blocked or full, caching is silently skipped and a subsequent reload collects the data normally. Configuration snapshots have no server, `localStorage`, or IndexedDB storage fallback.
+The dashboard keeps one compressed snapshot in the browser tab's `sessionStorage`, scoped to the signed-in account, tenant, and collection options. Browser reloads restore this snapshot after authentication settles. An expired or unavailable snapshot is collected again on reload. **Refresh data** explicitly initiates a new collection; after 30 minutes, the dashboard recommends refreshing without doing it automatically. A failed refresh preserves the previous snapshot and its original collection timestamp. Snapshots expire one hour after their original collection time. Expiry purges the stored copy while leaving the open report usable; suspended tabs recheck on resume. Sign-out clears the snapshot and broadcasts a data-free logout signal to other open app tabs, which clear their local authentication and snapshot. If session storage is blocked or full, caching is silently skipped and a subsequent reload collects the data normally. Configuration snapshots have no server, `localStorage`, or IndexedDB storage fallback.
 
 The hosted site collects anonymized usage statistics through Plausible Analytics, stores hashed tenant and user identifiers to calculate monthly active users, and provides a Crisp support-chat widget. Self-hosted deployments disable all telemetry and support chat by default because Supabase and Crisp are not configured and the analytics flag is off.
 
@@ -103,3 +103,18 @@ Report vulnerabilities privately by following [SECURITY.md](SECURITY.md).
 ## License
 
 Intune Documentation is licensed under the [Elastic License 2.0](LICENSE). You may use, copy, modify, redistribute, and self-host the software, but you may not offer it to third parties as a hosted or managed service.
+
+### Public site and app isolation
+
+Set both server environment variables together:
+
+```env
+PUBLIC_SITE_ORIGIN=https://intunedocumentation.com
+APP_SITE_ORIGIN=https://app.intunedocumentation.com
+```
+
+Map both domains to the deployment and add `https://app.intunedocumentation.com` as a **Single-page application** redirect URI in the existing Entra registration before activating these variables. Public sign-in links navigate to the app origin before starting Microsoft authentication. Public dashboard links redirect to the app. Existing sessions require signing in again on the new origin.
+
+Only the exact configured public origin loads Crisp and Plausible. Public pages clear legacy session storage before loading those scripts and cannot collect Intune data. The app uses a per-response script nonce and does not load analytics or chat, even on its landing page. Nonced HTML is dynamically rendered and must not be cached by a CDN. Unknown preview origins and self-hosted installations default to app mode with no third-party scripts. Leave both variables unset for a single-origin private app, or supply two distinct origins.
+
+The one-hour limit applies to dashboard snapshots, not Microsoft authentication token lifetimes or a report already visible in memory. Browser session restore can retain sessionStorage after restarting the browser, so the app also validates expiry before restoration. Cross-tab logout requires BroadcastChannel support; the originating tab always clears its own snapshot. No snapshot or logout payload is persisted on the server, in localStorage, or in IndexedDB.

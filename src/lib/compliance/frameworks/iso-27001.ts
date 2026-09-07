@@ -78,6 +78,7 @@ export const ISO_27001: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-applocker-rule-collections": ["8.19"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["8.9"],
     "windows-office-internet-macros-blocked": ["8.9"],

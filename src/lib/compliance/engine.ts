@@ -6,6 +6,8 @@ import type { DetailedExportData } from "../configuration-analyzer";
 import type { ConfigurationSettingInstance } from "../intune-detailed-client";
 import { summarizeAssignments } from "./assignments";
 import { evaluatePolicyCheck } from "./policy-checks";
+import { comparableValue, expectedValue } from "./check-results";
+import { policyCheckObservation } from "./policy-check-observation";
 import {
   buildCollectionCoverage,
   collectConfigurations,
@@ -35,6 +37,7 @@ import type {
   FrameworkDefinition,
   ValueExpectation,
   EvidenceKind,
+  TechnicalCheck,
 } from "./types";
 
 export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
@@ -44,7 +47,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.09.6";
+export const COMPLIANCE_RULESET_VERSION = "2026.09.7";
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -111,6 +114,8 @@ export function collectCatalogValues(
   const visit = (instance: ConfigurationSettingInstance | undefined) => {
     if (!instance || typeof instance !== "object") return;
     const definitionId = instance.settingDefinitionId;
+    // Presence without a readable primitive is unknown, never a missing setting.
+    if (definitionId && !values.has(definitionId)) values.set(definitionId, []);
 
     if (instance.simpleSettingValue) {
       record(definitionId, instance.simpleSettingValue.value);
@@ -250,6 +255,7 @@ function evaluateConfiguration(
   config: Record<string, unknown>,
   capabilities: readonly ComplianceCapability[],
   groupNames: ReadonlyMap<string, string>,
+  checksByCapability: Map<string, TechnicalCheck[]>,
 ): CapabilityEvidence[] {
   const evidence: CapabilityEvidence[] = [];
   const catalogValues = collectCatalogValues(config.settings);
@@ -294,8 +300,11 @@ function evaluateConfiguration(
 
   for (const capability of capabilities) {
     for (const signal of capability.signals) {
+      const checks = checksByCapability.get(capability.id) ?? [];
+      checksByCapability.set(capability.id, checks);
       let values: unknown[] = [];
       let settingId: string;
+      let prerequisiteReason: string | undefined;
       let matches: Array<{
         verdict: "enforced" | "disabled";
         observed: unknown;
@@ -304,9 +313,40 @@ function evaluateConfiguration(
         settingId = signal.check;
         const match = evaluatePolicyCheck(config, signal.check);
         matches = match ? [match] : [];
+        if (!match) {
+          const observation = policyCheckObservation(config, signal.check);
+          if (observation)
+            checks.push({
+              assessmentStatus: observation.complete
+                ? "checked"
+                : "unableToCheck",
+              result: observation.complete ? "different" : null,
+              settingId,
+              expectedValue: expectedValue(signal),
+              actualValue: observation.actual,
+              reason: observation.reason,
+              policyId,
+              policyName,
+              assignment,
+            });
+        }
       } else {
         if (signal.source === "settingsCatalog") {
           settingId = signal.settingDefinitionId;
+          values = catalogValues.get(settingId) ?? [];
+          if (catalogValues.has(settingId) && !values.length)
+            checks.push({
+              assessmentStatus: "unableToCheck",
+              result: null,
+              settingId,
+              expectedValue: expectedValue(signal),
+              actualValue: null,
+              reason:
+                "The setting is present but Graph did not return a readable configured value.",
+              policyId,
+              policyName,
+              assignment,
+            });
           if (
             signal.prerequisites?.some((required) => {
               const selected =
@@ -317,8 +357,8 @@ function evaluateConfiguration(
               );
             })
           )
-            continue;
-          values = catalogValues.get(settingId) ?? [];
+            prerequisiteReason =
+              "The required parent setting is missing, disabled, or ambiguous in this policy.";
         } else if (signal.source === "graphProperty") {
           if (
             !signal.odataTypes.some((type) => type.toLowerCase() === odataType)
@@ -333,9 +373,73 @@ function evaluateConfiguration(
             ? `${signal.settingId}/${signal.presentationId}`
             : signal.settingId;
           values = legacyValues(config, signal);
+          if (
+            signal.source === "administrativeTemplate" &&
+            signal.presentationId &&
+            !values.length
+          ) {
+            const rows = (config as any).definitionValues;
+            const row = Array.isArray(rows)
+              ? rows.find(
+                  (item: any) => item?.definition?.id === signal.settingId,
+                )
+              : undefined;
+            if (row)
+              checks.push({
+                assessmentStatus:
+                  row.enabled === false ? "checked" : "unableToCheck",
+                result: row.enabled === false ? "different" : null,
+                settingId,
+                expectedValue: expectedValue(signal),
+                actualValue:
+                  row.enabled === false ? "Parent policy disabled" : null,
+                reason:
+                  "This dropdown requires an enabled parent policy and its presentation value.",
+                policyId,
+                policyName,
+                assignment,
+              });
+          }
         }
         matches = verdictsFor(values, signal);
+        for (const value of [...new Set(values)]) {
+          const readable = comparableValue(value, signal.enforcedWhen);
+          checks.push({
+            assessmentStatus:
+              readable && !prerequisiteReason ? "checked" : "unableToCheck",
+            result:
+              readable && !prerequisiteReason
+                ? satisfies(value, signal.enforcedWhen)
+                  ? "matches"
+                  : "different"
+                : null,
+            settingId,
+            expectedValue: expectedValue(signal),
+            actualValue: JSON.stringify(value) ?? null,
+            reason:
+              prerequisiteReason ??
+              (readable
+                ? undefined
+                : "Graph returned an unsupported value shape."),
+            policyId,
+            policyName,
+            assignment,
+          });
+        }
+        if (prerequisiteReason) matches = [];
       }
+      if (signal.source === "policyCheck")
+        for (const match of matches)
+          checks.push({
+            assessmentStatus: "checked",
+            result: match.verdict === "enforced" ? "matches" : "different",
+            settingId,
+            expectedValue: expectedValue(signal),
+            actualValue: String(match.observed),
+            policyId,
+            policyName,
+            assignment,
+          });
       for (const match of matches)
         evidence.push({
           capabilityId: capability.id,
@@ -433,12 +537,14 @@ export function assessCapabilities(
   const configurations = collectConfigurations(data);
   const groupNames = normalizeGroupNames(data.groupNames);
   const evidenceByCapability = new Map<string, CapabilityEvidence[]>();
+  const checksByCapability = new Map<string, TechnicalCheck[]>();
 
   for (const config of configurations) {
     for (const item of evaluateConfiguration(
       config,
       capabilities,
       groupNames,
+      checksByCapability,
     )) {
       const existing = evidenceByCapability.get(item.capabilityId);
       if (existing) existing.push(item);
@@ -450,6 +556,63 @@ export function assessCapabilities(
     const evidence = evidenceByCapability.get(capability.id) ?? [];
     const collectionGaps = capabilityCollectionGaps(data, capability);
     const incomplete = collectionGaps.length > 0;
+    const checks = checksByCapability.get(capability.id) ?? [];
+    if (checks.length && capability.requiredGroups?.length) {
+      for (const group of capability.requiredGroups) {
+        const groupIds = capability.signals
+          .filter((signal) => signal.requirementGroup === group)
+          .map((signal) =>
+            signal.source === "settingsCatalog"
+              ? signal.settingDefinitionId
+              : signal.source === "graphProperty"
+                ? signal.propertyPath
+                : signal.source === "policyCheck"
+                  ? signal.check
+                  : signal.settingId,
+          );
+        if (!checks.some((check) => groupIds.includes(check.settingId)))
+          checks.push({
+            assessmentStatus:
+              incomplete || !data.collectedAt ? "unableToCheck" : "checked",
+            result: incomplete || !data.collectedAt ? null : "missing",
+            settingId: group,
+            expectedValue: capability.signals
+              .filter((signal) => signal.requirementGroup === group)
+              .map(expectedValue)
+              .join("; alternative: "),
+            actualValue: null,
+            reason:
+              "This required setting group was not found. All required groups must be configured together on a policy for complete deployment evidence.",
+          });
+      }
+    }
+    // A successful comparison remains visible even when another source failed.
+    // Absence is only a result after collection provenance is known and complete.
+    if (!checks.length || incomplete) {
+      const unable =
+        incomplete || !data.collectedAt || !capability.signals.length;
+      checks.push({
+        assessmentStatus: unable ? "unableToCheck" : "checked",
+        result: unable ? null : "missing",
+        settingId: capability.id,
+        expectedValue: capability.signals
+          .map(expectedValue)
+          .join("; alternative: "),
+        actualValue: null,
+        reason: incomplete
+          ? collectionGaps
+              .map(
+                (row) =>
+                  `${row.family}: ${row.status}. ${row.errors.join(" ")}`,
+              )
+              .join(" ")
+          : !data.collectedAt
+            ? "Collection completeness is unknown for this imported snapshot. Refresh policy data before concluding a setting is missing."
+            : !capability.signals.length
+              ? "A detector has not been implemented for this check."
+              : "No supported setting was found after checking the collected policies.",
+      });
+    }
     let status = capabilityStatus(evidence, capability);
     if (status === "noEvidence" && incomplete) status = "collectionIncomplete";
     if (
@@ -462,6 +625,14 @@ export function assessCapabilities(
       capability,
       status,
       evidence,
+      checks:
+        status === "notApplicable"
+          ? checks.map((check) => ({
+              ...check,
+              assessmentStatus: "outsideScope" as const,
+              result: null,
+            }))
+          : checks,
       limitations: [
         ...(evidence.some((item) => item.assignment.state === "unknown")
           ? [
@@ -584,6 +755,18 @@ export function assessFramework(
           status === "notApplicable" ? [] : enforcedCapabilityIds,
         status,
         unassessedAspects,
+        ...(!capabilityIds.length && status !== "notApplicable"
+          ? {
+              unavailableCheck: {
+                assessmentStatus: "unableToCheck" as const,
+                result: null,
+                settingId: control.id,
+                expectedValue: control.summary,
+                actualValue: null,
+                reason: unassessedAspects.join(" "),
+              },
+            }
+          : {}),
         excludedCapabilityIds:
           status === "notApplicable" ? mappedIds : excludedCapabilityIds,
       };

@@ -1,4 +1,5 @@
 import type { PolicyCheckSignal } from "./types";
+import { inspectAppLocker } from "./applocker";
 
 export interface PolicyCheckResult {
   verdict: "enforced" | "disabled";
@@ -10,6 +11,15 @@ export function evaluatePolicyCheck(
   config: Record<string, any>,
   check: PolicyCheckSignal["check"],
 ): PolicyCheckResult | undefined {
+  if (check === "appLockerRuleCollections") {
+    const result = inspectAppLocker(config);
+    return result?.complete
+      ? {
+          verdict: result.matches ? "enforced" : "disabled",
+          observed: result.actual,
+        }
+      : undefined;
+  }
   const type = String(config["@odata.type"] ?? "")
     .replace(/^#?(microsoft\.graph\.)?/, "")
     .toLowerCase();

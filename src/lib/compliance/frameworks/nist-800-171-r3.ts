@@ -139,6 +139,7 @@ export const NIST_800_171_R3: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-applocker-rule-collections": ["03.04.08"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["03.04.02", "03.04.06"],
     "windows-office-internet-macros-blocked": ["03.04.02", "03.04.06"],

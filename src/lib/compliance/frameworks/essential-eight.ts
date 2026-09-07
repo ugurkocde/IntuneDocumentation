@@ -13,6 +13,11 @@ export function essentialEightLevel(
 // Exact requirement text from the versioned ASD snapshot. No keyword-based evidence detection.
 const bindings: ReadonlyArray<readonly [string, string, string]> = [
   [
+    "Application control restricts the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set.",
+    "windows-applocker-rule-collections",
+    "AppLocker XML is checked for EXE, DLL, MSI and Script collections and enforcement mode. Compare the allowed rules with the approved inventory; compiled HTML, HTML applications, control-panel applets, alternate control engines and device blocking need separate verification.",
+  ],
+  [
     "Microsoft Office macros digitally signed by signatures other than V3 signatures cannot be enabled via the Message Bar or Backstage View.",
     "windows-office-v3-signatures",
     "Policy requires V3 signatures; publisher trust, signing processes and effective Office coverage require verification.",

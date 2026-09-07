@@ -113,6 +113,7 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-applocker-rule-collections": [],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["2418"],
     "windows-office-internet-macros-blocked": ["2418"],

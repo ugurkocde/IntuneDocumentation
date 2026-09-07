@@ -171,7 +171,7 @@ it("keeps operational patch and backup requirements separate from expanded techn
       )
         expect(mapped.has(control.id)).toBe(false);
     }
-    expect(mapped.size).toBe({ 1: 14, 2: 24, 3: 30 }[level]);
+    expect(mapped.size).toBe({ 1: 15, 2: 25, 3: 31 }[level]);
   }
 });
 it("preserves conflicting ASR policies and explicit platform scope", () => {

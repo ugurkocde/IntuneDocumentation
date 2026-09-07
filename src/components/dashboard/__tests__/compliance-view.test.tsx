@@ -181,7 +181,7 @@ describe("ComplianceView", () => {
       screen.getByRole("button", { name: "Download report (PDF)" }),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByText("Partial configuration evidence").length,
+      screen.getAllByText(/match;.*missing;.*different/).length,
     ).toBeGreaterThan(0);
   });
 
@@ -244,7 +244,7 @@ describe("ComplianceView", () => {
 
     expect(sc28Control).toHaveAttribute("aria-expanded", "true");
     expect(
-      screen.getByText("Assigned BitLocker dashboard policy"),
+      screen.getAllByText("Assigned BitLocker dashboard policy")[0],
     ).toBeInTheDocument();
   });
 
@@ -274,7 +274,7 @@ describe("ComplianceView", () => {
     const sc28Control = await screen.findByRole("button", { name: /SC-28/ });
     await user.click(sc28Control);
 
-    expect(screen.getByText(/Security Operations/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Security Operations/)[0]).toBeInTheDocument();
     expect(screen.queryByText(/group-1/)).not.toBeInTheDocument();
   });
 
@@ -446,7 +446,7 @@ describe("ComplianceView assessment scope", () => {
       />,
     );
     const control = await screen.findByRole("button", {
-      name: /User access control.*Assessment incomplete/,
+      name: /User access control.*unable to check/,
     });
     expect(control).toHaveAttribute("aria-expanded", "false");
     expect(control).toHaveTextContent(

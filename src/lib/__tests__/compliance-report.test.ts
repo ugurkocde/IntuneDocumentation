@@ -132,7 +132,7 @@ describe("compliance report PDF", () => {
       "Technischer Konfigurationsnachweis erkannt",
     );
     expect(renderedText).toContain("SYS.3.2.2.A17");
-    expect(renderedText).toContain("Nicht bewertet");
+    expect(renderedText).toContain("nicht prüfbar");
     expect(renderedText).toContain("ersetzt keine");
     expect(renderedText).toContain("Assigned BitLocker evidence policy");
     expect(renderedText).toContain("Einstellungskatalog");

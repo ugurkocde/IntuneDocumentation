@@ -250,6 +250,7 @@ export const BSI_IT_GRUNDSCHUTZ: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-applocker-rule-collections": ["SYS.2.1"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["SYS.2.1"],
     "windows-office-internet-macros-blocked": ["SYS.2.1"],

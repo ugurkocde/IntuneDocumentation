@@ -1,3 +1,4 @@
+import { displayCheckValue, checkSummary } from "./check-results";
 import { assignmentDetails, summarizeAssignments } from "./assignments";
 import {
   CONTROL_STATUS_LABELS,
@@ -368,6 +369,8 @@ const STRINGS: Record<Locale, ReportStrings> = {
 };
 
 export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
+  "windows-applocker-rule-collections":
+    "AppLocker-Regelsammlungstypen und Erzwingung",
   "windows-office-v3-signatures": "VBA-V3-Signaturen erforderlich",
   "windows-office-macros-disabled": "Office-VBA-Makros deaktiviert",
   "windows-office-internet-macros-blocked":
@@ -2050,15 +2053,23 @@ export async function generateComplianceReportPDF(
 
   const recordedStrategies = new Set<string>();
   for (const control of controls) {
+    const controlChecks = control.capabilityIds.flatMap(
+      (id) => capabilitiesById.get(id)?.checks ?? [],
+    );
+    const comparisonSummary =
+      control.status === "notApplicable"
+        ? strings.controlStatuses.notApplicable
+        : locale === "de"
+          ? controlChecks.length
+            ? `${controlChecks.filter((check) => check.result === "matches").length} Sollwert; ${controlChecks.filter((check) => check.result === "missing").length} fehlt; ${controlChecks.filter((check) => check.result === "different").length} abweichend; ${controlChecks.filter((check) => check.assessmentStatus === "unableToCheck").length} nicht prüfbar`
+            : "Nicht prüfbar"
+          : checkSummary(controlChecks);
     const tier = control.control.tier ? ` (${control.control.tier})` : "";
     const controlHeading = `${control.control.id} ${control.control.title}${tier}`;
     const controlHeadingHeight =
       wrap(controlHeading, contentWidth, 12, "bold").length * 5.2 + 1.5;
     const controlStatusHeight =
-      wrap(strings.controlStatuses[control.status], contentWidth, 9, "bold")
-        .length *
-        4 +
-      3;
+      wrap(comparisonSummary, contentWidth, 9, "bold").length * 4 + 3;
     const mappedCapabilities = control.capabilityIds
       .map((capabilityId) => capabilitiesById.get(capabilityId))
       .filter((result): result is CapabilityResult => Boolean(result));
@@ -2101,7 +2112,10 @@ export async function generateComplianceReportPDF(
             .length * 4.2
         : 0);
 
-    if (control.status === "noEvidence") {
+    if (
+      control.status === "noEvidence" &&
+      !controlChecks.some((check) => check.policyId)
+    ) {
       const gapHeight = gapBlockLayout(mappedCapabilities).blockHeight + 5;
       const capabilityHeight = mappedCapabilities.reduce(
         (total, result) => total + capabilityTextHeight(result),
@@ -2142,7 +2156,7 @@ export async function generateComplianceReportPDF(
       after: 1.5,
     });
     drawMarkedText(
-      strings.controlStatuses[control.status],
+      comparisonSummary,
       markerForControlStatus(control.status),
       CONTROL_STATUS_COLORS[control.status],
       {
@@ -2163,7 +2177,7 @@ export async function generateComplianceReportPDF(
 
     for (const aspect of control.unassessedAspects)
       drawWrappedText(
-        `${locale === "de" ? "Noch zu bewerten" : "Still to assess"}: ${locale === "de" ? translateAssessmentLimitation(aspect) : aspect}`,
+        `${locale === "de" ? "Zusätzliche Prüfung" : "Additional verification"}: ${locale === "de" ? translateAssessmentLimitation(aspect) : aspect}`,
         { fontSize: 7.5, lineHeight: 3.4, after: 2 },
       );
 
@@ -2203,6 +2217,41 @@ export async function generateComplianceReportPDF(
       );
 
       const refs = evidenceRefsFor(result);
+      for (const check of result.checks) {
+        const assessmentLabel =
+          locale === "de"
+            ? {
+                checked: "Geprüft",
+                unableToCheck: "Nicht prüfbar",
+                outsideScope: "Außerhalb des Umfangs",
+              }[check.assessmentStatus]
+            : {
+                checked: "Checked",
+                unableToCheck: "Unable to check",
+                outsideScope: "Outside selected scope",
+              }[check.assessmentStatus];
+        const resultLabel = check.result
+          ? locale === "de"
+            ? {
+                matches: "Entspricht dem Sollwert",
+                missing: "Fehlt",
+                different: "Abweichender Wert",
+              }[check.result]
+            : {
+                matches: "Matches expected value",
+                missing: "Missing",
+                different: "Different value",
+              }[check.result]
+          : undefined;
+        drawWrappedText(
+          `${assessmentLabel}${resultLabel ? `: ${resultLabel}` : ""}${check.policyName ? ` (${translateEvidenceValue(check.policyName, locale)})` : ""}`,
+          { fontSize: 8, style: "bold", lineHeight: 3.5, after: 1 },
+        );
+        drawWrappedText(
+          `${check.settingId}\n${locale === "de" ? "Sollwert" : "Expected value"}: ${displayCheckValue(check.expectedValue)}\n${locale === "de" ? "Istwert" : "Actual value"}: ${(check.actualValue === null ? null : displayCheckValue(check.actualValue)) ?? (check.result === "missing" ? "Not found" : "Unavailable")}${check.reason ? `\n${locale === "de" ? check.reason.replaceAll("Settings Catalog", "Einstellungskatalog") : check.reason}` : ""}`,
+          { fontSize: 7.5, lineHeight: 3.4, after: 3 },
+        );
+      }
       if (refs.length > 0) {
         const refText = `${strings.evidenceRefs}: ${refs.map((entry) => entry.ref).join(", ")}`;
         const refHeight =
@@ -2245,7 +2294,10 @@ export async function generateComplianceReportPDF(
       drawManualAssessment(control.control.id);
     }
 
-    if (control.status === "noEvidence") {
+    if (
+      control.status === "noEvidence" &&
+      !controlChecks.some((check) => check.policyId)
+    ) {
       const gapHeight = gapBlockLayout(mappedCapabilities).blockHeight + 5;
       if (yPosition + gapHeight > contentBottom) {
         addControlContinuationPage(control.control.id);

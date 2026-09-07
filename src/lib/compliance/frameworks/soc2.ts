@@ -60,6 +60,7 @@ export const SOC_2: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-applocker-rule-collections": ["CC6.8"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["CC6.8"],
     "windows-office-internet-macros-blocked": ["CC6.8"],

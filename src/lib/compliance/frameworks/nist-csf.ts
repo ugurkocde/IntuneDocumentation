@@ -81,6 +81,7 @@ export const NIST_CSF: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-applocker-rule-collections": ["PR.PS-05"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["PR.PS-01"],
     "windows-office-internet-macros-blocked": ["PR.PS-01"],

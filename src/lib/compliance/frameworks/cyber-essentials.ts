@@ -70,6 +70,7 @@ export const CYBER_ESSENTIALS: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-applocker-rule-collections": ["Malware protection"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["Secure configuration"],
     "windows-office-internet-macros-blocked": ["Secure configuration"],

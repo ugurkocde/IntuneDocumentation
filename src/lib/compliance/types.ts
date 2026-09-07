@@ -62,6 +62,7 @@ export interface LegacySettingSignal {
 export interface PolicyCheckSignal {
   source: "policyCheck";
   check:
+    | "appLockerRuleCollections"
     | "scheduledAntivirusScan"
     | "qualityUpdateDeadline"
     | "conditionalAccessMfaAllApps"
@@ -136,6 +137,20 @@ export interface CapabilityResult {
   status: CapabilityStatus;
   evidence: CapabilityEvidence[];
   limitations: string[];
+  checks: TechnicalCheck[];
+}
+
+/** Configuration comparisons are independent of assignment and audit coverage. */
+export interface TechnicalCheck {
+  assessmentStatus: "checked" | "unableToCheck" | "outsideScope";
+  result: "matches" | "missing" | "different" | null;
+  settingId: string;
+  expectedValue: string;
+  actualValue: string | null;
+  reason?: string;
+  policyId?: string;
+  policyName?: string;
+  assignment?: AssignmentSummary;
 }
 
 export interface FrameworkControl {
@@ -180,6 +195,8 @@ export interface ControlAssessment {
   status: ControlStatus;
   unassessedAspects: string[];
   excludedCapabilityIds: string[];
+  /** Explicit result for requirements without a configuration detector. */
+  unavailableCheck?: TechnicalCheck;
 }
 
 export interface FrameworkAssessment {

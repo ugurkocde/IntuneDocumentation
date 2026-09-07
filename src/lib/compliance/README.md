@@ -230,7 +230,6 @@ Adobe Reader protection does not establish protection of every PDF application.
 Backups, recovery exercises, incident response, access reviews, rule validation,
 central logging and other unmapped requirements remain explicitly unassessed.
 
-
 ## Pre-merge evidence corrections (ruleset 2026.09.4)
 
 Quality-update timing above the shared 14-day evidence threshold is indeterminate,
@@ -255,3 +254,48 @@ Paging rejects malformed collection responses and repeated continuation links wh
 The two legacy collection APIs retain their existing payload fields and now include `fetchErrors` and `collectionStatus`. Permission probes distinguish denied access from unavailable probes. Streaming completion reports incomplete results instead of claiming all reads succeeded. Group-name batch failures preserve group identifiers and expose resolution warnings; assignment targeting never depends on successful name resolution. Transient inner batch failures are retried together after one shared wait per retry pass, with at most two retry passes per batch. Only batches containing exclusively GET requests receive automatic envelope retries. Registry types without an assignment relation are excluded from assignment coverage as not applicable. Update-ring detail failures retain collected assignments and explicit incomplete-detail markers.
 
 Validation includes fault-injection regression tests and sampled read-only Greybeard lab calls against the actual modified collector methods. Empty lab families, every subtype, and large-tenant load are not covered by that sample. Microsoft beta schemas are referenced at https://github.com/microsoftgraph/msgraph-metadata/blob/master/schemas/beta-Prod.csdl.
+
+## Separate check and configuration results (ruleset 2026.09.7)
+
+Every capability now returns `checks`. Each check has an `assessmentStatus`
+(`checked`, `unableToCheck`, or `outsideScope`) and an independent `result`
+(`matches`, `missing`, `different`, or null when no comparison is possible).
+Expected and actual values, policy identity, assignment information and reasons
+are retained in JSON. The dashboard and framework PDFs display the comparisons.
+Existing supporting-evidence statuses remain available for deployment context and
+compatibility; a matching value on an unassigned policy is still not deployed.
+
+A missing result requires a collection timestamp and no relevant collection gaps.
+Imported snapshots of unknown completeness, skipped collections, API errors,
+unsupported value types and unreadable compound inputs produce an unavailable
+comparison. Successfully read settings remain checked even if another source
+failed. Required setting groups are reported individually when absent. Values
+outside the legacy positive/negative predicates are retained as comparisons
+instead of disappearing. The shared 14-day update threshold is a supporting
+configuration check, not a framework-specific remediation verdict.
+
+The review covers all ten framework definitions: ISO 27001, SOC 2, NIST 800-53,
+NIST CSF, BSI IT-Grundschutz, Def Stan, Cyber Essentials, both NIST 800-171
+revisions and Essential Eight. Every listed in-scope requirement has mapped
+checks or an explicit `unavailableCheck` with a reason. Automated tests enforce
+this invariant and exercise matching and different configurations across every
+framework mapping. It does not expand the licensed/selected framework subsets
+into full audit programs.
+
+AppLocker ApplicationLaunchRestrictions OMA-URI XML now has a detector for EXE,
+DLL, MSI and Script collection types, rule counts and Enabled enforcement mode
+in one CSP group. It rejects malformed/encrypted XML, DTD/entity declarations,
+unsupported collection types and payloads over 1 MB. Audit mode and incomplete
+collection sets do not match. Paths and Allow/Deny counts are reported; approval
+of the actual rule set and device execution remain separate checks. The source
+contract is Microsoft's [AppLocker CSP documentation](https://learn.microsoft.com/en-us/windows/client-management/mdm/applocker-csp),
+reviewed 7 September 2026. Essential Eight now has supporting mappings for 15,
+25 and 31 entries at Levels 1, 2 and 3 respectively.
+
+Remaining coverage boundaries are explicit rather than treated as missing
+configuration: compiled WDAC policy interpretation, organizational application
+approval inventories, actual execution and patch timing, vulnerability telemetry,
+backup platform configuration/recovery results, external customer identity,
+privilege approvals and operational monitoring are not established by this
+collector. These need additional parsers, sources or supplied evidence. No new
+Graph scopes, server-side tenant storage or retention changes are introduced.

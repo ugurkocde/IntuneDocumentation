@@ -106,6 +106,12 @@ function capability(
 }
 export const TECHNICAL_CAPABILITIES: readonly ComplianceCapability[] = [
   capability(
+    "windows-applocker-rule-collections",
+    "AppLocker rule collection types and enforcement",
+    "Inspects readable AppLocker CSP XML for EXE, DLL, MSI and Script rule collections. Rule approval, broad allow paths, publisher/hash validity and actual device blocking remain unverified.",
+    [{ source: "policyCheck", check: "appLockerRuleCollections" }],
+  ),
+  capability(
     "windows-office-v3-signatures",
     "Office VBA V3 signatures required",
     "Office policy requires VBA V3 signatures. Signing processes, publisher trust and effective application coverage still require review.",

@@ -139,6 +139,23 @@ describe("Essential Eight target maturity", () => {
       expect(text).toContain(
         "Application control is implemented on workstations.",
       );
+      const contentsStart = text.indexOf("(Table of Contents) Tj");
+      const contentsEnd = text.indexOf("(Summary) Tj", contentsStart);
+      // The first Summary entry belongs to the contents. Stop at the body
+      // Summary heading, which follows the contents page's text stream.
+      const bodyStart = text.indexOf("(Summary) Tj", contentsEnd + 1);
+      expect(contentsStart).toBeGreaterThan(0);
+      expect(bodyStart).toBeGreaterThan(contentsEnd);
+      const contents = text.slice(contentsStart, bodyStart);
+      const strategies = new Set(
+        Object.values(essentialEightFramework(level).controls).map(
+          (control) => control.title,
+        ),
+      );
+      for (const strategy of strategies) {
+        expect(contents.split(`(${strategy}) Tj`)).toHaveLength(2);
+      }
+      expect(contents).not.toMatch(/ML[123]-[A-Z]+-\d+/);
     },
   );
 });

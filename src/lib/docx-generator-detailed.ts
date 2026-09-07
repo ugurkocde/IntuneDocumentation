@@ -20,7 +20,8 @@ import {
   TabStopType,
   Table,
   TableCell,
-  TableOfContents,
+  Bookmark,
+  InternalHyperlink,
   TableRow,
   TextRun,
   WidthType,
@@ -673,8 +674,17 @@ export async function generateDetailedDOCX(
   const defaultHeader = buildHeader();
   const defaultFooter = buildFooter();
 
+  const spacers = new WeakSet<Paragraph>();
+  const contentsEntries: { title: string; anchor: string }[] = [];
+  let contentsChildren: Paragraph[] | undefined;
+
   // Helper: wrap children in a content section (with page break, header, footer)
   const pushContentSection = (children: (Paragraph | Table)[]) => {
+    while (
+      children.length &&
+      spacers.has(children[children.length - 1] as Paragraph)
+    )
+      children.pop();
     const sectionProps: any = {
       type: SectionType.NEXT_PAGE,
     };
@@ -688,20 +698,30 @@ export async function generateDetailedDOCX(
   };
 
   // Helper: create a Heading 1 paragraph
-  const heading1 = (text: string): Paragraph =>
-    new Paragraph({
+  const heading1 = (text: string): Paragraph => {
+    const anchor = `section_${contentsEntries.length + 1}`;
+    if (text !== "Table of Contents")
+      contentsEntries.push({ title: text, anchor });
+    return new Paragraph({
       children: [
-        new TextRun({
-          text,
-          bold: true,
-          color: primaryHex,
-          font: fontName,
-          size: headerSizeHp + 8,
+        new Bookmark({
+          id: anchor,
+          children: [
+            new TextRun({
+              text,
+              bold: true,
+              color: primaryHex,
+              font: fontName,
+              size: headerSizeHp + 8,
+            }),
+          ],
         }),
       ],
       heading: HeadingLevel.HEADING_1,
+      keepNext: true,
       spacing: { before: 240, after: 120 },
     });
+  };
 
   // Helper: create a Heading 2 paragraph
   const heading2 = (text: string): Paragraph =>
@@ -759,34 +779,22 @@ export async function generateDetailedDOCX(
     });
 
   // Helper: blank spacer
-  const spacer = (): Paragraph => new Paragraph({ spacing: { after: 120 } });
+  const spacer = (): Paragraph => {
+    const paragraph = new Paragraph({ spacing: { after: 120 } });
+    spacers.add(paragraph);
+    return paragraph;
+  };
 
   // ===== 2. TABLE OF CONTENTS =====
   if (branding?.documentSettings?.includeTableOfContents !== false) {
-    const tocChildren: (Paragraph | Table | TableOfContents)[] = [];
-    tocChildren.push(heading1("Table of Contents"));
-    tocChildren.push(
-      new TableOfContents("TOC", {
-        hyperlink: true,
-        headingStyleRange: "1-3",
-      }),
-    );
-    tocChildren.push(spacer());
-    tocChildren.push(
+    contentsChildren = [
       new Paragraph({
-        children: [
-          new TextRun({
-            text: "Right-click and select 'Update Field' to populate page numbers.",
-            font: fontName,
-            size: bodySizeHp - 2,
-            color: "888888",
-            italics: true,
-          }),
-        ],
-        spacing: { before: 200 },
+        text: "Table of Contents",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 240, after: 120 },
       }),
-    );
-    pushContentSection(tocChildren);
+    ];
+    pushContentSection(contentsChildren);
   }
 
   // ===== 3. EXECUTIVE SUMMARY =====
@@ -808,12 +816,18 @@ export async function generateDetailedDOCX(
 
       summaryChildren.push(
         createSettingsTable(
-          ["Total Configurations", "Assigned Policies", "Unassigned"],
+          [
+            "Total Configurations",
+            "Assigned Policies",
+            "Unassigned",
+            "Unknown",
+          ],
           [
             [
               String(analytics.totalConfigs),
               String(analytics.assignedConfigs),
               String(analytics.unassignedConfigs),
+              String(analytics.unknownAssignmentConfigs),
             ],
           ],
           branding,
@@ -886,21 +900,24 @@ export async function generateDetailedDOCX(
       // Configuration inventory by type
       summaryChildren.push(heading2("Configuration Inventory"));
       const inventoryRows: string[][] = [];
-      analytics.inventory.forEach(({ label, total, assigned }) => {
-        if (total > 0) {
-          inventoryRows.push([
-            label,
-            String(total),
-            String(assigned),
-            String(total - assigned),
-          ]);
-        }
-      });
+      analytics.inventory.forEach(
+        ({ label, total, assigned, unassigned, unknown }) => {
+          if (total > 0) {
+            inventoryRows.push([
+              label,
+              String(total),
+              String(assigned),
+              String(unassigned),
+              String(unknown),
+            ]);
+          }
+        },
+      );
 
       if (inventoryRows.length > 0) {
         summaryChildren.push(
           createSettingsTable(
-            ["Policy Type", "Total", "Assigned", "Unassigned"],
+            ["Policy Type", "Total", "Assigned", "Unassigned", "Unknown"],
             inventoryRows,
             branding,
           ),
@@ -2245,6 +2262,29 @@ export async function generateDetailedDOCX(
   // -----------------------------------------------------------------------
   // Build the Document
   // -----------------------------------------------------------------------
+  // A populated section index works immediately in Word and previewers,
+  // without relying on the reader to recalculate a TOC field.
+  if (contentsChildren) {
+    for (const entry of contentsEntries)
+      contentsChildren.push(
+        new Paragraph({
+          children: [
+            new InternalHyperlink({
+              anchor: entry.anchor,
+              children: [
+                new TextRun({
+                  text: entry.title,
+                  font: fontName,
+                  size: bodySizeHp,
+                  color: primaryHex,
+                }),
+              ],
+            }),
+          ],
+          spacing: { after: 120 },
+        }),
+      );
+  }
   const doc = new Document({
     features: {
       updateFields: true,

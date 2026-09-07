@@ -211,3 +211,43 @@ it.each(["PDF", "Word"])(
     expect(result.errors).toEqual([]);
   },
 );
+
+it("provides populated Word contents links with valid section bookmarks", async () => {
+  const result = await generateDetailedDOCX(createExportData());
+  const xml = extractZipEntry(result.buffer, "word/document.xml");
+  const anchors = [...xml.matchAll(/w:hyperlink[^>]*w:anchor="([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  expect(anchors.length).toBeGreaterThan(1);
+  for (const anchor of anchors) expect(xml).toContain(`w:name="${anchor}"`);
+  expect(new Set(anchors).size).toBe(anchors.length);
+  expect(xml).not.toContain("Update Field");
+  expect(xml).not.toMatch(/w:instrText[^>]*>\s*TOC/);
+});
+
+it.each(["PDF", "Word"])(
+  "reports unavailable assignments separately in the full %s summary",
+  async (format) => {
+    const data = createExportData();
+    data.settingsCatalog = [
+      {
+        id: "unknown",
+        name: "Unreadable policy",
+        settings: [],
+        assignments: [],
+        collectionStatus: { assignments: "incomplete" },
+      },
+    ];
+    const result =
+      format === "PDF"
+        ? await generateDetailedPDF(data)
+        : await generateDetailedDOCX(data);
+    const text =
+      format === "PDF"
+        ? extractPdfStreamText(result.buffer)
+        : extractZipEntry(result.buffer, "word/document.xml");
+    expect(text).toContain("Unknown");
+    expect(text).not.toContain("have no group assignment");
+    expect(text).toContain("Assignments unavailable");
+  },
+);

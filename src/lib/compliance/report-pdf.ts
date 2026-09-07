@@ -1989,6 +1989,7 @@ export async function generateComplianceReportPDF(
     });
   }
 
+  const recordedStrategies = new Set<string>();
   for (const control of controls) {
     const tier = control.control.tier ? ` (${control.control.tier})` : "";
     const controlHeading = `${control.control.id} ${control.control.title}${tier}`;
@@ -2060,11 +2061,19 @@ export async function generateComplianceReportPDF(
       ensureSpace(minimumControlStartHeight);
     }
 
-    tocEntries.push({
-      title: `${control.control.id} ${control.control.title}`,
-      page: doc.internal.getCurrentPageInfo().pageNumber,
-      level: 1,
-    });
+    // Essential Eight has up to 149 requirements. Index the eight strategies
+    // at their first requirement so the contents stay readable on one page.
+    const isEssentialEight = options.frameworkId === "essential-eight";
+    if (!isEssentialEight || !recordedStrategies.has(control.control.title)) {
+      tocEntries.push({
+        title: isEssentialEight
+          ? control.control.title
+          : `${control.control.id} ${control.control.title}`,
+        page: doc.internal.getCurrentPageInfo().pageNumber,
+        level: 1,
+      });
+      recordedStrategies.add(control.control.title);
+    }
 
     drawWrappedText(controlHeading, {
       fontSize: 12,

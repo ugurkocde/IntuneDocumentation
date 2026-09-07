@@ -1,3 +1,4 @@
+import { summarizeAssignments } from "./compliance/assignments";
 import type { AssessmentScope } from "./compliance/types";
 import type { BrandingOptions } from "~/types/branding";
 import type { ConfigurationSectionData } from "./configuration-sections";
@@ -78,9 +79,25 @@ export function analyzeConfigurations(data: DetailedExportData) {
   const groupAssignmentCount: Record<string, number> = {};
   let assignedCount = 0;
   let unassignedCount = 0;
+  let unknownCount = 0;
+  const assignmentState = (config: any) =>
+    summarizeAssignments(
+      config.assignments,
+      undefined,
+      config.collectionStatus?.assignments === "incomplete",
+    ).state;
+  const inventoryCounts = (items: any[]) => ({
+    total: items.length,
+    assigned: items.filter((item) => assignmentState(item) === "assigned")
+      .length,
+    unassigned: items.filter((item) => assignmentState(item) === "notAssigned")
+      .length,
+    unknown: items.filter((item) => assignmentState(item) === "unknown").length,
+  });
 
   allConfigs.forEach((config) => {
-    if (config.assignments && config.assignments.length > 0) {
+    const state = assignmentState(config);
+    if (state === "assigned") {
       assignedCount++;
       config.assignments.forEach((assignment: any) => {
         const odataType =
@@ -88,6 +105,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
             ? assignment.target["@odata.type"].toLowerCase()
             : "";
 
+        if (odataType.includes("exclusiongroupassignmenttarget")) return;
         if (assignment.target?.groupId) {
           uniqueGroups.add(assignment.target.groupId);
           const groupId = assignment.target.groupId;
@@ -106,8 +124,10 @@ export function analyzeConfigurations(data: DetailedExportData) {
             (groupAssignmentCount["All Devices"] || 0) + 1;
         }
       });
-    } else {
+    } else if (state === "notAssigned") {
       unassignedCount++;
+    } else {
+      unknownCount++;
     }
   });
 
@@ -176,11 +196,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
     ? data.sections.map((section) => ({
         key: section.key,
         label: section.label,
-        total: section.items.length,
-        assigned: section.items.filter(
-          (item) =>
-            Array.isArray(item.assignments) && item.assignments.length > 0,
-        ).length,
+        ...inventoryCounts(section.items),
       }))
     : [
         {
@@ -223,20 +239,37 @@ export function analyzeConfigurations(data: DetailedExportData) {
           label: "Scripts (macOS)",
           items: data.scripts.macOS,
         },
+        {
+          key: "appConfigurations",
+          label: "App Configurations",
+          items: data.appConfigurations || [],
+        },
+        {
+          key: "windowsUpdatePolicies",
+          label: "Windows Update Policies",
+          items: data.windowsUpdatePolicies || [],
+        },
+        {
+          key: "enrollmentConfigurations",
+          label: "Enrollment Configurations",
+          items: data.enrollmentConfigurations || [],
+        },
+        {
+          key: "conditionalAccessPolicies",
+          label: "Conditional Access Policies",
+          items: data.conditionalAccessPolicies || [],
+        },
       ].map(({ key, label, items }) => ({
         key,
         label,
-        total: items.length,
-        assigned: items.filter(
-          (item) =>
-            Array.isArray(item.assignments) && item.assignments.length > 0,
-        ).length,
+        ...inventoryCounts(items),
       }));
 
   return {
     totalConfigs: allConfigs.length,
     assignedConfigs: assignedCount,
     unassignedConfigs: unassignedCount,
+    unknownAssignmentConfigs: unknownCount,
     uniqueGroupsCount: uniqueGroups.size,
     topGroups,
     platformCounts,

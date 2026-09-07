@@ -1083,7 +1083,15 @@ export async function generateDetailedPDF(
       cardX += cardWidth + cardSpacing;
     });
 
-    yPosition += cardHeight + 15;
+    yPosition += cardHeight + 6;
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(
+      `Unknown assignments: ${analytics.unknownAssignmentConfigs}`,
+      margin,
+      yPosition,
+    );
+    yPosition += 9;
 
     // === ASSIGNMENT RATE VISUALIZATION ===
     doc.setFontSize(12);
@@ -1361,6 +1369,8 @@ export async function generateDetailedPDF(
     type: item.label,
     count: item.total,
     assigned: item.assigned,
+    unassigned: item.unassigned,
+    unknown: item.unknown,
   }));
 
   // Check if we need to start a new page for Configuration Inventory
@@ -1388,7 +1398,7 @@ export async function generateDetailedPDF(
   yPosition += 10;
 
   // Enhanced table header with color
-  const tableWidth = 165;
+  const tableWidth = 180;
   const [thr, thg, thb] = hexToRgb(primaryColor);
   doc.setFillColor(thr, thg, thb);
   doc.rect(margin, yPosition, tableWidth, 10, "F");
@@ -1397,9 +1407,10 @@ export async function generateDetailedPDF(
   doc.setFont(fontFamily, "bold");
   doc.setTextColor(255, 255, 255);
   doc.text("Policy Type", margin + 3, yPosition + 7);
-  doc.text("Total", margin + 85, yPosition + 7);
-  doc.text("Assigned", margin + 110, yPosition + 7);
-  doc.text("Unassigned", margin + 140, yPosition + 7);
+  doc.text("Total", margin + 80, yPosition + 7);
+  doc.text("Assigned", margin + 100, yPosition + 7);
+  doc.text("Unassigned", margin + 125, yPosition + 7);
+  doc.text("Unknown", margin + 155, yPosition + 7);
   yPosition += 10;
 
   doc.setFont(fontFamily, "normal");
@@ -1426,10 +1437,12 @@ export async function generateDetailedPDF(
       doc.setFont(fontFamily, "bold");
       doc.setTextColor(255, 255, 255);
       doc.text("Policy Type", margin + 3, yPosition + 7);
-      doc.text("Total", margin + 85, yPosition + 7);
-      doc.text("Assigned", margin + 110, yPosition + 7);
-      doc.text("Unassigned", margin + 140, yPosition + 7);
+      doc.text("Total", margin + 80, yPosition + 7);
+      doc.text("Assigned", margin + 100, yPosition + 7);
+      doc.text("Unassigned", margin + 125, yPosition + 7);
       yPosition += 10;
+
+      doc.text("Unknown", margin + 155, yPosition - 3);
 
       // Reset text settings
       doc.setFont(fontFamily, "normal");
@@ -1461,20 +1474,22 @@ export async function generateDetailedPDF(
     // Total count
     doc.setFont(fontFamily, "bold");
     doc.setTextColor(52, 152, 219); // Blue
-    doc.text(item.count.toString(), margin + 90, yPosition + 6);
+    doc.text(item.count.toString(), margin + 85, yPosition + 6);
 
     // Assigned count
     doc.setTextColor(39, 174, 96); // Green
-    doc.text(item.assigned.toString(), margin + 120, yPosition + 6);
+    doc.text(item.assigned.toString(), margin + 110, yPosition + 6);
 
     // Unassigned count (red if > 0, gray if 0)
-    const unassigned = item.count - item.assigned;
+    const unassigned = item.unassigned;
     doc.setTextColor(
       unassigned > 0 ? 231 : 149,
       unassigned > 0 ? 76 : 165,
       unassigned > 0 ? 60 : 166,
     );
-    doc.text(unassigned.toString(), margin + 150, yPosition + 6);
+    doc.text(unassigned.toString(), margin + 135, yPosition + 6);
+    doc.setTextColor(100, 100, 100);
+    doc.text(item.unknown.toString(), margin + 165, yPosition + 6);
 
     doc.setTextColor(0, 0, 0);
     doc.setFont(fontFamily, "normal");

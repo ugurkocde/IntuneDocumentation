@@ -1,4 +1,9 @@
 import {
+  CONTROL_STATUS_LABELS,
+  CONTROL_STATUS_ORDER,
+  frameworkCoverageLabel,
+} from "./compliance/presentation";
+import {
   AlignmentType,
   BorderStyle,
   Document,
@@ -15,7 +20,8 @@ import {
   TabStopType,
   Table,
   TableCell,
-  TableOfContents,
+  Bookmark,
+  InternalHyperlink,
   TableRow,
   TextRun,
   WidthType,
@@ -40,11 +46,7 @@ import {
 } from "./configuration-parser";
 import type { BrandingOptions } from "~/types/branding";
 import { REDACTED_VALUE } from "./intune-policy-registry";
-import {
-  assessCompliance,
-  compareControlIds,
-  type ControlStatus,
-} from "./compliance";
+import { assessCompliance, compareControlIds } from "./compliance";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -672,8 +674,17 @@ export async function generateDetailedDOCX(
   const defaultHeader = buildHeader();
   const defaultFooter = buildFooter();
 
+  const spacers = new WeakSet<Paragraph>();
+  const contentsEntries: { title: string; anchor: string }[] = [];
+  let contentsChildren: Paragraph[] | undefined;
+
   // Helper: wrap children in a content section (with page break, header, footer)
   const pushContentSection = (children: (Paragraph | Table)[]) => {
+    while (
+      children.length &&
+      spacers.has(children[children.length - 1] as Paragraph)
+    )
+      children.pop();
     const sectionProps: any = {
       type: SectionType.NEXT_PAGE,
     };
@@ -687,20 +698,30 @@ export async function generateDetailedDOCX(
   };
 
   // Helper: create a Heading 1 paragraph
-  const heading1 = (text: string): Paragraph =>
-    new Paragraph({
+  const heading1 = (text: string): Paragraph => {
+    const anchor = `section_${contentsEntries.length + 1}`;
+    if (text !== "Table of Contents")
+      contentsEntries.push({ title: text, anchor });
+    return new Paragraph({
       children: [
-        new TextRun({
-          text,
-          bold: true,
-          color: primaryHex,
-          font: fontName,
-          size: headerSizeHp + 8,
+        new Bookmark({
+          id: anchor,
+          children: [
+            new TextRun({
+              text,
+              bold: true,
+              color: primaryHex,
+              font: fontName,
+              size: headerSizeHp + 8,
+            }),
+          ],
         }),
       ],
       heading: HeadingLevel.HEADING_1,
+      keepNext: true,
       spacing: { before: 240, after: 120 },
     });
+  };
 
   // Helper: create a Heading 2 paragraph
   const heading2 = (text: string): Paragraph =>
@@ -758,34 +779,22 @@ export async function generateDetailedDOCX(
     });
 
   // Helper: blank spacer
-  const spacer = (): Paragraph => new Paragraph({ spacing: { after: 120 } });
+  const spacer = (): Paragraph => {
+    const paragraph = new Paragraph({ spacing: { after: 120 } });
+    spacers.add(paragraph);
+    return paragraph;
+  };
 
   // ===== 2. TABLE OF CONTENTS =====
   if (branding?.documentSettings?.includeTableOfContents !== false) {
-    const tocChildren: (Paragraph | Table | TableOfContents)[] = [];
-    tocChildren.push(heading1("Table of Contents"));
-    tocChildren.push(
-      new TableOfContents("TOC", {
-        hyperlink: true,
-        headingStyleRange: "1-3",
-      }),
-    );
-    tocChildren.push(spacer());
-    tocChildren.push(
+    contentsChildren = [
       new Paragraph({
-        children: [
-          new TextRun({
-            text: "Right-click and select 'Update Field' to populate page numbers.",
-            font: fontName,
-            size: bodySizeHp - 2,
-            color: "888888",
-            italics: true,
-          }),
-        ],
-        spacing: { before: 200 },
+        text: "Table of Contents",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 240, after: 120 },
       }),
-    );
-    pushContentSection(tocChildren);
+    ];
+    pushContentSection(contentsChildren);
   }
 
   // ===== 3. EXECUTIVE SUMMARY =====
@@ -799,20 +808,28 @@ export async function generateDetailedDOCX(
 
       // Key metrics table (3 columns)
       const coveragePercent =
-        analytics.totalConfigs > 0
+        analytics.assignmentApplicableConfigs > 0
           ? Math.round(
-              (analytics.assignedConfigs / analytics.totalConfigs) * 100,
+              (analytics.assignedConfigs /
+                analytics.assignmentApplicableConfigs) *
+                100,
             )
           : 0;
 
       summaryChildren.push(
         createSettingsTable(
-          ["Total Configurations", "Assigned Policies", "Unassigned"],
+          [
+            "Total Configurations",
+            "Assigned Policies",
+            "Unassigned",
+            "Unknown",
+          ],
           [
             [
               String(analytics.totalConfigs),
               String(analytics.assignedConfigs),
               String(analytics.unassignedConfigs),
+              String(analytics.unknownAssignmentConfigs),
             ],
           ],
           branding,
@@ -820,6 +837,12 @@ export async function generateDetailedDOCX(
       );
       summaryChildren.push(spacer());
 
+      if (analytics.assignmentNotApplicableConfigs)
+        summaryChildren.push(
+          bodyText(
+            `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from assignment coverage.`,
+          ),
+        );
       // Assignment coverage
       let coverageColor = "00A652"; // green
       if (coveragePercent < 50) coverageColor = "CC0000";
@@ -885,21 +908,24 @@ export async function generateDetailedDOCX(
       // Configuration inventory by type
       summaryChildren.push(heading2("Configuration Inventory"));
       const inventoryRows: string[][] = [];
-      analytics.inventory.forEach(({ label, total, assigned }) => {
-        if (total > 0) {
-          inventoryRows.push([
-            label,
-            String(total),
-            String(assigned),
-            String(total - assigned),
-          ]);
-        }
-      });
+      analytics.inventory.forEach(
+        ({ label, total, assigned, unassigned, unknown, notApplicable }) => {
+          if (total > 0) {
+            inventoryRows.push([
+              label,
+              String(total),
+              notApplicable === total ? "N/A" : String(assigned),
+              notApplicable === total ? "N/A" : String(unassigned),
+              notApplicable === total ? "N/A" : String(unknown),
+            ]);
+          }
+        },
+      );
 
       if (inventoryRows.length > 0) {
         summaryChildren.push(
           createSettingsTable(
-            ["Policy Type", "Total", "Assigned", "Unassigned"],
+            ["Policy Type", "Total", "Assigned", "Unassigned", "Unknown"],
             inventoryRows,
             branding,
           ),
@@ -950,32 +976,28 @@ export async function generateDetailedDOCX(
   try {
     const complianceAssessment = assessCompliance(data);
     const complianceChildren: (Paragraph | Table)[] = [];
-    const statusLabels: Record<ControlStatus, string> = {
-      evidenceFound: "Configuration evidence",
-      partialEvidence: "Partial configuration evidence",
-      noEvidence: "No recognized configuration evidence",
-    };
-    const statusRank: Record<ControlStatus, number> = {
-      evidenceFound: 0,
-      partialEvidence: 1,
-      noEvidence: 2,
-    };
+    const statusLabels = CONTROL_STATUS_LABELS;
+    const statusRank = CONTROL_STATUS_ORDER;
 
     complianceChildren.push(heading1("Compliance Evidence Preview"));
     complianceChildren.push(
       bodyText(
-        "This preview maps the exported configuration to technical evidence for NIST SP 800-53 (Rev. 5), NIST CSF 2.0, and BSI IT-Grundschutz. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
+        "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
       ),
     );
     complianceChildren.push(spacer());
 
     for (const framework of complianceAssessment.frameworks) {
       complianceChildren.push(
-        heading2(`${framework.framework.name} (${framework.framework.version})`),
+        heading2(
+          `${framework.framework.name} (${framework.framework.version})`,
+        ),
       );
+      const coverageLabel = frameworkCoverageLabel(framework);
+      if (coverageLabel) complianceChildren.push(bodyText(coverageLabel));
       complianceChildren.push(
         bodyText(
-          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.totalControls} technically assessable controls)`,
+          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
         ),
       );
 
@@ -992,9 +1014,11 @@ export async function generateDetailedDOCX(
             .slice(0, maxRows)
             .map((assessed) => [
               assessed.control.id,
-              assessed.control.tier
-                ? `${assessed.control.title} (${assessed.control.tier})`
-                : assessed.control.title,
+              framework.framework.id === "essential-eight"
+                ? `${assessed.control.title}: ${assessed.control.summary}`
+                : assessed.control.tier
+                  ? `${assessed.control.title} (${assessed.control.tier})`
+                  : assessed.control.title,
               statusLabels[assessed.status],
             ]),
           branding,
@@ -1092,7 +1116,10 @@ export async function generateDetailedDOCX(
     }
 
     // Assignments
-    const rawAssignment = parseAssignments(policy.assignments);
+    const rawAssignment = parseAssignments(
+      policy.assignments,
+      policy.collectionStatus?.assignments,
+    );
     const assignmentText = enhanceAssignmentText(
       rawAssignment,
       data.groupNames,
@@ -1499,7 +1526,15 @@ export async function generateDetailedDOCX(
         );
         sectionChildren.push(...policyMeta(baseline));
 
-        const cats = parseSecurityBaseline(baseline.categories || []);
+        if (baseline.collectionStatus?.settings === "incomplete") {
+          sectionChildren.push(
+            bodyText("Baseline settings collection incomplete"),
+          );
+        }
+        const cats = parseSecurityBaseline(
+          baseline.categories || [],
+          baseline.settings,
+        );
         for (const cat of cats) {
           if (cat.settings.length === 0) continue;
           sectionChildren.push(heading3(cat.category));
@@ -2235,10 +2270,30 @@ export async function generateDetailedDOCX(
   // -----------------------------------------------------------------------
   // Build the Document
   // -----------------------------------------------------------------------
+  // A populated section index works immediately in Word and previewers,
+  // without relying on the reader to recalculate a TOC field.
+  if (contentsChildren) {
+    for (const entry of contentsEntries)
+      contentsChildren.push(
+        new Paragraph({
+          children: [
+            new InternalHyperlink({
+              anchor: entry.anchor,
+              children: [
+                new TextRun({
+                  text: entry.title,
+                  font: fontName,
+                  size: bodySizeHp,
+                  color: primaryHex,
+                }),
+              ],
+            }),
+          ],
+          spacing: { after: 120 },
+        }),
+      );
+  }
   const doc = new Document({
-    features: {
-      updateFields: true,
-    },
     title: branding?.metadata?.title || "Intune Configuration Documentation",
     creator: branding?.metadata?.author || "IntuneDocumentation",
     subject:

@@ -325,46 +325,28 @@ export function formatValue(value: any): string {
     return value.toString();
   }
 
-  if (typeof value === "string") {
-    // Clean up technical values
-    if (value.startsWith("device_vendor_msft_")) {
-      return value.replace(/device_vendor_msft_/g, "").replace(/_/g, " ");
-    }
-    return value;
-  }
+  if (typeof value === "string") return value;
 
   if (Array.isArray(value)) {
-    // Handle empty arrays
-    if (value.length === 0) {
-      return "Not configured";
-    }
-
-    // Handle arrays of objects - extract displayName or other meaningful fields
-    if (value.length > 0 && typeof value[0] === "object" && value[0] !== null) {
-      const formattedItems = value.map((item: any) => {
-        // Try to find a meaningful string representation
-        if (item.displayName) return item.displayName;
-        if (item.name) return item.name;
-        if (item.value) return String(item.value);
-        if (item.packageId) return item.packageId;
-        if (item.bundleId) return item.bundleId;
-        // If object has only a few keys, try to create a readable string
-        const keys = Object.keys(item);
-        if (keys.length === 1 && keys[0]) return String(item[keys[0]]);
-        return JSON.stringify(item);
-      });
-      return formattedItems.join("\n");
-    }
-
-    // Handle arrays of primitives (strings, numbers, booleans)
-    // Use newlines for better readability if more than 3 items
-    const formattedItems = value.map((item: any) =>
-      typeof item === "string" ? formatValue(item) : String(item),
-    );
-    return formattedItems.join(value.length > 3 ? "\n" : ", ");
+    if (value.length === 0) return "Not configured";
+    return value
+      .map(formatValue)
+      .join(
+        value.length > 3 ||
+          value.some((item) => item !== null && typeof item === "object")
+          ? "\n"
+          : ", ",
+      );
   }
 
   if (typeof value === "object") {
+    // Preserve name/value pairs and falsy values instead of discarding payloads.
+    if (Object.hasOwn(value, "value")) {
+      const label = value.displayName ?? value.name;
+      return label !== undefined && label !== null
+        ? `${String(label)}: ${formatValue(value.value)}`
+        : formatValue(value.value);
+    }
     return JSON.stringify(value, null, 2);
   }
 
@@ -385,6 +367,8 @@ const DOCUMENT_METADATA_KEYS = new Set([
   "configType",
   "registryKey",
   "sourceEndpoint",
+  "collectionStatus",
+  "presentationFetchError",
 ]);
 
 function humanizePropertyName(value: string) {
@@ -504,6 +488,7 @@ export function parseDeviceConfiguration(config: any): Array<{
   Object.keys(config).forEach((key) => {
     if (
       !ignoredKeys.includes(key) &&
+      !DOCUMENT_METADATA_KEYS.has(key) &&
       config[key] !== null &&
       config[key] !== undefined
     ) {
@@ -547,12 +532,20 @@ export function parseAdministrativeTemplate(definitionValues: any[]): Array<{
     let value = dv.presentationFetchError
       ? "Unavailable (Microsoft Graph did not return presentation values)"
       : "Not configured";
-    const state = dv.enabled ? "Enabled" : "Disabled";
+    const state =
+      dv.enabled === true
+        ? "Enabled"
+        : dv.enabled === false
+          ? "Disabled"
+          : "Unknown";
 
     // Extract values from presentation values
     if (presentationValues.length > 0) {
       const values = presentationValues
         .map((pv: any) => {
+          if (Array.isArray(pv.values)) {
+            return `${pv.presentation?.label || "Values"}: ${formatValue(pv.values)}`;
+          }
           if (pv.value !== undefined && pv.value !== null) {
             return `${pv.presentation?.label || "Value"}: ${formatValue(pv.value)}`;
           }
@@ -602,6 +595,7 @@ export function parseComplianceRules(policy: any): Array<{
   Object.keys(policy).forEach((key) => {
     if (
       !ignoredKeys.includes(key) &&
+      !DOCUMENT_METADATA_KEYS.has(key) &&
       policy[key] !== undefined &&
       policy[key] !== null
     ) {
@@ -616,7 +610,10 @@ export function parseComplianceRules(policy: any): Array<{
         category: getCategoryFromKey(key),
         rule: formatKeyName(key),
         value: formattedValue,
-        action: getComplianceAction(policy.scheduledActionsForRule),
+        action: getComplianceAction(
+          policy.scheduledActionsForRule,
+          policy.collectionStatus?.scheduledActionsForRule,
+        ),
       });
     }
   });
@@ -665,7 +662,10 @@ function parseSecurityBaselineSettingName(
 }
 
 // Parse security baseline categories and settings
-export function parseSecurityBaseline(categories: any[]): Array<{
+export function parseSecurityBaseline(
+  categories: any[],
+  flatSettings?: any[],
+): Array<{
   category: string;
   settings: Array<{
     name: string;
@@ -673,14 +673,26 @@ export function parseSecurityBaseline(categories: any[]): Array<{
     description?: string;
   }>;
 }> {
-  return categories.map((category) => {
+  const sourceCategories = Array.isArray(flatSettings)
+    ? [{ displayName: "Baseline settings", settings: flatSettings }]
+    : categories;
+  return sourceCategories.map((category) => {
     const settings = (category.settings || [])
       .map((setting: any) => {
         let value = "Not configured";
 
         if (setting.value !== undefined && setting.value !== null) {
           value = formatValue(setting.value);
-        } else if (setting.stringValue) {
+        } else if (typeof setting.valueJson === "string") {
+          try {
+            value = formatValue(JSON.parse(setting.valueJson));
+          } catch {
+            value = setting.valueJson;
+          }
+        } else if (
+          setting.stringValue !== undefined &&
+          setting.stringValue !== null
+        ) {
           value = setting.stringValue;
         } else if (setting.intValue !== undefined) {
           value = setting.intValue.toString();
@@ -707,9 +719,11 @@ export function parseSecurityBaseline(categories: any[]): Array<{
 }
 
 // Parse assignment information
-export function parseAssignments(assignments: any[]): string {
+export function parseAssignments(assignments: any[], status?: string): string {
   if (!assignments || assignments.length === 0) {
-    return "Not assigned";
+    return status === "incomplete"
+      ? "Assignments unavailable (collection incomplete)"
+      : "Not assigned";
   }
 
   const labels: string[] = [];
@@ -719,39 +733,21 @@ export function parseAssignments(assignments: any[]): string {
     const typeRaw = target["@odata.type"] || "";
     const type = typeof typeRaw === "string" ? typeRaw.toLowerCase() : "";
 
-    // Common group-based assignments
+    let label: string | undefined;
     if (target.groupId) {
-      if (type.includes("exclusiongroup")) {
-        labels.push(`Excluded: ${target.groupId}`);
-      } else {
-        labels.push(`Group: ${target.groupId}`);
-      }
-      continue;
+      label = `${type.includes("exclusiongroup") ? "Excluded" : "Group"}: ${target.groupId}`;
+    } else if (type.includes("alldevices")) {
+      label = "All Devices";
+    } else if (type.includes("alllicensedusers") || type.includes("allusers")) {
+      label = "All Users";
     }
-
-    // All Devices / All Users / All Licensed Users
-    if (type.includes("alldevices")) {
-      labels.push("All Devices");
-      continue;
-    }
-    if (type.includes("alllicensedusers") || type.includes("allusers")) {
-      labels.push("All Users");
-      continue;
-    }
-
-    // Intune assignment filter
     if (target.deviceAndAppManagementAssignmentFilterId) {
-      const fType = String(
-        target.deviceAndAppManagementAssignmentFilterType || "",
-      ).toLowerCase();
-      const prefix = fType.includes("include")
-        ? "Filter (Include)"
-        : fType.includes("exclude")
-          ? "Filter (Exclude)"
-          : "Filter";
-      labels.push(
-        `${prefix}: ${target.deviceAndAppManagementAssignmentFilterId}`,
-      );
+      const filterType = target.deviceAndAppManagementAssignmentFilterType;
+      const filter = `Filter (${filterType === "include" ? "Include" : filterType === "exclude" ? "Exclude" : "Unknown"}): ${target.deviceAndAppManagementAssignmentFilterId}`;
+      label = label ? `${label} [${filter}]` : filter;
+    }
+    if (label) {
+      labels.push(label);
       continue;
     }
 
@@ -768,7 +764,10 @@ export function parseAssignments(assignments: any[]): string {
     labels.push("Custom Assignment");
   }
 
-  return labels.join(", ");
+  return (
+    labels.join(", ") +
+    (status === "incomplete" ? " (collection incomplete)" : "")
+  );
 }
 
 // Helper functions
@@ -820,28 +819,33 @@ function getPropertyDescription(key: string): string | undefined {
   return descriptions[key];
 }
 
-function getComplianceAction(scheduledActions: any[]): string {
-  if (!scheduledActions || scheduledActions.length === 0) {
-    return "No action configured";
-  }
-
-  const actions = scheduledActions
-    .flatMap((sa) => sa.scheduledActionConfigurations || [])
+function getComplianceAction(scheduledActions: any[], status?: string): string {
+  const incomplete = status === "incomplete";
+  const actions = (scheduledActions || [])
+    .flatMap((rule) => rule?.scheduledActionConfigurations || [])
     .map((config: any) => {
-      const hours = config.gracePeriodHours || 0;
-      const days = Math.floor(hours / 24);
-      const actionType = config.actionType || "notification";
-
-      if (actionType === "block") {
-        return `Block access after ${days} days`;
-      } else if (actionType === "retire") {
-        return `Retire device after ${days} days`;
-      } else if (actionType === "removeResourceAccessProfiles") {
-        return `Remove profiles after ${days} days`;
-      }
-
-      return `Notify after ${days} days`;
+      const hours = config.gracePeriodHours;
+      const timing =
+        typeof hours !== "number" || !Number.isFinite(hours) || hours < 0
+          ? " (timing unavailable)"
+          : hours === 0
+            ? " immediately"
+            : hours % 24 === 0
+              ? ` after ${hours / 24} day${hours === 24 ? "" : "s"}`
+              : ` after ${hours} hour${hours === 1 ? "" : "s"}`;
+      const labels: Record<string, string> = {
+        block: "Mark device noncompliant",
+        retire: "Retire device",
+        removeResourceAccessProfiles: "Remove profiles",
+        notification: "Notify",
+        pushNotification: "Send push notification",
+        remoteLock: "Remotely lock device",
+      };
+      return `${labels[config.actionType] ?? `Action ${config.actionType ?? "unknown"}`}${timing}`;
     });
-
-  return actions.join(", ");
+  if (actions.length === 0)
+    return incomplete
+      ? "Actions unavailable (collection incomplete)"
+      : "No action configured";
+  return actions.join(", ") + (incomplete ? " (collection incomplete)" : "");
 }

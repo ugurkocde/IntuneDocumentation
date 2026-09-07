@@ -46,7 +46,19 @@ describe("normalized configuration sections", () => {
           familyKey: "settingsCatalog",
           label: "Settings Catalog",
           selectionPrefix: "catalog",
-          items: [{ id: "policy-1", assignments: [{ id: "assignment-1" }] }],
+          items: [
+            {
+              id: "policy-1",
+              assignments: [
+                {
+                  target: {
+                    "@odata.type":
+                      "#microsoft.graph.allDevicesAssignmentTarget",
+                  },
+                },
+              ],
+            },
+          ],
         },
         {
           key: "mobileApps",
@@ -71,8 +83,113 @@ describe("normalized configuration sections", () => {
         label: "Settings Catalog",
         total: 1,
         assigned: 1,
+        unassigned: 0,
+        unknown: 0,
+        notApplicable: 0,
       },
-      { key: "mobileApps", label: "Mobile apps", total: 1, assigned: 0 },
+      {
+        key: "mobileApps",
+        label: "Mobile apps",
+        total: 1,
+        assigned: 0,
+        unassigned: 1,
+        unknown: 0,
+        notApplicable: 0,
+      },
     ]);
   });
 });
+
+it("does not turn unavailable or malformed assignment reads into missing assignments", () => {
+  const target = {
+    "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
+  };
+  const analytics = analyzeConfigurations({
+    settingsCatalog: [
+      { assignments: [{ target }] },
+      { assignments: [] },
+      { assignments: [], collectionStatus: { assignments: "incomplete" } },
+      {
+        assignments: [{ target }],
+        collectionStatus: { assignments: "incomplete" },
+      },
+      {},
+      { assignments: [{ id: "unrecognized" }] },
+      {
+        assignments: [
+          {
+            target: {
+              "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget",
+              groupId: "excluded",
+            },
+          },
+        ],
+      },
+    ],
+    deviceConfigurations: [],
+    administrativeTemplates: [],
+    compliancePolicies: [],
+    securityBaselines: [],
+    scripts: { windows: [], macOS: [] },
+    windowsUpdatePolicies: [{ assignments: [] }],
+  });
+  expect(analytics).toMatchObject({
+    totalConfigs: 8,
+    assignedConfigs: 1,
+    unassignedConfigs: 3,
+    unknownAssignmentConfigs: 4,
+  });
+  expect(analytics.inventory.reduce((n, row) => n + row.total, 0)).toBe(8);
+  expect(analytics.inventory[0]).toMatchObject({
+    total: 7,
+    assigned: 1,
+    unassigned: 2,
+    unknown: 4,
+  });
+  expect(analytics.topGroups).toEqual([["All Devices", 1]]);
+});
+
+it.each([false, true])(
+  "does not classify Conditional Access conditions as unknown Intune assignments (sections=%s)",
+  (sections) => {
+    const ca = {
+      id: "ca",
+      state: "enabled",
+      conditions: { users: { includeUsers: ["All"] } },
+    };
+    const input = {
+      settingsCatalog: [],
+      deviceConfigurations: [],
+      administrativeTemplates: [],
+      compliancePolicies: [],
+      securityBaselines: [],
+      scripts: { windows: [], macOS: [] },
+      ...(sections
+        ? {
+            sections: [
+              {
+                key: "conditionalAccessPolicies",
+                familyKey: "conditionalAccessPolicies",
+                label: "Conditional Access",
+                selectionPrefix: "ca",
+                items: [ca],
+              },
+            ],
+          }
+        : { conditionalAccessPolicies: [ca] }),
+    };
+    const result = analyzeConfigurations(input);
+    expect(result).toMatchObject({
+      totalConfigs: 1,
+      assignmentApplicableConfigs: 0,
+      assignmentNotApplicableConfigs: 1,
+      assignedConfigs: 0,
+      unassignedConfigs: 0,
+      unknownAssignmentConfigs: 0,
+    });
+    expect(result.inventory.find((r) => r.total === 1)).toMatchObject({
+      notApplicable: 1,
+      unknown: 0,
+    });
+  },
+);

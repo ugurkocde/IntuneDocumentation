@@ -58,6 +58,7 @@ export const ADDITIONAL_FAMILY_LABELS: Record<
 export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   {
     key: "windowsFeatureUpdateProfiles",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Feature update profiles",
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsFeatureUpdateProfiles",
@@ -66,6 +67,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "windowsQualityUpdateProfiles",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Quality update profiles",
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsQualityUpdateProfiles",
@@ -74,6 +76,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "windowsQualityUpdatePolicies",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Expedite quality update policies",
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsQualityUpdatePolicies",
@@ -82,6 +85,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "windowsDriverUpdateProfiles",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Driver update profiles",
     family: "windowsUpdateProfiles",
     path: "/deviceManagement/windowsDriverUpdateProfiles",
@@ -98,6 +102,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "deviceComplianceScripts",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Compliance scripts",
     family: "scriptsAndRemediations",
     path: "/deviceManagement/deviceComplianceScripts",
@@ -105,6 +110,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "deviceCustomAttributeShellScripts",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "macOS custom attributes",
     family: "scriptsAndRemediations",
     path: "/deviceManagement/deviceCustomAttributeShellScripts",
@@ -127,6 +133,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "appleUserInitiatedEnrollmentProfiles",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Apple user-initiated profiles",
     family: "enrollmentAndProvisioning",
     path: "/deviceManagement/appleUserInitiatedEnrollmentProfiles",
@@ -141,6 +148,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "mobileApps",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Mobile apps",
     family: "applications",
     path: "/deviceAppManagement/mobileApps",
@@ -183,6 +191,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "mdmWindowsInformationProtectionPolicies",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "MDM Windows Information Protection (legacy)",
     family: "applications",
     path: "/deviceAppManagement/mdmWindowsInformationProtectionPolicies",
@@ -192,6 +201,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "windowsInformationProtectionPolicies",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Windows Information Protection (legacy)",
     family: "applications",
     path: "/deviceAppManagement/windowsInformationProtectionPolicies",
@@ -201,6 +211,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "iosLobAppProvisioningConfigurations",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "iOS LOB provisioning profiles",
     family: "applications",
     path: "/deviceAppManagement/iosLobAppProvisioningConfigurations",
@@ -222,6 +233,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "roleScopeTags",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Scope tags",
     family: "assignmentAndRbac",
     path: "/deviceManagement/roleScopeTags",
@@ -300,7 +312,10 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     family: "specialistPolicies",
     path: "/deviceAppManagement/policySets",
     permissionHint: "DeviceManagementApps.Read.All",
-    childCollections: [{ property: "items", path: "items" }],
+    childCollections: [
+      { property: "items", path: "items" },
+      { property: "assignments", path: "assignments" },
+    ],
   },
   {
     key: "notificationMessageTemplates",
@@ -317,6 +332,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "termsAndConditions",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Terms and conditions",
     family: "specialistPolicies",
     path: "/deviceManagement/termsAndConditions",
@@ -338,6 +354,7 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
   },
   {
     key: "hardwareConfigurations",
+    childCollections: [{ property: "assignments", path: "assignments" }],
     label: "Hardware configurations",
     family: "specialistPolicies",
     path: "/deviceManagement/hardwareConfigurations",

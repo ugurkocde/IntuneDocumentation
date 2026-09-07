@@ -1,4 +1,5 @@
-import { Client } from "@microsoft/microsoft-graph-client";
+import { retryGraphRequest } from "./graph-request";
+import type { Client } from "@microsoft/microsoft-graph-client";
 import "isomorphic-fetch";
 import {
   collectAllPages,
@@ -19,13 +20,8 @@ import {
   collectConfiguredSettingDefinitionIds,
 } from "./configuration-parser";
 
-export function createGraphClient(accessToken: string) {
-  return Client.init({
-    authProvider: (done) => {
-      done(null, accessToken);
-    },
-  });
-}
+import { createGraphClient } from "./graph-client";
+export { createGraphClient } from "./graph-client";
 
 // Enhanced configuration types with settings
 export interface ConfigurationSettingInstance {
@@ -187,6 +183,167 @@ export class DetailedIntuneService {
   private client: ReturnType<typeof createGraphClient>;
   private permissionErrors: PermissionError[] = [];
   private fetchErrors: FetchError[] = [];
+  private async readComplianceScheduledActions(policy: any) {
+    // Some Intune backends reject GET on the scheduledActionsForRule relation.
+    // Read the parent policy with both navigation collections expanded instead.
+    const endpoint = `/deviceManagement/deviceCompliancePolicies/${encodeURIComponent(policy.id)}`;
+    const expand =
+      "scheduledActionsForRule($expand=scheduledActionConfigurations)";
+    const errors: unknown[] = [];
+    let items: any[] = [];
+    try {
+      const response = await this.retryWithBackoff(() =>
+        this.client.api(endpoint).version("beta").expand(expand).get(),
+      );
+      if (!Array.isArray(response?.scheduledActionsForRule))
+        throw new Error(
+          "Graph omitted the expanded scheduledActionsForRule collection",
+        );
+      const rules = await collectAllPagesWithStatus<any>(
+        this.client as unknown as Client,
+        {
+          value: response.scheduledActionsForRule,
+          "@odata.nextLink": response["scheduledActionsForRule@odata.nextLink"],
+        },
+      );
+      if (!rules.complete) errors.push(rules.error);
+      items = await Promise.all(
+        rules.items.map(async (rule: any) => {
+          if (!Array.isArray(rule?.scheduledActionConfigurations)) {
+            errors.push(
+              new Error(
+                "Graph omitted an expanded scheduledActionConfigurations collection",
+              ),
+            );
+            return rule;
+          }
+          const actions = await collectAllPagesWithStatus<any>(
+            this.client as unknown as Client,
+            {
+              value: rule.scheduledActionConfigurations,
+              "@odata.nextLink":
+                rule["scheduledActionConfigurations@odata.nextLink"],
+            },
+          );
+          if (!actions.complete) errors.push(actions.error);
+          return { ...rule, scheduledActionConfigurations: actions.items };
+        }),
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+    for (const error of errors) {
+      const details = this.graphError(error);
+      this.fetchErrors.push({
+        policyId: policy.id,
+        policyName: policy.displayName ?? policy.id,
+        policyType: "Compliance Policies",
+        familyKey: "compliancePolicies",
+        endpoint: `${endpoint}?$expand=${expand}`,
+        error: `Scheduled noncompliance actions could not be fully collected: ${details.message}`,
+        statusCode: details.statusCode,
+        errorCode: details.errorCode,
+        partial: true,
+      });
+    }
+    return { items, complete: errors.length === 0 };
+  }
+  private async readPolicyDetails(
+    policy: any,
+    familyKey: string,
+    endpoint: string,
+    select?: string,
+  ) {
+    try {
+      const item = await this.retryWithBackoff(() => {
+        const request = this.client.api(endpoint).version("beta");
+        return (select ? request.select(select) : request).get();
+      });
+      return {
+        item: { ...policy, ...item },
+        complete: true,
+        errorMessage: undefined,
+      };
+    } catch (error) {
+      const details = this.graphError(error);
+      this.fetchErrors.push({
+        policyId: policy.id,
+        policyName: policy.displayName ?? policy.name ?? policy.id,
+        policyType: familyKey,
+        familyKey,
+        endpoint,
+        error: details.message,
+        statusCode: details.statusCode,
+        partial: true,
+      });
+      return { item: policy, complete: false, errorMessage: details.message };
+    }
+  }
+  private async readPolicyRelation(
+    policy: any,
+    familyKey: string,
+    endpoint: string,
+    expand?: string,
+    expandedParent?: { endpoint: string; relation: string },
+  ) {
+    let items: any[] = [];
+    try {
+      let response;
+      try {
+        response = await this.retryWithBackoff(() => {
+          const request = this.client.api(endpoint).version("beta");
+          return (expand ? request.expand(expand) : request).get();
+        });
+      } catch (error) {
+        const details = this.graphError(error);
+        if (
+          !expandedParent ||
+          details.statusCode !== 400 ||
+          !/No OData route exists/i.test(details.message)
+        )
+          throw error;
+        // Compatibility fallback for backends rejecting navigation GET requests.
+        endpoint = `${expandedParent.endpoint}?$expand=${expandedParent.relation}`;
+        const parent = await this.retryWithBackoff(() =>
+          this.client
+            .api(expandedParent.endpoint)
+            .version("beta")
+            .expand(expandedParent.relation)
+            .get(),
+        );
+        if (!Array.isArray(parent?.[expandedParent.relation])) {
+          throw new Error(
+            `Graph omitted the expanded ${expandedParent.relation} collection`,
+          );
+        }
+        response = {
+          value: parent[expandedParent.relation],
+          "@odata.nextLink":
+            parent[`${expandedParent.relation}@odata.nextLink`],
+        };
+      }
+      const pages = await collectAllPagesWithStatus<any>(
+        this.client as unknown as Client,
+        response,
+      );
+      items = pages.items;
+      if (!pages.complete) throw pages.error;
+      return { items, complete: true };
+    } catch (error) {
+      const details = this.graphError(error);
+      this.fetchErrors.push({
+        policyId: policy.id,
+        policyName: policy.displayName ?? policy.name ?? policy.id,
+        policyType: familyKey,
+        familyKey,
+        endpoint,
+        error: details.message,
+        statusCode: details.statusCode,
+        partial: true,
+      });
+      return { items, complete: false };
+    }
+  }
   private progressCallback?: ProgressCallback;
   private configurationSettingDefinitionCache = new Map<
     string,
@@ -205,8 +362,12 @@ export class DetailedIntuneService {
   ];
   private nextConfigurationSettingDefinitionRequestLane = 0;
 
-  constructor(accessToken: string, progressCallback?: ProgressCallback) {
-    this.client = createGraphClient(accessToken);
+  constructor(
+    accessToken: string,
+    progressCallback?: ProgressCallback,
+    signal?: AbortSignal,
+  ) {
+    this.client = createGraphClient(accessToken, { signal, budgetMs: 105_000 });
     this.progressCallback = progressCallback;
   }
 
@@ -503,7 +664,10 @@ export class DetailedIntuneService {
       if (entry.childCollections?.length && rawItems.length > 0) {
         rawItems = await mapWithConcurrency(rawItems, 4, async (item: any) => {
           if (!item?.id) return item;
-          const enriched = { ...item };
+          const enriched = {
+            ...item,
+            collectionStatus: { ...item.collectionStatus },
+          };
           const enrichmentWarnings: string[] = [];
           for (const child of entry.childCollections || []) {
             try {
@@ -514,19 +678,49 @@ export class DetailedIntuneService {
                 childRequest = childRequest.expand(child.expand);
               if (child.shape !== "singleton")
                 childRequest = childRequest.top(getRegistryPageSize(child));
-              const childResponse = await this.retryWithBackoff(
-                () => childRequest.get(),
-                2,
-                300,
-              );
+              let childResponse;
+              try {
+                childResponse = await this.retryWithBackoff(
+                  () => childRequest.get(),
+                  2,
+                  300,
+                );
+              } catch (error) {
+                const details = this.graphError(error);
+                if (
+                  child.shape === "singleton" ||
+                  details.statusCode !== 400 ||
+                  !/No OData route exists/i.test(details.message)
+                )
+                  throw error;
+                const parent = await this.retryWithBackoff(() =>
+                  this.client
+                    .api(`${entry.path}/${encodeURIComponent(item.id)}`)
+                    .version("beta")
+                    .expand(child.path)
+                    .get(),
+                );
+                if (!Array.isArray(parent?.[child.property]))
+                  throw new Error(
+                    `Graph omitted the expanded ${child.property} collection`,
+                  );
+                childResponse = {
+                  value: parent[child.property],
+                  "@odata.nextLink": parent[`${child.property}@odata.nextLink`],
+                };
+              }
               if (child.shape === "singleton") {
                 enriched[child.property] = childResponse;
+                enriched.collectionStatus[child.property] = "complete";
               } else {
                 const childPages = await collectAllPagesWithStatus<any>(
                   this.client as unknown as Client,
                   childResponse,
                 );
                 enriched[child.property] = childPages.items;
+                enriched.collectionStatus[child.property] = childPages.complete
+                  ? "complete"
+                  : "incomplete";
                 if (!childPages.complete) {
                   enrichmentWarnings.push(
                     `${child.property}: ${this.graphError(childPages.error).message}`,
@@ -534,6 +728,7 @@ export class DetailedIntuneService {
                 }
               }
             } catch (error: any) {
+              enriched.collectionStatus[child.property] = "incomplete";
               enrichmentWarnings.push(
                 `${child.property}: ${this.graphError(error).message}`,
               );
@@ -605,67 +800,13 @@ export class DetailedIntuneService {
     );
   }
 
-  // Helper function to add delay between requests
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   // Helper function to retry an API call with exponential backoff and jitter
   private async retryWithBackoff<T>(
     fn: () => Promise<T>,
     maxRetries: number = 5,
     initialDelay: number = 1000,
   ): Promise<T> {
-    let lastError: any;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error: any) {
-        lastError = error;
-        const statusCode = error?.statusCode || error?.response?.status;
-        const errorMessage = error?.message || "";
-
-        // Don't retry on permanent failures
-        // 404 or 403 - resource doesn't exist or forbidden
-        // "No OData route exists" - API endpoint not supported for this resource
-        if (
-          statusCode === 404 ||
-          statusCode === 403 ||
-          errorMessage.includes("No OData route exists")
-        ) {
-          throw error;
-        }
-
-        // If this is the last attempt, throw the error
-        if (attempt === maxRetries - 1) {
-          throw error;
-        }
-
-        // Check if it's a rate limit error (429)
-        if (statusCode === 429 || error?.code === "TooManyRequests") {
-          // Try to get Retry-After header
-          const retryAfter =
-            error?.headers?.["retry-after"] || error?.retryAfter;
-          const retryDelay = retryAfter ? parseInt(retryAfter) * 1000 : 30000; // Default to 30s
-          console.log(
-            `Rate limited (429). Waiting ${retryDelay}ms before retry ${attempt + 1}/${maxRetries}`,
-          );
-          await this.delay(retryDelay);
-          continue;
-        }
-
-        // Wait with exponential backoff plus jitter to avoid thundering herd
-        const exponentialDelay = initialDelay * Math.pow(2, attempt);
-        const jitter = Math.random() * 500; // Random jitter up to 500ms
-        const delayMs = exponentialDelay + jitter;
-
-        console.log(
-          `Retry attempt ${attempt + 1}/${maxRetries} after ${Math.round(delayMs)}ms (error: ${error?.message || "Unknown"})`,
-        );
-        await this.delay(delayMs);
-      }
-    }
-    throw lastError;
+    return retryGraphRequest(fn, { maxAttempts: maxRetries, initialDelay });
   }
 
   // 1. Settings Catalog with full settings
@@ -831,6 +972,18 @@ export class DetailedIntuneService {
                 configType: "Settings Catalog",
                 settings: settings || [],
                 assignments: assignments || [],
+                collectionStatus: {
+                  assignments: policyWarnings.some((warning) =>
+                    warning.startsWith("Assignments:"),
+                  )
+                    ? "incomplete"
+                    : "complete",
+                  settings: policyWarnings.some((warning) =>
+                    warning.startsWith("Settings:"),
+                  )
+                    ? "incomplete"
+                    : "complete",
+                },
                 hasFetchError: policyWarnings.length > 0,
                 fetchErrorMessage:
                   policyWarnings.length > 0
@@ -870,6 +1023,10 @@ export class DetailedIntuneService {
                 configType: "Settings Catalog",
                 settings: [],
                 assignments: [],
+                collectionStatus: {
+                  assignments: "incomplete",
+                  settings: "incomplete",
+                },
                 hasFetchError: true,
                 fetchErrorMessage: errorMessage,
               };
@@ -878,12 +1035,6 @@ export class DetailedIntuneService {
         );
 
         detailedPolicies.push(...batchResults);
-
-        // Add a small delay between batches to avoid rate limiting
-        // Reduced from 500ms to 200ms for faster processing
-        if (i + batchSize < (allPolicies || []).length) {
-          await this.delay(200);
-        }
       }
 
       console.log(
@@ -926,34 +1077,23 @@ export class DetailedIntuneService {
       const detailedConfigs = await Promise.all(
         nonUpdateRingConfigs.map(async (config: any) => {
           try {
-            // Fetch assignments with retry
-            let assignmentsResponse;
-            try {
-              assignmentsResponse = await this.retryWithBackoff(() =>
-                this.client
-                  .api(
-                    `/deviceManagement/deviceConfigurations('${config.id}')/assignments`,
-                  )
-                  .version("beta")
-                  .get(),
-              );
-            } catch (assignmentError: any) {
-              console.warn(
-                `Failed to fetch assignments for ${config.displayName}:`,
-                assignmentError?.message,
-              );
-              assignmentsResponse = { value: [] };
-            }
-            const assignments = await collectAllPages<any>(
-              this.client as unknown as Client,
-              assignmentsResponse,
+            const assignmentResult = await this.readPolicyRelation(
+              config,
+              "deviceConfigurations",
+              `/deviceManagement/deviceConfigurations('${config.id}')/assignments`,
             );
+            const assignments = assignmentResult.items;
 
             // The config object already contains all settings as properties
             return {
               ...config,
               configType: this.getConfigurationType(config["@odata.type"]),
               assignments: assignments || [],
+              collectionStatus: {
+                assignments: assignmentResult.complete
+                  ? "complete"
+                  : "incomplete",
+              },
             };
           } catch (error) {
             console.error(
@@ -1144,6 +1284,18 @@ export class DetailedIntuneService {
               ...config,
               configType: "Administrative Template",
               definitionValues: definitionValuesWithPresentations,
+              collectionStatus: {
+                assignments: policyWarnings.some((warning) =>
+                  warning.startsWith("Assignments:"),
+                )
+                  ? "incomplete"
+                  : "complete",
+                settings: policyWarnings.some(
+                  (warning) => !warning.startsWith("Assignments:"),
+                )
+                  ? "incomplete"
+                  : "complete",
+              },
               assignments: assignments || [],
               version: 1,
               hasFetchError: policyWarnings.length > 0,
@@ -1211,63 +1363,30 @@ export class DetailedIntuneService {
       const detailedPolicies = await Promise.all(
         (allPolicies || []).map(async (policy: any) => {
           try {
-            // Fetch assignments with retry
-            let assignmentsResponse;
-            try {
-              assignmentsResponse = await this.retryWithBackoff(() =>
-                this.client
-                  .api(
-                    `/deviceManagement/deviceCompliancePolicies('${policy.id}')/assignments`,
-                  )
-                  .version("beta")
-                  .get(),
-              );
-            } catch (assignmentError: any) {
-              console.warn(
-                `Failed to fetch assignments for ${policy.displayName}:`,
-                assignmentError?.message,
-              );
-              assignmentsResponse = { value: [] };
-            }
-            const assignments = await collectAllPages<any>(
-              this.client as unknown as Client,
-              assignmentsResponse,
+            const assignmentResult = await this.readPolicyRelation(
+              policy,
+              "compliancePolicies",
+              `/deviceManagement/deviceCompliancePolicies('${policy.id}')/assignments`,
             );
+            const assignments = assignmentResult.items;
 
-            // Fetch scheduled actions for rules with retry
-            // Note: Not all compliance policies support the scheduledActionsForRule endpoint
-            let scheduledActions;
-            try {
-              scheduledActions = await this.retryWithBackoff(() =>
-                this.client
-                  .api(
-                    `/deviceManagement/deviceCompliancePolicies('${policy.id}')/scheduledActionsForRule`,
-                  )
-                  .version("beta")
-                  .expand("scheduledActionConfigurations")
-                  .get(),
-              );
-            } catch (scheduledError: any) {
-              const errorMessage = scheduledError?.message || "";
-              // Don't log warnings for known API limitations (OData route not exists)
-              if (!errorMessage.includes("No OData route exists")) {
-                console.warn(
-                  `Failed to fetch scheduled actions for ${policy.displayName}:`,
-                  scheduledError?.message,
-                );
-              }
-              scheduledActions = { value: [] };
-            }
-            const scheduledActionsAll = await collectAllPages<any>(
-              this.client as unknown as Client,
-              scheduledActions,
-            );
+            const actionsResult =
+              await this.readComplianceScheduledActions(policy);
+            const scheduledActionsAll = actionsResult.items;
 
             return {
               ...policy,
               configType: "Compliance Policy",
               scheduledActionsForRule: scheduledActionsAll || [],
               assignments: assignments || [],
+              collectionStatus: {
+                scheduledActionsForRule: actionsResult.complete
+                  ? "complete"
+                  : "incomplete",
+                assignments: assignmentResult.complete
+                  ? "complete"
+                  : "incomplete",
+              },
             };
           } catch (error) {
             console.error(
@@ -1346,31 +1465,27 @@ export class DetailedIntuneService {
         ],
       );
 
-      const allIosPolicies = await collectAllPages<any>(
-        this.client as unknown as Client,
-        iosPolicies,
+      const platformResults = await Promise.all(
+        [
+          { platform: "iOS", response: iosPolicies },
+          { platform: "Android", response: androidPolicies },
+          { platform: "Windows", response: windowsPolicies },
+        ].map(async ({ platform, response }) => {
+          const pages = await collectAllPagesWithStatus<any>(
+            this.client as unknown as Client,
+            response,
+          );
+          if (!pages.complete) {
+            this.recordCollectionError(
+              `${platform} App Protection Policies`,
+              new GraphPaginationError(pages.items, pages.error),
+              "DeviceManagementApps.Read.All",
+            );
+          }
+          return pages.items.map((policy: any) => ({ ...policy, platform }));
+        }),
       );
-      const allAndroidPolicies = await collectAllPages<any>(
-        this.client as unknown as Client,
-        androidPolicies,
-      );
-      const allWindowsPolicies = await collectAllPages<any>(
-        this.client as unknown as Client,
-        windowsPolicies,
-      );
-
-      // Combine all policies and fetch their assignments
-      const allPolicies = [
-        ...(allIosPolicies || []).map((p: any) => ({ ...p, platform: "iOS" })),
-        ...(allAndroidPolicies || []).map((p: any) => ({
-          ...p,
-          platform: "Android",
-        })),
-        ...(allWindowsPolicies || []).map((p: any) => ({
-          ...p,
-          platform: "Windows",
-        })),
-      ];
+      const allPolicies = platformResults.flat();
 
       const detailedPolicies = await Promise.all(
         allPolicies.map(async (policy: any) => {
@@ -1385,28 +1500,20 @@ export class DetailedIntuneService {
               endpoint = `/deviceAppManagement/windowsManagedAppProtections('${policy.id}')/assignments`;
             }
 
-            // Fetch assignments and targeted apps
-            const assignmentsResponse = await this.client
-              .api(endpoint)
-              .version("beta")
-              .get()
-              .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(
-              this.client as unknown as Client,
-              assignmentsResponse,
-            );
-
-            const appsEndpoint = endpoint.replace(/\/assignments$/, "/apps");
-            const appsResponse = await this.client
-              .api(appsEndpoint)
-              .version("beta")
-              .top(999)
-              .get()
-              .catch(() => ({ value: [] }));
-            const apps = await collectAllPages<any>(
-              this.client as unknown as Client,
-              appsResponse,
-            );
+            const [assignmentResult, appsResult] = await Promise.all([
+              this.readPolicyRelation(
+                policy,
+                "appProtectionPolicies",
+                endpoint,
+              ),
+              this.readPolicyRelation(
+                policy,
+                "appProtectionPolicies",
+                endpoint.replace(/\/assignments$/, "/apps"),
+              ),
+            ]);
+            const assignments = assignmentResult.items;
+            const apps = appsResult.items;
 
             return {
               ...policy,
@@ -1414,6 +1521,12 @@ export class DetailedIntuneService {
               platformType: policy.platform,
               assignments: assignments || [],
               apps: apps || [],
+              collectionStatus: {
+                assignments: assignmentResult.complete
+                  ? "complete"
+                  : "incomplete",
+                apps: appsResult.complete ? "complete" : "incomplete",
+              },
             };
           } catch (error) {
             console.error(
@@ -1463,33 +1576,46 @@ export class DetailedIntuneService {
       const detailedIntents = await Promise.all(
         (allIntents || []).map(async (intent: any) => {
           try {
-            // Fetch categories with settings
-            const categories = await this.client
-              .api(`/deviceManagement/intents('${intent.id}')/categories`)
-              .version("beta")
-              .expand("settings")
-              .get()
-              .catch(() => ({ value: [] }));
-            const categoriesAll = await collectAllPages<any>(
-              this.client as unknown as Client,
-              categories,
-            );
-
-            // Fetch assignments
-            const assignmentsResponse = await this.client
-              .api(`/deviceManagement/intents('${intent.id}')/assignments`)
-              .version("beta")
-              .get()
-              .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(
-              this.client as unknown as Client,
-              assignmentsResponse,
-            );
+            const [categoriesResult, settingsResult, assignmentResult] =
+              await Promise.all([
+                this.readPolicyRelation(
+                  intent,
+                  "securityBaselines",
+                  `/deviceManagement/intents('${intent.id}')/categories`,
+                  undefined,
+                  {
+                    endpoint: `/deviceManagement/intents/${encodeURIComponent(intent.id)}`,
+                    relation: "categories",
+                  },
+                ),
+                this.readPolicyRelation(
+                  intent,
+                  "securityBaselines",
+                  `/deviceManagement/intents('${intent.id}')/settings`,
+                ),
+                this.readPolicyRelation(
+                  intent,
+                  "securityBaselines",
+                  `/deviceManagement/intents('${intent.id}')/assignments`,
+                ),
+              ]);
+            const categoriesAll = categoriesResult.items;
+            const assignments = assignmentResult.items;
 
             return {
               ...intent,
               configType: "Security Baseline",
               categories: categoriesAll || [],
+              settings: settingsResult.items,
+              collectionStatus: {
+                categories: categoriesResult.complete
+                  ? "complete"
+                  : "incomplete",
+                assignments: assignmentResult.complete
+                  ? "complete"
+                  : "incomplete",
+                settings: settingsResult.complete ? "complete" : "incomplete",
+              },
               assignments: assignments || [],
             };
           } catch (error) {
@@ -1553,26 +1679,23 @@ export class DetailedIntuneService {
       const detailedScripts = await Promise.all(
         (allScripts || []).map(async (script: any) => {
           try {
-            // Fetch script content
-            const scriptContent = await this.client
-              .api(`/deviceManagement/deviceManagementScripts('${script.id}')`)
-              .version("beta")
-              .select("scriptContent")
-              .get()
-              .catch(() => ({ scriptContent: null }));
-
-            // Fetch assignments
-            const assignmentsResponse = await this.client
-              .api(
-                `/deviceManagement/deviceManagementScripts('${script.id}')/assignments`,
-              )
-              .version("beta")
-              .get()
-              .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(
-              this.client as unknown as Client,
-              assignmentsResponse,
-            );
+            const endpoint = `/deviceManagement/deviceManagementScripts/${encodeURIComponent(script.id)}`;
+            const [details, assignments] = await Promise.all([
+              this.readPolicyDetails(
+                script,
+                "scripts",
+                endpoint,
+                "scriptContent",
+              ),
+              this.readPolicyRelation(
+                script,
+                "scripts",
+                `${endpoint}/assignments`,
+                undefined,
+                { endpoint, relation: "assignments" },
+              ),
+            ]);
+            const scriptContent = details.item;
 
             return {
               ...script,
@@ -1583,7 +1706,11 @@ export class DetailedIntuneService {
                 : null,
               configType: "PowerShell Script",
               platformType: "Windows",
-              assignments: assignments || [],
+              assignments: assignments.items,
+              collectionStatus: {
+                details: details.complete ? "complete" : "incomplete",
+                assignments: assignments.complete ? "complete" : "incomplete",
+              },
             };
           } catch (error) {
             console.error(
@@ -1615,12 +1742,12 @@ export class DetailedIntuneService {
         });
       } else {
         console.error("Error fetching Windows scripts:", error);
-        this.recordCollectionError(
-          "Windows PowerShell Scripts",
-          error,
-          "DeviceManagementScripts.Read.All",
-        );
       }
+      this.recordCollectionError(
+        "Windows PowerShell Scripts",
+        error,
+        "DeviceManagementScripts.Read.All",
+      );
       return this.partialCollectionItems(error, "PowerShell Script");
     }
   }
@@ -1645,26 +1772,23 @@ export class DetailedIntuneService {
       const detailedScripts = await Promise.all(
         (allScripts || []).map(async (script: any) => {
           try {
-            // Fetch script content
-            const scriptContent = await this.client
-              .api(`/deviceManagement/deviceShellScripts('${script.id}')`)
-              .version("beta")
-              .select("scriptContent")
-              .get()
-              .catch(() => ({ scriptContent: null }));
-
-            // Fetch assignments
-            const assignmentsResponse = await this.client
-              .api(
-                `/deviceManagement/deviceShellScripts('${script.id}')/assignments`,
-              )
-              .version("beta")
-              .get()
-              .catch(() => ({ value: [] }));
-            const assignments = await collectAllPages<any>(
-              this.client as unknown as Client,
-              assignmentsResponse,
-            );
+            const endpoint = `/deviceManagement/deviceShellScripts/${encodeURIComponent(script.id)}`;
+            const [details, assignments] = await Promise.all([
+              this.readPolicyDetails(
+                script,
+                "scripts",
+                endpoint,
+                "scriptContent",
+              ),
+              this.readPolicyRelation(
+                script,
+                "scripts",
+                `${endpoint}/assignments`,
+                undefined,
+                { endpoint, relation: "assignments" },
+              ),
+            ]);
+            const scriptContent = details.item;
 
             return {
               ...script,
@@ -1675,7 +1799,11 @@ export class DetailedIntuneService {
                 : null,
               configType: "Shell Script",
               platformType: "macOS",
-              assignments: assignments || [],
+              assignments: assignments.items,
+              collectionStatus: {
+                details: details.complete ? "complete" : "incomplete",
+                assignments: assignments.complete ? "complete" : "incomplete",
+              },
             };
           } catch (error) {
             console.error(
@@ -1705,12 +1833,12 @@ export class DetailedIntuneService {
         });
       } else {
         console.error("Error fetching macOS scripts:", error);
-        this.recordCollectionError(
-          "macOS Shell Scripts",
-          error,
-          "DeviceManagementScripts.Read.All",
-        );
       }
+      this.recordCollectionError(
+        "macOS Shell Scripts",
+        error,
+        "DeviceManagementScripts.Read.All",
+      );
       return this.partialCollectionItems(error, "Shell Script");
     }
   }
@@ -1826,52 +1954,23 @@ export class DetailedIntuneService {
       const detailedConfigs = await Promise.all(
         (allConfigs || []).map(async (config: any) => {
           try {
-            // Fetch full configuration details including all settings
-            let fullConfig;
-            try {
-              fullConfig = await this.retryWithBackoff(() =>
-                this.client
-                  .api(
-                    `/deviceAppManagement/mobileAppConfigurations('${config.id}')`,
-                  )
-                  .version("beta")
-                  .get(),
-              );
-            } catch (detailsError: any) {
-              console.warn(
-                `Failed to fetch full details for ${config.displayName}:`,
-                detailsError?.message,
-              );
-              fullConfig = config; // Fallback to basic config
-            }
-
-            // Fetch assignments with retry
-            let assignmentsResponse;
-            try {
-              assignmentsResponse = await this.retryWithBackoff(() =>
-                this.client
-                  .api(
-                    `/deviceAppManagement/mobileAppConfigurations('${config.id}')/assignments`,
-                  )
-                  .version("beta")
-                  .get(),
-              );
-            } catch (assignmentError: any) {
-              console.warn(
-                `Failed to fetch assignments for ${config.displayName}:`,
-                assignmentError?.message,
-              );
-              assignmentsResponse = { value: [] };
-            }
-            const assignments = await collectAllPages<any>(
-              this.client as unknown as Client,
-              assignmentsResponse,
-            );
-
+            const endpoint = `/deviceAppManagement/mobileAppConfigurations('${config.id}')`;
+            const [details, assignments] = await Promise.all([
+              this.readPolicyDetails(config, "appConfigurations", endpoint),
+              this.readPolicyRelation(
+                config,
+                "appConfigurations",
+                `${endpoint}/assignments`,
+              ),
+            ]);
             return {
-              ...fullConfig, // Use full config with all settings
+              ...details.item,
               configType: "App Configuration",
-              assignments: assignments || [],
+              assignments: assignments.items,
+              collectionStatus: {
+                details: details.complete ? "complete" : "incomplete",
+                assignments: assignments.complete ? "complete" : "incomplete",
+              },
             };
           } catch (error) {
             console.error(
@@ -1920,29 +2019,26 @@ export class DetailedIntuneService {
       // Fetch detailed settings for each policy
       const detailedPolicies = await Promise.all(
         list.map(async (policy: any) => {
-          try {
-            const detailResponse = await this.client
-              .api(`/deviceManagement/deviceConfigurations/${policy.id}`)
-              .version("beta")
-              .get();
-
-            return {
-              ...policy,
-              ...detailResponse,
-              configType: "Windows Update Ring",
-              assignments:
-                policy.assignments || detailResponse.assignments || [],
-            };
-          } catch (error) {
-            console.error(
-              `Error fetching details for Windows Update policy ${policy.id}:`,
-              error,
-            );
-            return {
-              ...policy,
-              configType: "Windows Update Ring",
-            };
-          }
+          const endpoint = `/deviceManagement/deviceConfigurations/${encodeURIComponent(policy.id)}`;
+          const [assignments, details] = await Promise.all([
+            this.readPolicyRelation(
+              policy,
+              "windowsUpdatePolicies",
+              `/deviceManagement/deviceConfigurations('${policy.id}')/assignments`,
+            ),
+            this.readPolicyDetails(policy, "windowsUpdatePolicies", endpoint),
+          ]);
+          return {
+            ...details.item,
+            configType: "Windows Update Ring",
+            assignments: assignments.items,
+            hasFetchError: !details.complete,
+            fetchErrorMessage: details.errorMessage,
+            collectionStatus: {
+              details: details.complete ? "complete" : "incomplete",
+              assignments: assignments.complete ? "complete" : "incomplete",
+            },
+          };
         }),
       );
 
@@ -2130,10 +2226,24 @@ export class DetailedIntuneService {
   ): Promise<T> {
     return promise.then(
       (value) => {
-        this.progressSectionsFor(step, value).forEach((section) =>
+        const sections = this.progressSectionsFor(step, value);
+        sections.forEach((section) =>
           this.progressCallback?.({ step, type: "section", section }),
         );
-        this.progressCallback?.({ step, type: "completed" });
+        const incomplete =
+          this.fetchErrors.some(
+            (error) =>
+              error.policyType === step ||
+              sections.some((section) => section.familyKey === error.familyKey),
+          ) ||
+          (Array.isArray(value) && value.some((section) => section?.error));
+        this.progressCallback?.({
+          step,
+          type: incomplete ? "error" : "completed",
+          message: incomplete
+            ? "Collection finished with incomplete results"
+            : undefined,
+        });
         return value;
       },
       (error: any) => {
@@ -2148,6 +2258,7 @@ export class DetailedIntuneService {
   }
 
   async getAllDetailedConfigurations(includeConditionalAccess = true) {
+    const collectionStartedAt = new Date().toISOString();
     console.log("Fetching all detailed Intune configurations...");
     this.permissionErrors = []; // Reset permission errors
     this.fetchErrors = []; // Reset fetch errors
@@ -2422,6 +2533,11 @@ export class DetailedIntuneService {
     );
 
     return {
+      collectedAt: new Date().toISOString(),
+      collectionStartedAt,
+      collectionSkippedFamilies: includeConditionalAccess
+        ? []
+        : ["conditionalAccessPolicies"],
       settingsCatalog: safeSettingsCatalog,
       deviceConfigurations: safeDeviceConfigurations,
       administrativeTemplates: safeAdministrativeTemplates,

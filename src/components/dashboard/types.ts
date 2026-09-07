@@ -36,6 +36,9 @@ export interface DashboardConfigurationItem {
 export type ConfigurationTypeCounts = Record<string, number>;
 
 export interface IntuneConfigurations {
+  collectedAt?: string;
+  collectionStartedAt?: string;
+  collectionSkippedFamilies?: string[];
   settingsCatalog: DashboardConfigurationItem[];
   deviceConfigurations: DashboardConfigurationItem[];
   administrativeTemplates: DashboardConfigurationItem[];

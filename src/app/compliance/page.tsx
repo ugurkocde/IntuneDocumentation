@@ -7,18 +7,23 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz. Audit-ready evidence reports, generated from your tenant documentation.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Audit-ready evidence reports, generated from your tenant documentation.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST CSF 2.0, and BSI IT-Grundschutz.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3.",
     url: "/compliance",
     type: "website",
   },
 };
 
 const frameworks = [
+  {
+    name: "ASD Essential Eight (Maturity Levels 1, 2 and 3)",
+    detail:
+      "Choose a target maturity level in the dashboard. All eight strategies are included, with 48, 107 and 149 requirement entries for Levels 1, 2 and 3 respectively, based on ASD’s November 2023 model. Supporting Intune evidence is mapped to 3, 8 and 10 requirements respectively. Other requirements remain explicitly unassessed; the tool does not calculate an achieved maturity level.",
+  },
   {
     name: "ISO/IEC 27001:2022",
     detail:
@@ -38,6 +43,26 @@ const frameworks = [
     name: "NIST Cybersecurity Framework 2.0",
     detail:
       "Evidence for Protect and Detect subcategories, from PR.DS-01 (data-at-rest protection) to DE.CM-09 (endpoint monitoring).",
+  },
+  {
+    name: "UK MOD Def Stan 05-138 (Issue 4)",
+    detail:
+      "Selected Objective B controls for defence suppliers under DEFCON 658, referenced by control identifier with the Cyber Risk Profile levels at which each applies.",
+  },
+  {
+    name: "NCSC Cyber Essentials",
+    detail:
+      "The five control themes (firewalls, secure configuration, security update management, user access control, malware protection) mapped to managed-device configuration evidence.",
+  },
+  {
+    name: "NIST SP 800-171 (Rev. 2)",
+    detail:
+      "Supporting Intune evidence for 12 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
+  },
+  {
+    name: "NIST SP 800-171 (Rev. 3)",
+    detail:
+      "Supporting Intune evidence for 11 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
   },
   {
     name: "BSI IT-Grundschutz",
@@ -185,7 +210,9 @@ export default function CompliancePage() {
             <p className="mb-5 text-sm leading-relaxed text-slate-600">
               The compliance evidence view is available in the dashboard for
               every signed-in user. Review framework controls and download full
-              requirement-level reports as PDF.
+              requirement-level reports as PDF. For ASD Essential Eight, select
+              Maturity Level 1, 2 or 3 to review evidence against that target
+              and include it in your PDF report and JSON evidence record.
             </p>
             <Link
               href="/dashboard"
@@ -201,7 +228,27 @@ export default function CompliancePage() {
             ISO/IEC 27001 and SOC 2 criteria are referenced by identifier with
             original summaries. NIST publications are used with their
             public-domain status; BSI IT-Grundschutz is referenced from the
-            freely published Kompendium.
+            freely published Kompendium. Def Stan 05-138 is referenced by
+            control identifier with original summaries. Cyber Essentials content
+            is used under the Open Government Licence v3.0, and evidence never
+            indicates certification. Essential Eight requirement text is
+            attributed to the Australian Signals Directorate, © Commonwealth of
+            Australia 2026, under CC BY 4.0. Local requirement identifiers and
+            evidence mappings are additions by Intune Documentation.{" "}
+            <a
+              href="https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model"
+              className="underline"
+            >
+              ASD maturity model
+            </a>
+            {" · "}
+            <a
+              href="https://creativecommons.org/licenses/by/4.0/"
+              className="underline"
+            >
+              CC BY 4.0 licence
+            </a>
+            .
           </p>
         </div>
       </main>

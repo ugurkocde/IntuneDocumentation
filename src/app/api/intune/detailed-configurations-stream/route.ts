@@ -21,11 +21,15 @@ export async function GET(request: NextRequest) {
   // Create a readable stream for Server-Sent Events
   const encoder = new TextEncoder();
 
+  let closed = false;
+  const cancelled = new AbortController();
+  const signal = AbortSignal.any([request.signal, cancelled.signal]);
   const stream = new ReadableStream({
     async start(controller) {
       try {
         // Helper function to send SSE event
         const sendEvent = (event: string, data: any) => {
+          if (closed || signal.aborted) return;
           const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
           controller.enqueue(encoder.encode(message));
         };
@@ -100,6 +104,7 @@ export async function GET(request: NextRequest) {
               status: "loading",
             });
           },
+          signal,
         );
 
         // Mark connection as completed
@@ -138,27 +143,32 @@ export async function GET(request: NextRequest) {
           includeConditionalAccess,
         );
 
-        // Safety net: ensure every step reads as completed before the payload
-        policyTypes.forEach((type) => {
-          sendEvent("progress", {
-            step: type.name,
-            stepIndex: type.stepIndex,
-            status: "completed",
-          });
-        });
+        const incomplete =
+          configurations.fetchErrors.length > 0 ||
+          configurations.permissionErrors.length > 0 ||
+          configurations.sections.some((section) => !!section.error);
 
         // Send final data
         sendEvent("complete", {
           data: {
+            collectionStatus: incomplete ? "incomplete" : "complete",
+            collectedAt: configurations.collectedAt,
+            collectionStartedAt: configurations.collectionStartedAt,
+            collectionSkippedFamilies: configurations.collectionSkippedFamilies,
             permissionErrors: configurations.permissionErrors,
             fetchErrors: configurations.fetchErrors,
             summary: configurations.summary,
           },
-          message: "All configurations fetched successfully",
+          message: incomplete
+            ? "Collection finished with incomplete results"
+            : "All configurations fetched successfully",
         });
 
         // Close the stream
-        controller.close();
+        if (!closed) {
+          closed = true;
+          controller.close();
+        }
       } catch (error: any) {
         console.error("Error in SSE stream:", error);
 
@@ -167,9 +177,17 @@ export async function GET(request: NextRequest) {
           details: error?.stack,
         })}\n\n`;
 
-        controller.enqueue(encoder.encode(errorMessage));
-        controller.close();
+        if (!closed && !signal.aborted)
+          controller.enqueue(encoder.encode(errorMessage));
+        if (!closed) {
+          closed = true;
+          controller.close();
+        }
       }
+    },
+    cancel() {
+      closed = true;
+      cancelled.abort(new DOMException("Client disconnected", "AbortError"));
     },
   });
 

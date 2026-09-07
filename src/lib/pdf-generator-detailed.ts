@@ -1,3 +1,10 @@
+import { compareControlIds } from "./compliance/engine";
+import {
+  CONTROL_STATUS_LABELS,
+  CONTROL_STATUS_ORDER,
+  CONTROL_STATUS_COLORS,
+  frameworkCoverageLabel,
+} from "./compliance/presentation";
 import jsPDF from "jspdf";
 import {
   extractSettingValue,
@@ -17,7 +24,7 @@ import {
   type ExportGenerationResult,
 } from "./configuration-analyzer";
 import { REDACTED_VALUE } from "./intune-policy-registry";
-import { assessCompliance, type ControlStatus } from "./compliance";
+import { assessCompliance } from "./compliance";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -1009,8 +1016,9 @@ export async function generateDetailedPDF(
 
     // Calculate assignment rate
     const assignmentRate =
-      analytics.totalConfigs > 0
-        ? (analytics.assignedConfigs / analytics.totalConfigs) * 100
+      analytics.assignmentApplicableConfigs > 0
+        ? (analytics.assignedConfigs / analytics.assignmentApplicableConfigs) *
+          100
         : 0;
 
     // Create metrics cards without emoji icons
@@ -1076,8 +1084,23 @@ export async function generateDetailedPDF(
       cardX += cardWidth + cardSpacing;
     });
 
-    yPosition += cardHeight + 15;
+    yPosition += cardHeight + 6;
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(
+      `Unknown assignments: ${analytics.unknownAssignmentConfigs}`,
+      margin,
+      yPosition,
+    );
+    yPosition += 9;
 
+    if (analytics.assignmentNotApplicableConfigs) {
+      addText(
+        `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from assignment coverage.`,
+        9,
+      );
+      yPosition += 4;
+    }
     // === ASSIGNMENT RATE VISUALIZATION ===
     doc.setFontSize(12);
     doc.setFont(fontFamily, "bold");
@@ -1229,28 +1252,16 @@ export async function generateDetailedPDF(
     addSectionHeader("Compliance Evidence Preview");
 
     addText(
-      "This preview maps the exported configuration to technical evidence for NIST SP 800-53 (Rev. 5), NIST CSF 2.0, and BSI IT-Grundschutz. Evidence is only claimed when a recognized Intune setting is configured with an enforcing value on an assigned policy.",
+      "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
       9,
       "normal",
       [80, 80, 80],
     );
     yPosition += 5;
 
-    const statusLabels: Record<ControlStatus, string> = {
-      evidenceFound: "Configuration evidence",
-      partialEvidence: "Partial configuration evidence",
-      noEvidence: "No recognized configuration evidence",
-    };
-    const statusColors: Record<ControlStatus, [number, number, number]> = {
-      evidenceFound: [39, 174, 96],
-      partialEvidence: [230, 126, 34],
-      noEvidence: [140, 140, 140],
-    };
-    const statusRank: Record<ControlStatus, number> = {
-      evidenceFound: 0,
-      partialEvidence: 1,
-      noEvidence: 2,
-    };
+    const statusLabels = CONTROL_STATUS_LABELS;
+    const statusColors = CONTROL_STATUS_COLORS;
+    const statusRank = CONTROL_STATUS_ORDER;
 
     for (const framework of assessment.frameworks) {
       checkPageBreak(45);
@@ -1260,8 +1271,10 @@ export async function generateDetailedPDF(
         "bold",
       );
       yPosition += 1;
+      const coverageLabel = frameworkCoverageLabel(framework);
+      if (coverageLabel) addText(coverageLabel, 9, "normal", [80, 80, 80]);
       addText(
-        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.totalControls} technically assessable controls)`,
+        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
         9,
         "normal",
         [80, 80, 80],
@@ -1272,7 +1285,7 @@ export async function generateDetailedPDF(
       const ranked = [...framework.controls].sort(
         (a, b) =>
           statusRank[a.status] - statusRank[b.status] ||
-          a.control.id.localeCompare(b.control.id),
+          compareControlIds(a.control.id, b.control.id),
       );
       for (const assessed of ranked.slice(0, maxRows)) {
         checkPageBreak(10);
@@ -1283,6 +1296,8 @@ export async function generateDetailedPDF(
           "normal",
           statusColors[assessed.status],
         );
+        if (framework.framework.id === "essential-eight")
+          addText(assessed.control.summary, 9, "normal", [80, 80, 80]);
         yPosition += 1;
       }
       if (ranked.length > maxRows) {
@@ -1362,6 +1377,9 @@ export async function generateDetailedPDF(
     type: item.label,
     count: item.total,
     assigned: item.assigned,
+    unassigned: item.unassigned,
+    unknown: item.unknown,
+    notApplicable: item.notApplicable,
   }));
 
   // Check if we need to start a new page for Configuration Inventory
@@ -1389,7 +1407,7 @@ export async function generateDetailedPDF(
   yPosition += 10;
 
   // Enhanced table header with color
-  const tableWidth = 165;
+  const tableWidth = 180;
   const [thr, thg, thb] = hexToRgb(primaryColor);
   doc.setFillColor(thr, thg, thb);
   doc.rect(margin, yPosition, tableWidth, 10, "F");
@@ -1398,9 +1416,10 @@ export async function generateDetailedPDF(
   doc.setFont(fontFamily, "bold");
   doc.setTextColor(255, 255, 255);
   doc.text("Policy Type", margin + 3, yPosition + 7);
-  doc.text("Total", margin + 85, yPosition + 7);
-  doc.text("Assigned", margin + 110, yPosition + 7);
-  doc.text("Unassigned", margin + 140, yPosition + 7);
+  doc.text("Total", margin + 80, yPosition + 7);
+  doc.text("Assigned", margin + 100, yPosition + 7);
+  doc.text("Unassigned", margin + 125, yPosition + 7);
+  doc.text("Unknown", margin + 155, yPosition + 7);
   yPosition += 10;
 
   doc.setFont(fontFamily, "normal");
@@ -1427,10 +1446,12 @@ export async function generateDetailedPDF(
       doc.setFont(fontFamily, "bold");
       doc.setTextColor(255, 255, 255);
       doc.text("Policy Type", margin + 3, yPosition + 7);
-      doc.text("Total", margin + 85, yPosition + 7);
-      doc.text("Assigned", margin + 110, yPosition + 7);
-      doc.text("Unassigned", margin + 140, yPosition + 7);
+      doc.text("Total", margin + 80, yPosition + 7);
+      doc.text("Assigned", margin + 100, yPosition + 7);
+      doc.text("Unassigned", margin + 125, yPosition + 7);
       yPosition += 10;
+
+      doc.text("Unknown", margin + 155, yPosition - 3);
 
       // Reset text settings
       doc.setFont(fontFamily, "normal");
@@ -1462,20 +1483,34 @@ export async function generateDetailedPDF(
     // Total count
     doc.setFont(fontFamily, "bold");
     doc.setTextColor(52, 152, 219); // Blue
-    doc.text(item.count.toString(), margin + 90, yPosition + 6);
+    doc.text(item.count.toString(), margin + 85, yPosition + 6);
 
     // Assigned count
     doc.setTextColor(39, 174, 96); // Green
-    doc.text(item.assigned.toString(), margin + 120, yPosition + 6);
+    doc.text(
+      item.notApplicable === item.count ? "N/A" : item.assigned.toString(),
+      margin + 110,
+      yPosition + 6,
+    );
 
     // Unassigned count (red if > 0, gray if 0)
-    const unassigned = item.count - item.assigned;
+    const unassigned = item.unassigned;
     doc.setTextColor(
       unassigned > 0 ? 231 : 149,
       unassigned > 0 ? 76 : 165,
       unassigned > 0 ? 60 : 166,
     );
-    doc.text(unassigned.toString(), margin + 150, yPosition + 6);
+    doc.text(
+      item.notApplicable === item.count ? "N/A" : unassigned.toString(),
+      margin + 135,
+      yPosition + 6,
+    );
+    doc.setTextColor(100, 100, 100);
+    doc.text(
+      item.notApplicable === item.count ? "N/A" : item.unknown.toString(),
+      margin + 165,
+      yPosition + 6,
+    );
 
     doc.setTextColor(0, 0, 0);
     doc.setFont(fontFamily, "normal");
@@ -1756,7 +1791,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName || policy.name,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -1841,7 +1881,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -1892,7 +1937,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           template.displayName,
-          enhanceAssignmentText(parseAssignments(template.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              template.assignments,
+              template.collectionStatus?.assignments,
+            ),
+          ),
           template.createdDateTime,
           template.lastModifiedDateTime,
         );
@@ -1959,7 +2009,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2018,7 +2073,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2221,7 +2281,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           baseline.displayName,
-          enhanceAssignmentText(parseAssignments(baseline.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              baseline.assignments,
+              baseline.collectionStatus?.assignments,
+            ),
+          ),
           baseline.createdDateTime,
           baseline.lastModifiedDateTime,
         );
@@ -2231,9 +2296,21 @@ export async function generateDetailedPDF(
           yPosition += 2;
         }
 
+        if (baseline.collectionStatus?.settings === "incomplete") {
+          addText(
+            "Baseline settings collection incomplete",
+            9,
+            "normal",
+            [150, 150, 150],
+          );
+          yPosition += 5;
+        }
         // Parse and display baseline settings
-        if (baseline.categories && baseline.categories.length > 0) {
-          const categories = parseSecurityBaseline(baseline.categories);
+        if (baseline.settings?.length || baseline.categories?.length) {
+          const categories = parseSecurityBaseline(
+            baseline.categories || [],
+            baseline.settings,
+          );
           categories.forEach((category) => {
             if (category.settings.length > 0) {
               addText(category.category, 10, "bold");
@@ -2242,7 +2319,14 @@ export async function generateDetailedPDF(
             }
           });
         } else {
-          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          addText(
+            baseline.collectionStatus?.settings === "incomplete"
+              ? "Settings unavailable"
+              : "No settings configured",
+            9,
+            "normal",
+            [150, 150, 150],
+          );
           yPosition += 5;
         }
 
@@ -2282,7 +2366,12 @@ export async function generateDetailedPDF(
         try {
           addConfigHeader(
             script.displayName,
-            enhanceAssignmentText(parseAssignments(script.assignments)),
+            enhanceAssignmentText(
+              parseAssignments(
+                script.assignments,
+                script.collectionStatus?.assignments,
+              ),
+            ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
@@ -2384,7 +2473,12 @@ export async function generateDetailedPDF(
         try {
           addConfigHeader(
             script.displayName,
-            enhanceAssignmentText(parseAssignments(script.assignments)),
+            enhanceAssignmentText(
+              parseAssignments(
+                script.assignments,
+                script.collectionStatus?.assignments,
+              ),
+            ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
@@ -2491,7 +2585,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName || config.name,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -2645,7 +2744,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           policy.displayName || policy.name,
-          enhanceAssignmentText(parseAssignments(policy.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              policy.assignments,
+              policy.collectionStatus?.assignments,
+            ),
+          ),
           policy.createdDateTime,
           policy.lastModifiedDateTime,
         );
@@ -2820,7 +2924,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           config.displayName || config.name,
-          enhanceAssignmentText(parseAssignments(config.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              config.assignments,
+              config.collectionStatus?.assignments,
+            ),
+          ),
           config.createdDateTime,
           config.lastModifiedDateTime,
         );
@@ -3004,7 +3113,12 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           item.displayName || item.name || section.label,
-          enhanceAssignmentText(parseAssignments(item.assignments)),
+          enhanceAssignmentText(
+            parseAssignments(
+              item.assignments,
+              item.collectionStatus?.assignments,
+            ),
+          ),
           item.createdDateTime,
           item.lastModifiedDateTime || item.modifiedDateTime,
         );

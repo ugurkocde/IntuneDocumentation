@@ -574,6 +574,10 @@ export default function DashboardPage() {
                       setHasCompletedInitialLoad(true);
                       setConfigurations((current) => ({
                         ...(current || EMPTY_CONFIGURATIONS),
+                        collectedAt: data.data.collectedAt,
+                        collectionStartedAt: data.data.collectionStartedAt,
+                        collectionSkippedFamilies:
+                          data.data.collectionSkippedFamilies,
                         permissionErrors: data.data.permissionErrors || [],
                         fetchErrors: data.data.fetchErrors || [],
                         summary:

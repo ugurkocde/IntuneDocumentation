@@ -168,6 +168,7 @@ export default function DashboardPage() {
   const [configurations, setConfigurations] =
     useState<IntuneConfigurations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [snapshotResolved, setSnapshotResolved] = useState(false);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedConfigs, setSelectedConfigs] = useState<Set<string>>(
@@ -267,6 +268,7 @@ export default function DashboardPage() {
     // idle, otherwise the refresh races straight back to the landing page.
     if (settledAccountKey === undefined) return;
     if (!account || !accountKey) {
+      setSnapshotResolved(true);
       clearDashboardSession(false);
       router.push("/");
       return;
@@ -284,6 +286,7 @@ export default function DashboardPage() {
     setSelectAll(false);
     setDataAccountKey(null);
     setHasCompletedInitialLoad(false);
+    setSnapshotResolved(false);
     setLoading(true);
     setError(null);
     lastCollectionSucceeded.current = false;
@@ -293,6 +296,7 @@ export default function DashboardPage() {
       includeCA,
     }).then((snapshot) => {
       if (cancelled) return;
+      setSnapshotResolved(true);
       if (snapshot) {
         setConfigurations(snapshot.configurations);
         setLastFetched(new Date(snapshot.lastFetched));
@@ -857,6 +861,21 @@ export default function DashboardPage() {
       });
     },
   });
+
+  // Authentication and local snapshot restoration are not a Graph collection.
+  // Keep the first paint quiet until the account and retained data are checked.
+  // Never render another account's data while an account switch settles.
+  if (
+    (!hasCompletedInitialLoad &&
+      (!snapshotResolved || settledAccountKey !== accountKey)) ||
+    (configurations && dataAccountKey !== accountKey)
+  ) {
+    return (
+      <main className="bg-mint-50 min-h-screen" aria-busy="true">
+        <span className="sr-only">Restoring dashboard</span>
+      </main>
+    );
+  }
 
   // Show sign-in prompt instead of loading UI for unauthenticated users
   // Wait for MSAL to finish initializing before deciding

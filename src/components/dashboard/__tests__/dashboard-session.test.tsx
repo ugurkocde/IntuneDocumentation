@@ -37,6 +37,7 @@ const auth = vi.hoisted(() => ({
   },
 }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
+const loadingScreenRendered = vi.hoisted(() => vi.fn());
 vi.mock("@azure/msal-react", () => ({ useMsal: () => auth }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("~/hooks/use-user-profile", () => ({
@@ -49,7 +50,10 @@ vi.mock("~/components/navigation-header", () => ({
   NavigationHeader: () => null,
 }));
 vi.mock("~/components/dashboard-loading", () => ({
-  DashboardLoading: () => <div>Loading policies</div>,
+  DashboardLoading: () => {
+    loadingScreenRendered();
+    return <div>Loading policies</div>;
+  },
 }));
 vi.mock("~/components/branding-settings-modal", () => ({
   BrandingSettingsModal: () => null,
@@ -190,17 +194,28 @@ describe("dashboard session restore", () => {
     expect(await screen.findByText("Cached policy")).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
     expect(auth.instance.acquireTokenSilent).not.toHaveBeenCalled();
+    expect(loadingScreenRendered).not.toHaveBeenCalled();
   });
 
   it("waits for MSAL to settle before restoring the account snapshot", async () => {
     auth.inProgress = "startup";
     const view = render(<DashboardPage />);
-    expect(screen.getByText("Loading policies")).toBeVisible();
+    expect(screen.queryByText("Loading policies")).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
     auth.inProgress = "none";
     view.rerender(<DashboardPage />);
     expect(await screen.findByText("Cached policy")).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
+    expect(loadingScreenRendered).not.toHaveBeenCalled();
+  });
+
+  it("shows collection progress when no retained snapshot is available", async () => {
+    window.sessionStorage.clear();
+    vi.mocked(fetch).mockImplementation(
+      () => new Promise(() => { /* Keep collection pending to inspect progress. */ }),
+    );
+    render(<DashboardPage />);
+    expect(await screen.findByText("Loading policies")).toBeVisible();
   });
 
   it("explicit refresh replaces the snapshot and original collection timestamp", async () => {

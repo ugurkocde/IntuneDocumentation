@@ -8,6 +8,18 @@ connector, and specialist settings. Every Microsoft Graph request uses the beta
 endpoint, follows paging links, and exposes partial failures instead of silently
 presenting them as empty tenant data.
 
+### Retired sources
+
+Windows Information Protection **without enrollment** is excluded from active
+collection and new exports. Microsoft retired this scenario; its
+`/deviceAppManagement/windowsInformationProtectionPolicies` endpoint returned
+HTTP 200 with a null body during a scoped Graph beta diagnostic on 2026-09-07.
+This is not interpreted as proof that a tenant has zero legacy policies.
+The separate MDM WIP endpoint remains in the registry. Other endpoints still
+report missing collection arrays as incomplete data.
+
+Reference: [Microsoft WIP retirement guidance](https://techcommunity.microsoft.com/blog/intunecustomersuccess/support-tip-end-of-support-guidance-for-windows-information-protection/3580091).
+
 ## Delivery architecture
 
 1. Keep the existing first-class policy sections for Settings Catalog, device
@@ -62,7 +74,6 @@ All paths below are relative to `https://graph.microsoft.com/beta`.
 | Applications              | Targeted managed-app configurations   | `/deviceAppManagement/targetedManagedAppConfigurations`        | `DeviceManagementApps.Read.All`           |
 | Applications              | Default managed-app protections       | `/deviceAppManagement/defaultManagedAppProtections`            | `DeviceManagementApps.Read.All`           |
 | Applications              | MDM Windows Information Protection    | `/deviceAppManagement/mdmWindowsInformationProtectionPolicies` | `DeviceManagementApps.Read.All`           |
-| Applications              | Windows Information Protection        | `/deviceAppManagement/windowsInformationProtectionPolicies`    | `DeviceManagementApps.Read.All`           |
 | Applications              | iOS LOB provisioning profiles         | `/deviceAppManagement/iosLobAppProvisioningConfigurations`     | `DeviceManagementApps.Read.All`           |
 | Assignment & RBAC         | Assignment filters                    | `/deviceManagement/assignmentFilters`                          | `DeviceManagementConfiguration.Read.All`  |
 | Assignment & RBAC         | Reusable policy settings              | `/deviceManagement/reusablePolicySettings`                     | `DeviceManagementConfiguration.Read.All`  |

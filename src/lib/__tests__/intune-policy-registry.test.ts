@@ -9,6 +9,26 @@ import {
 } from "../intune-policy-registry";
 
 describe("Intune policy registry", () => {
+  it("excludes retired WIP without enrollment while retaining MDM WIP", () => {
+    expect(
+      INTUNE_POLICY_REGISTRY.some(
+        (entry) =>
+          entry.path ===
+          "/deviceAppManagement/windowsInformationProtectionPolicies",
+      ),
+    ).toBe(false);
+    expect(
+      INTUNE_POLICY_REGISTRY.find(
+        (entry) =>
+          entry.path ===
+          "/deviceAppManagement/mdmWindowsInformationProtectionPolicies",
+      ),
+    ).toMatchObject({
+      key: "mdmWindowsInformationProtectionPolicies",
+      childCollections: [{ property: "assignments", path: "assignments" }],
+    });
+  });
+
   it("uses beta-relative paths and unique keys", () => {
     const keys = INTUNE_POLICY_REGISTRY.map((entry) => entry.key);
     expect(new Set(keys).size).toBe(keys.length);

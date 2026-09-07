@@ -199,16 +199,10 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     legacy: true,
     notConfiguredOn404: true,
   },
-  {
-    key: "windowsInformationProtectionPolicies",
-    childCollections: [{ property: "assignments", path: "assignments" }],
-    label: "Windows Information Protection (legacy)",
-    family: "applications",
-    path: "/deviceAppManagement/windowsInformationProtectionPolicies",
-    permissionHint: "DeviceManagementApps.Read.All",
-    legacy: true,
-    notConfiguredOn404: true,
-  },
+  // WIP without enrollment was retired. Its windowsInformationProtectionPolicies
+  // endpoint can return HTTP 200 with no body instead of a collection. Do not
+  // query it or weaken collection validation; MDM WIP above is a separate API.
+  // https://techcommunity.microsoft.com/blog/intunecustomersuccess/support-tip-end-of-support-guidance-for-windows-information-protection/3580091
   {
     key: "iosLobAppProvisioningConfigurations",
     childCollections: [{ property: "assignments", path: "assignments" }],

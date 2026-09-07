@@ -89,8 +89,10 @@ export function DashboardBanners({
                 be fully loaded
               </p>
               <p className="mt-1 text-xs leading-5 text-orange-900/80">
-                These policies remain visible, but some settings may be missing
-                from exports because the API did not return their complete data.
+                Microsoft Graph did not return complete data for the resources
+                listed below. Successfully loaded data remains available, but
+                some policies or settings may be missing from the list and
+                exports.
               </p>
               <details className="mt-3">
                 <summary className="cursor-pointer text-xs font-semibold text-orange-950 underline decoration-orange-600/30 underline-offset-2 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none">
@@ -115,7 +117,9 @@ export function DashboardBanners({
                       )}
                       {error.permissionHint && (
                         <span className="mt-1 block text-[10px] text-orange-800/80">
-                          Permission hint: {error.permissionHint}
+                          Permission used by this endpoint:{" "}
+                          {error.permissionHint}. This hint does not confirm a
+                          permission problem.
                         </span>
                       )}
                     </li>

@@ -55,7 +55,7 @@ describe("NIST SP 800-171 Revision 3", () => {
     expect(r2.framework.totalRequirements).toBe(110);
     expect(r3.framework.version).toBe("Rev. 3 (May 2024)");
     expect(r3.framework.totalRequirements).toBe(97);
-    expect(r2.summary.totalControls).toBe(11);
+    expect(r2.summary.totalControls).toBe(12);
     expect(r3.summary.totalControls).toBe(11);
     expect(r3.framework.source?.url).toBe(
       "https://csrc.nist.gov/pubs/sp/800/171/r3/final",
@@ -175,4 +175,13 @@ describe("NIST SP 800-171 Revision 3", () => {
     expect(text).not.toContain("03.14.05");
     expect(text).not.toContain("NIST-800-171-R2");
   });
+});
+
+it("maps Revision 2 MFA to 3.5.3 and credential protection to configuration settings", async () => {
+  const { NIST_800_171 } = await import(
+    "../compliance/frameworks/nist-800-171"
+  );
+  expect(NIST_800_171.mappings["tenant-mfa-required"]).toEqual(["3.5.3"]);
+  expect(NIST_800_171.mappings["windows-credential-guard"]).toEqual(["3.4.2"]);
+  expect(NIST_800_171.controls["3.5.3"]?.evidenceStrength).toBe("supporting");
 });

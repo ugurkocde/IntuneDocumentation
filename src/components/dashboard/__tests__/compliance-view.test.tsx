@@ -138,7 +138,7 @@ describe("ComplianceView", () => {
       name: "Selected framework: NIST SP 800-171 Rev. 2",
     });
     expect(
-      screen.getByText(/11 of 110 published requirements/),
+      screen.getByText(/12 of 110 published requirements/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /3\.13\.16/ }),

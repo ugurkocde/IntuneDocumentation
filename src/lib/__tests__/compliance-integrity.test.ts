@@ -329,7 +329,7 @@ describe("compound detectors and legacy representations", () => {
   });
   it.each([
     [2, 7, 2, false, "enforced"],
-    [8, 7, 0, false, "disabledByPolicy"],
+    [8, 7, 0, false, "noEvidence"],
     [0, 7, 0, true, "disabledByPolicy"],
     [undefined, 7, 0, false, "noEvidence"],
   ])(
@@ -639,4 +639,84 @@ describe("collection and reproducibility", () => {
       first.snapshotSha256,
     );
   });
+});
+
+it("keeps ancillary action failures visible without invalidating unrelated evidence", () => {
+  const input = data();
+  input.collectedAt = "2026-09-07T10:00:00Z";
+  input.compliancePolicies = [
+    policy("windows10CompliancePolicy", {
+      collectionStatus: {
+        assignments: "complete",
+        scheduledActionsForRule: "incomplete",
+      },
+    }),
+  ];
+  input.fetchErrors = [
+    {
+      policyId: "policy",
+      policyName: "Actions",
+      policyType: "Compliance Policies",
+      familyKey: "compliancePolicies",
+      endpoint:
+        "/deviceManagement/deviceCompliancePolicies/policy?$expand=scheduledActionsForRule($expand=scheduledActionConfigurations)",
+      error: "HTTP 400",
+      partial: true,
+    },
+  ];
+  const result = assessCompliance(input);
+  expect(
+    result.collectionCoverage.find((r) => r.family === "compliancePolicies")
+      ?.status,
+  ).toBe("incomplete");
+  expect(capability(input, "windows-disk-encryption").status).toBe(
+    "noEvidence",
+  );
+  input.compliancePolicies[0].collectionStatus.assignments = "incomplete";
+  expect(capability(input, "windows-disk-encryption").status).toBe(
+    "collectionIncomplete",
+  );
+});
+
+it("preserves unknown detail failures as evidence-incomplete", () => {
+  const input = data(
+    policy("windows10GeneralConfiguration", { hasFetchError: true }),
+  );
+  expect(capability(input, "windows-disk-encryption").status).toBe(
+    "collectionIncomplete",
+  );
+});
+
+it("recognizes a firewall compliance requirement without treating it as profile configuration", () => {
+  const input = data(
+    policy("windows10CompliancePolicy", { activeFirewallRequired: true }),
+  );
+  expect(capability(input, "windows-firewall").status).toBe(
+    "requirementAssigned",
+  );
+  input.deviceConfigurations.push(
+    policy(
+      "windows10EndpointProtectionConfiguration",
+      { firewallProfileDomain: { firewallEnabled: "allowed" } },
+      "domain-only",
+    ),
+  );
+  expect(capability(input, "windows-firewall").status).toBe(
+    "requirementAssigned",
+  );
+});
+
+it("does not report a 21-day update ring as assigned counter-evidence", () => {
+  const input = data(
+    policy("windowsUpdateForBusinessConfiguration", {
+      qualityUpdatesDeferralPeriodInDays: 14,
+      deadlineForQualityUpdatesInDays: 7,
+      deadlineGracePeriodInDays: 0,
+      qualityUpdatesPaused: false,
+      automaticUpdateMode: "autoInstallAtMaintenanceTime",
+    }),
+  );
+  const result = capability(input, "windows-quality-update-deadline");
+  expect(result.status).toBe("noEvidence");
+  expect(result.evidence).toHaveLength(0);
 });

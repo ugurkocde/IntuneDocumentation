@@ -57,7 +57,7 @@ const frameworks = [
   {
     name: "NIST SP 800-171 (Rev. 2)",
     detail:
-      "Supporting Intune evidence for 11 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
+      "Supporting Intune evidence for 12 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
   },
   {
     name: "NIST SP 800-171 (Rev. 3)",

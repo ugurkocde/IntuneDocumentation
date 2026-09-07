@@ -1016,8 +1016,9 @@ export async function generateDetailedPDF(
 
     // Calculate assignment rate
     const assignmentRate =
-      analytics.totalConfigs > 0
-        ? (analytics.assignedConfigs / analytics.totalConfigs) * 100
+      analytics.assignmentApplicableConfigs > 0
+        ? (analytics.assignedConfigs / analytics.assignmentApplicableConfigs) *
+          100
         : 0;
 
     // Create metrics cards without emoji icons
@@ -1093,6 +1094,13 @@ export async function generateDetailedPDF(
     );
     yPosition += 9;
 
+    if (analytics.assignmentNotApplicableConfigs) {
+      addText(
+        `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from assignment coverage.`,
+        9,
+      );
+      yPosition += 4;
+    }
     // === ASSIGNMENT RATE VISUALIZATION ===
     doc.setFontSize(12);
     doc.setFont(fontFamily, "bold");
@@ -1371,6 +1379,7 @@ export async function generateDetailedPDF(
     assigned: item.assigned,
     unassigned: item.unassigned,
     unknown: item.unknown,
+    notApplicable: item.notApplicable,
   }));
 
   // Check if we need to start a new page for Configuration Inventory
@@ -1478,7 +1487,11 @@ export async function generateDetailedPDF(
 
     // Assigned count
     doc.setTextColor(39, 174, 96); // Green
-    doc.text(item.assigned.toString(), margin + 110, yPosition + 6);
+    doc.text(
+      item.notApplicable === item.count ? "N/A" : item.assigned.toString(),
+      margin + 110,
+      yPosition + 6,
+    );
 
     // Unassigned count (red if > 0, gray if 0)
     const unassigned = item.unassigned;
@@ -1487,9 +1500,17 @@ export async function generateDetailedPDF(
       unassigned > 0 ? 76 : 165,
       unassigned > 0 ? 60 : 166,
     );
-    doc.text(unassigned.toString(), margin + 135, yPosition + 6);
+    doc.text(
+      item.notApplicable === item.count ? "N/A" : unassigned.toString(),
+      margin + 135,
+      yPosition + 6,
+    );
     doc.setTextColor(100, 100, 100);
-    doc.text(item.unknown.toString(), margin + 165, yPosition + 6);
+    doc.text(
+      item.notApplicable === item.count ? "N/A" : item.unknown.toString(),
+      margin + 165,
+      yPosition + 6,
+    );
 
     doc.setTextColor(0, 0, 0);
     doc.setFont(fontFamily, "normal");

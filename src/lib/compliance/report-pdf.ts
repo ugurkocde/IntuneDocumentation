@@ -1342,7 +1342,34 @@ export async function generateComplianceReportPDF(
       };
     };
 
-    const rows = evidenceRegistry.map(buildRow);
+    const maxRowLines = Math.floor(
+      (contentBottom - 18 - 5 - headerHeight - 5) / lineHeight,
+    );
+    const rows = evidenceRegistry.flatMap((entry) => {
+      const row = buildRow(entry);
+      if (row.height <= maxRowLines * lineHeight + 5) return [row];
+      // Large Conditional Access conditions (and long policy values) must flow
+      // across pages rather than extend beyond the printable area.
+      const cells = row.cells.map((lines, index) =>
+        index === 1 ? [...lines, ...row.policyIdLines] : lines,
+      );
+      const lineCount = Math.max(...cells.map((lines) => lines.length));
+      const chunks = [];
+      for (let offset = 0; offset < lineCount; offset += maxRowLines) {
+        const chunkCells = cells.map((lines, index) =>
+          index === 0 ? [entry.ref] : lines.slice(offset, offset + maxRowLines),
+        );
+        chunks.push({
+          ...row,
+          cells: chunkCells,
+          policyIdLines: [],
+          height:
+            Math.max(...chunkCells.map((lines) => lines.length)) * lineHeight +
+            5,
+        });
+      }
+      return chunks;
+    });
     const drawAppendixContinuationCaption = () => {
       doc.setFont("helvetica", "italic");
       doc.setFontSize(7.5);

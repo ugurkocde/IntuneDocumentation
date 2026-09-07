@@ -44,7 +44,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.09.3";
+export const COMPLIANCE_RULESET_VERSION = "2026.09.4";
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -369,7 +369,18 @@ function capabilityStatus(
           ),
         ),
       );
-      if (!complete) return "partialConfiguration";
+      if (!complete) {
+        // A compliance requirement is supporting evidence for the capability,
+        // not a partial attempt to configure all firewall profile settings.
+        if (
+          positive.some(
+            (item) =>
+              item.kind === "complianceRequirement" && !item.requirementGroup,
+          )
+        )
+          return "requirementAssigned";
+        return "partialConfiguration";
+      }
     }
     return positive.some((item) => item.kind !== "complianceRequirement")
       ? "enforced"

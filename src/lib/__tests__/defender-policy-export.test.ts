@@ -105,7 +105,7 @@ describe("Defender policy exports", () => {
     expect(renderedText).not.toContain("Evidence found");
     expect(renderedText).toContain("Rev. 2");
     expect(renderedText).toContain("Rev. 3");
-    expect(renderedText).toContain("11 of 110 published requirements");
+    expect(renderedText).toContain("12 of 110 published requirements");
     expect(renderedText).toContain("11 of 97 published requirements");
   });
 
@@ -131,7 +131,7 @@ describe("Defender policy exports", () => {
     expect(documentXml).toContain("Compliance Evidence Preview");
     expect(documentXml).toContain("Rev. 2");
     expect(documentXml).toContain("Rev. 3");
-    expect(documentXml).toContain("11 of 110 published requirements");
+    expect(documentXml).toContain("12 of 110 published requirements");
     expect(documentXml).toContain("11 of 97 published requirements");
     expect(documentXml).toContain("BSI IT-Grundschutz");
     expect(documentXml).toContain("not a compliance certification");
@@ -222,6 +222,9 @@ it("provides populated Word contents links with valid section bookmarks", async 
   for (const anchor of anchors) expect(xml).toContain(`w:name="${anchor}"`);
   expect(new Set(anchors).size).toBe(anchors.length);
   expect(xml).not.toContain("Update Field");
+  expect(extractZipEntry(result.buffer, "word/settings.xml")).not.toContain(
+    "w:updateFields",
+  );
   expect(xml).not.toMatch(/w:instrText[^>]*>\s*TOC/);
 });
 

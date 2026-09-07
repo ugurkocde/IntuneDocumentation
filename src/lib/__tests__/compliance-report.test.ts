@@ -466,3 +466,36 @@ describe("compliance report PDF", () => {
     expect(text).not.toContain("blocked \\(not assigned\\)");
   });
 });
+
+it("paginates oversized evidence-register rows without drawing text below the page", async () => {
+  const data = createExportData();
+  data.conditionalAccessPolicies = [
+    {
+      id: "large-ca",
+      displayName: "Large MFA policy",
+      "@odata.type": "#microsoft.graph.conditionalAccessPolicy",
+      state: "enabled",
+      grantControls: { operator: "AND", builtInControls: ["mfa"] },
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeGroups: Array.from(
+            { length: 80 },
+            (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`,
+          ),
+        },
+        applications: { includeApplications: ["All"] },
+      },
+    },
+  ];
+  const text = extractPdfStreamText(
+    await generateComplianceReportPDF(data, { frameworkId: "nist-800-171-r2" }),
+  );
+  const positions = [
+    ...text.matchAll(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?) Td/g),
+  ];
+  expect(positions.length).toBeGreaterThan(100);
+  expect(positions.every((match) => Number(match[2]) >= 0)).toBe(true);
+  expect(text).toContain("Appendix A");
+  expect(text).toContain("Large MFA policy");
+});

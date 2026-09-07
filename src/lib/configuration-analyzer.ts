@@ -75,17 +75,27 @@ export function analyzeConfigurations(data: DetailedExportData) {
         ...(data.conditionalAccessPolicies || []),
       ];
 
+  // Conditional Access uses conditions rather than an Intune assignment relation.
+  const nonAssignable = new Set([
+    ...(data.conditionalAccessPolicies ?? []),
+    ...(data.sections ?? [])
+      .filter((section) => section.familyKey === "conditionalAccessPolicies")
+      .flatMap((section) => section.items),
+  ]);
   const uniqueGroups = new Set<string>();
   const groupAssignmentCount: Record<string, number> = {};
   let assignedCount = 0;
   let unassignedCount = 0;
   let unknownCount = 0;
   const assignmentState = (config: any) =>
-    summarizeAssignments(
-      config.assignments,
-      undefined,
-      config.collectionStatus?.assignments === "incomplete",
-    ).state;
+    nonAssignable.has(config) ||
+    config["@odata.type"] === "#microsoft.graph.conditionalAccessPolicy"
+      ? "notApplicable"
+      : summarizeAssignments(
+          config.assignments,
+          undefined,
+          config.collectionStatus?.assignments === "incomplete",
+        ).state;
   const inventoryCounts = (items: any[]) => ({
     total: items.length,
     assigned: items.filter((item) => assignmentState(item) === "assigned")
@@ -93,6 +103,9 @@ export function analyzeConfigurations(data: DetailedExportData) {
     unassigned: items.filter((item) => assignmentState(item) === "notAssigned")
       .length,
     unknown: items.filter((item) => assignmentState(item) === "unknown").length,
+    notApplicable: items.filter(
+      (item) => assignmentState(item) === "notApplicable",
+    ).length,
   });
 
   allConfigs.forEach((config) => {
@@ -126,7 +139,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
       });
     } else if (state === "notAssigned") {
       unassignedCount++;
-    } else {
+    } else if (state === "unknown") {
       unknownCount++;
     }
   });
@@ -267,6 +280,9 @@ export function analyzeConfigurations(data: DetailedExportData) {
 
   return {
     totalConfigs: allConfigs.length,
+    assignmentApplicableConfigs: assignedCount + unassignedCount + unknownCount,
+    assignmentNotApplicableConfigs:
+      allConfigs.length - assignedCount - unassignedCount - unknownCount,
     assignedConfigs: assignedCount,
     unassignedConfigs: unassignedCount,
     unknownAssignmentConfigs: unknownCount,

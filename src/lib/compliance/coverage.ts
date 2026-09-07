@@ -77,6 +77,7 @@ export function collectConfigurations(
 export function buildCollectionCoverage(
   data: Omit<DetailedExportData, "groupNames">,
   capabilities: readonly CapabilityResult[],
+  evidenceOnly = false,
 ): CollectionCoverage[] {
   const rows = new Map<string, CollectionCoverage>();
   const evidence = new Set(
@@ -102,9 +103,23 @@ export function buildCollectionCoverage(
     if (error) row.errors.push(error);
     for (const item of items) {
       const incompleteParts = Object.entries(item.collectionStatus ?? {})
-        .filter(([, status]) => status === "incomplete")
+        .filter(
+          ([part, status]) =>
+            status === "incomplete" &&
+            (!evidenceOnly ||
+              !["scheduledActionsForRule", "apps"].includes(part)),
+        )
         .map(([part]) => part);
-      if (item.hasFetchError || incompleteParts.length)
+      if (
+        (item.hasFetchError &&
+          (!evidenceOnly ||
+            !Object.entries(item.collectionStatus ?? {}).some(
+              ([part, status]) =>
+                status === "incomplete" &&
+                ["scheduledActionsForRule", "apps"].includes(part),
+            ))) ||
+        incompleteParts.length
+      )
         row.errors.push(
           `${item.displayName ?? item.name ?? item.id}: ${item.fetchErrorMessage ?? `incomplete ${incompleteParts.join(", ") || "policy details"}`}`,
         );
@@ -112,6 +127,15 @@ export function buildCollectionCoverage(
     rows.set(family, row);
   }
   for (const error of data.fetchErrors ?? []) {
+    // Ancillary relation warnings remain visible in the collection report, but
+    // do not invalidate settings or assignment evidence already collected.
+    if (
+      evidenceOnly &&
+      /scheduledActionsForRule|scheduledActionConfigurations|\/apps(?:[/?]|$)/i.test(
+        error.endpoint ?? "",
+      )
+    )
+      continue;
     const normalizeFamily = (value: string) =>
       value
         .toLowerCase()
@@ -181,7 +205,7 @@ export function isCapabilityCollectionIncomplete(
             ? ["appProtectionPolicies"]
             : []),
         ];
-  return buildCollectionCoverage(data, []).some(
+  return buildCollectionCoverage(data, [], true).some(
     (row) =>
       relevant.includes(row.family) &&
       ["incomplete", "notCollected"].includes(row.status),

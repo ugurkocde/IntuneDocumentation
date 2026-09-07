@@ -78,8 +78,11 @@ export function evaluatePolicyCheck(
       "autoInstallAndRebootWithoutEndUserControl",
     ].includes(config.automaticUpdateMode);
     if (!automatic) return;
+    // This shared signal supports frameworks with different remediation periods.
+    // Exceeding its 14-day evidence threshold is not a framework deviation.
+    if (!paused && days > 14) return;
     return {
-      verdict: !paused && days <= 14 ? "enforced" : "disabled",
+      verdict: paused ? "disabled" : "enforced",
       observed: `Quality update deferral ${deferral}d + deadline ${deadline}d + grace ${grace}d = ${days}d; paused: ${paused}`,
     };
   }

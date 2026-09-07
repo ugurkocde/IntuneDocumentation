@@ -67,6 +67,17 @@ export const NIST_800_171: FrameworkDefinition = {
       summary:
         "A credential is required before a user can access a managed device.",
     },
+    "3.5.3": {
+      id: "3.5.3",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
+      title: "Multi-factor authentication",
+      summary:
+        "Multi-factor authentication is required for access under the configured Conditional Access policy conditions.",
+      unassessedAspects: [
+        "Local privileged access, all required accounts, exclusions and effective sign-in behavior are assessed separately.",
+      ],
+    },
     "3.13.1": {
       id: "3.13.1",
       evidenceStrength: "supporting",
@@ -130,8 +141,8 @@ export const NIST_800_171: FrameworkDefinition = {
     "windows-application-control": ["3.4.9"],
     "windows-behavior-monitoring": ["3.14.2"],
     "windows-memory-integrity": ["3.4.2"],
-    "windows-credential-guard": ["3.5.2"],
-    "tenant-mfa-required": ["3.5.2"],
+    "windows-credential-guard": ["3.4.2"],
+    "tenant-mfa-required": ["3.5.3"],
 
     "windows-disk-encryption": ["3.1.19", "3.13.16"],
     "macos-disk-encryption": ["3.1.19", "3.13.16"],

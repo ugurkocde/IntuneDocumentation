@@ -59,7 +59,7 @@ with target Maturity Levels 1, 2 and 3.
 ## NIST SP 800-171 revisions
 
 Revision 2 (`nist-800-171-r2`) remains available for CMMC Level 2 and has
-supporting mappings for 11 of its 110 published requirements. Revision 3
+supporting mappings for 12 of its 110 published requirements. Revision 3
 (`nist-800-171-r3`, May 2024) is a separate assessment with supporting mappings
 for 11 of its 97 active requirements. These counts describe mapping coverage,
 not satisfied requirements or a compliance score. Unmapped requirements need
@@ -199,3 +199,17 @@ protection. Memory integrity compliance requirements do not prove device state.
 Adobe Reader protection does not establish protection of every PDF application.
 Backups, recovery exercises, incident response, access reviews, rule validation,
 central logging and other unmapped requirements remain explicitly unassessed.
+
+
+## Pre-merge evidence corrections (ruleset 2026.09.4)
+
+Quality-update timing above the shared 14-day evidence threshold is indeterminate,
+not an assigned deviation across frameworks with different remediation periods.
+Explicitly paused updates still produce counter-evidence. Scheduled noncompliance
+actions and app relation collection warnings remain in collection coverage but do
+not invalidate settings evidence; missing settings, details and assignments still do.
+NIST Revision 2 MFA evidence maps to 3.5.3, and Credential Guard supports 3.4.2.
+Conditional Access is excluded from Intune assignment coverage because it uses
+conditions rather than an assignment relation. The Word contents are populated
+section links and do not request field refresh on open. Oversized PDF evidence
+register rows continue across pages without omitting condition values.

@@ -808,9 +808,11 @@ export async function generateDetailedDOCX(
 
       // Key metrics table (3 columns)
       const coveragePercent =
-        analytics.totalConfigs > 0
+        analytics.assignmentApplicableConfigs > 0
           ? Math.round(
-              (analytics.assignedConfigs / analytics.totalConfigs) * 100,
+              (analytics.assignedConfigs /
+                analytics.assignmentApplicableConfigs) *
+                100,
             )
           : 0;
 
@@ -835,6 +837,12 @@ export async function generateDetailedDOCX(
       );
       summaryChildren.push(spacer());
 
+      if (analytics.assignmentNotApplicableConfigs)
+        summaryChildren.push(
+          bodyText(
+            `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations use another targeting model. Assignment coverage excludes these configurations.`,
+          ),
+        );
       // Assignment coverage
       let coverageColor = "00A652"; // green
       if (coveragePercent < 50) coverageColor = "CC0000";
@@ -901,14 +909,14 @@ export async function generateDetailedDOCX(
       summaryChildren.push(heading2("Configuration Inventory"));
       const inventoryRows: string[][] = [];
       analytics.inventory.forEach(
-        ({ label, total, assigned, unassigned, unknown }) => {
+        ({ label, total, assigned, unassigned, unknown, notApplicable }) => {
           if (total > 0) {
             inventoryRows.push([
               label,
               String(total),
-              String(assigned),
-              String(unassigned),
-              String(unknown),
+              notApplicable === total ? "N/A" : String(assigned),
+              notApplicable === total ? "N/A" : String(unassigned),
+              notApplicable === total ? "N/A" : String(unknown),
             ]);
           }
         },
@@ -2286,9 +2294,6 @@ export async function generateDetailedDOCX(
       );
   }
   const doc = new Document({
-    features: {
-      updateFields: true,
-    },
     title: branding?.metadata?.title || "Intune Configuration Documentation",
     creator: branding?.metadata?.author || "IntuneDocumentation",
     subject:

@@ -1,6 +1,8 @@
 "use client";
 
 import { RefreshCw, Search, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { SNAPSHOT_FRESHNESS_MS } from "~/lib/dashboard-session-cache";
 
 interface DashboardHeaderProps {
   title: string;
@@ -19,6 +21,14 @@ export function DashboardHeader({
   onSearchChange,
   onRefresh,
 }: DashboardHeaderProps) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [lastFetched]);
+  const age = lastFetched ? Math.max(0, now - lastFetched.getTime()) : 0;
+  const stale = Boolean(lastFetched && age >= SNAPSHOT_FRESHNESS_MS);
   return (
     <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
       <div className="min-w-52 shrink-0">
@@ -59,13 +69,16 @@ export function DashboardHeader({
         </div>
 
         <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-start">
-          <span className="text-petrol-600 text-xs whitespace-nowrap tabular-nums">
+          <span
+            title={lastFetched?.toLocaleString()}
+            className="text-petrol-600 text-xs tabular-nums"
+          >
             {lastFetched
-              ? `Updated ${lastFetched.toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}`
-              : "Not updated yet"}
+              ? `Data collected ${Math.floor(age / 60_000)} minutes ago`
+              : "No completed collection yet"}
+            {stale && (
+              <span className="block text-amber-800">Refresh recommended</span>
+            )}
           </span>
           <button
             type="button"
@@ -76,7 +89,7 @@ export function DashboardHeader({
             <RefreshCw
               className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
             />
-            Refresh
+            {refreshing ? "Refreshing…" : "Refresh data"}
           </button>
         </div>
       </div>

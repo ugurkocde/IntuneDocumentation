@@ -1,6 +1,7 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
+import { clearDashboardSession } from "~/lib/dashboard-session-cache";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowRight,
@@ -427,6 +428,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
   };
 
   const handleSignOut = () => {
+    clearDashboardSession();
     void instance.logoutRedirect({
       postLogoutRedirectUri: window.location.origin,
     });

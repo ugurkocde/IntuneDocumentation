@@ -30,6 +30,7 @@ interface DashboardContentProps {
   caConsentStatus: "unknown" | "included" | "missing";
   sidebarOpen: boolean;
   refreshing?: boolean;
+  refreshError?: string | null;
   typeStats: DashboardTypeStat[];
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
@@ -204,6 +205,7 @@ export function DashboardContent({
   caConsentStatus,
   sidebarOpen,
   refreshing = false,
+  refreshError,
   typeStats,
   onSearchChange,
   onRefresh,
@@ -273,6 +275,15 @@ export function DashboardContent({
           onSearchChange={onSearchChange}
           onRefresh={onRefresh}
         />
+        {refreshError && (
+          <p
+            role="alert"
+            className="rounded-xl bg-orange-50 p-3 text-sm text-orange-900"
+          >
+            Data collection did not complete. Available data remains visible.{" "}
+            {refreshError}
+          </p>
+        )}
 
         <KpiCards
           totalConfigurations={configurations.summary.totalConfigurations}

@@ -4,7 +4,7 @@
   <img src="public/logo.png" alt="Intune Documentation logo" width="128" height="128">
 </p>
 
-Intune Documentation is a Next.js web app that signs you into your Microsoft Entra tenant with MSAL, reads Intune configuration through delegated, read-only Microsoft Graph permissions, and creates professional PDF and Word documentation entirely in your browser. Intune configuration data never touches the application server.
+Intune Documentation is a Next.js web app that signs you into your Microsoft Entra tenant with MSAL, reads Intune configuration through delegated, read-only Microsoft Graph permissions, and creates professional PDF and Word documentation in your browser. The application server processes Graph responses transiently during collection and does not persist configuration data.
 
 Endpoint Security policies represented by Microsoft Graph as configuration policies, including policies created through Microsoft Defender for Endpoint security settings management, are handled as ordinary configuration policies. They appear in the existing Settings Catalog list and in the Settings Catalog chapter of PDF and Word exports, using the existing read-only permissions.
 
@@ -86,7 +86,9 @@ npm run test
 
 ## Privacy and telemetry
 
-Intune configuration data is fetched, processed, and exported in the browser. It is never sent to or stored by the application server.
+The application server retrieves, normalizes, and redacts Graph responses during the active collection request without persisting configuration data or access tokens. PDF and Word exports are generated in the browser.
+
+The dashboard keeps one compressed snapshot in the browser tab's `sessionStorage`, scoped to the signed-in account, tenant, and collection options. Browser reloads restore this snapshot after authentication settles. Only **Refresh data** initiates a new collection; after 30 minutes, the dashboard recommends refreshing without doing it automatically. A failed refresh preserves the previous snapshot and its original collection timestamp. Sign-out clears the snapshot. If session storage is blocked or full, caching is silently skipped and a subsequent reload collects the data normally. Configuration snapshots have no server, `localStorage`, or IndexedDB storage fallback.
 
 The hosted site collects anonymized usage statistics through Plausible Analytics, stores hashed tenant and user identifiers to calculate monthly active users, and provides a Crisp support-chat widget. Self-hosted deployments disable all telemetry and support chat by default because Supabase and Crisp are not configured and the analytics flag is off.
 

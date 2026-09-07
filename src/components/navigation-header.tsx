@@ -10,6 +10,7 @@ import { useUserProfile } from "~/hooks/use-user-profile";
 import { useEffect, useState, memo } from "react";
 import { loginRequest, shouldUseRedirectLogin } from "~/lib/msal-config";
 import { ChangelogBell } from "~/components/changelog-bell";
+import { clearDashboardSession } from "~/lib/dashboard-session-cache";
 
 interface NavLinksProps {
   vertical?: boolean;
@@ -137,6 +138,7 @@ export function NavigationHeader() {
   }, [onHome]);
 
   const handleSignOut = () => {
+    clearDashboardSession();
     void instance.logoutRedirect({
       postLogoutRedirectUri: window.location.origin,
     });

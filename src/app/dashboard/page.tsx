@@ -33,6 +33,11 @@ import {
   type IntuneConfigurations,
 } from "~/components/dashboard/types";
 import type { ConfigurationSectionData } from "~/lib/configuration-sections";
+import {
+  clearDashboardSession,
+  readDashboardSession,
+  saveDashboardSession,
+} from "~/lib/dashboard-session-cache";
 
 const EMPTY_CONFIGURATIONS: IntuneConfigurations = {
   settingsCatalog: [],
@@ -143,24 +148,20 @@ function mergeConfigurationSection(
   return next;
 }
 
-// Module-scope cache so browser back/forward navigation does not refetch the
-// whole tenant. Only the explicit refresh action bypasses it.
-const dashboardCache: {
-  accountId: string | null;
-  configurations: IntuneConfigurations | null;
-  lastFetched: Date | null;
-  groupNames: Map<string, string> | null;
-} = {
-  accountId: null,
-  configurations: null,
-  lastFetched: null,
-  groupNames: null,
-};
-
 export default function DashboardPage() {
   const { instance, accounts, inProgress } = useMsal();
   const router = useRouter();
   const { userProfile } = useUserProfile();
+  const account = accounts[0];
+  const accountKey = account
+    ? JSON.stringify([account.homeAccountId, account.tenantId])
+    : null;
+  const activeAccountKey = useRef(accountKey);
+  activeAccountKey.current = accountKey;
+  const [dataAccountKey, setDataAccountKey] = useState<string | null>(null);
+  const [settledAccountKey, setSettledAccountKey] = useState<
+    string | null | undefined
+  >(undefined);
 
   // Log tenant access server-side only
   useTenantLogging("Dashboard-Access");
@@ -251,48 +252,116 @@ export default function DashboardPage() {
   };
 
   // Prevent duplicate fetches on React Strict Mode double-mount
-  const hasFetchedRef = useRef(false);
   const isFetchingRef = useRef(false);
+  const requestRevision = useRef(0);
+  const requestController = useRef<AbortController | null>(null);
+  const lastCollectionSucceeded = useRef(false);
+
+  useEffect(() => {
+    if (inProgress === "none") setSettledAccountKey(accountKey);
+  }, [accountKey, inProgress]);
 
   useEffect(() => {
     // MSAL rehydrates the signed-in account asynchronously after a hard
     // refresh; only treat an empty account list as signed out once MSAL is
     // idle, otherwise the refresh races straight back to the landing page.
-    if (inProgress !== "none") {
+    if (settledAccountKey === undefined) return;
+    if (!account || !accountKey) {
+      clearDashboardSession();
+      router.push("/");
       return;
     }
-    if (accounts.length === 0) {
-      router.push("/");
-    } else if (!hasFetchedRef.current && !isFetchingRef.current) {
-      hasFetchedRef.current = true;
-      if (
-        dashboardCache.configurations &&
-        dashboardCache.accountId === (accounts[0]?.homeAccountId ?? null)
-      ) {
-        setConfigurations(dashboardCache.configurations);
-        setLastFetched(dashboardCache.lastFetched);
-        setGroupNames(dashboardCache.groupNames);
+    let cancelled = false;
+    const requests = {
+      revision: requestRevision,
+      controller: requestController,
+      fetching: isFetchingRef,
+    };
+    setConfigurations(null);
+    setLastFetched(null);
+    setGroupNames(null);
+    setSelectedConfigs(new Set());
+    setSelectAll(false);
+    setDataAccountKey(null);
+    setHasCompletedInitialLoad(false);
+    setLoading(true);
+    setError(null);
+    lastCollectionSucceeded.current = false;
+    void readDashboardSession({
+      accountId: account.homeAccountId,
+      tenantId: account.tenantId,
+      includeCA,
+    }).then((snapshot) => {
+      if (cancelled) return;
+      if (snapshot) {
+        setConfigurations(snapshot.configurations);
+        setLastFetched(new Date(snapshot.lastFetched));
+        setGroupNames(
+          snapshot.groupNames === null ? null : new Map(snapshot.groupNames),
+        );
+        setCaConsentStatus(snapshot.caConsentStatus);
+        setDataAccountKey(accountKey);
         setHasCompletedInitialLoad(true);
         setLoading(false);
-        return;
-      }
-      void fetchConfigurations();
-    }
-  }, [accounts, inProgress, router]);
+        lastCollectionSucceeded.current = true;
+      } else void fetchConfigurations();
+    });
+    return () => {
+      cancelled = true;
+      requests.revision.current++;
+      requests.controller.current?.abort();
+      requests.fetching.current = false;
+    };
+    // Initialize only after auth settles or the account/tenant changes. The
+    // explicit settings callback handles collection-option changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledAccountKey, router]);
 
   useEffect(() => {
-    if (!loading && configurations && lastFetched) {
-      dashboardCache.accountId = accounts[0]?.homeAccountId ?? null;
-      dashboardCache.configurations = configurations;
-      dashboardCache.lastFetched = lastFetched;
-      dashboardCache.groupNames = groupNames;
-    }
-  }, [loading, configurations, lastFetched, groupNames, accounts]);
+    if (
+      loading ||
+      !configurations ||
+      !lastFetched ||
+      !account ||
+      dataAccountKey !== accountKey ||
+      !lastCollectionSucceeded.current
+    )
+      return;
+    void saveDashboardSession(
+      {
+        accountId: account.homeAccountId,
+        tenantId: account.tenantId,
+        includeCA,
+      },
+      {
+        configurations,
+        lastFetched: lastFetched.toISOString(),
+        groupNames: groupNames ? [...groupNames] : null,
+        caConsentStatus,
+      },
+    );
+  }, [
+    loading,
+    configurations,
+    lastFetched,
+    groupNames,
+    account,
+    accountKey,
+    dataAccountKey,
+    includeCA,
+    caConsentStatus,
+  ]);
 
   // Resolve assignment group ids to display names once a fetch settles, so
   // the dashboard and compliance reports show real group names, not GUIDs.
   useEffect(() => {
-    if (loading || !hasCompletedInitialLoad || !configurations) return;
+    if (
+      loading ||
+      !hasCompletedInitialLoad ||
+      !configurations ||
+      dataAccountKey !== accountKey
+    )
+      return;
     if (groupNames !== null) return;
 
     let cancelled = false;
@@ -336,7 +405,14 @@ export default function DashboardPage() {
     // getAccessToken is stable in behavior but recreated per render; adding it
     // would re-run the resolver on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, hasCompletedInitialLoad, configurations, groupNames]);
+  }, [
+    loading,
+    hasCompletedInitialLoad,
+    configurations,
+    groupNames,
+    accountKey,
+    dataAccountKey,
+  ]);
 
   useEffect(() => {
     if (window.innerWidth < 768) {
@@ -345,6 +421,9 @@ export default function DashboardPage() {
   }, []);
 
   const handleSignOut = () => {
+    clearDashboardSession();
+    requestRevision.current++;
+    requestController.current?.abort();
     void instance.logoutRedirect({
       postLogoutRedirectUri: window.location.origin,
     });
@@ -398,16 +477,22 @@ export default function DashboardPage() {
       return;
     }
 
+    const revision = ++requestRevision.current;
+    const controller = new AbortController();
+    requestController.current = controller;
+    const isCurrent = () =>
+      requestRevision.current === revision &&
+      activeAccountKey.current === accountKey;
+    const previousSnapshot =
+      dataAccountKey === accountKey ? configurations : null;
+    let pendingConfigurations: IntuneConfigurations = EMPTY_CONFIGURATIONS;
     let receivedAnySection = false;
+    lastCollectionSucceeded.current = false;
 
     try {
       isFetchingRef.current = true;
       setLoading(true);
       setError(null);
-      setGroupNames(null);
-      // Reset selections when refreshing
-      setSelectedConfigs(new Set());
-      setSelectAll(false);
 
       // Build steps dynamically based on whether CA is effectively included
       const stepsFor = (withCA: boolean) => [
@@ -458,6 +543,7 @@ export default function DashboardPage() {
       setFetchProgress({ steps: stepsFor(false), currentStep: 0 });
       updateFetchProgress(0, "loading");
       let accessToken = await getAccessToken();
+      if (!isCurrent()) return;
       updateFetchProgress(0, "completed");
 
       // Optionally include Conditional Access if requested AND token can be acquired silently or via prompt
@@ -472,6 +558,8 @@ export default function DashboardPage() {
         }
       }
 
+      if (!isCurrent()) return;
+
       setCaConsentStatus(
         wantCA ? (caIncluded ? "included" : "missing") : "unknown",
       );
@@ -484,6 +572,8 @@ export default function DashboardPage() {
       // Since EventSource doesn't support Authorization header, we use fetch with streaming
       await new Promise<void>((resolve, reject) => {
         fetch("/api/intune/detailed-configurations-stream", {
+          signal: controller.signal,
+          cache: "no-store",
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "X-Include-Conditional-Access": String(caIncluded),
@@ -506,6 +596,7 @@ export default function DashboardPage() {
 
             while (true) {
               const { done, value } = await reader.read();
+              if (!isCurrent()) throw new Error("Collection cancelled");
 
               if (done) {
                 if (receivedComplete) {
@@ -566,14 +657,19 @@ export default function DashboardPage() {
                       }
                     } else if (eventType === "section" && data.section) {
                       receivedAnySection = true;
-                      setConfigurations((current) =>
-                        mergeConfigurationSection(current, data.section),
+                      pendingConfigurations = mergeConfigurationSection(
+                        pendingConfigurations,
+                        data.section,
                       );
+                      if (!previousSnapshot) {
+                        setConfigurations(pendingConfigurations);
+                        setDataAccountKey(accountKey);
+                      }
                     } else if (eventType === "complete") {
                       receivedComplete = true;
                       setHasCompletedInitialLoad(true);
-                      setConfigurations((current) => ({
-                        ...(current || EMPTY_CONFIGURATIONS),
+                      setConfigurations({
+                        ...pendingConfigurations,
                         collectedAt: data.data.collectedAt,
                         collectionStartedAt: data.data.collectionStartedAt,
                         collectionSkippedFamilies:
@@ -582,10 +678,17 @@ export default function DashboardPage() {
                         fetchErrors: data.data.fetchErrors || [],
                         summary:
                           data.data.summary ||
-                          current?.summary ||
+                          pendingConfigurations.summary ||
                           EMPTY_CONFIGURATIONS.summary,
-                      }));
-                      setLastFetched(new Date());
+                      });
+                      setDataAccountKey(accountKey);
+                      setGroupNames(null);
+                      setSelectedConfigs(new Set());
+                      setSelectAll(false);
+                      setLastFetched(
+                        new Date(data.data.collectedAt || Date.now()),
+                      );
+                      lastCollectionSucceeded.current = true;
                       resolve();
                     } else if (eventType === "error") {
                       throw new Error(data.error || "Stream error");
@@ -598,6 +701,8 @@ export default function DashboardPage() {
           .catch(reject);
       });
     } catch (err) {
+      if (!isCurrent()) return;
+      if (previousSnapshot) setCaConsentStatus(caConsentStatus);
       // Mark current step as error
       const currentStep = fetchProgress.currentStep;
       updateFetchProgress(currentStep, "error");
@@ -606,28 +711,31 @@ export default function DashboardPage() {
       if (configurations || receivedAnySection) {
         setHasCompletedInitialLoad(true);
       }
-      setConfigurations((current) =>
-        current
-          ? {
-              ...current,
-              fetchErrors: [
-                ...(current.fetchErrors || []),
-                {
-                  policyId: "stream",
-                  policyName: "Configuration stream",
-                  policyType: "Streaming",
-                  familyKey: "overview",
-                  error: message,
-                  partial: true,
-                },
-              ],
-            }
-          : current,
-      );
+      if (!previousSnapshot)
+        setConfigurations((current) =>
+          current
+            ? {
+                ...current,
+                fetchErrors: [
+                  ...(current.fetchErrors || []),
+                  {
+                    policyId: "stream",
+                    policyName: "Configuration stream",
+                    policyType: "Streaming",
+                    familyKey: "overview",
+                    error: message,
+                    partial: true,
+                  },
+                ],
+              }
+            : current,
+        );
       console.error("Error fetching configurations:", err);
     } finally {
-      setLoading(false);
-      isFetchingRef.current = false;
+      if (isCurrent()) {
+        setLoading(false);
+        isFetchingRef.current = false;
+      }
     }
   };
 
@@ -844,7 +952,10 @@ export default function DashboardPage() {
     );
   }
 
-  if (loading && !hasCompletedInitialLoad) {
+  if (
+    (loading && !hasCompletedInitialLoad) ||
+    (configurations && dataAccountKey !== accountKey)
+  ) {
     return (
       <>
         <NavigationHeader />
@@ -928,6 +1039,7 @@ export default function DashboardPage() {
           caConsentStatus={caConsentStatus}
           sidebarOpen={sidebarOpen}
           refreshing={loading}
+          refreshError={error}
           typeStats={typeStats}
           onSearchChange={setSearchQuery}
           onRefresh={() => void fetchConfigurations()}
@@ -938,6 +1050,7 @@ export default function DashboardPage() {
           onBulkSelect={handleBulkSelect}
           onToggleFamily={handleToggleFamily}
           onIncludeCAChange={async (next) => {
+            if (isFetchingRef.current) return;
             setIncludeCA(next);
             localStorage.setItem("include-ca", String(next));
             if (!next && activeView === "conditionalAccessPolicies") {

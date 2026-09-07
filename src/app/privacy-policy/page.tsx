@@ -133,6 +133,16 @@ export default function PrivacyPolicyPage() {
                 upload or persist your generated documents.
               </li>
               <li>
+                The dashboard saves a compressed configuration snapshot and
+                resolved assignment group names in your browser tab&apos;s
+                sessionStorage so a page reload can restore your work. This
+                snapshot is scoped to your signed-in account, tenant, and
+                collection options. Signing out clears it; closing the tab ends
+                its browser session. It is not stored on our server, in
+                localStorage, or in IndexedDB. If session storage is unavailable
+                or full, the dashboard works without saving a snapshot.
+              </li>
+              <li>
                 Access tokens are managed in your browser session by MSAL and
                 presented to our application server only for the active Graph
                 collection request; we do not persist them server-side.

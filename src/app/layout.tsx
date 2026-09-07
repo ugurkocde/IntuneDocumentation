@@ -3,13 +3,13 @@ import "~/styles/globals.css";
 import { type Metadata } from "next";
 import Script from "next/script";
 import { headers } from "next/headers";
+import { AppSupportChat } from "~/components/app-support-chat";
+import { getCrispWebsiteId } from "~/lib/crisp-config";
 import { SiteBoundaryProvider } from "~/components/site-boundary-provider";
 // Removed Google Fonts to allow offline builds in restricted environments
 import { AuthProvider } from "~/components/auth-provider";
 import PlausibleProvider from "next-plausible";
 import { CookieConsentBanner } from "~/components/cookie-consent-banner";
-
-const PRODUCTION_CRISP_WEBSITE_ID = "d8cf4fcb-0dbe-42ee-b94c-3bbc415d58f4";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://intunedocumentation.com"),
@@ -136,12 +136,9 @@ export default async function RootLayout({
   const nonce = requestHeaders.get("x-nonce") ?? "";
   const publicSite = requestHeaders.get("x-site-mode") === "public";
   const appOrigin = requestHeaders.get("x-app-origin") ?? "";
-  const crispWebsiteId =
-    publicSite &&
-    (process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ??
-      (process.env.VERCEL_ENV === "production"
-        ? PRODUCTION_CRISP_WEBSITE_ID
-        : undefined));
+  const configuredCrispId = getCrispWebsiteId();
+  const crispWebsiteId = publicSite && configuredCrispId;
+  const supportOrigin = requestHeaders.get("x-support-origin") ?? "";
   const app = (
     <SiteBoundaryProvider
       publicSite={publicSite}
@@ -167,7 +164,13 @@ export default async function RootLayout({
           <script nonce={nonce} src="/api/config/script" />
         )}
       </head>
-      <body className={crispWebsiteId ? "crisp-chat-enabled" : undefined}>
+      <body
+        className={
+          crispWebsiteId || (configuredCrispId && supportOrigin)
+            ? "crisp-chat-enabled"
+            : undefined
+        }
+      >
         {publicSite && process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (
           <PlausibleProvider
             domain="intunedocumentation.com"
@@ -179,6 +182,9 @@ export default async function RootLayout({
           app
         )}
         {publicSite ? <CookieConsentBanner /> : null}
+        {!publicSite && configuredCrispId && supportOrigin ? (
+          <AppSupportChat supportOrigin={supportOrigin} />
+        ) : null}
         {crispWebsiteId ? (
           <>
             <Script

@@ -30,6 +30,31 @@ describe("public/app security boundary", () => {
     );
   });
 
+  it("allows only the app origin to embed the isolated public support page", () => {
+    configure();
+    const support = middleware(
+      new NextRequest("https://intunedocumentation.com/support-chat"),
+    );
+    expect(support.headers.get("content-security-policy")).toContain(
+      "frame-ancestors https://app.intunedocumentation.com",
+    );
+    expect(support.headers.get("x-frame-options")).toBeNull();
+    expect(support.headers.get("referrer-policy")).toBe("no-referrer");
+    const app = middleware(
+      new NextRequest("https://app.intunedocumentation.com/dashboard"),
+    );
+    expect(app.headers.get("x-frame-options")).toBe("DENY");
+    expect(app.headers.get("content-security-policy")).toContain(
+      "frame-src 'self' https://login.microsoftonline.com https://intunedocumentation.com",
+    );
+    expect(app.headers.get("content-security-policy")).not.toContain("crisp");
+    expect(
+      middleware(
+        new NextRequest("https://app.intunedocumentation.com/support-chat"),
+      ).status,
+    ).toBe(404);
+  });
+
   it("requires two distinct origins", () => {
     configure();
     vi.stubEnv("APP_SITE_ORIGIN", "https://intunedocumentation.com");

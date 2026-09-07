@@ -207,10 +207,13 @@ export default function PrivacyPolicyPage() {
             </h2>
             <p>
               The hosted Service uses Crisp IM SAS (&quot;Crisp&quot;) to
-              provide the support-chat widget on intunedocumentation.com only.
-              The authenticated app at app.intunedocumentation.com does not load
-              chat or analytics scripts. Self-hosted deployments require a
-              separate public origin to enable these scripts.
+              provide support chat on the public site and throughout the app.
+              App chat opens in an isolated panel served from
+              intunedocumentation.com. Chat scripts cannot access the app’s
+              session storage or authentication tokens. We do not pass account
+              details or tenant configurations to the panel. The app does not
+              run analytics scripts. Self-hosted deployments require a separate
+              public origin to enable chat.
             </p>
             <ul className="mt-3 list-disc space-y-2 pl-6">
               <li>

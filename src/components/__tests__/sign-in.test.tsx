@@ -29,6 +29,12 @@ it("waits for a real, settled MSAL instance before redirecting", () => {
   auth.inProgress = "none";
   view.rerender(<SignInPage />);
   expect(real.loginRedirect).toHaveBeenCalledOnce();
+  expect(real.loginRedirect).toHaveBeenCalledWith(
+    expect.objectContaining({
+      redirectStartPage: new URL("/dashboard", window.location.origin).href,
+    }),
+  );
+  expect(screen.queryByRole("heading")).toBeNull();
 });
 it("restores an authenticated visitor directly to the dashboard", () => {
   auth.accounts = [{}];

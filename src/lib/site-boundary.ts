@@ -4,7 +4,7 @@ export function siteBoundary(origin: string) {
   const publicValue = process.env.PUBLIC_SITE_ORIGIN;
   const appValue = process.env.APP_SITE_ORIGIN;
   if (!publicValue && !appValue)
-    return { mode: "app" as const, appOrigin: origin };
+    return { mode: "app" as const, appOrigin: origin, publicOrigin: "" };
   if (!publicValue || !appValue)
     throw new Error("Configure both PUBLIC_SITE_ORIGIN and APP_SITE_ORIGIN");
   const publicOrigin = new URL(publicValue).origin;
@@ -14,6 +14,7 @@ export function siteBoundary(origin: string) {
   return {
     mode: origin === publicOrigin ? ("public" as const) : ("app" as const),
     appOrigin,
+    publicOrigin,
   };
 }
 
@@ -21,6 +22,8 @@ export function contentSecurityPolicy(
   nonce: string,
   publicSite: boolean,
   development = false,
+  supportOrigin = "",
+  frameAncestor = "",
 ) {
   const crisp = publicSite
     ? " https://*.crisp.chat wss://*.relay.crisp.chat wss://*.relay.rescue.crisp.chat"
@@ -29,7 +32,7 @@ export function contentSecurityPolicy(
     "default-src 'self'",
     "base-uri 'none'",
     "object-src 'none'",
-    "frame-ancestors 'none'",
+    `frame-ancestors ${frameAncestor || "'none'"}`,
     "form-action 'self' https://login.microsoftonline.com",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ""}`,
     "script-src-attr 'none'",
@@ -38,7 +41,7 @@ export function contentSecurityPolicy(
     `font-src 'self' data:${publicSite ? " https://client.crisp.chat" : ""}`,
     `media-src 'self' blob:${publicSite ? " https://*.crisp.chat" : ""}`,
     `connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://changelog.ugurlabs.com${publicSite ? " https://plausible.io" : ""}${crisp}`,
-    `frame-src 'self' https://login.microsoftonline.com${publicSite ? " https://*.crisp.chat" : ""}`,
+    `frame-src 'self' https://login.microsoftonline.com${supportOrigin ? ` ${supportOrigin}` : ""}${publicSite ? " https://*.crisp.chat" : ""}`,
     `worker-src 'self' blob:${publicSite ? " https://*.crisp.chat" : ""}`,
     "manifest-src 'self'",
     ...(development ? [] : ["upgrade-insecure-requests"]),

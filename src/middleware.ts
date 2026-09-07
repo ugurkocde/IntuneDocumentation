@@ -20,22 +20,34 @@ export function middleware(request: NextRequest) {
       return new NextResponse(null, { status: 404 });
     }
   }
+  const supportFrame = path === "/support-chat" && boundary.mode === "public";
+  if (path === "/support-chat" && !supportFrame)
+    return new NextResponse(null, { status: 404 });
+  const supportOrigin =
+    boundary.mode === "app" && origin.origin === boundary.appOrigin
+      ? boundary.publicOrigin
+      : "";
   const nonce = btoa(crypto.randomUUID());
   const policy = contentSecurityPolicy(
     nonce,
     boundary.mode === "public",
     process.env.NODE_ENV === "development",
+    supportOrigin,
+    supportFrame ? boundary.appOrigin : "",
   );
   const headers = new Headers(request.headers);
   // Replace client-supplied values, including on RSC and prefetch requests.
   headers.set("x-site-mode", boundary.mode);
   headers.set("x-app-origin", boundary.appOrigin);
   headers.set("x-nonce", nonce);
+  headers.set("x-support-origin", supportOrigin);
   headers.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set("Content-Security-Policy", policy);
   response.headers.set("Cache-Control", "private, no-store");
-  if (boundary.mode === "app")
+  if (!supportFrame) response.headers.set("X-Frame-Options", "DENY");
+  if (supportFrame) response.headers.set("Referrer-Policy", "no-referrer");
+  if (boundary.mode === "app" || supportFrame)
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
   return response;
 }

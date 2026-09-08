@@ -255,10 +255,33 @@ export class DetailedIntuneService {
     select?: string,
   ) {
     try {
-      const item = await this.retryWithBackoff(() => {
-        const request = this.client.api(endpoint).version("beta");
-        return (select ? request.select(select) : request).get();
-      });
+      const read = (fields?: string) =>
+        this.retryWithBackoff(() => {
+          const request = this.client.api(endpoint).version("beta");
+          return (fields ? request.select(fields) : request).get();
+        });
+      let item;
+      try {
+        item = await read(select);
+      } catch (error) {
+        if (
+          familyKey !== "scripts" ||
+          select !== "scriptContent" ||
+          this.graphError(error).statusCode !== 404
+        )
+          throw error;
+        // Intune can list a script but temporarily reject the projected content
+        // read. Try the same object once without projection before recording a gap.
+        item = await read();
+      }
+      if (
+        familyKey === "scripts" &&
+        select === "scriptContent" &&
+        typeof item?.scriptContent !== "string"
+      )
+        throw new Error(
+          "Microsoft Graph returned the script without readable script content",
+        );
       return {
         item: { ...policy, ...item },
         complete: true,

@@ -369,6 +369,13 @@ const STRINGS: Record<Locale, ReportStrings> = {
 };
 
 export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
+  "windows-lsa-protection": "LSA-Prozessschutz erforderlich",
+  "windows-remote-credential-guard": "Remote Credential Guard erforderlich",
+  "windows-laps-management": "Windows-LAPS-Kennwortverwaltung aktiviert",
+  "windows-process-creation-logging":
+    "Prozesserstellungsüberwachung mit Befehlszeilen",
+  "windows-powershell-module-logging":
+    "PowerShell-Protokollierung aller Module",
   "windows-applocker-rule-collections":
     "AppLocker-Regelsammlungstypen und Erzwingung",
   "windows-office-v3-signatures": "VBA-V3-Signaturen erforderlich",

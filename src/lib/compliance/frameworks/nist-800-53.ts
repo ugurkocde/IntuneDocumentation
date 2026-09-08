@@ -93,6 +93,12 @@ export const NIST_800_53: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": ["IA-5"],
+    "windows-remote-credential-guard": ["IA-5"],
+    "windows-laps-management": ["IA-5"],
+    "windows-process-creation-logging": [],
+    "windows-powershell-module-logging": [],
+
     "windows-applocker-rule-collections": ["CM-11"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["CM-6", "CM-7"],

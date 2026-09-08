@@ -94,6 +94,25 @@ describe("working detectors across every framework", () => {
         .sort(),
     ).toEqual(matrix.map((row) => row[0]).sort());
   });
+  it("only displays controls backed by policy detectors in every framework", () => {
+    const assessment = result([]);
+    const supportedIds = new Set(
+      assessment.capabilities
+        .filter((row) => row.capability.signals.length > 0)
+        .map((row) => row.capability.id),
+    );
+    for (const framework of assessment.frameworks) {
+      expect(framework.controls.length).toBeGreaterThan(0);
+      for (const control of framework.controls) {
+        expect(
+          [...control.capabilityIds, ...control.excludedCapabilityIds].some(
+            (id) => supportedIds.has(id),
+          ),
+          `${framework.framework.id}: ${control.control.id}`,
+        ).toBe(true);
+      }
+    }
+  });
   it("requires assignment and never detects from a policy name", () => {
     const unassigned = result(
       [setting(disableVba, "1")],
@@ -196,22 +215,15 @@ describe("working detectors across every framework", () => {
       );
     },
   );
-  it("explains external requirements without confusing them with missing policy data", () => {
+  it("excludes external requirements from the policy assessment", () => {
     const framework = result([]).frameworks.find(
       (f) => f.framework.id === "essential-eight",
     )!;
-    const backup = framework.controls.find(
-      (c) => c.control.id === "ML1-BK-04",
-    )!;
-    expect(backup.status).toBe("notAssessed");
-    expect(backup.unassessedAspects.join(" ")).toContain(
-      "restoration test reports",
-    );
+    const backup = framework.controls.find((c) => c.control.id === "ML1-BK-04");
+    expect(backup).toBeUndefined();
     expect(
-      framework.controls
-        .find((c) => c.control.id === "ML1-PA-05")!
-        .unassessedAspects.join(" "),
-    ).toContain("installation records");
+      framework.controls.find((c) => c.control.id === "ML1-PA-05"),
+    ).toBeUndefined();
   });
 });
 
@@ -288,5 +300,113 @@ describe("authentication-strength detectors", () => {
         "conditionalAccessPhishingResistantMfa",
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("additional verified policy detectors", () => {
+  it.each([
+    [
+      "windows-lsa-protection",
+      "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess",
+      "1",
+      "0",
+    ],
+    [
+      "windows-lsa-protection",
+      "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess",
+      "2",
+      "0",
+    ],
+    [
+      "windows-laps-management",
+      "device_vendor_msft_laps_policies_backupdirectory",
+      "1",
+      "0",
+    ],
+    [
+      "windows-laps-management",
+      "device_vendor_msft_laps_policies_backupdirectory",
+      "2",
+      "0",
+    ],
+  ])(
+    "compares %s using its actual Graph choices",
+    (capabilityId, settingId, on, off) => {
+      expect(
+        result([setting(settingId, on)]).capabilities.find(
+          (row) => row.capability.id === capabilityId,
+        )!.status,
+      ).toBe("enforced");
+      expect(
+        result([setting(settingId, off)]).capabilities.find(
+          (row) => row.capability.id === capabilityId,
+        )!.status,
+      ).toBe("disabledByPolicy");
+    },
+  );
+  it("requires the exact Remote Credential Guard option and enabled parent", () => {
+    const parent =
+      "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration";
+    const child = `${parent}_restrictedremoteadministrationdrop`;
+    const status = (instances: any[]) =>
+      result(instances).capabilities.find(
+        (row) => row.capability.id === "windows-remote-credential-guard",
+      )!.status;
+    expect(status([setting(parent, "1", [setting(child, "2")])])).toBe(
+      "enforced",
+    );
+    for (const value of ["1", "3"])
+      expect(status([setting(parent, "1", [setting(child, value)])])).not.toBe(
+        "enforced",
+      );
+    expect(status([setting(parent, "0", [setting(child, "2")])])).not.toBe(
+      "enforced",
+    );
+    expect(status([setting(child, "2")])).not.toBe("enforced");
+  });
+  it("requires both process creation settings on the same assigned policy", () => {
+    const audit =
+      "device_vendor_msft_policy_config_audit_detailedtracking_auditprocesscreation";
+    const command =
+      "device_vendor_msft_policy_config_admx_auditsettings_includecmdline";
+    const status = (input: ReturnType<typeof empty>) =>
+      assessCompliance(input).capabilities.find(
+        (row) => row.capability.id === "windows-process-creation-logging",
+      )!.status;
+    expect(
+      result([setting(audit, "1"), setting(command, "1")]).capabilities.find(
+        (row) => row.capability.id === "windows-process-creation-logging",
+      )!.status,
+    ).toBe("enforced");
+    const input = empty();
+    input.settingsCatalog = [
+      policy([setting(audit, "1")]) as any,
+      { ...policy([setting(command, "1")]), id: "other" } as any,
+    ];
+    expect(status(input)).toBe("partialConfiguration");
+    expect(
+      result([setting(audit, "2"), setting(command, "1")]).capabilities.find(
+        (row) => row.capability.id === "windows-process-creation-logging",
+      )!.status,
+    ).not.toBe("enforced");
+  });
+  it("requires the wildcard and enabled parent for all-module logging", () => {
+    const parent =
+      "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging";
+    const child = (value: string) => ({
+      settingDefinitionId: `${parent}_listbox_modulenames`,
+      simpleSettingCollectionValue: [{ value }],
+    });
+    const status = (instances: any[]) =>
+      result(instances).capabilities.find(
+        (row) => row.capability.id === "windows-powershell-module-logging",
+      )!.status;
+    expect(status([setting(parent, "1", [child("*")])])).toBe("enforced");
+    expect(
+      status([
+        setting(parent, "1", [child("Microsoft.PowerShell.Management")]),
+      ]),
+    ).not.toBe("enforced");
+    expect(status([setting(parent, "0", [child("*")])])).not.toBe("enforced");
   });
 });

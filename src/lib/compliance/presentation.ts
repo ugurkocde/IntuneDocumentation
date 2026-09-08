@@ -11,7 +11,7 @@ export function frameworkCoverageLabel(
     const mapped = assessment.controls.filter(
       (row) => row.capabilityIds.length || row.excludedCapabilityIds.length,
     ).length;
-    return `${assessment.summary.totalControls} published requirement entries across all eight strategies; ${mapped} have supporting Intune evidence mappings. Target level only; achieved maturity is not assessed.`;
+    return `${assessment.framework.totalRequirements} published requirement entries; showing ${mapped} with Intune or Conditional Access policy checks. Operational-only requirements are excluded. Target level only; achieved maturity is not assessed.`;
   }
   const total = assessment.framework.totalRequirements;
   if (total === undefined) return undefined;

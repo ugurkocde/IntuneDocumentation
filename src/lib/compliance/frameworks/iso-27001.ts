@@ -78,6 +78,12 @@ export const ISO_27001: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": ["8.5"],
+    "windows-remote-credential-guard": ["8.5"],
+    "windows-laps-management": ["8.5"],
+    "windows-process-creation-logging": [],
+    "windows-powershell-module-logging": [],
+
     "windows-applocker-rule-collections": ["8.19"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["8.9"],

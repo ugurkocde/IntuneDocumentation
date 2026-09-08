@@ -81,6 +81,12 @@ export const NIST_CSF: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": [],
+    "windows-remote-credential-guard": [],
+    "windows-laps-management": ["PR.AA-01", "PR.AA-03"],
+    "windows-process-creation-logging": ["DE.CM-09"],
+    "windows-powershell-module-logging": ["DE.CM-09"],
+
     "windows-applocker-rule-collections": ["PR.PS-05"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["PR.PS-01"],

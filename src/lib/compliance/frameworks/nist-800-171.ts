@@ -122,6 +122,12 @@ export const NIST_800_171: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": ["3.4.2"],
+    "windows-remote-credential-guard": ["3.4.2"],
+    "windows-laps-management": ["3.5.2"],
+    "windows-process-creation-logging": [],
+    "windows-powershell-module-logging": [],
+
     "windows-applocker-rule-collections": ["3.4.9"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["3.4.2", "3.4.6"],

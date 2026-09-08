@@ -520,18 +520,18 @@ function ControlRow({
           className="border-petrol-950/6 divide-petrol-950/6 divide-y border-t bg-slate-50/55 px-4 sm:px-5"
         >
           {control.unassessedAspects.length > 0 && (
-            <div className="py-4 text-xs text-amber-900">
-              <p className="font-semibold">
+            <details className="py-4 text-xs text-slate-600">
+              <summary className="cursor-pointer font-semibold">
                 {control.unavailableCheck
                   ? "Unable to check"
-                  : "Additional verification"}
-              </p>
+                  : "Scope of these policy checks"}
+              </summary>
               <ul className="mt-2 list-disc space-y-1 pl-4">
                 {control.unassessedAspects.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-            </div>
+            </details>
           )}
           {control.capabilityIds.map((capabilityId) => {
             const capability = capabilitiesById.get(capabilityId);
@@ -1284,17 +1284,10 @@ export function ComplianceView({
                         (check) => check.assessmentStatus === "unableToCheck",
                       ).length
                     }{" "}
-                    unable to check;{" "}
-                    {
-                      selectedFramework.controls.filter(
-                        (control) =>
-                          control.status !== "notApplicable" &&
-                          control.capabilityIds.length === 0,
-                      ).length
-                    }{" "}
-                    requirements need separate evidence. Counts describe setting
-                    comparisons, not passed framework requirements. Assignment
-                    and operational verification are shown separately.
+                    unable to check. Only Intune and Conditional Access policy
+                    checks are shown. Counts describe setting comparisons, not
+                    passed framework requirements. Assignment is shown
+                    separately.
                   </p>
                   {selectedFramework.framework.totalRequirements !==
                     undefined && (

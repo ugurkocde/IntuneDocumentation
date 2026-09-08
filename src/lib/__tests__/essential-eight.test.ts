@@ -63,9 +63,12 @@ describe("Essential Eight target maturity", () => {
     const result = assess(data(level));
     expect(result.summary.withEvidence).toBe(0);
     expect(
-      result.controls
-        .filter((c) => c.control.title === "Regular backups")
-        .every((c) => c.status === "notAssessed"),
+      result.controls.some((c) => c.control.title === "Regular backups"),
+    ).toBe(false);
+    expect(
+      result.controls.every(
+        (c) => c.capabilityIds.length + c.excludedCapabilityIds.length > 0,
+      ),
     ).toBe(true);
     expect(result.framework.version).toContain(
       `target Maturity Level ${level}`,
@@ -134,7 +137,7 @@ describe("Essential Eight target maturity", () => {
       });
       const text = extractPdfStreamText(bytes);
       expect(text).toContain(`Maturity Level ${level}`);
-      expect(text).toContain(`ML${level}-BK-01`);
+      expect(text).not.toContain(`ML${level}-BK-01`);
       expect(text).toContain("achieved maturity");
       expect(text).toContain(
         "Application control is implemented on workstations.",
@@ -148,9 +151,7 @@ describe("Essential Eight target maturity", () => {
       expect(bodyStart).toBeGreaterThan(contentsEnd);
       const contents = text.slice(contentsStart, bodyStart);
       const strategies = new Set(
-        Object.values(essentialEightFramework(level).controls).map(
-          (control) => control.title,
-        ),
+        assess(data(level)).controls.map((row) => row.control.title),
       );
       for (const strategy of strategies) {
         expect(contents.split(`(${strategy}) Tj`)).toHaveLength(2);
@@ -171,7 +172,7 @@ it("keeps operational patch and backup requirements separate from expanded techn
       )
         expect(mapped.has(control.id)).toBe(false);
     }
-    expect(mapped.size).toBe({ 1: 15, 2: 25, 3: 31 }[level]);
+    expect(mapped.size).toBe({ 1: 15, 2: 27, 3: 35 }[level]);
   }
 });
 it("preserves conflicting ASR policies and explicit platform scope", () => {

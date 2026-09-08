@@ -1,4 +1,5 @@
 import verified from "./verified-technical-settings.json";
+import additionalVerified from "./additional-verified-settings.json";
 import type {
   ComplianceCapability,
   DetectionSignal,
@@ -7,7 +8,7 @@ import type {
 
 // IDs and option values verified through Graph beta on 2026-09-07. Metadata
 // selects the exact identifiers; policy display names never produce evidence.
-const definitions = verified.catalog;
+const definitions = [...verified.catalog, ...additionalVerified.catalog];
 function catalog(
   id: string,
   on: string[],
@@ -105,6 +106,90 @@ function capability(
   };
 }
 export const TECHNICAL_CAPABILITIES: readonly ComplianceCapability[] = [
+  capability(
+    "windows-lsa-protection",
+    "LSA protected process required",
+    "Policy configures LSA as a protected process. Device activation and hardware support are outside policy inspection.",
+    [
+      catalog(
+        "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess",
+        ["1", "2"],
+        ["0"],
+      ),
+    ],
+  ),
+  capability(
+    "windows-remote-credential-guard",
+    "Remote Credential Guard required",
+    "The enabled delegation policy specifically requires Remote Credential Guard; Restricted Admin and the fallback mode do not match.",
+    [
+      catalog(
+        "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_restrictedremoteadministrationdrop",
+        ["2"],
+        ["1", "3"],
+      ),
+    ],
+  ),
+  capability(
+    "windows-laps-management",
+    "Windows LAPS password management enabled",
+    "Policy enables directory backup of managed local administrator passwords. This check covers LAPS configuration, not service-account or emergency-account credential management.",
+    [
+      catalog(
+        "device_vendor_msft_laps_policies_backupdirectory",
+        ["1", "2"],
+        ["0"],
+      ),
+    ],
+  ),
+  {
+    ...capability(
+      "windows-process-creation-logging",
+      "Process creation auditing with command lines",
+      "Checks successful process creation auditing and command-line inclusion together in one policy. Central log ingestion is not evaluated.",
+      [
+        {
+          ...catalog(
+            "device_vendor_msft_policy_config_audit_detailedtracking_auditprocesscreation",
+            ["1", "3"],
+            ["0", "2"],
+          ),
+          requirementGroup: "audit",
+        },
+        {
+          ...catalog(
+            "device_vendor_msft_policy_config_admx_auditsettings_includecmdline",
+            ["1"],
+            ["0"],
+          ),
+          requirementGroup: "commandLine",
+        },
+      ],
+    ),
+    requiredGroups: ["audit", "commandLine"],
+  },
+  capability(
+    "windows-powershell-module-logging",
+    "PowerShell logging for all modules",
+    "Checks the enabled module-logging policy with the all-modules wildcard. This is local logging configuration, not central ingestion.",
+    [
+      {
+        source: "settingsCatalog",
+        settingDefinitionId:
+          "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging_listbox_modulenames",
+        enforcedWhen: { kind: "equals", value: "*" },
+        prerequisites: [
+          {
+            settingDefinitionId:
+              "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging",
+            values: [
+              "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging_1",
+            ],
+          },
+        ],
+      },
+    ],
+  ),
   capability(
     "windows-applocker-rule-collections",
     "AppLocker rule collection types and enforcement",

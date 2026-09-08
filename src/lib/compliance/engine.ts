@@ -47,7 +47,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.09.7";
+export const COMPLIANCE_RULESET_VERSION = "2026.09.8";
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -685,6 +685,15 @@ export function assessFramework(
   );
 
   const controls: ControlAssessment[] = Object.values(framework.controls)
+    // Reference-only requirements remain in the source, not in policy checks.
+    .filter((control) =>
+      (capabilitiesByControl.get(control.id) ?? []).some((id) =>
+        capabilityResults.some(
+          (result) =>
+            result.capability.id === id && result.capability.signals.length > 0,
+        ),
+      ),
+    )
     .sort((a, b) => compareControlIds(a.id, b.id))
     .map((control) => {
       const mappedIds = capabilitiesByControl.get(control.id) ?? [];
@@ -716,7 +725,13 @@ export function assessFramework(
         scope.defStanRiskLevel !== undefined &&
         control.riskLevels &&
         !control.riskLevels.includes(scope.defStanRiskLevel);
-      if (outsidePlatformScope || outsideRiskScope) status = "notApplicable";
+      if (
+        outsidePlatformScope ||
+        outsideRiskScope ||
+        (mappedIds.length > 0 &&
+          excludedCapabilityIds.length === mappedIds.length)
+      )
+        status = "notApplicable";
       else if (!capabilityIds.length) {
         status = "notAssessed";
         if (!unassessedAspects.length)

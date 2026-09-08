@@ -60,6 +60,12 @@ export const SOC_2: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": [],
+    "windows-remote-credential-guard": [],
+    "windows-laps-management": ["CC6.1"],
+    "windows-process-creation-logging": [],
+    "windows-powershell-module-logging": [],
+
     "windows-applocker-rule-collections": ["CC6.8"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["CC6.8"],

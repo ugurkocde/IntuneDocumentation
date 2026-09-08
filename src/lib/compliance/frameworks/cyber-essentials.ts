@@ -70,6 +70,12 @@ export const CYBER_ESSENTIALS: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": [],
+    "windows-remote-credential-guard": [],
+    "windows-laps-management": ["Secure configuration", "User access control"],
+    "windows-process-creation-logging": [],
+    "windows-powershell-module-logging": [],
+
     "windows-applocker-rule-collections": ["Malware protection"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["Secure configuration"],

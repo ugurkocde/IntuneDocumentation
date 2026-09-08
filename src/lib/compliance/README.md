@@ -299,3 +299,27 @@ backup platform configuration/recovery results, external customer identity,
 privilege approvals and operational monitoring are not established by this
 collector. These need additional parsers, sources or supplied evidence. No new
 Graph scopes, server-side tenant storage or retention changes are introduced.
+
+## Policy-only assessment scope (ruleset 2026.09.8)
+
+The user-facing assessment includes only requirements with working Intune or
+Conditional Access policy detectors. Backup restore tests, patch installation
+times, approval processes and other reference-only operational requirements are
+excluded from the dashboard, its counters and all generated assessment exports.
+The complete published Essential Eight requirements remain in the source snapshot
+for provenance; the displayed subset is 15, 27 and 35 entries at Levels 1, 2 and 3.
+Published totals are labelled separately from displayed check counts.
+
+Unavailable data for a supported detector remains visible as Unable to check.
+Unsupported platform selection produces Outside selected scope. Collection errors
+are never hidden by the policy-only filter. Context explaining the boundary of
+supporting policy evidence is available under Scope of these policy checks.
+
+Added public-definition-verified detectors cover LSA protected-process policy,
+Remote Credential Guard (with its parent prerequisite), Windows LAPS directory
+backup configuration, process creation success auditing plus command-line logging,
+and PowerShell all-module logging. This checks configuration values only, not
+central log ingestion, device execution or password escrow results. Source IDs
+and choices were read using seven scoped, read-only Graph beta requests on
+8 September 2026 and are stored in additional-verified-settings.json; no tenant
+policy data was saved. Only DeviceManagementConfiguration.Read.All was needed.

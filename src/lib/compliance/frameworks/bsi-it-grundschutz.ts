@@ -250,6 +250,12 @@ export const BSI_IT_GRUNDSCHUTZ: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": ["SYS.2.2.3.A23"],
+    "windows-remote-credential-guard": ["SYS.2.2.3.A23"],
+    "windows-laps-management": ["ORP.4", "SYS.2.1"],
+    "windows-process-creation-logging": [],
+    "windows-powershell-module-logging": [],
+
     "windows-applocker-rule-collections": ["SYS.2.1"],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["SYS.2.1"],

@@ -296,7 +296,7 @@ describe("evidence integrity regressions", () => {
     )!;
     expect(
       iosNist.controls.find((control) => control.control.id === "SC-7")?.status,
-    ).toBe("notAssessed");
+    ).toBe("notApplicable");
   });
   it("does not infer scope from empty platform inventory or policy absence", () => {
     const exportData = data();

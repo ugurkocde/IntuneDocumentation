@@ -205,6 +205,9 @@ it.each(["PDF", "Word"])(
     expect(text).toContain("target Maturity Level 3");
     expect(text).toContain("149 published requirement entries");
     expect(text).toContain(
+      "Application control is implemented on workstations.",
+    );
+    expect(text).not.toContain(
       "Application control is implemented on internet-facing servers.",
     );
     expect(text).not.toContain("target Maturity Level 1");

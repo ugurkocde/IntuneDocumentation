@@ -13,6 +13,31 @@ export function essentialEightLevel(
 // Exact requirement text from the versioned ASD snapshot. No keyword-based evidence detection.
 const bindings: ReadonlyArray<readonly [string, string, string]> = [
   [
+    "Local Security Authority protection functionality is enabled.",
+    "windows-lsa-protection",
+    "Checks the LSA protected-process policy value; device activation is outside this policy review.",
+  ],
+  [
+    "Remote Credential Guard functionality is enabled.",
+    "windows-remote-credential-guard",
+    "Checks the enabled delegation policy and its Require Remote Credential Guard option.",
+  ],
+  [
+    "Credentials for break glass accounts, local administrator accounts and service accounts are long, unique, unpredictable and managed.",
+    "windows-laps-management",
+    "Policy check covers Windows LAPS for local administrator accounts only. Other account classes are outside this check.",
+  ],
+  [
+    "Command line process creation events are centrally logged.",
+    "windows-process-creation-logging",
+    "Policy check covers local auditing and command-line inclusion. It does not assess central log delivery.",
+  ],
+  [
+    "PowerShell module logging, script block logging and transcription events are centrally logged.",
+    "windows-powershell-module-logging",
+    "Policy check covers logging for all PowerShell modules. It does not assess central log delivery.",
+  ],
+  [
     "Application control restricts the execution of executables, software libraries, scripts, installers, compiled HTML, HTML applications and control panel applets to an organisation-approved set.",
     "windows-applocker-rule-collections",
     "AppLocker XML is checked for EXE, DLL, MSI and Script collections and enforcement mode. Compare the allowed rules with the approved inventory; compiled HTML, HTML applications, control-panel applets, alternate control engines and device blocking need separate verification.",
@@ -265,7 +290,7 @@ export function essentialEightFramework(
     name: "ASD Essential Eight",
     version: `November 2023; target Maturity Level ${level}`,
     totalRequirements: requirements.length,
-    note: `Evidence against target Maturity Level ${level}; no achieved maturity level is calculated. All eight strategies are included. Local ML identifiers identify rows within the published appendix and are not official ISM control IDs. ${source.attribution} Licence: ${source.license} Configuration evidence does not prove implementation effectiveness, patch installation, backup recovery or operational processes. The model targets enterprise IT; mobile and operational technology coverage must be assessed separately.`,
+    note: `Evidence against target Maturity Level ${level}; no achieved maturity level is calculated. Only entries with Intune or Conditional Access policy checks are displayed. Operational-only requirements are excluded. Local ML identifiers identify rows within the published appendix and are not official ISM control IDs. ${source.attribution} Licence: ${source.license} Configuration evidence does not prove implementation effectiveness, patch installation, backup recovery or operational processes. The model targets enterprise IT; mobile and operational technology coverage must be assessed separately.`,
     source: { url: source.source, verifiedAt: source.verifiedAt },
     controls,
     mappings,

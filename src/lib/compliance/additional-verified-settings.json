@@ -1,0 +1,254 @@
+{
+  "verifiedAt": "2026-09-08",
+  "source": "Microsoft Graph beta public configurationSettings definitions; no tenant policy data.",
+  "catalog": [
+    {
+      "id": "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging",
+      "name": "Turn on Module Logging",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging_listbox_modulenames"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_laps_policies_backupdirectory",
+      "name": "Backup Directory ",
+      "options": [
+        {
+          "id": "device_vendor_msft_laps_policies_backupdirectory_0",
+          "label": "Disabled (password will not be backed up)",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_backupdirectory_1",
+          "label": "Backup the password to Microsoft Entra ID only",
+          "value": 1,
+          "children": ["device_vendor_msft_laps_policies_passwordagedays_aad"]
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_backupdirectory_2",
+          "label": "Backup the password to Active Directory only",
+          "value": 2,
+          "children": [
+            "device_vendor_msft_laps_policies_passwordagedays",
+            "device_vendor_msft_laps_policies_passwordexpirationprotectionenabled",
+            "device_vendor_msft_laps_policies_adpasswordencryptionenabled",
+            "device_vendor_msft_laps_policies_adpasswordencryptionprincipal",
+            "device_vendor_msft_laps_policies_adencryptedpasswordhistorysize"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_laps_policies_passwordcomplexity",
+      "name": "Password Complexity ",
+      "options": [
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_1",
+          "label": "Large letters",
+          "value": 1,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_2",
+          "label": "Large letters + small letters",
+          "value": 2,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_3",
+          "label": "Large letters + small letters + numbers",
+          "value": 3,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_4",
+          "label": "Large letters + small letters + numbers + special characters",
+          "value": 4,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_5",
+          "label": "Large letters + small letters + numbers + special characters (improved readability)",
+          "value": 5,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_6",
+          "label": "Passphrase (long words)",
+          "value": 6,
+          "children": ["device_vendor_msft_laps_policies_passphraselength"]
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_7",
+          "label": "Passphrase (short words)",
+          "value": 7,
+          "children": ["device_vendor_msft_laps_policies_passphraselength"]
+        },
+        {
+          "id": "device_vendor_msft_laps_policies_passwordcomplexity_8",
+          "label": "Passphrase (short words with unique prefixes)",
+          "value": 8,
+          "children": ["device_vendor_msft_laps_policies_passphraselength"]
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_laps_policies_passwordlength",
+      "name": "Password Length ",
+      "options": []
+    },
+    {
+      "id": "device_vendor_msft_policy_config_admx_auditsettings_includecmdline",
+      "name": "Include command line in process creation events",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_admx_auditsettings_includecmdline_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_admx_auditsettings_includecmdline_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_audit_detailedtracking_auditprocesscreation",
+      "name": "Detailed Tracking Audit Process Creation",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_audit_detailedtracking_auditprocesscreation_0",
+          "label": "Off/ None",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_audit_detailedtracking_auditprocesscreation_1",
+          "label": "Success",
+          "value": 1,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_audit_detailedtracking_auditprocesscreation_2",
+          "label": "Failure",
+          "value": 2,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_audit_detailedtracking_auditprocesscreation_3",
+          "label": "Success+ Failure",
+          "value": 3,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess",
+      "name": "Configure Lsa Protected Process",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess_0",
+          "label": "Disabled. Default value. LSA will not run as protected process.",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess_1",
+          "label": "Enabled with UEFI lock. LSA will run as protected process and this configuration is UEFI locked.",
+          "value": 1,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess_2",
+          "label": "Enabled without UEFI lock. LSA will run as protected process and this configuration is not UEFI locked.",
+          "value": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging_listbox_modulenames",
+      "name": "Module Names",
+      "options": []
+    },
+    {
+      "id": "user_vendor_msft_policy_config_outlk16v2~policy~l_microsoftofficeoutlook~l_security~l_securityformsettings~l_miscattachmentsettings_l_showolepackageobj",
+      "name": "Display OLE package objects (User)",
+      "options": [
+        {
+          "id": "user_vendor_msft_policy_config_outlk16v2~policy~l_microsoftofficeoutlook~l_security~l_securityformsettings~l_miscattachmentsettings_l_showolepackageobj_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "user_vendor_msft_policy_config_outlk16v2~policy~l_microsoftofficeoutlook~l_security~l_securityformsettings~l_miscattachmentsettings_l_showolepackageobj_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_restrictedremoteadministrationdrop",
+      "name": "Use the following restricted mode:",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_restrictedremoteadministrationdrop_3",
+          "label": "Restrict Credential Delegation",
+          "value": "3",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_restrictedremoteadministrationdrop_2",
+          "label": "Require Remote Credential Guard",
+          "value": "2",
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_restrictedremoteadministrationdrop_1",
+          "label": "Require Restricted Admin",
+          "value": "1",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration",
+      "name": "Restrict delegation of credentials to remote servers",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_0",
+          "label": "Disabled",
+          "value": 0,
+          "children": []
+        },
+        {
+          "id": "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_1",
+          "label": "Enabled",
+          "value": 1,
+          "children": [
+            "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration_restrictedremoteadministrationdrop"
+          ]
+        }
+      ]
+    }
+  ]
+}

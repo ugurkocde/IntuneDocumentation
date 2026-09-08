@@ -113,6 +113,12 @@ export const DEF_STAN_05_138: FrameworkDefinition = {
     },
   },
   mappings: {
+    "windows-lsa-protection": [],
+    "windows-remote-credential-guard": [],
+    "windows-laps-management": [],
+    "windows-process-creation-logging": [],
+    "windows-powershell-module-logging": [],
+
     "windows-applocker-rule-collections": [],
     "windows-office-v3-signatures": [],
     "windows-office-macros-disabled": ["2418"],

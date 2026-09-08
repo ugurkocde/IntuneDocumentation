@@ -4,8 +4,9 @@ import type {
   ValueExpectation,
 } from "./types";
 import verified from "./verified-technical-settings.json";
+import additionalVerified from "./additional-verified-settings.json";
 
-const displayIdentifiers = verified.catalog
+const displayIdentifiers = [...verified.catalog, ...additionalVerified.catalog]
   .flatMap((definition) => [
     ...definition.options.map((option) => [option.id, option.label] as const),
     [definition.id, definition.name] as const,

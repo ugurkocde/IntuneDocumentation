@@ -78,3 +78,17 @@ describe("Graph route status", () => {
     expect(body).not.toContain("All configurations fetched successfully");
   });
 });
+
+it("rejects unknown retry categories before starting a stream", async () => {
+  for (const selection of ["", "0", "13", "1.5", "bogus", "12"]) {
+    const response = await stream(
+      new Request("http://localhost/api", {
+        headers: {
+          Authorization: "Bearer test",
+          "X-Collection-Steps": selection,
+        },
+      }) as any,
+    );
+    expect(response.status).toBe(400);
+  }
+});

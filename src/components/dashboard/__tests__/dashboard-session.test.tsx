@@ -75,6 +75,8 @@ vi.mock("~/components/dashboard/dashboard-content", () => ({
     refreshing,
     refreshError,
     caConsentStatus,
+    retryAvailable,
+    onRetry,
   }: any) => (
     <div>
       <span>
@@ -87,6 +89,8 @@ vi.mock("~/components/dashboard/dashboard-content", () => ({
       <button disabled={refreshing} onClick={onRefresh}>
         Refresh data
       </button>
+      {refreshing && <p>Collecting in background</p>}
+      {retryAvailable && <button onClick={onRetry}>Retry unfinished</button>}
       {refreshError && <p role="alert">{refreshError}</p>}
     </div>
   ),
@@ -105,7 +109,7 @@ function collectionResponse(name = "Fresh policy", complete = true) {
             event: "complete",
             data: {
               data: {
-                collectedAt: "2026-09-07T12:30:00.000Z",
+                collectedAt: "2026-09-07T12:29:00.000Z",
                 summary: {
                   totalConfigurations: 1,
                   byType: { settingsCatalog: 1 },
@@ -131,7 +135,7 @@ describe("dashboard session restore", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.spyOn(Date, "now").mockReturnValue(
-      Date.parse("2026-09-07T12:30:00.000Z"),
+      Date.parse("2026-09-07T12:29:00.000Z"),
     );
     window.sessionStorage.clear();
     window.localStorage.clear();
@@ -209,13 +213,70 @@ describe("dashboard session restore", () => {
     expect(loadingScreenRendered).not.toHaveBeenCalled();
   });
 
-  it("shows collection progress when no retained snapshot is available", async () => {
+  it("opens the dashboard shell while the first collection is pending", async () => {
     window.sessionStorage.clear();
     vi.mocked(fetch).mockImplementation(
-      () => new Promise(() => { /* Keep collection pending to inspect progress. */ }),
+      () =>
+        new Promise(() => {
+          /* Keep collection pending to inspect progress. */
+        }),
     );
     render(<DashboardPage />);
-    expect(await screen.findByText("Loading policies")).toBeVisible();
+    expect(await screen.findByText("Collecting in background")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
+    expect(loadingScreenRendered).not.toHaveBeenCalled();
+  });
+
+  it("restores stale data immediately and refreshes quietly", async () => {
+    vi.mocked(Date.now).mockReturnValue(Date.parse("2026-09-07T12:35:00.000Z"));
+    vi.mocked(fetch).mockImplementation(
+      () =>
+        new Promise(() => {
+          /* Keep background refresh pending. */
+        }),
+    );
+    render(<DashboardPage />);
+    expect(await screen.findByText("Cached policy")).toBeVisible();
+    expect(await screen.findByText("Collecting in background")).toBeVisible();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(loadingScreenRendered).not.toHaveBeenCalled();
+  });
+
+  it("streams sections before completion and retries only unfinished categories", async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        new ReadableStream({
+          start(value) {
+            controller = value;
+          },
+        }),
+      ),
+    );
+    render(<DashboardPage />);
+    await screen.findByText("Cached policy");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const section = {
+      ...sessionSnapshot().configurations.sections[0]!,
+      items: [{ id: "new", displayName: "Streamed policy", assignments: [] }],
+    };
+    controller.enqueue(
+      new TextEncoder().encode(
+        `event: section\ndata: ${JSON.stringify({ section })}\n\nevent: progress\ndata: ${JSON.stringify({ stepIndex: 1, status: "completed" })}\n\n`,
+      ),
+    );
+    expect(await screen.findByText("Streamed policy")).toBeVisible();
+    expect(screen.getByText("Collecting in background")).toBeVisible();
+    controller.close();
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Retry unfinished" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    const headers = vi.mocked(fetch).mock.calls[1]![1]!.headers as Record<
+      string,
+      string
+    >;
+    expect(headers["X-Collection-Steps"]).toBe("2,3,4,5,6,7,8,9,10,11");
   });
 
   it("explicit refresh replaces the snapshot and original collection timestamp", async () => {
@@ -244,7 +305,7 @@ describe("dashboard session restore", () => {
     );
   });
 
-  it("keeps the previous snapshot when a refresh stream stops partway through", async () => {
+  it("keeps completed sections visible without persisting an interrupted refresh", async () => {
     vi.mocked(fetch).mockResolvedValue(
       collectionResponse("Partial replacement", false),
     );
@@ -254,8 +315,10 @@ describe("dashboard session restore", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "closed before all collections finished",
     );
-    expect(screen.getByText("Cached policy")).toBeVisible();
-    expect(screen.queryByText("Partial replacement")).not.toBeInTheDocument();
+    expect(screen.getByText("Partial replacement")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Retry unfinished" }),
+    ).toBeVisible();
     expect((await readDashboardSession(sessionScope))?.lastFetched).toBe(
       sessionSnapshot().lastFetched,
     );

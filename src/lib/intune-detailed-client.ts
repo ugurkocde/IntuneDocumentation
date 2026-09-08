@@ -2257,59 +2257,57 @@ export class DetailedIntuneService {
     );
   }
 
-  async getAllDetailedConfigurations(includeConditionalAccess = true) {
+  async getAllDetailedConfigurations(
+    includeConditionalAccess = true,
+    selectedSteps?: string[],
+  ) {
     const collectionStartedAt = new Date().toISOString();
     console.log("Fetching all detailed Intune configurations...");
     this.permissionErrors = []; // Reset permission errors
     this.fetchErrors = []; // Reset fetch errors
 
+    const collect = <T>(
+      step: string,
+      fetcher: () => Promise<T>,
+    ): Promise<T> => {
+      if (selectedSteps && !selectedSteps.includes(step))
+        return Promise.resolve(
+          (step === "Scripts" ? { windows: [], macOS: [] } : []) as T,
+        );
+      return this.withCompletionEvent(step, fetcher());
+    };
     // Use Promise.allSettled instead of Promise.all to prevent one failure from breaking everything
     const results = await Promise.allSettled([
-      this.withCompletionEvent(
-        "Settings Catalog",
+      collect("Settings Catalog", () =>
         this.getConfigurationPoliciesWithSettings(),
       ),
-      this.withCompletionEvent(
-        "Device Configurations",
+      collect("Device Configurations", () =>
         this.getDeviceConfigurationsDetailed(),
       ),
-      this.withCompletionEvent(
-        "Administrative Templates",
+      collect("Administrative Templates", () =>
         this.getGroupPolicyConfigurationsDetailed(),
       ),
-      this.withCompletionEvent(
-        "Compliance Policies",
+      collect("Compliance Policies", () =>
         this.getCompliancePoliciesDetailed(),
       ),
-      this.withCompletionEvent(
-        "App Protection Policies",
+      collect("App Protection Policies", () =>
         this.getAppProtectionPoliciesDetailed(),
       ),
-      this.withCompletionEvent(
-        "Security Baselines",
-        this.getSecurityBaselinesDetailed(),
-      ),
-      this.withCompletionEvent("Scripts", this.getScriptsDetailed()),
-      this.withCompletionEvent(
-        "App Configurations",
-        this.getAppConfigurationsDetailed(),
-      ),
-      this.withCompletionEvent(
-        "Windows Update Policies",
+      collect("Security Baselines", () => this.getSecurityBaselinesDetailed()),
+      collect("Scripts", () => this.getScriptsDetailed()),
+      collect("App Configurations", () => this.getAppConfigurationsDetailed()),
+      collect("Windows Update Policies", () =>
         this.getWindowsUpdatePoliciesDetailed(),
       ),
-      this.withCompletionEvent(
-        "Enrollment Configurations",
+      collect("Enrollment Configurations", () =>
         this.getEnrollmentConfigurationsDetailed(),
       ),
-      this.withCompletionEvent(
-        "Conditional Access Policies",
+      collect("Conditional Access Policies", () =>
         includeConditionalAccess
           ? this.getConditionalAccessPoliciesDetailed()
           : Promise.resolve([]),
       ),
-      this.withCompletionEvent(
-        "Additional Intune coverage",
+      collect("Additional Intune coverage", () =>
         this.getAdditionalConfigurationSections(),
       ),
     ]);

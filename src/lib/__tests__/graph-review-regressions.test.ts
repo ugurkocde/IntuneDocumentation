@@ -335,3 +335,21 @@ describe("Graph review regressions", () => {
     expect(resolver.getWarnings()).toHaveLength(1);
   });
 });
+
+it("targeted collection does not call successful category collectors", async () => {
+  const instance = service(() => {
+    throw new Error("Unexpected Graph request");
+  });
+  const catalog = vi.spyOn(instance, "getConfigurationPoliciesWithSettings");
+  const compliance = vi
+    .spyOn(instance, "getCompliancePoliciesDetailed")
+    .mockResolvedValue([]);
+  const sections: string[] = [];
+  instance.progressCallback = (event: any) => {
+    if (event.type === "section") sections.push(event.section.key);
+  };
+  await instance.getAllDetailedConfigurations(false, ["Compliance Policies"]);
+  expect(compliance).toHaveBeenCalledOnce();
+  expect(catalog).not.toHaveBeenCalled();
+  expect(sections).toEqual(["compliancePolicies"]);
+});

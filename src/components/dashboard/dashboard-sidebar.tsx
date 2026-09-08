@@ -73,6 +73,7 @@ interface DashboardSidebarProps {
   counts: ConfigurationTypeCounts;
   totalCount: number;
   selectedCount: number;
+  collecting?: boolean;
   affectedFamilyKeys: string[];
   showConditionalAccess: boolean;
   userName: string;
@@ -151,6 +152,7 @@ export function DashboardSidebar({
   counts,
   totalCount,
   selectedCount,
+  collecting = false,
   affectedFamilyKeys,
   showConditionalAccess,
   userName,
@@ -427,17 +429,17 @@ export function DashboardSidebar({
               <button
                 type="button"
                 onClick={onOpenExport}
-                disabled={selectedCount === 0}
+                disabled={selectedCount === 0 || collecting}
                 className="bg-petrol-950 hover:bg-petrol-800 mt-4 flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Export selected
+                {collecting ? "Available after loading" : "Export selected"}
               </button>
             </div>
           ) : (
             <button
               type="button"
               onClick={onOpenExport}
-              disabled={selectedCount === 0}
+              disabled={selectedCount === 0 || collecting}
               className="bg-petrol-950 hover:bg-petrol-800 relative mx-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
               aria-label={`Export ${selectedCount} selected configurations`}
               title="Export selected"

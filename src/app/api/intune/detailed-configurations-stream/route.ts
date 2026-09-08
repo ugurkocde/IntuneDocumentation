@@ -1,3 +1,4 @@
+import { COLLECTION_STEPS } from "~/lib/collection-progress";
 import type { NextRequest } from "next/server";
 import { DetailedIntuneService } from "~/lib/intune-detailed-client";
 
@@ -17,6 +18,24 @@ export async function GET(request: NextRequest) {
   const accessToken = authHeader.replace("Bearer ", "");
   const includeConditionalAccess =
     request.headers.get("X-Include-Conditional-Access") === "true";
+
+  const retryHeader = request.headers.get("X-Collection-Steps");
+  const retryIndexes = retryHeader?.split(",").map(Number);
+  if (
+    retryIndexes &&
+    (!retryIndexes.length ||
+      retryIndexes.some(
+        (index) =>
+          !Number.isInteger(index) ||
+          index < 1 ||
+          index >= COLLECTION_STEPS.length ||
+          (index === 12 && !includeConditionalAccess),
+      ))
+  )
+    return new Response("Invalid collection steps", { status: 400 });
+  const selectedSteps = retryIndexes?.map(
+    (index) => COLLECTION_STEPS[index]!.name,
+  );
 
   // Create a readable stream for Server-Sent Events
   const encoder = new TextEncoder();
@@ -67,6 +86,8 @@ export async function GET(request: NextRequest) {
           accessToken,
           (progressEvent) => {
             const stepIndex = stepIndexByName[progressEvent.step];
+            if (selectedSteps && !selectedSteps.includes(progressEvent.step))
+              return;
 
             if (progressEvent.type === "section" && progressEvent.section) {
               sendEvent("section", { section: progressEvent.section });
@@ -130,17 +151,22 @@ export async function GET(request: NextRequest) {
         ];
 
         // Mark all as loading
-        policyTypes.forEach((type) => {
-          sendEvent("progress", {
-            step: type.name,
-            stepIndex: type.stepIndex,
-            status: "loading",
+        policyTypes
+          .filter(
+            (type) => !retryIndexes || retryIndexes.includes(type.stepIndex),
+          )
+          .forEach((type) => {
+            sendEvent("progress", {
+              step: type.name,
+              stepIndex: type.stepIndex,
+              status: "loading",
+            });
           });
-        });
 
         // Fetch all configurations; per-type completion events stream in live
         const configurations = await service.getAllDetailedConfigurations(
           includeConditionalAccess,
+          selectedSteps,
         );
 
         const incomplete =

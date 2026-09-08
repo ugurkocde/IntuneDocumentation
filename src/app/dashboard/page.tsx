@@ -8,7 +8,11 @@ import { useTenantLogging } from "~/hooks/use-tenant-logging";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
-import { DashboardLoading } from "~/components/dashboard-loading";
+import {
+  COLLECTION_STEPS,
+  collectionSteps,
+  stepForFamily,
+} from "~/lib/collection-progress";
 import { NavigationHeader } from "~/components/navigation-header";
 // Settings is now an in-dashboard view; no external link needed here
 import {
@@ -37,6 +41,7 @@ import {
   clearDashboardSession,
   readDashboardSession,
   saveDashboardSession,
+  SNAPSHOT_FRESHNESS_MS,
 } from "~/lib/dashboard-session-cache";
 
 const EMPTY_CONFIGURATIONS: IntuneConfigurations = {
@@ -62,10 +67,13 @@ function mergeConfigurationSection(
   section: ConfigurationSectionData,
 ): IntuneConfigurations {
   const base = current || EMPTY_CONFIGURATIONS;
-  const sections = [
-    ...base.sections.filter((candidate) => candidate.key !== section.key),
-    section,
-  ];
+  const sections = base.sections.some(
+    (candidate) => candidate.key === section.key,
+  )
+    ? base.sections.map((candidate) =>
+        candidate.key === section.key ? section : candidate,
+      )
+    : [...base.sections, section];
   const byType = sections.reduce<Record<string, number>>(
     (counts, candidate) => {
       counts[candidate.familyKey] =
@@ -168,6 +176,7 @@ export default function DashboardPage() {
   const [configurations, setConfigurations] =
     useState<IntuneConfigurations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retrySteps, setRetrySteps] = useState<number[]>([]);
   const [snapshotResolved, setSnapshotResolved] = useState(false);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +295,7 @@ export default function DashboardPage() {
     setSelectAll(false);
     setDataAccountKey(null);
     setHasCompletedInitialLoad(false);
+    setRetrySteps([]);
     setSnapshotResolved(false);
     setLoading(true);
     setError(null);
@@ -308,6 +318,22 @@ export default function DashboardPage() {
         setHasCompletedInitialLoad(true);
         setLoading(false);
         lastCollectionSucceeded.current = true;
+        setRetrySteps([
+          ...new Set(
+            (snapshot.configurations.fetchErrors ?? [])
+              .map((error) => stepForFamily(error.familyKey ?? ""))
+              .filter((index) => index > 0),
+          ),
+        ]);
+        if (
+          Date.now() - Date.parse(snapshot.lastFetched) >=
+          SNAPSHOT_FRESHNESS_MS
+        )
+          void fetchConfigurations(
+            undefined,
+            undefined,
+            snapshot.configurations,
+          );
       } else void fetchConfigurations();
     });
     return () => {
@@ -474,7 +500,11 @@ export default function DashboardPage() {
     });
   };
 
-  const fetchConfigurations = async (caRequested?: boolean) => {
+  const fetchConfigurations = async (
+    caRequested?: boolean,
+    retry?: number[],
+    restored?: IntuneConfigurations,
+  ) => {
     // Prevent concurrent fetches
     if (isFetchingRef.current) {
       console.log("Fetch already in progress, skipping duplicate request");
@@ -488,8 +518,20 @@ export default function DashboardPage() {
       requestRevision.current === revision &&
       activeAccountKey.current === accountKey;
     const previousSnapshot =
-      dataAccountKey === accountKey ? configurations : null;
-    let pendingConfigurations: IntuneConfigurations = EMPTY_CONFIGURATIONS;
+      restored ?? (dataAccountKey === accountKey ? configurations : null);
+    let pendingConfigurations: IntuneConfigurations =
+      retry && previousSnapshot ? previousSnapshot : EMPTY_CONFIGURATIONS;
+    const finishedSteps = new Set<number>();
+    const failedSteps = new Set<number>();
+    let requestedSteps: number[] =
+      retry ??
+      collectionSteps(caRequested ?? includeCA)
+        .map((_, index) => index)
+        .filter((index) => index > 0);
+    const collectionStart =
+      previousSnapshot?.collectedAt ??
+      previousSnapshot?.collectionStartedAt ??
+      new Date().toISOString();
     let receivedAnySection = false;
     lastCollectionSucceeded.current = false;
 
@@ -498,50 +540,12 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
 
-      // Build steps dynamically based on whether CA is effectively included
-      const stepsFor = (withCA: boolean) => [
-        {
-          name: "Connecting to Microsoft Graph API",
-          status: "pending" as const,
-        },
-        {
-          name: "Fetching Settings Catalog configurations",
-          status: "pending" as const,
-        },
-        { name: "Fetching Device Configurations", status: "pending" as const },
-        {
-          name: "Fetching Administrative Templates",
-          status: "pending" as const,
-        },
-        { name: "Fetching Security Baselines", status: "pending" as const },
-        { name: "Fetching Compliance Policies", status: "pending" as const },
-        {
-          name: "Fetching App Protection Policies",
-          status: "pending" as const,
-        },
-        { name: "Fetching Scripts", status: "pending" as const },
-        { name: "Fetching App Configurations", status: "pending" as const },
-        {
-          name: "Fetching Windows Update Policies",
-          status: "pending" as const,
-        },
-        {
-          name: "Fetching Enrollment Configurations",
-          status: "pending" as const,
-        },
-        {
-          name: "Fetching extended Intune coverage",
-          status: "pending" as const,
-        },
-        ...(withCA
-          ? [
-              {
-                name: "Fetching Conditional Access Policies",
-                status: "pending" as const,
-              },
-            ]
-          : []),
-      ];
+      // Render the shell before the first Graph response; retained data stays visible.
+      if (!previousSnapshot) {
+        setConfigurations(EMPTY_CONFIGURATIONS);
+        setDataAccountKey(accountKey);
+      }
+      const stepsFor = (withCA: boolean) => collectionSteps(withCA, retry);
 
       // Step 1: Connect to Graph API (base scopes)
       setFetchProgress({ steps: stepsFor(false), currentStep: 0 });
@@ -567,11 +571,20 @@ export default function DashboardPage() {
       setCaConsentStatus(
         wantCA ? (caIncluded ? "included" : "missing") : "unknown",
       );
+      if (retry?.includes(12) && !caIncluded)
+        throw new Error(
+          "Conditional Access could not be retried because its read permission is unavailable. Check the Conditional Access setting and consent, then retry.",
+        );
 
       // Refresh steps with/without CA and start progress
       setFetchProgress({ steps: stepsFor(caIncluded), currentStep: 0 });
       updateFetchProgress(0, "completed");
 
+      requestedSteps =
+        retry ??
+        stepsFor(caIncluded)
+          .map((_, index) => index)
+          .filter((index) => index > 0);
       // Use Server-Sent Events for real-time progress
       // Since EventSource doesn't support Authorization header, we use fetch with streaming
       await new Promise<void>((resolve, reject) => {
@@ -581,6 +594,7 @@ export default function DashboardPage() {
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "X-Include-Conditional-Access": String(caIncluded),
+            ...(retry ? { "X-Collection-Steps": retry.join(",") } : {}),
           },
         })
           .then(async (response) => {
@@ -630,6 +644,10 @@ export default function DashboardPage() {
                     if (eventType === "progress") {
                       // Update progress based on event
                       if (data.stepIndex !== undefined) {
+                        if (data.status === "completed")
+                          finishedSteps.add(data.stepIndex);
+                        if (data.status === "error")
+                          failedSteps.add(data.stepIndex);
                         updateFetchProgress(data.stepIndex, data.status);
                       }
 
@@ -665,32 +683,87 @@ export default function DashboardPage() {
                         pendingConfigurations,
                         data.section,
                       );
-                      if (!previousSnapshot) {
-                        setConfigurations(pendingConfigurations);
-                        setDataAccountKey(accountKey);
-                      }
+                      setConfigurations((current) =>
+                        mergeConfigurationSection(current, data.section),
+                      );
+                      setDataAccountKey(accountKey);
                     } else if (eventType === "complete") {
                       receivedComplete = true;
                       setHasCompletedInitialLoad(true);
                       setConfigurations({
                         ...pendingConfigurations,
-                        collectedAt: data.data.collectedAt,
-                        collectionStartedAt: data.data.collectionStartedAt,
+                        collectedAt: retry
+                          ? collectionStart
+                          : data.data.collectedAt,
+                        collectionStartedAt: retry
+                          ? previousSnapshot?.collectionStartedAt
+                          : data.data.collectionStartedAt,
                         collectionSkippedFamilies:
                           data.data.collectionSkippedFamilies,
-                        permissionErrors: data.data.permissionErrors || [],
-                        fetchErrors: data.data.fetchErrors || [],
+                        permissionErrors: [
+                          ...(retry
+                            ? (previousSnapshot?.permissionErrors ?? []).filter(
+                                (error) =>
+                                  !retry.some(
+                                    (index) =>
+                                      COLLECTION_STEPS[index]?.name ===
+                                        error.resource ||
+                                      (index === 7 &&
+                                        error.resource.includes("Scripts")),
+                                  ),
+                              )
+                            : []),
+                          ...(data.data.permissionErrors || []),
+                        ],
+                        fetchErrors: [
+                          ...(retry
+                            ? (previousSnapshot?.fetchErrors ?? []).filter(
+                                (error) =>
+                                  !retry.includes(
+                                    stepForFamily(error.familyKey ?? ""),
+                                  ) && error.policyId !== "stream",
+                              )
+                            : []),
+                          ...(data.data.fetchErrors || []),
+                        ],
                         summary:
-                          data.data.summary ||
+                          (retry
+                            ? pendingConfigurations.summary
+                            : data.data.summary) ||
                           pendingConfigurations.summary ||
                           EMPTY_CONFIGURATIONS.summary,
                       });
                       setDataAccountKey(accountKey);
                       setGroupNames(null);
-                      setSelectedConfigs(new Set());
+                      const validIds = new Set(
+                        pendingConfigurations.sections.flatMap((section) =>
+                          section.items.map(
+                            (item) => `${section.selectionPrefix}-${item.id}`,
+                          ),
+                        ),
+                      );
+                      setSelectedConfigs(
+                        (current) =>
+                          new Set(
+                            [...current].filter((id) => validIds.has(id)),
+                          ),
+                      );
                       setSelectAll(false);
+                      setRetrySteps([
+                        ...new Set([
+                          ...failedSteps,
+                          ...(data.data.fetchErrors ?? [])
+                            .map((error: { familyKey?: string }) =>
+                              stepForFamily(error.familyKey ?? ""),
+                            )
+                            .filter((index: number) => index > 0),
+                        ]),
+                      ]);
                       setLastFetched(
-                        new Date(data.data.collectedAt || Date.now()),
+                        new Date(
+                          (retry ? collectionStart : data.data.collectedAt) ||
+                            Date.now(),
+                        ),
                       );
                       lastCollectionSucceeded.current = true;
                       resolve();
@@ -706,7 +779,11 @@ export default function DashboardPage() {
       });
     } catch (err) {
       if (!isCurrent()) return;
-      if (previousSnapshot) setCaConsentStatus(caConsentStatus);
+      setRetrySteps(
+        requestedSteps.filter(
+          (index) => !finishedSteps.has(index) || failedSteps.has(index),
+        ),
+      );
       // Mark current step as error
       const currentStep = fetchProgress.currentStep;
       updateFetchProgress(currentStep, "error");
@@ -715,25 +792,26 @@ export default function DashboardPage() {
       if (configurations || receivedAnySection) {
         setHasCompletedInitialLoad(true);
       }
-      if (!previousSnapshot)
-        setConfigurations((current) =>
-          current
-            ? {
-                ...current,
-                fetchErrors: [
-                  ...(current.fetchErrors || []),
-                  {
-                    policyId: "stream",
-                    policyName: "Configuration stream",
-                    policyType: "Streaming",
-                    familyKey: "overview",
-                    error: message,
-                    partial: true,
-                  },
-                ],
-              }
-            : current,
-        );
+      setConfigurations((current) =>
+        current
+          ? {
+              ...current,
+              collectedAt: undefined,
+              collectionStartedAt: collectionStart,
+              fetchErrors: [
+                ...(current.fetchErrors || []),
+                {
+                  policyId: "stream",
+                  policyName: "Configuration stream",
+                  policyType: "Streaming",
+                  familyKey: "overview",
+                  error: message,
+                  partial: true,
+                },
+              ],
+            }
+          : current,
+      );
       console.error("Error fetching configurations:", err);
     } finally {
       if (isCurrent()) {
@@ -971,21 +1049,6 @@ export default function DashboardPage() {
     );
   }
 
-  if (
-    (loading && !hasCompletedInitialLoad) ||
-    (configurations && dataAccountKey !== accountKey)
-  ) {
-    return (
-      <>
-        <NavigationHeader />
-        <DashboardLoading
-          steps={fetchProgress.steps}
-          currentStep={fetchProgress.currentStep}
-        />
-      </>
-    );
-  }
-
   if (error && !configurations) {
     return (
       <div className="bg-mint-50 flex min-h-screen items-center justify-center px-4">
@@ -1034,6 +1097,7 @@ export default function DashboardPage() {
           counts={configurations.summary.byType}
           totalCount={configurations.summary.totalConfigurations}
           selectedCount={selectedConfigs.size}
+          collecting={loading}
           affectedFamilyKeys={(configurations.fetchErrors || []).map(
             (fetchError) => fetchError.familyKey || fetchError.policyType,
           )}
@@ -1042,7 +1106,9 @@ export default function DashboardPage() {
           onToggle={() => setSidebarOpen((current) => !current)}
           onViewChange={setActiveView}
           onOpenBranding={() => setShowBrandingModal(true)}
-          onOpenExport={() => setShowExportModal(true)}
+          onOpenExport={() => {
+            if (!loading) setShowExportModal(true);
+          }}
           onSignOut={handleSignOut}
         />
         <DashboardContent
@@ -1058,6 +1124,9 @@ export default function DashboardPage() {
           caConsentStatus={caConsentStatus}
           sidebarOpen={sidebarOpen}
           refreshing={loading}
+          collectionSteps={fetchProgress.steps}
+          retryAvailable={retrySteps.length > 0}
+          onRetry={() => void fetchConfigurations(undefined, retrySteps)}
           refreshError={error}
           typeStats={typeStats}
           onSearchChange={setSearchQuery}

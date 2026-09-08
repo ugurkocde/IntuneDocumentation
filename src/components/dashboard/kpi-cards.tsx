@@ -4,6 +4,7 @@ import {
   Files,
   Layers3,
   ListChecks,
+  LoaderCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -12,6 +13,7 @@ interface KpiCardsProps {
   selectedCount: number;
   configurationTypeCount: number;
   warningCount: number;
+  loading?: boolean;
 }
 
 interface KpiCardProps {
@@ -48,6 +50,7 @@ export function KpiCards({
   selectedCount,
   configurationTypeCount,
   warningCount,
+  loading = false,
 }: KpiCardsProps) {
   return (
     <section
@@ -70,9 +73,27 @@ export function KpiCards({
         value={configurationTypeCount.toLocaleString()}
       />
       <KpiCard
-        icon={warningCount > 0 ? AlertTriangle : CheckCircle2}
-        label={warningCount > 0 ? "Items with warnings" : "All data loaded"}
-        value={warningCount > 0 ? warningCount.toLocaleString() : "100%"}
+        icon={
+          loading
+            ? LoaderCircle
+            : warningCount > 0
+              ? AlertTriangle
+              : CheckCircle2
+        }
+        label={
+          loading
+            ? "Collection status"
+            : warningCount > 0
+              ? "Items with warnings"
+              : "All data loaded"
+        }
+        value={
+          loading
+            ? "Loading"
+            : warningCount > 0
+              ? warningCount.toLocaleString()
+              : "100%"
+        }
         tone={warningCount > 0 ? "amber" : "teal"}
       />
     </section>

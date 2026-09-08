@@ -1,5 +1,7 @@
 "use client";
 
+import { CollectionStatus, CollectionPlaceholder } from "./collection-status";
+import { stepForFamily, type CollectionStep } from "~/lib/collection-progress";
 import { CheckSquare, FileText, Info, Shield } from "lucide-react";
 import { ConfigurationSection } from "~/components/dashboard/config-section";
 import { ComplianceView } from "~/components/dashboard/compliance-view";
@@ -31,6 +33,9 @@ interface DashboardContentProps {
   sidebarOpen: boolean;
   refreshing?: boolean;
   refreshError?: string | null;
+  collectionSteps?: CollectionStep[];
+  retryAvailable?: boolean;
+  onRetry?: () => void;
   typeStats: DashboardTypeStat[];
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
@@ -206,6 +211,9 @@ export function DashboardContent({
   sidebarOpen,
   refreshing = false,
   refreshError,
+  collectionSteps = [],
+  retryAvailable = false,
+  onRetry,
   typeStats,
   onSearchChange,
   onRefresh,
@@ -218,6 +226,10 @@ export function DashboardContent({
   onIncludeCAChange,
 }: DashboardContentProps) {
   const showConditionalAccess = includeCA && caConsentStatus === "included";
+  const activeStep = collectionSteps[stepForFamily(activeView)];
+  const activeLoading =
+    refreshing &&
+    (!activeStep || ["pending", "loading"].includes(activeStep.status));
   const visibleSections = configurations.sections.filter(
     (section) =>
       (showConditionalAccess ||
@@ -275,6 +287,14 @@ export function DashboardContent({
           onSearchChange={onSearchChange}
           onRefresh={onRefresh}
         />
+        <CollectionStatus
+          loading={refreshing}
+          steps={collectionSteps}
+          count={configurations.summary.totalConfigurations}
+          retryAvailable={retryAvailable}
+          incomplete={!!refreshError || warningCount > 0}
+          onRetry={retryAvailable ? (onRetry ?? onRefresh) : onRefresh}
+        />
         {refreshError && (
           <p
             role="alert"
@@ -290,6 +310,7 @@ export function DashboardContent({
           selectedCount={selectedConfigs.size}
           configurationTypeCount={populatedTypeCount}
           warningCount={warningCount}
+          loading={refreshing}
         />
 
         {activeView === "overview" && (
@@ -316,6 +337,11 @@ export function DashboardContent({
             includeCA={includeCA}
             caConsentStatus={caConsentStatus}
             onIncludeCAChange={onIncludeCAChange}
+          />
+        ) : activeView === "compliance" && refreshing ? (
+          <CollectionPlaceholder
+            title="Checking policy evidence"
+            description="Results will appear when collection finishes. Settings still loading will not be marked as missing."
           />
         ) : activeView === "compliance" ? (
           <ComplianceView
@@ -352,23 +378,30 @@ export function DashboardContent({
               })}
             </div>
 
-            {visibleFilteredCount === 0 && (
-              <div className="border-petrol-950/6 shadow-card rounded-2xl border bg-white px-6 py-12 text-center">
-                <p className="text-petrol-950 text-sm font-semibold">
-                  {searchQuery
-                    ? "No configurations match your search"
-                    : activeViewHasError
-                      ? "This configuration family could not be loaded"
-                      : "No configurations are set up in this family"}
-                </p>
-                <p className="text-petrol-600 mt-1 text-xs">
-                  {searchQuery
-                    ? "Try a different name or description."
-                    : activeViewHasError
-                      ? "Review the affected-resource warning above for Microsoft Graph details."
-                      : "Choose another family or return to the overview."}
-                </p>
-              </div>
+            {visibleFilteredCount === 0 && activeLoading ? (
+              <CollectionPlaceholder
+                title="Loading configurations"
+                description="This category is still loading. You can browse another category while it finishes."
+              />
+            ) : (
+              visibleFilteredCount === 0 && (
+                <div className="border-petrol-950/6 shadow-card rounded-2xl border bg-white px-6 py-12 text-center">
+                  <p className="text-petrol-950 text-sm font-semibold">
+                    {searchQuery
+                      ? "No configurations match your search"
+                      : activeViewHasError
+                        ? "This configuration family could not be loaded"
+                        : "No configurations are set up in this family"}
+                  </p>
+                  <p className="text-petrol-600 mt-1 text-xs">
+                    {searchQuery
+                      ? "Try a different name or description."
+                      : activeViewHasError
+                        ? "Review the affected-resource warning above for Microsoft Graph details."
+                        : "Choose another family or return to the overview."}
+                  </p>
+                </div>
+              )
             )}
           </>
         )}

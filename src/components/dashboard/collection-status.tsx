@@ -82,7 +82,8 @@ export function CollectionStatus({
             <span className="font-semibold tabular-nums">
               {count.toLocaleString()}
             </span>{" "}
-            {count === 1 ? "resource" : "resources"} ready to browse
+            {count === 1 ? "resource" : "resources"}{" "}
+            {loading ? "loaded this collection" : "ready to browse"}
           </p>
         </div>
         {loading ? (

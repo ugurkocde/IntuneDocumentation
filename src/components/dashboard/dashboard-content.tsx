@@ -34,6 +34,7 @@ interface DashboardContentProps {
   refreshing?: boolean;
   refreshError?: string | null;
   collectionSteps?: CollectionStep[];
+  loadedResourceCount?: number;
   retryAvailable?: boolean;
   onRetry?: () => void;
   typeStats: DashboardTypeStat[];
@@ -212,6 +213,7 @@ export function DashboardContent({
   refreshing = false,
   refreshError,
   collectionSteps = [],
+  loadedResourceCount = 0,
   retryAvailable = false,
   onRetry,
   typeStats,
@@ -290,7 +292,11 @@ export function DashboardContent({
         <CollectionStatus
           loading={refreshing}
           steps={collectionSteps}
-          count={configurations.summary.totalConfigurations}
+          count={
+            refreshing
+              ? loadedResourceCount
+              : configurations.summary.totalConfigurations
+          }
           retryAvailable={retryAvailable}
           incomplete={!!refreshError || warningCount > 0}
           onRetry={retryAvailable ? (onRetry ?? onRefresh) : onRefresh}

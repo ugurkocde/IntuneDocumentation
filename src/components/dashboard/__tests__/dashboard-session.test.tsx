@@ -76,6 +76,7 @@ vi.mock("~/components/dashboard/dashboard-content", () => ({
     refreshError,
     caConsentStatus,
     retryAvailable,
+    loadedResourceCount,
     onRetry,
   }: any) => (
     <div>
@@ -86,6 +87,7 @@ vi.mock("~/components/dashboard/dashboard-content", () => ({
       </span>
       <span>{lastFetched?.toISOString()}</span>
       <span>Consent: {caConsentStatus}</span>
+      <span>Loaded now: {loadedResourceCount}</span>
       <button disabled={refreshing} onClick={onRefresh}>
         Refresh data
       </button>
@@ -263,10 +265,17 @@ describe("dashboard session restore", () => {
     };
     controller.enqueue(
       new TextEncoder().encode(
-        `event: section\ndata: ${JSON.stringify({ section })}\n\nevent: progress\ndata: ${JSON.stringify({ stepIndex: 1, status: "completed" })}\n\n`,
+        `event: section\ndata: ${JSON.stringify({ section })}\n\n`,
       ),
     );
     expect(await screen.findByText("Streamed policy")).toBeVisible();
+    expect(screen.getByText("Loaded now: 0")).toBeVisible();
+    controller.enqueue(
+      new TextEncoder().encode(
+        `event: progress\ndata: ${JSON.stringify({ stepIndex: 1, status: "completed" })}\n\n`,
+      ),
+    );
+    expect(await screen.findByText("Loaded now: 1")).toBeVisible();
     expect(screen.getByText("Collecting in background")).toBeVisible();
     controller.close();
     await screen.findByRole("alert");

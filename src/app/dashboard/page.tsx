@@ -10,6 +10,7 @@ import { Card, CardContent } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import {
   COLLECTION_STEPS,
+  countCompletedResources,
   collectionSteps,
   stepForFamily,
 } from "~/lib/collection-progress";
@@ -176,6 +177,7 @@ export default function DashboardPage() {
   const [configurations, setConfigurations] =
     useState<IntuneConfigurations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedResourceCount, setLoadedResourceCount] = useState(0);
   const [retrySteps, setRetrySteps] = useState<number[]>([]);
   const [snapshotResolved, setSnapshotResolved] = useState(false);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
@@ -522,6 +524,7 @@ export default function DashboardPage() {
     let pendingConfigurations: IntuneConfigurations =
       retry && previousSnapshot ? previousSnapshot : EMPTY_CONFIGURATIONS;
     const finishedSteps = new Set<number>();
+    const receivedSections = new Map<string, ConfigurationSectionData>();
     const failedSteps = new Set<number>();
     let requestedSteps: number[] =
       retry ??
@@ -537,6 +540,7 @@ export default function DashboardPage() {
 
     try {
       isFetchingRef.current = true;
+      setLoadedResourceCount(0);
       setLoading(true);
       setError(null);
 
@@ -646,8 +650,16 @@ export default function DashboardPage() {
                       if (data.stepIndex !== undefined) {
                         if (data.status === "completed")
                           finishedSteps.add(data.stepIndex);
-                        if (data.status === "error")
+                        if (data.status === "error") {
                           failedSteps.add(data.stepIndex);
+                          finishedSteps.delete(data.stepIndex);
+                        }
+                        setLoadedResourceCount(
+                          countCompletedResources(
+                            receivedSections.values(),
+                            finishedSteps,
+                          ),
+                        );
                         updateFetchProgress(data.stepIndex, data.status);
                       }
 
@@ -679,6 +691,13 @@ export default function DashboardPage() {
                       }
                     } else if (eventType === "section" && data.section) {
                       receivedAnySection = true;
+                      receivedSections.set(data.section.key, data.section);
+                      setLoadedResourceCount(
+                        countCompletedResources(
+                          receivedSections.values(),
+                          finishedSteps,
+                        ),
+                      );
                       pendingConfigurations = mergeConfigurationSection(
                         pendingConfigurations,
                         data.section,
@@ -1125,6 +1144,7 @@ export default function DashboardPage() {
           sidebarOpen={sidebarOpen}
           refreshing={loading}
           collectionSteps={fetchProgress.steps}
+          loadedResourceCount={loadedResourceCount}
           retryAvailable={retrySteps.length > 0}
           onRetry={() => void fetchConfigurations(undefined, retrySteps)}
           refreshError={error}

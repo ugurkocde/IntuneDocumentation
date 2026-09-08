@@ -1,3 +1,4 @@
+import type { ConfigurationSectionData } from "./configuration-sections";
 // Shared stream indexes keep retries and dashboard status aligned.
 export const COLLECTION_STEPS = [
   { name: "Connecting to Microsoft Graph API", families: [] },
@@ -49,4 +50,16 @@ export function collectionSteps(
 }
 export function stepForFamily(family: string): number {
   return COLLECTION_STEPS.findIndex((step) => step.families.includes(family));
+}
+
+export function countCompletedResources(
+  receivedSections: Iterable<ConfigurationSectionData>,
+  completedSteps: ReadonlySet<number>,
+): number {
+  let count = 0;
+  for (const section of receivedSections) {
+    if (!section.error && completedSteps.has(stepForFamily(section.familyKey)))
+      count += section.items.filter((item) => !item.hasFetchError).length;
+  }
+  return count;
 }

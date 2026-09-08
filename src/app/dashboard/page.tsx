@@ -580,8 +580,12 @@ export default function DashboardPage() {
           "Conditional Access could not be retried because its read permission is unavailable. Check the Conditional Access setting and consent, then retry.",
         );
 
-      // Refresh steps with/without CA and start progress
-      setFetchProgress({ steps: stepsFor(caIncluded), currentStep: 0 });
+      // Keep requested CA visible even when authentication cannot include it.
+      setFetchProgress({ steps: stepsFor(wantCA), currentStep: 0 });
+      if (wantCA && !caIncluded) {
+        failedSteps.add(12);
+        updateFetchProgress(12, "error");
+      }
       updateFetchProgress(0, "completed");
 
       requestedSteps =
@@ -646,6 +650,7 @@ export default function DashboardPage() {
                     const data = JSON.parse(dataStr);
 
                     if (eventType === "progress") {
+                      if (data.stepIndex === 12 && !caIncluded) continue;
                       // Update progress based on event
                       if (data.stepIndex !== undefined) {
                         if (data.status === "completed")
@@ -744,6 +749,19 @@ export default function DashboardPage() {
                               )
                             : []),
                           ...(data.data.fetchErrors || []),
+                          ...(wantCA && !caIncluded
+                            ? [
+                                {
+                                  policyId: "conditional-access-auth",
+                                  policyName: "Conditional Access",
+                                  policyType: "conditionalAccessPolicies",
+                                  familyKey: "conditionalAccessPolicies",
+                                  error:
+                                    "Conditional Access is enabled but Microsoft sign-in did not provide access to read its policies. Retry sign-in and check Policy.Read.All consent if access is still unavailable.",
+                                  permissionHint: "Policy.Read.All",
+                                },
+                              ]
+                            : []),
                         ],
                         summary:
                           (retry
@@ -1099,7 +1117,7 @@ export default function DashboardPage() {
   }
 
   const typeStats = buildDashboardTypeStats(configurations, selectedConfigs);
-  const showConditionalAccess = includeCA && caConsentStatus === "included";
+  const showConditionalAccess = includeCA;
 
   return (
     <div className="bg-mint-50 min-h-screen">
@@ -1151,6 +1169,7 @@ export default function DashboardPage() {
           typeStats={typeStats}
           onSearchChange={setSearchQuery}
           onRefresh={() => void fetchConfigurations()}
+          onRetryConditionalAccess={() => void fetchConfigurations(true, [12])}
           onDismissTip={() => setShowTipBanner(false)}
           onSelectAll={handleSelectAll}
           onSelectFiltered={handleSelectFiltered}

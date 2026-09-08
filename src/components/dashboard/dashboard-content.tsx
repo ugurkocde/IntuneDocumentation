@@ -40,6 +40,7 @@ interface DashboardContentProps {
   typeStats: DashboardTypeStat[];
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
+  onRetryConditionalAccess?: () => void;
   onDismissTip: () => void;
   onSelectAll: () => void;
   onSelectFiltered: () => void;
@@ -165,31 +166,12 @@ function SettingsView({
           </label>
 
           {includeCA && caConsentStatus === "missing" && (
-            <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-600/20 bg-amber-50 p-4">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-              <div>
-                <p className="text-sm font-semibold text-amber-950">
-                  Admin consent required
-                </p>
-                <p className="mt-1 text-xs leading-5 text-amber-900/80">
-                  Conditional Access policies could not be loaded because{" "}
-                  <code className="rounded bg-amber-100 px-1 py-0.5">
-                    Policy.Read.All
-                  </code>{" "}
-                  has not been granted for this tenant. Ask a tenant
-                  administrator to grant consent in Entra ID Enterprise
-                  applications, or read the{" "}
-                  <a
-                    href="https://learn.microsoft.com/azure/active-directory/develop/v2-permissions-and-consent"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-semibold underline decoration-amber-700/35 underline-offset-2 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
-                  >
-                    permissions and consent guide
-                  </a>
-                  .
-                </p>
-              </div>
+            <div className="mt-4 rounded-xl bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+              Microsoft sign-in did not provide access to Conditional Access.
+              This can happen if sign-in was cancelled, the session expired, or
+              Policy.Read.All consent is unavailable. Use the Conditional Access
+              page to retry; if Microsoft requests administrator approval, ask
+              an administrator to grant it.
             </div>
           )}
         </div>
@@ -219,6 +201,7 @@ export function DashboardContent({
   typeStats,
   onSearchChange,
   onRefresh,
+  onRetryConditionalAccess,
   onDismissTip,
   onSelectAll,
   onSelectFiltered,
@@ -344,6 +327,43 @@ export function DashboardContent({
             caConsentStatus={caConsentStatus}
             onIncludeCAChange={onIncludeCAChange}
           />
+        ) : activeView === "conditionalAccessPolicies" &&
+          includeCA &&
+          (caConsentStatus === "missing" ||
+            (!refreshing && caConsentStatus !== "included")) ? (
+          <section className="border-petrol-950/6 rounded-2xl border bg-white p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <Info
+                aria-hidden="true"
+                className="mt-0.5 h-5 w-5 shrink-0 text-amber-700"
+              />
+              <div>
+                <h2 className="text-petrol-950 text-base font-semibold">
+                  Conditional Access wasn’t loaded
+                </h2>
+                <p className="text-petrol-600 mt-2 max-w-2xl text-sm leading-6">
+                  Conditional Access is enabled, but Microsoft sign-in did not
+                  provide the access needed to read its policies. This does not
+                  mean your tenant has no Conditional Access policies.
+                </p>
+                <p className="text-petrol-600 mt-2 max-w-2xl text-sm leading-6">
+                  Try signing in again. If Microsoft requests administrator
+                  approval, ask an administrator to grant{" "}
+                  <code>Policy.Read.All</code>.
+                </p>
+                <button
+                  type="button"
+                  disabled={refreshing}
+                  onClick={onRetryConditionalAccess ?? onRefresh}
+                  className="bg-petrol-950 mt-4 min-h-11 rounded-xl px-4 text-sm font-semibold text-white hover:bg-teal-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600 disabled:cursor-wait disabled:opacity-50"
+                >
+                  {refreshing
+                    ? "Collection in progress…"
+                    : "Retry Conditional Access"}
+                </button>
+              </div>
+            </div>
+          </section>
         ) : activeView === "compliance" && refreshing ? (
           <CollectionPlaceholder
             title="Checking policy evidence"

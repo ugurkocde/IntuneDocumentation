@@ -63,8 +63,11 @@ vi.mock("~/components/floating-export-notification", () => ({
   FloatingExportNotification: () => null,
 }));
 vi.mock("~/components/dashboard/dashboard-sidebar", () => ({
-  DashboardSidebar: ({ onSignOut }: any) => (
-    <button onClick={onSignOut}>Sign out</button>
+  DashboardSidebar: ({ onSignOut, showConditionalAccess }: any) => (
+    <div>
+      <button onClick={onSignOut}>Sign out</button>
+      {showConditionalAccess && <span>Conditional Access navigation</span>}
+    </div>
   ),
 }));
 vi.mock("~/components/dashboard/dashboard-content", () => ({
@@ -87,6 +90,7 @@ vi.mock("~/components/dashboard/dashboard-content", () => ({
       </span>
       <span>{lastFetched?.toISOString()}</span>
       <span>Consent: {caConsentStatus}</span>
+      <span>Warnings: {configurations.fetchErrors?.length ?? 0}</span>
       <span>Loaded now: {loadedResourceCount}</span>
       <button disabled={refreshing} onClick={onRefresh}>
         Refresh data
@@ -286,6 +290,37 @@ describe("dashboard session restore", () => {
       string
     >;
     expect(headers["X-Collection-Steps"]).toBe("2,3,4,5,6,7,8,9,10,11");
+  });
+
+  it("keeps enabled Conditional Access visible and records unavailable access", async () => {
+    window.localStorage.setItem("include-ca", "true");
+    auth.instance.acquireTokenSilent.mockImplementation(
+      async (request: { scopes: string[] }) => {
+        if (request.scopes.includes("Policy.Read.All"))
+          throw new Error("interaction_required");
+        return { accessToken: "test-access-token" };
+      },
+    );
+    auth.instance.acquireTokenPopup.mockRejectedValueOnce(
+      new Error("user_cancelled"),
+    );
+    render(<DashboardPage />);
+    expect(
+      await screen.findByText("Conditional Access navigation"),
+    ).toBeVisible();
+    expect(await screen.findByText("Consent: missing")).toBeVisible();
+    expect(await screen.findByText("Warnings: 1")).toBeVisible();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/intune/detailed-configurations-stream",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Include-Conditional-Access": "false",
+        }),
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Retry unfinished" }),
+    ).toBeVisible();
   });
 
   it("explicit refresh replaces the snapshot and original collection timestamp", async () => {

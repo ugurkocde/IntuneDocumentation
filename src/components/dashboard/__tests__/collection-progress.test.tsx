@@ -146,3 +146,26 @@ it("prioritizes unfinished categories and supports minimizing without hiding pro
   );
   expect(screen.getByText("Settings Catalog")).toBeVisible();
 });
+
+it("explains unavailable CA instead of showing an empty policy collection", async () => {
+  const retry = vi.fn();
+  const { fireEvent } = await import("@testing-library/react");
+  render(
+    <DashboardContent
+      {...props()}
+      activeView="conditionalAccessPolicies"
+      includeCA
+      caConsentStatus="missing"
+      refreshing={false}
+      onRetryConditionalAccess={retry}
+    />,
+  );
+  expect(screen.getByText("Conditional Access wasn’t loaded")).toBeVisible();
+  expect(
+    screen.queryByText("No configurations are set up in this family"),
+  ).not.toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry Conditional Access" }),
+  );
+  expect(retry).toHaveBeenCalledOnce();
+});

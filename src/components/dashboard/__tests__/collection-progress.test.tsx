@@ -38,9 +38,7 @@ function props() {
 it("shows received policies while loading without claiming collection is complete", () => {
   render(<DashboardContent {...props()} />);
   expect(screen.getByText("Cached policy")).toBeVisible();
-  expect(
-    screen.getByText("Loading policy details in the background"),
-  ).toBeVisible();
+  expect(screen.getByText("Updating your dashboard")).toBeVisible();
   expect(screen.queryByText("All data loaded")).not.toBeInTheDocument();
   expect(screen.queryByText("100%")).not.toBeInTheDocument();
 });
@@ -112,4 +110,39 @@ it("keeps incomplete collection visible instead of showing success", async () =>
   expect(
     screen.getByRole("button", { name: "Retry unfinished categories" }),
   ).toBeVisible();
+});
+
+it("prioritizes unfinished categories and supports minimizing without hiding progress", async () => {
+  const { CollectionStatus } = await import("../collection-status");
+  const { fireEvent } = await import("@testing-library/react");
+  const steps = collectionSteps(false).map((step, index) => ({
+    ...step,
+    status: index === 1 ? ("loading" as const) : ("completed" as const),
+  }));
+  render(
+    <CollectionStatus
+      steps={steps}
+      count={853}
+      loading
+      retryAvailable={false}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByRole("list", { name: "Unfinished categories" }),
+  ).toHaveTextContent("Settings Catalog");
+  expect(screen.getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "11",
+  );
+  expect(screen.getByText("Device Configurations")).not.toBeVisible();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Minimize collection details" }),
+  );
+  expect(screen.getByRole("progressbar")).toBeVisible();
+  expect(screen.getByText("Settings Catalog")).not.toBeVisible();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Expand collection details" }),
+  );
+  expect(screen.getByText("Settings Catalog")).toBeVisible();
 });

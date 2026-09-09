@@ -44,6 +44,14 @@ export function SiteFooter() {
               </li>
               <li>
                 <Link
+                  href="/pricing"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Pricing
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/dashboard"
                   className="transition-colors hover:text-teal-700"
                 >

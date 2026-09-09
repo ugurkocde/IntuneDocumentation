@@ -62,6 +62,7 @@ const NavLinks = memo(function NavLinks({
       </Link>
       <Link
         href="/pricing"
+        aria-current={pathname === "/pricing" ? "page" : undefined}
         onClick={onNavigate}
         className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${pathname === "/pricing" ? activeLink : linkBase}`}
       >
@@ -192,7 +193,7 @@ export function NavigationHeader() {
 
   const navProps = {
     pathname,
-    activeSection,
+    activeSection: onHome ? activeSection : "",
     activeLink,
     linkBase,
     isAuthenticated,

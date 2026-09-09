@@ -791,7 +791,7 @@ export function HomePage({ stats }: { stats: SiteStats }) {
                       desc: "PDF and Word documents are built locally on your device, not on a server.",
                     },
                     {
-                      title: "Nothing uploaded, nothing stored",
+                      title: "Hobby: no persistent tenant storage",
                       desc: "Configuration data is fetched during your session and discarded when you leave.",
                     },
                     {

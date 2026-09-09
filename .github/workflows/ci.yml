@@ -28,6 +28,12 @@ jobs:
       - name: Run tests
         run: npm run test
 
+      - name: Install browser for Enterprise UI contracts
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify Enterprise screens and interactions
+        run: npm run test:enterprise-ui
+
       - name: Build application
         run: npm run build
         env:

@@ -135,6 +135,7 @@ export default async function RootLayout({
   const requestHeaders = await headers();
   const nonce = requestHeaders.get("x-nonce") ?? "";
   const publicSite = requestHeaders.get("x-site-mode") === "public";
+  const enterpriseRoute = requestHeaders.get("x-enterprise-route") === "true";
   const appOrigin = requestHeaders.get("x-app-origin") ?? "";
   const configuredCrispId = getCrispWebsiteId();
   const crispWebsiteId = publicSite && configuredCrispId;
@@ -145,7 +146,11 @@ export default async function RootLayout({
       appOrigin={appOrigin}
       nonce={nonce}
     >
-      {publicSite ? children : <AuthProvider>{children}</AuthProvider>}
+      {publicSite || enterpriseRoute ? (
+        children
+      ) : (
+        <AuthProvider>{children}</AuthProvider>
+      )}
     </SiteBoundaryProvider>
   );
   return (
@@ -182,7 +187,10 @@ export default async function RootLayout({
           app
         )}
         {publicSite ? <CookieConsentBanner /> : null}
-        {!publicSite && configuredCrispId && supportOrigin ? (
+        {!publicSite &&
+        !enterpriseRoute &&
+        configuredCrispId &&
+        supportOrigin ? (
           <AppSupportChat supportOrigin={supportOrigin} />
         ) : null}
         {crispWebsiteId ? (

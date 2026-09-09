@@ -22,6 +22,7 @@ const sections = [
   { id: "controller", label: "Data Controller" },
   { id: "what-we-access", label: "What We Access" },
   { id: "how-we-process-data", label: "How We Process Data" },
+  { id: "paid-workspaces", label: "Paid Workspaces" },
   { id: "analytics-cookies", label: "Analytics & Cookies" },
   { id: "support-chat", label: "Support Chat" },
   { id: "data-sharing", label: "Data Sharing" },
@@ -43,7 +44,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Privacy Policy
           </h1>
-          <p className="mb-10 text-slate-600">Effective: September 1, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: September 9, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -116,11 +117,11 @@ export default function PrivacyPolicyPage() {
             </h2>
             <ul className="list-disc space-y-2 pl-6">
               <li>
-                Our application server uses your delegated access token to
-                retrieve Microsoft Graph responses during the active request. It
-                processes those responses transiently to collect, normalize, and
-                redact them; it does not persist your token or Intune
-                configuration data.
+                For Hobby, our application server uses your delegated access
+                token to retrieve Microsoft Graph responses during the active
+                request. It processes those responses transiently to collect,
+                normalize, and redact them; it does not persist your token or
+                Intune configuration data.
               </li>
               <li>
                 Sensitive values, including script bodies, passwords, tokens,
@@ -129,12 +130,12 @@ export default function PrivacyPolicyPage() {
                 data is displayed in the dashboard or included in an export.
               </li>
               <li>
-                PDF and DOCX generation happens in your browser. We do not
-                upload or persist your generated documents.
+                For Hobby, PDF and DOCX generation happens in your browser. We
+                do not upload or persist your generated documents.
               </li>
               <li>
-                The dashboard saves a compressed configuration snapshot and
-                resolved assignment group names in your browser tab&apos;s
+                The Hobby dashboard saves a compressed configuration snapshot
+                and resolved assignment group names in your browser tab&apos;s
                 sessionStorage so a page reload can restore your work. Stored
                 snapshots expire one hour after collection and are checked
                 before restoration and when a tab resumes. Expiry removes the
@@ -150,12 +151,45 @@ export default function PrivacyPolicyPage() {
                 without saving a snapshot.
               </li>
               <li>
-                Access tokens are managed in your browser session by MSAL and
-                presented to our application server only for the active Graph
-                collection request; we do not persist them server-side.
+                For Hobby, access tokens are managed in your browser session by
+                MSAL and presented to our application server only for the active
+                Graph collection request; we do not persist them server-side.
               </li>
             </ul>
 
+            <h2
+              id="paid-workspaces"
+              className="scroll-mt-24 text-xl font-semibold text-slate-900"
+            >
+              Enterprise and MSP workspaces
+            </h2>
+            <p>
+              When you opt into a paid workspace, Microsoft business sign-in
+              identifies you by directory and user identifiers. We store your
+              display name, workspace memberships, invitations, roles, and
+              customer scope in our application database. Matching an email
+              domain does not grant access. Invitation acceptance verifies
+              control of the invited mailbox.
+            </p>
+            <p>
+              Customer administrators separately authorize read-only background
+              collection. Redacted configuration snapshots, history comparisons,
+              findings, report artifacts, and your team&apos;s audit notes are
+              processed and stored server-side. Configuration history and report
+              artifacts are encrypted in EU-hosted storage. Signing out does not
+              stop unattended collection. Workspace administrators can
+              disconnect a tenant and contact support about export or deletion.
+            </p>
+            <p>
+              Business identity, subscription metadata, support correspondence,
+              and payment information may be processed by Microsoft, Polar, and
+              our delivery providers under their own service terms and
+              applicable transfer arrangements. The EU configuration-storage
+              commitment does not mean every provider processes all account or
+              billing metadata exclusively in the EU. Contact
+              support@ugurlabs.com for the applicable processing agreement and
+              provider information before onboarding regulated data.
+            </p>
             <h2
               id="analytics-cookies"
               className="scroll-mt-24 text-xl font-semibold text-slate-900"
@@ -246,10 +280,17 @@ export default function PrivacyPolicyPage() {
               Data Sharing
             </h2>
             <p>
-              We do not sell or share your configuration data with third
-              parties. Data accessed from Microsoft Graph is used solely to
-              generate your documentation. Crisp processes only the support
-              information described above on our behalf when you use the chat.
+              We do not sell configuration data. Microsoft supplies authorized
+              configuration and identity information. For paid workspaces,
+              Supabase and our hosting infrastructure process encrypted history,
+              workspace records, and reports on our behalf. Polar processes
+              checkout, subscription, and billing information as merchant of
+              record. Our configured email provider delivers invitation,
+              verification, and notification messages. Customer-configured
+              webhooks receive scoped event identifiers and private links, not
+              configuration attachments. Crisp processes only the support
+              information described above when its chat is used; paid workspace
+              support is provided by email.
             </p>
 
             <h2
@@ -270,8 +311,10 @@ export default function PrivacyPolicyPage() {
                 display or export.
               </li>
               <li>
-                We do not persist tenant configuration data; documents are
-                generated on demand in your browser.
+                Hobby does not persist tenant configuration data on our servers.
+                Paid history and report artifacts are encrypted server-side and
+                accessed through authenticated, customer-scoped application
+                routes.
               </li>
             </ul>
 
@@ -282,15 +325,24 @@ export default function PrivacyPolicyPage() {
               Data Retention
             </h2>
             <p>
-              We do not retain your Intune configuration data or generated
-              documents. Pseudonymous monthly-active-user records and aggregate
-              export counts are retained for service measurement and
-              administration. Operational logs may exist within hosting-provider
-              systems, but the Service does not intentionally write Microsoft
-              Graph response bodies or access tokens to those logs. Support
-              conversations and voluntarily submitted attachments are retained
-              in Crisp until they are deleted under our support-data retention
-              practices or in response to an applicable deletion request.
+              Hobby does not retain Intune configuration data or generated
+              documents on our servers. Paid configuration history and report
+              artifacts are retained for up to twelve months while subscribed.
+              Following subscription expiry, retained exports remain available
+              for a thirty-day recovery period before scheduled deletion.
+              Database backups expire according to the applicable backup
+              schedule; contact support for deployment-specific backup
+              retention. Identity, membership, billing, trial-eligibility, and
+              security-audit records have separate account administration and
+              legal retention needs. Pseudonymous monthly-active-user records
+              and aggregate export counts are retained for service measurement
+              and administration. Operational logs may exist within
+              hosting-provider systems, but the Service does not intentionally
+              write Microsoft Graph response bodies or access tokens to those
+              logs. Support conversations and voluntarily submitted attachments
+              are retained in Crisp until they are deleted under our
+              support-data retention practices or in response to an applicable
+              deletion request.
             </p>
 
             <h2
@@ -300,7 +352,11 @@ export default function PrivacyPolicyPage() {
               Your Choices
             </h2>
             <ul className="list-disc space-y-2 pl-6">
-              <li>You can disconnect at any time by signing out of the app.</li>
+              <li>
+                Signing out ends your browser session. Paid unattended
+                collection continues until a workspace administrator disconnects
+                the customer tenant or paid access ends.
+              </li>
               <li>
                 You can revoke the app&apos;s permissions from your Microsoft
                 account/tenant to prevent future access.

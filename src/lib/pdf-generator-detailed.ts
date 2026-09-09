@@ -3151,7 +3151,7 @@ export async function generateDetailedPDF(
   // Now go back and fill in the ToC if it was included
   if (includeToC && tocEntries.length > 0) {
     // Save current page
-    const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
+    const currentPage = doc.getCurrentPageInfo().pageNumber;
 
     // Go back to ToC page (page 2, after title page)
     doc.setPage(tocPageNumber);

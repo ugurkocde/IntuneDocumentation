@@ -389,6 +389,7 @@ export class DetailedIntuneService {
     accessToken: string,
     progressCallback?: ProgressCallback,
     signal?: AbortSignal,
+    private readonly logger: Pick<Console, "log" | "warn" | "error"> = console,
   ) {
     this.client = createGraphClient(accessToken, { signal, budgetMs: 105_000 });
     this.progressCallback = progressCallback;
@@ -416,11 +417,11 @@ export class DetailedIntuneService {
     } catch (error: any) {
       // Often requires admin-consented permissions; fail soft
       if (error?.statusCode === 403) {
-        console.log(
+        this.logger.log(
           "Conditional Access policies skipped - insufficient permissions",
         );
       } else {
-        console.error("Error fetching conditional access policies:", error);
+        this.logger.error("Error fetching conditional access policies:", error);
       }
       this.recordCollectionError(
         "Conditional Access Policies",
@@ -517,7 +518,7 @@ export class DetailedIntuneService {
               response,
             );
             if (!pages.complete) {
-              console.warn(
+              this.logger.warn(
                 "Settings Catalog definition metadata was only partially returned:",
                 this.graphError(pages.error).message,
               );
@@ -527,7 +528,7 @@ export class DetailedIntuneService {
               definitions: pages.items as ConfigurationSettingDefinition[],
             };
           } catch (error: any) {
-            console.warn(
+            this.logger.warn(
               `Failed to fetch ${chunk.length} Settings Catalog definition(s):`,
               error?.message,
             );
@@ -837,7 +838,7 @@ export class DetailedIntuneService {
     DetailedConfiguration[]
   > {
     try {
-      console.log("Fetching Settings Catalog policies...");
+      this.logger.log("Fetching Settings Catalog policies...");
       const policies = await this.client
         .api("/deviceManagement/configurationPolicies")
         .version("beta")
@@ -851,7 +852,7 @@ export class DetailedIntuneService {
         this.client as unknown as Client,
         policies,
       );
-      console.log(
+      this.logger.log(
         `Found ${allPolicies?.length || 0} Settings Catalog policies`,
       );
 
@@ -865,7 +866,7 @@ export class DetailedIntuneService {
         const batchNumber = Math.floor(i / batchSize) + 1;
         const totalBatches = Math.ceil((allPolicies?.length || 0) / batchSize);
 
-        console.log(`Processing batch ${batchNumber}/${totalBatches}`);
+        this.logger.log(`Processing batch ${batchNumber}/${totalBatches}`);
 
         // Emit progress callback
         this.progressCallback?.({
@@ -907,7 +908,7 @@ export class DetailedIntuneService {
                 }
               } catch {
                 // If expand fails, try without it as a fallback
-                console.warn(
+                this.logger.warn(
                   `Failed to fetch with expand for ${policy.name}, trying without expand...`,
                 );
                 try {
@@ -941,7 +942,7 @@ export class DetailedIntuneService {
                 await this.enrichConfigurationSettingDefinitions(settings);
               settings = enrichedSettings.settings;
               if (enrichedSettings.missingDefinitionIds.length > 0) {
-                console.warn(
+                this.logger.warn(
                   `Setting metadata unavailable for ${enrichedSettings.missingDefinitionIds.length} definition(s) in ${policy.name}`,
                 );
               }
@@ -968,7 +969,7 @@ export class DetailedIntuneService {
                   );
                 }
               } catch (assignmentError: any) {
-                console.warn(
+                this.logger.warn(
                   `Failed to fetch assignments for ${policy.name}:`,
                   assignmentError?.message,
                 );
@@ -1019,7 +1020,7 @@ export class DetailedIntuneService {
               const errorCode = error?.code || error?.error?.code;
               const statusCode = error?.statusCode || error?.response?.status;
 
-              console.error(
+              this.logger.error(
                 `Error fetching details for policy ${policy.name}:`,
                 {
                   message: errorMessage,
@@ -1060,12 +1061,12 @@ export class DetailedIntuneService {
         detailedPolicies.push(...batchResults);
       }
 
-      console.log(
+      this.logger.log(
         `Successfully fetched ${detailedPolicies.filter((p) => !p.hasFetchError).length}/${detailedPolicies.length} Settings Catalog policies`,
       );
       return detailedPolicies;
     } catch (error) {
-      console.error("Error fetching configuration policies:", error);
+      this.logger.error("Error fetching configuration policies:", error);
       this.recordCollectionError(
         "Settings Catalog",
         error,
@@ -1078,7 +1079,7 @@ export class DetailedIntuneService {
   // 2. Device Configurations with full properties
   async getDeviceConfigurationsDetailed(): Promise<DetailedConfiguration[]> {
     try {
-      console.log("Fetching Device Configurations...");
+      this.logger.log("Fetching Device Configurations...");
       const configs = await this.client
         .api("/deviceManagement/deviceConfigurations")
         .version("beta")
@@ -1119,7 +1120,7 @@ export class DetailedIntuneService {
               },
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for config ${config.displayName}:`,
               error,
             );
@@ -1134,7 +1135,7 @@ export class DetailedIntuneService {
 
       return detailedConfigs;
     } catch (error) {
-      console.error("Error fetching device configurations:", error);
+      this.logger.error("Error fetching device configurations:", error);
       this.recordCollectionError(
         "Device Configurations",
         error,
@@ -1154,7 +1155,7 @@ export class DetailedIntuneService {
     DetailedConfiguration[]
   > {
     try {
-      console.log("Fetching Administrative Templates...");
+      this.logger.log("Fetching Administrative Templates...");
       const configs = await this.client
         .api("/deviceManagement/groupPolicyConfigurations")
         .version("beta")
@@ -1199,7 +1200,7 @@ export class DetailedIntuneService {
                 );
               }
             } catch (defError: any) {
-              console.warn(
+              this.logger.warn(
                 `Failed to fetch definition values for ${config.displayName}:`,
                 defError?.message,
               );
@@ -1243,7 +1244,7 @@ export class DetailedIntuneService {
                     presentationFetchError: !presentationPages.complete,
                   };
                 } catch (error: any) {
-                  console.warn(
+                  this.logger.warn(
                     `Presentation values unavailable for ${config.displayName}:`,
                     error?.message,
                   );
@@ -1281,7 +1282,7 @@ export class DetailedIntuneService {
                 );
               }
             } catch (assignmentError: any) {
-              console.warn(
+              this.logger.warn(
                 `Failed to fetch assignments for ${config.displayName}:`,
                 assignmentError?.message,
               );
@@ -1328,7 +1329,7 @@ export class DetailedIntuneService {
                   : undefined,
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for group policy ${config.displayName}:`,
               error,
             );
@@ -1358,7 +1359,7 @@ export class DetailedIntuneService {
 
       return detailedConfigs;
     } catch (error) {
-      console.error("Error fetching group policy configurations:", error);
+      this.logger.error("Error fetching group policy configurations:", error);
       this.recordCollectionError(
         "Administrative Templates",
         error,
@@ -1371,7 +1372,7 @@ export class DetailedIntuneService {
   // 4. Compliance Policies with rules
   async getCompliancePoliciesDetailed(): Promise<DetailedConfiguration[]> {
     try {
-      console.log("Fetching Compliance Policies...");
+      this.logger.log("Fetching Compliance Policies...");
       const policies = await this.client
         .api("/deviceManagement/deviceCompliancePolicies")
         .version("beta")
@@ -1412,7 +1413,7 @@ export class DetailedIntuneService {
               },
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for compliance policy ${policy.displayName}:`,
               error,
             );
@@ -1428,7 +1429,7 @@ export class DetailedIntuneService {
 
       return detailedPolicies;
     } catch (error) {
-      console.error("Error fetching compliance policies:", error);
+      this.logger.error("Error fetching compliance policies:", error);
       this.recordCollectionError(
         "Compliance Policies",
         error,
@@ -1441,7 +1442,7 @@ export class DetailedIntuneService {
   // 5. App Protection Policies with settings
   async getAppProtectionPoliciesDetailed(): Promise<DetailedConfiguration[]> {
     try {
-      console.log("Fetching App Protection Policies...");
+      this.logger.log("Fetching App Protection Policies...");
 
       // Fetch iOS, Android, and Windows MAM policies in parallel
       const [iosPolicies, androidPolicies, windowsPolicies] = await Promise.all(
@@ -1552,7 +1553,7 @@ export class DetailedIntuneService {
               },
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for app protection policy ${policy.displayName}:`,
               error,
             );
@@ -1568,7 +1569,7 @@ export class DetailedIntuneService {
 
       return detailedPolicies;
     } catch (error) {
-      console.error("Error fetching app protection policies:", error);
+      this.logger.error("Error fetching app protection policies:", error);
       this.recordCollectionError(
         "App Protection Policies",
         error,
@@ -1581,7 +1582,7 @@ export class DetailedIntuneService {
   // 6. Security Baselines with settings
   async getSecurityBaselinesDetailed(): Promise<DetailedConfiguration[]> {
     try {
-      console.log("Fetching Security Baselines...");
+      this.logger.log("Fetching Security Baselines...");
       const intents = await this.client
         .api("/deviceManagement/intents")
         .version("beta")
@@ -1642,7 +1643,7 @@ export class DetailedIntuneService {
               assignments: assignments || [],
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for intent ${intent.displayName}:`,
               error,
             );
@@ -1658,7 +1659,7 @@ export class DetailedIntuneService {
 
       return detailedIntents;
     } catch (error) {
-      console.error("Error fetching security baselines:", error);
+      this.logger.error("Error fetching security baselines:", error);
       this.recordCollectionError(
         "Security Baselines",
         error,
@@ -1684,7 +1685,7 @@ export class DetailedIntuneService {
 
   private async getWindowsScriptsDetailed(): Promise<DetailedConfiguration[]> {
     try {
-      console.log("Fetching Windows PowerShell Scripts...");
+      this.logger.log("Fetching Windows PowerShell Scripts...");
       const scripts = await this.client
         .api("/deviceManagement/deviceManagementScripts")
         .version("beta")
@@ -1736,7 +1737,7 @@ export class DetailedIntuneService {
               },
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for script ${script.displayName}:`,
               error,
             );
@@ -1754,7 +1755,7 @@ export class DetailedIntuneService {
     } catch (error: any) {
       // Check if it's a permission error
       if (error?.statusCode === 403 || error?.code === "Forbidden") {
-        console.log(
+        this.logger.log(
           "Windows PowerShell Scripts skipped - insufficient permissions",
         );
         this.permissionErrors.push({
@@ -1764,7 +1765,7 @@ export class DetailedIntuneService {
             "Unable to fetch Windows PowerShell Scripts due to missing permissions",
         });
       } else {
-        console.error("Error fetching Windows scripts:", error);
+        this.logger.error("Error fetching Windows scripts:", error);
       }
       this.recordCollectionError(
         "Windows PowerShell Scripts",
@@ -1777,7 +1778,7 @@ export class DetailedIntuneService {
 
   private async getMacOSScriptsDetailed(): Promise<DetailedConfiguration[]> {
     try {
-      console.log("Fetching macOS Shell Scripts...");
+      this.logger.log("Fetching macOS Shell Scripts...");
       const scripts = await this.client
         .api("/deviceManagement/deviceShellScripts")
         .version("beta")
@@ -1829,7 +1830,7 @@ export class DetailedIntuneService {
               },
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for script ${script.displayName}:`,
               error,
             );
@@ -1847,7 +1848,9 @@ export class DetailedIntuneService {
     } catch (error: any) {
       // Check if it's a permission error
       if (error?.statusCode === 403 || error?.code === "Forbidden") {
-        console.log("macOS Shell Scripts skipped - insufficient permissions");
+        this.logger.log(
+          "macOS Shell Scripts skipped - insufficient permissions",
+        );
         this.permissionErrors.push({
           resource: "macOS Shell Scripts",
           requiredPermission: "DeviceManagementScripts.Read.All",
@@ -1855,7 +1858,7 @@ export class DetailedIntuneService {
             "Unable to fetch macOS Shell Scripts due to missing permissions",
         });
       } else {
-        console.error("Error fetching macOS scripts:", error);
+        this.logger.error("Error fetching macOS scripts:", error);
       }
       this.recordCollectionError(
         "macOS Shell Scripts",
@@ -1960,7 +1963,7 @@ export class DetailedIntuneService {
   // Get App Configurations with detailed settings
   async getAppConfigurationsDetailed() {
     try {
-      console.log("Fetching App Configurations...");
+      this.logger.log("Fetching App Configurations...");
       // Get mobile app configuration policies
       const response = await this.client
         .api("/deviceAppManagement/mobileAppConfigurations")
@@ -1996,7 +1999,7 @@ export class DetailedIntuneService {
               },
             };
           } catch (error) {
-            console.error(
+            this.logger.error(
               `Error fetching details for app configuration ${config.displayName}:`,
               error,
             );
@@ -2011,7 +2014,7 @@ export class DetailedIntuneService {
 
       return detailedConfigs;
     } catch (error) {
-      console.error("Error fetching app configurations:", error);
+      this.logger.error("Error fetching app configurations:", error);
       this.recordCollectionError(
         "App Configurations",
         error,
@@ -2067,7 +2070,7 @@ export class DetailedIntuneService {
 
       return detailedPolicies;
     } catch (error) {
-      console.error("Error fetching Windows Update policies:", error);
+      this.logger.error("Error fetching Windows Update policies:", error);
       this.recordCollectionError(
         "Windows Update Policies",
         error,
@@ -2091,7 +2094,7 @@ export class DetailedIntuneService {
         response,
       );
     } catch (error) {
-      console.error("Error fetching enrollment configurations:", error);
+      this.logger.error("Error fetching enrollment configurations:", error);
       this.recordCollectionError(
         "Enrollment Configurations",
         error,
@@ -2285,7 +2288,7 @@ export class DetailedIntuneService {
     selectedSteps?: string[],
   ) {
     const collectionStartedAt = new Date().toISOString();
-    console.log("Fetching all detailed Intune configurations...");
+    this.logger.log("Fetching all detailed Intune configurations...");
     this.permissionErrors = []; // Reset permission errors
     this.fetchErrors = []; // Reset fetch errors
 
@@ -2382,7 +2385,7 @@ export class DetailedIntuneService {
     results.forEach((result, index) => {
       if (result.status === "rejected") {
         const policyType = policyTypes[index] || "Unknown Policy Type";
-        console.error(`Failed to fetch ${policyType}:`, result.reason);
+        this.logger.error(`Failed to fetch ${policyType}:`, result.reason);
 
         // Track as a fetch error
         this.fetchErrors.push({
@@ -2403,7 +2406,7 @@ export class DetailedIntuneService {
       (r) => r.status === "fulfilled",
     ).length;
     const failedTypes = results.filter((r) => r.status === "rejected").length;
-    console.log(
+    this.logger.log(
       `Successfully fetched ${successfulTypes}/${results.length} policy types. Failed: ${failedTypes}`,
     );
 

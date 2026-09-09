@@ -1,0 +1,46 @@
+# Copy values into your deployment's secret store. Do not commit populated secrets.
+ENTERPRISE_ENABLED=false
+APP_SITE_ORIGIN=https://app.intunedocumentation.com
+PUBLIC_SITE_ORIGIN=https://intunedocumentation.com
+
+# Separate Entra SPA + API registration. API token version must be 2.
+ENTERPRISE_ENTRA_CLIENT_ID=
+ENTERPRISE_ENTRA_API_ID=
+
+# Dedicated LOGIN users, granted ONLY the corresponding NOLOGIN role.
+# Use the EU Supabase pooler connection strings, transaction mode, TLS verification.
+ENTERPRISE_DATABASE_URL=
+ENTERPRISE_WORKER_DATABASE_URL=
+# Only for a local development database. Never enable in hosted production.
+ENTERPRISE_LOCAL_DATABASE=false
+# JSON object mapping key IDs to 32-byte base64 keys, supplied from a secret store.
+ENTERPRISE_ENCRYPTION_KEYS={}
+ENTERPRISE_ACTIVE_KEY=
+
+# Separate multi-tenant collector app. Certificate preferred; secret is supported.
+ENTERPRISE_COLLECTOR_CLIENT_ID=
+ENTERPRISE_COLLECTOR_PRIVATE_KEY=
+# x5t: base64url-encoded SHA-1 certificate thumbprint, not hex.
+ENTERPRISE_COLLECTOR_THUMBPRINT=
+ENTERPRISE_COLLECTOR_CLIENT_SECRET=
+ENTERPRISE_WORKER_PAUSED=false
+CRON_SECRET=
+
+# Polar sandbox first. Four recurring products, one for each plan/interval.
+POLAR_ENVIRONMENT=sandbox
+POLAR_ACCESS_TOKEN=
+POLAR_ENTERPRISE_MONTH_PRODUCT_ID=
+POLAR_ENTERPRISE_YEAR_PRODUCT_ID=
+POLAR_MSP_MONTH_PRODUCT_ID=
+POLAR_MSP_YEAR_PRODUCT_ID=
+POLAR_FOUNDERS_DISCOUNT_ID=
+POLAR_WEBHOOK_SECRET=
+# standard for secrets created on/after 8 September 2026; legacy for older secrets.
+POLAR_WEBHOOK_SECRET_FORMAT=standard
+
+# Any authenticated SMTP provider, no additional auth/support platform required.
+ENTERPRISE_SMTP_HOST=
+ENTERPRISE_SMTP_PORT=465
+ENTERPRISE_SMTP_USER=
+ENTERPRISE_SMTP_PASSWORD=
+ENTERPRISE_EMAIL_FROM=Intune Documentation <notifications@ugurlabs.com>

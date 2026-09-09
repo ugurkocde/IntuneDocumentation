@@ -12,11 +12,25 @@ export function middleware(request: NextRequest) {
     if (
       path === "/dashboard" ||
       path.startsWith("/dashboard/") ||
-      path === "/sign-in"
+      path === "/sign-in" ||
+      path === "/enterprise" ||
+      path.startsWith("/enterprise/")
     ) {
-      return NextResponse.redirect(new URL(path, boundary.appOrigin));
+      const destination = new URL(path, boundary.appOrigin);
+      if (path === "/enterprise" || path.startsWith("/enterprise/")) {
+        for (const key of ["workspace", "customer", "view", "invite"]) {
+          const value = request.nextUrl.searchParams.get(key);
+          if (value && /^[a-zA-Z0-9_-]{1,100}$/.test(value))
+            destination.searchParams.set(key, value);
+        }
+      }
+      return NextResponse.redirect(destination);
     }
-    if (path.startsWith("/api/intune") || path.startsWith("/api/config")) {
+    if (
+      path.startsWith("/api/intune") ||
+      path.startsWith("/api/config") ||
+      path.startsWith("/api/enterprise")
+    ) {
       return new NextResponse(null, { status: 404 });
     }
   }
@@ -38,6 +52,12 @@ export function middleware(request: NextRequest) {
   const headers = new Headers(request.headers);
   // Replace client-supplied values, including on RSC and prefetch requests.
   headers.set("x-site-mode", boundary.mode);
+  headers.set(
+    "x-enterprise-route",
+    path === "/enterprise" || path.startsWith("/enterprise/")
+      ? "true"
+      : "false",
+  );
   headers.set("x-app-origin", boundary.appOrigin);
   headers.set("x-nonce", nonce);
   headers.set("x-support-origin", supportOrigin);
@@ -46,7 +66,12 @@ export function middleware(request: NextRequest) {
   response.headers.set("Content-Security-Policy", policy);
   response.headers.set("Cache-Control", "private, no-store");
   if (!supportFrame) response.headers.set("X-Frame-Options", "DENY");
-  if (supportFrame) response.headers.set("Referrer-Policy", "no-referrer");
+  if (
+    supportFrame ||
+    path.startsWith("/enterprise") ||
+    path.startsWith("/api/enterprise")
+  )
+    response.headers.set("Referrer-Policy", "no-referrer");
   if (boundary.mode === "app" || supportFrame)
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
   return response;

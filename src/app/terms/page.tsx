@@ -22,6 +22,7 @@ const sections = [
   { id: "provider", label: "Service Provider" },
   { id: "access-and-eligibility", label: "Access and Eligibility" },
   { id: "use-of-the-service", label: "Use of the Service" },
+  { id: "paid-plans", label: "Paid Plans & Trials" },
   { id: "privacy", label: "Privacy" },
   { id: "disclaimer", label: "Disclaimer" },
   { id: "limitation-of-liability", label: "Limitation of Liability" },
@@ -38,7 +39,7 @@ export default function TermsOfUsePage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Terms of Use
           </h1>
-          <p className="mb-10 text-slate-600">Effective: August 12, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: September 9, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -117,6 +118,60 @@ export default function TermsOfUsePage() {
               </li>
             </ul>
 
+            <h2
+              id="paid-plans"
+              className="scroll-mt-24 text-xl font-semibold text-slate-900"
+            >
+              Paid plans, trials, and cancellation
+            </h2>
+            <p>
+              Hobby remains free with its existing documentation features.
+              Enterprise is $149 per month including one production and one test
+              tenant, plus $99 per additional production tenant. MSP is $249 per
+              month including ten customers and one internal tenant, plus $20
+              per additional customer. Human workspace members are not billed as
+              seats. Regular annual billing is fifteen percent below twelve
+              monthly list charges. Prices are in USD before applicable tax.
+            </p>
+            <p>
+              A thirty-day trial can be selected at checkout. Unless canceled,
+              it converts automatically to the chosen paid subscription. Trial
+              eligibility is limited across recreated workspaces and previously
+              trialed customer tenants. A checkout without a trial starts a paid
+              subscription immediately. Billing details and applicable taxes are
+              confirmed at Polar checkout. Polar acts as merchant of record for
+              the purchase.
+            </p>
+            <p>
+              The founders offer applies a fifty-percent discount to monthly
+              list rates, including additional tenants, for twelve paid months.
+              It cannot be combined with the annual discount. Qualifying
+              checkout completion must occur before 1 November 2026, 00:00
+              Europe/Berlin. The regular price applies after the discount
+              period. A terminated founders offer does not restart with a new
+              subscription.
+            </p>
+            <p>
+              Workspace owners manage invoices and cancellation through the
+              billing portal. Capacity changes require confirmation and may be
+              prorated. Disconnect tenants before reducing capacity below
+              current usage. Cancellation at the end of a paid period preserves
+              access through that period. After access expires, collection stops
+              and retained exports are available for a thirty-day recovery
+              period before scheduled deletion. A refund or payment reversal may
+              change subscription access according to the applicable checkout
+              terms. These descriptions do not limit any mandatory statutory
+              rights.
+            </p>
+            <p>
+              Customer tenant monitoring requires authorization from an
+              administrator in that tenant. Inviting a teammate does not grant
+              Microsoft permissions or automatically authorize a customer
+              connection. Reports document configured policies and review
+              evidence; they do not certify compliance or prove effective device
+              enforcement. Support and onboarding assistance are available at
+              support@ugurlabs.com.
+            </p>
             <h2
               id="privacy"
               className="scroll-mt-24 text-xl font-semibold text-slate-900"

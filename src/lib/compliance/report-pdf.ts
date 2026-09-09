@@ -1002,7 +1002,7 @@ export async function generateComplianceReportPDF(
     ensureSpace(16);
     tocEntries.push({
       title: text,
-      page: doc.internal.getCurrentPageInfo().pageNumber,
+      page: doc.getCurrentPageInfo().pageNumber,
       level: 0,
     });
     drawSectionHeading(text);
@@ -1665,7 +1665,7 @@ export async function generateComplianceReportPDF(
   });
   yPosition += disclaimerHeight + 8;
 
-  const tocPage = doc.internal.getCurrentPageInfo().pageNumber;
+  const tocPage = doc.getCurrentPageInfo().pageNumber;
   const tocStartY = yPosition;
   addContentPage();
 
@@ -2149,7 +2149,7 @@ export async function generateComplianceReportPDF(
         title: isEssentialEight
           ? control.control.title
           : `${control.control.id} ${control.control.title}`,
-        page: doc.internal.getCurrentPageInfo().pageNumber,
+        page: doc.getCurrentPageInfo().pageNumber,
         level: 1,
       });
       recordedStrategies.add(control.control.title);
@@ -2366,7 +2366,7 @@ export async function generateComplianceReportPDF(
     tocY += Math.max(4.3, lines.length * 3.5 + 0.8);
   }
 
-  const pageCount = doc.internal.getNumberOfPages();
+  const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page);
     doc.setDrawColor(...primaryColor);

@@ -41,6 +41,7 @@ export default function ImpressumPage() {
               Germany
             </p>
             <p>Represented by: Managing Director Ugur Koc</p>
+            <p>Commercial register: HRB 113979, Amtsgericht Düsseldorf</p>
 
             <h2 className="text-xl font-semibold text-slate-900">Contact</h2>
             <p>
@@ -94,6 +95,7 @@ export default function ImpressumPage() {
                 Deutschland
               </p>
               <p>Vertreten durch: Geschäftsführer Ugur Koc</p>
+              <p>Handelsregister: HRB 113979, Amtsgericht Düsseldorf</p>
 
               <h3 className="text-lg font-semibold text-slate-900">Kontakt</h3>
               <p>

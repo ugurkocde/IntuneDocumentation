@@ -118,3 +118,33 @@ Map both domains to the deployment and add `https://app.intunedocumentation.com`
 Only the exact configured public origin loads Crisp and Plausible. Public pages clear legacy session storage before loading those scripts and cannot collect Intune data. The app uses a per-response script nonce and runs no analytics or chat SDK in its own origin. A support button on app pages opens an isolated iframe at the public origin’s `/support-chat` route. Only the configured app origin may embed that page. The frame receives no account, token, policy, or URL data from the app, loads only when opened, and stays mounted when closed to preserve the conversation. Nonced HTML is dynamically rendered and must not be cached by a CDN. Unknown preview origins and self-hosted installations default to app mode with no third-party scripts. Leave both variables unset for a single-origin private app, or supply two distinct origins.
 
 The one-hour limit applies to dashboard snapshots, not Microsoft authentication token lifetimes or a report already visible in memory. Browser session restore can retain sessionStorage after restarting the browser, so the app also validates expiry before restoration. Cross-tab logout requires BroadcastChannel support; the originating tab always clears its own snapshot. No snapshot or logout payload is persisted on the server, in localStorage, or in IndexedDB.
+
+### Contact support form
+
+The public site's `/support` page runs alongside Crisp and sends requests to
+`support@ugurlabs.com` using Resend. Configure `RESEND_API_KEY`,
+`SUPPORT_FROM_EMAIL` (an address on a Resend-verified domain),
+`SUPPORT_TURNSTILE_SITE_KEY`, and `SUPPORT_TURNSTILE_SECRET_KEY` on the server.
+Configure the existing `PUBLIC_SITE_ORIGIN` and `APP_SITE_ORIGIN` pair too.
+Restrict the Turnstile widget to the public site's hostname. The site key is
+passed to the public form at runtime; API keys and secrets stay on the server.
+
+App-origin visits to `/support` redirect to the public site. Unconfigured and
+self-hosted installations show an email link without loading Turnstile. The
+endpoint rejects non-public origins, cross-origin submissions, invalid fields,
+oversized bodies, honeypot submissions, and failed or replayed Turnstile tokens.
+Cloudflare verification must match the public hostname and `support` action.
+Consider an edge rate limit on `POST /api/support` for additional volume control.
+
+The visitor's email is used only as `Reply-To`; the recipient is fixed. Success
+requires a successful Resend response containing an email ID. Acceptance does
+not guarantee inbox delivery. Timeouts show an uncertainty message and keep the
+form contents, so check Resend logs before retrying an uncertain submission.
+The app does not persist or log form contents. Resend processes the email and
+Cloudflare processes the spam verification.
+
+Before going live, configure the four variables, verify the sender domain, and
+submit a real request to confirm inbox delivery and Reply-To. API tests mock
+both services and do not send email. Provider references:
+[Resend send email](https://resend.com/docs/api-reference/emails/send-email) and
+[Turnstile server validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).

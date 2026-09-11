@@ -7,6 +7,10 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
+    RESEND_API_KEY: z.string().optional(),
+    SUPPORT_FROM_EMAIL: z.string().optional(),
+    SUPPORT_TURNSTILE_SITE_KEY: z.string().optional(),
+    SUPPORT_TURNSTILE_SECRET_KEY: z.string().optional(),
     NODE_ENV: z.enum(["development", "test", "production"]),
   },
 
@@ -29,6 +33,10 @@ export const env = createEnv({
    */
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    SUPPORT_FROM_EMAIL: process.env.SUPPORT_FROM_EMAIL,
+    SUPPORT_TURNSTILE_SITE_KEY: process.env.SUPPORT_TURNSTILE_SITE_KEY,
+    SUPPORT_TURNSTILE_SECRET_KEY: process.env.SUPPORT_TURNSTILE_SECRET_KEY,
     NEXT_PUBLIC_AZURE_AD_CLIENT_ID: process.env.NEXT_PUBLIC_AZURE_AD_CLIENT_ID,
     NEXT_PUBLIC_AZURE_AD_TENANT_ID: process.env.NEXT_PUBLIC_AZURE_AD_TENANT_ID,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,

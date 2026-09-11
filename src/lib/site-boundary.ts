@@ -24,6 +24,7 @@ export function contentSecurityPolicy(
   development = false,
   supportOrigin = "",
   frameAncestor = "",
+  supportForm = false,
 ) {
   const crisp = publicSite
     ? " https://*.crisp.chat wss://*.relay.crisp.chat wss://*.relay.rescue.crisp.chat"
@@ -40,8 +41,8 @@ export function contentSecurityPolicy(
     "img-src 'self' data: blob: https:",
     `font-src 'self' data:${publicSite ? " https://client.crisp.chat" : ""}`,
     `media-src 'self' blob:${publicSite ? " https://*.crisp.chat" : ""}`,
-    `connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://changelog.ugurlabs.com${publicSite ? " https://plausible.io" : ""}${crisp}`,
-    `frame-src 'self' https://login.microsoftonline.com${supportOrigin ? ` ${supportOrigin}` : ""}${publicSite ? " https://*.crisp.chat" : ""}`,
+    `connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://changelog.ugurlabs.com${publicSite ? " https://plausible.io" : ""}${crisp}${supportForm ? " https://challenges.cloudflare.com" : ""}`,
+    `frame-src 'self'${supportForm ? " https://challenges.cloudflare.com" : ""} https://login.microsoftonline.com${supportOrigin ? ` ${supportOrigin}` : ""}${publicSite ? " https://*.crisp.chat" : ""}`,
     `worker-src 'self' blob:${publicSite ? " https://*.crisp.chat" : ""}`,
     "manifest-src 'self'",
     ...(development ? [] : ["upgrade-insecure-requests"]),

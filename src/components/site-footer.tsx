@@ -192,10 +192,10 @@ export function SiteFooter() {
               </li>
               <li>
                 <a
-                  href="mailto:support@ugurlabs.com"
+                  href="/support"
                   className="transition-colors hover:text-teal-700"
                 >
-                  Contact
+                  Contact support
                 </a>
               </li>
             </ul>

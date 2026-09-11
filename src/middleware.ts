@@ -34,6 +34,7 @@ export function middleware(request: NextRequest) {
     process.env.NODE_ENV === "development",
     supportOrigin,
     supportFrame ? boundary.appOrigin : "",
+    path === "/support" && boundary.mode === "public",
   );
   const headers = new Headers(request.headers);
   // Replace client-supplied values, including on RSC and prefetch requests.

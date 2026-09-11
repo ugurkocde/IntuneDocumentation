@@ -106,3 +106,18 @@ describe("public/app security boundary", () => {
     );
   });
 });
+
+it("allows Turnstile only on the public support form", () => {
+  configure();
+  for (const [url, allowed] of [
+    ["https://intunedocumentation.com/support", true],
+    ["https://intunedocumentation.com/", false],
+    ["https://app.intunedocumentation.com/support", false],
+    ["https://preview.vercel.app/support", false],
+  ] as const) {
+    const policy = middleware(new NextRequest(url)).headers.get(
+      "content-security-policy",
+    )!;
+    expect(policy.includes("https://challenges.cloudflare.com")).toBe(allowed);
+  }
+});

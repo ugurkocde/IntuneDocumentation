@@ -239,6 +239,24 @@ export default function PrivacyPolicyPage() {
               </li>
             </ul>
 
+            <h2 className="text-xl font-semibold text-slate-900">
+              Support form
+            </h2>
+            <p>
+              When you use the contact support form, we send your name, email
+              address, subject, and message to our support mailbox through
+              Resend. Your email address is included as Reply-To so we can
+              respond directly. The application does not store or log form
+              submissions. The email is processed by Resend and our mailbox
+              provider.
+            </p>
+            <p>
+              The form uses Cloudflare Turnstile to prevent automated spam.
+              Cloudflare processes browser and network information for this
+              verification. The form does not attach Microsoft account details,
+              access tokens, or tenant configurations to your message.
+            </p>
+
             <h2
               id="data-sharing"
               className="scroll-mt-24 text-xl font-semibold text-slate-900"

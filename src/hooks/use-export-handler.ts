@@ -3,6 +3,7 @@ import type {
   ExportFormat,
   ExportConfig,
   ExportResult,
+  ExportOptions,
   PolicyExportError,
 } from "~/components/export-modal";
 
@@ -85,7 +86,10 @@ export function useExportHandler({
     };
   };
 
-  const handleExport = async (format: ExportFormat): Promise<ExportResult> => {
+  const handleExport = async (
+    format: ExportFormat,
+    options?: ExportOptions,
+  ): Promise<ExportResult> => {
     try {
       const accessToken = await getAccessToken();
 
@@ -156,6 +160,7 @@ export function useExportHandler({
               ) ?? [])
             : [],
         branding: brandingOptions,
+        includeComplianceEvidence: options?.includeComplianceEvidence ?? true,
       };
 
       onProgress?.({ stage: 0, progress: 10 });

@@ -1322,7 +1322,9 @@ export async function generateDetailedPDF(
   };
 
   addTenantOverview();
-  addComplianceOverview();
+  if (data.includeComplianceEvidence !== false) {
+    addComplianceOverview();
+  }
 
   if (data.fetchErrors?.length) {
     doc.addPage();

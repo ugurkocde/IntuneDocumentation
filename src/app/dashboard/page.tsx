@@ -248,6 +248,7 @@ export default function DashboardPage() {
   // Export state management
   const [exportState, setExportState] = useState<ExportState>({
     selectedFormat: "pdf-detailed",
+    includeComplianceEvidence: true,
     isExporting: false,
     exportComplete: false,
     exportError: null,
@@ -1248,6 +1249,7 @@ export default function DashboardPage() {
           if (exportState.exportComplete || exportState.exportError) {
             updateExportState({
               selectedFormat: "pdf-detailed",
+              includeComplianceEvidence: true,
               isExporting: false,
               exportComplete: false,
               exportError: null,

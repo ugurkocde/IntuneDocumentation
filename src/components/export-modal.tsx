@@ -31,6 +31,10 @@ export interface ExportConfig {
   collectionWarningCount: number;
 }
 
+export interface ExportOptions {
+  includeComplianceEvidence: boolean;
+}
+
 export interface ExportResult {
   success: boolean;
   error?: string;
@@ -45,6 +49,7 @@ export interface ExportResult {
 
 export interface ExportState {
   selectedFormat: ExportFormat;
+  includeComplianceEvidence: boolean;
   isExporting: boolean;
   exportComplete: boolean;
   exportError: string | null;
@@ -58,7 +63,10 @@ interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onMinimize?: () => void;
-  onExport: (format: ExportFormat) => Promise<ExportResult>;
+  onExport: (
+    format: ExportFormat,
+    options: ExportOptions,
+  ) => Promise<ExportResult>;
   config: ExportConfig;
   state: ExportState;
   onStateChange: (state: Partial<ExportState>) => void;
@@ -75,6 +83,7 @@ export function ExportModal({
 }: ExportModalProps) {
   const {
     selectedFormat,
+    includeComplianceEvidence,
     isExporting,
     exportComplete,
     exportError,
@@ -107,6 +116,7 @@ export function ExportModal({
   const resetState = () => {
     onStateChange({
       selectedFormat: "pdf-detailed",
+      includeComplianceEvidence: true,
       isExporting: false,
       exportComplete: false,
       exportError: null,
@@ -131,7 +141,9 @@ export function ExportModal({
     try {
       // The export handler reports real progress via onProgress callback.
       // Modal state is updated by the dashboard wiring, so we just await the result.
-      const result = await onExport(selectedFormat);
+      const result = await onExport(selectedFormat, {
+        includeComplianceEvidence,
+      });
 
       if (!result.success) {
         onStateChange({ exportError: result.error || "Export failed" });
@@ -273,6 +285,33 @@ export function ExportModal({
                     onClick={() => onStateChange({ selectedFormat: "docx" })}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="text-petrol-800 mb-3 block text-sm font-semibold">
+                  Document content
+                </label>
+                <label className="border-petrol-950/8 hover:border-petrol-950/12 bg-mint-50 flex cursor-pointer touch-manipulation items-start gap-3 rounded-2xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-teal-600 sm:p-5">
+                  <input
+                    type="checkbox"
+                    checked={includeComplianceEvidence}
+                    onChange={(event) =>
+                      onStateChange({
+                        includeComplianceEvidence: event.target.checked,
+                      })
+                    }
+                    className="border-petrol-950/20 mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded accent-teal-600 focus-visible:ring-teal-600"
+                  />
+                  <span className="min-w-0">
+                    <span className="text-petrol-950 block text-sm font-semibold">
+                      Include compliance evidence preview
+                    </span>
+                    <span className="text-petrol-600 mt-1 block text-sm leading-5">
+                      Adds the framework-to-control evidence mapping section to
+                      the exported document. Turn off to export only the
+                      selected configuration details.
+                    </span>
+                  </span>
+                </label>
               </div>
             </div>
           )}

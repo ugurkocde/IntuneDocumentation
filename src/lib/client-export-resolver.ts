@@ -33,6 +33,7 @@ interface SelectedData {
   enrollmentConfigurations: any[];
   conditionalAccessPolicies: any[];
   branding?: any;
+  includeComplianceEvidence?: boolean;
 }
 
 export interface ResolvedExportData extends SelectedData {

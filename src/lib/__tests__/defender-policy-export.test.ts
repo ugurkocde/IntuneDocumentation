@@ -109,6 +109,26 @@ describe("Defender policy exports", () => {
     expect(renderedText).toContain("11 of 97 published requirements");
   });
 
+  it.each(["PDF", "Word"])(
+    "omits the compliance evidence preview from the %s export when disabled",
+    async (format) => {
+      const data = createExportData();
+      data.includeComplianceEvidence = false;
+      const result =
+        format === "PDF"
+          ? await generateDetailedPDF(data)
+          : await generateDetailedDOCX(data);
+      const text =
+        format === "PDF"
+          ? extractPdfStreamText(result.buffer)
+          : extractZipEntry(result.buffer, "word/document.xml");
+
+      expect(text).not.toContain("Compliance Evidence Preview");
+      expect(text).not.toContain("BSI IT-Grundschutz");
+      expect(result.errors).toEqual([]);
+    },
+  );
+
   it("renders a Defender-managed policy through the ordinary Word policy path", async () => {
     const result = await generateDetailedDOCX(createExportData());
     const documentXml = extractZipEntry(result.buffer, "word/document.xml");

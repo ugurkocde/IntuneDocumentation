@@ -43,6 +43,7 @@ export interface DetailedExportData {
   groupNames?: Map<string, string>;
   deviceCounts?: Record<string, number>;
   branding?: BrandingOptions;
+  includeComplianceEvidence?: boolean;
 }
 
 export interface PolicyExportError {

@@ -973,97 +973,99 @@ export async function generateDetailedDOCX(
   }
 
   // ===== 3b. COMPLIANCE EVIDENCE PREVIEW =====
-  try {
-    const complianceAssessment = assessCompliance(data);
-    const complianceChildren: (Paragraph | Table)[] = [];
-    const statusLabels = CONTROL_STATUS_LABELS;
-    const statusRank = CONTROL_STATUS_ORDER;
+  if (data.includeComplianceEvidence !== false) {
+    try {
+      const complianceAssessment = assessCompliance(data);
+      const complianceChildren: (Paragraph | Table)[] = [];
+      const statusLabels = CONTROL_STATUS_LABELS;
+      const statusRank = CONTROL_STATUS_ORDER;
 
-    complianceChildren.push(heading1("Compliance Evidence Preview"));
-    complianceChildren.push(
-      bodyText(
-        "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
-      ),
-    );
-    complianceChildren.push(spacer());
-
-    for (const framework of complianceAssessment.frameworks) {
-      complianceChildren.push(
-        heading2(
-          `${framework.framework.name} (${framework.framework.version})`,
-        ),
-      );
-      const coverageLabel = frameworkCoverageLabel(framework);
-      if (coverageLabel) complianceChildren.push(bodyText(coverageLabel));
+      complianceChildren.push(heading1("Compliance Evidence Preview"));
       complianceChildren.push(
         bodyText(
-          `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
+          "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
         ),
       );
+      complianceChildren.push(spacer());
 
-      const maxRows = 8;
-      const ranked = [...framework.controls].sort(
-        (a, b) =>
-          statusRank[a.status] - statusRank[b.status] ||
-          compareControlIds(a.control.id, b.control.id),
-      );
-      complianceChildren.push(
-        createSettingsTable(
-          ["Control", "Title", "Status"],
-          ranked
-            .slice(0, maxRows)
-            .map((assessed) => [
-              assessed.control.id,
-              framework.framework.id === "essential-eight"
-                ? `${assessed.control.title}: ${assessed.control.summary}`
-                : assessed.control.tier
-                  ? `${assessed.control.title} (${assessed.control.tier})`
-                  : assessed.control.title,
-              statusLabels[assessed.status],
-            ]),
-          branding,
-        ),
-      );
-      if (ranked.length > maxRows) {
+      for (const framework of complianceAssessment.frameworks) {
         complianceChildren.push(
-          bodyText(
-            `…and ${ranked.length - maxRows} more controls in the full report.`,
+          heading2(
+            `${framework.framework.name} (${framework.framework.version})`,
           ),
         );
+        const coverageLabel = frameworkCoverageLabel(framework);
+        if (coverageLabel) complianceChildren.push(bodyText(coverageLabel));
+        complianceChildren.push(
+          bodyText(
+            `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
+          ),
+        );
+
+        const maxRows = 8;
+        const ranked = [...framework.controls].sort(
+          (a, b) =>
+            statusRank[a.status] - statusRank[b.status] ||
+            compareControlIds(a.control.id, b.control.id),
+        );
+        complianceChildren.push(
+          createSettingsTable(
+            ["Control", "Title", "Status"],
+            ranked
+              .slice(0, maxRows)
+              .map((assessed) => [
+                assessed.control.id,
+                framework.framework.id === "essential-eight"
+                  ? `${assessed.control.title}: ${assessed.control.summary}`
+                  : assessed.control.tier
+                    ? `${assessed.control.title} (${assessed.control.tier})`
+                    : assessed.control.title,
+                statusLabels[assessed.status],
+              ]),
+            branding,
+          ),
+        );
+        if (ranked.length > maxRows) {
+          complianceChildren.push(
+            bodyText(
+              `…and ${ranked.length - maxRows} more controls in the full report.`,
+            ),
+          );
+        }
+        complianceChildren.push(spacer());
       }
-      complianceChildren.push(spacer());
+
+      complianceChildren.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: complianceAssessment.disclaimer,
+              font: fontName,
+              size: bodySizeHp - 2,
+              color: "6E6E6E",
+              italics: true,
+            }),
+          ],
+          spacing: { before: 120, after: 120 },
+        }),
+      );
+      complianceChildren.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "Generate the full requirement-level compliance report from the Compliance view in your dashboard: intunedocumentation.com/dashboard",
+              font: fontName,
+              size: bodySizeHp,
+              bold: true,
+            }),
+          ],
+        }),
+      );
+
+      pushContentSection(complianceChildren);
+    } catch (e) {
+      console.error("Skipping compliance preview section:", e);
     }
-
-    complianceChildren.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: complianceAssessment.disclaimer,
-            font: fontName,
-            size: bodySizeHp - 2,
-            color: "6E6E6E",
-            italics: true,
-          }),
-        ],
-        spacing: { before: 120, after: 120 },
-      }),
-    );
-    complianceChildren.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: "Generate the full requirement-level compliance report from the Compliance view in your dashboard: intunedocumentation.com/dashboard",
-            font: fontName,
-            size: bodySizeHp,
-            bold: true,
-          }),
-        ],
-      }),
-    );
-
-    pushContentSection(complianceChildren);
-  } catch (e) {
-    console.error("Skipping compliance preview section:", e);
   }
 
   if (data.fetchErrors?.length) {

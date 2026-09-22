@@ -93,7 +93,10 @@ document.getElementById("sign-out")?.addEventListener("click", () => {
     .signOut()
     .then(() => {
       messageEl.textContent = "Signed out";
+      resultEl.textContent = "";
       resultEl.hidden = true;
+      deviceCodeEl.textContent = "";
+      deviceCodeEl.hidden = true;
       return refreshStatus();
     })
     .catch((error) => {

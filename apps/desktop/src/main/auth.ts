@@ -1,5 +1,6 @@
 import { PublicClientApplication } from "@azure/msal-node";
 import type {
+  AccountInfo,
   AuthenticationResult,
   AuthorizationCodeRequest,
   AuthorizationUrlRequest,
@@ -28,6 +29,9 @@ export interface SignInResult {
   expiresOn: string | null;
 }
 
+const TOKEN_REFRESH_SKEW_MS = 60_000;
+const INTERACTIVE_TIMEOUT_MS = 5 * 60_000;
+
 function base64Url(buffer: Buffer): string {
   return buffer
     .toString("base64")
@@ -42,12 +46,34 @@ function createPkcePair() {
   return { verifier, challenge };
 }
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export class AuthService {
   private readonly pca: PublicClientApplication;
   private readonly scopes: string[];
+  private account: AccountInfo | null = null;
   private accessToken: string | null = null;
-  private accountName: string | null = null;
   private expiresOn: Date | null = null;
+  private generation = 0;
+  private activeCancel: (() => void) | null = null;
 
   constructor(config: DesktopAuthConfig) {
     this.scopes = config.scopes;
@@ -62,49 +88,87 @@ export class AuthService {
   getStatus(): AuthStatus {
     return {
       signedIn: this.accessToken !== null,
-      account: this.accountName,
+      account: this.account?.username ?? null,
       expiresOn: this.expiresOn ? this.expiresOn.toISOString() : null,
     };
   }
 
-  getAccessToken(): string | null {
-    return this.accessToken;
+  async getAccessToken(): Promise<string | null> {
+    if (
+      this.accessToken &&
+      this.expiresOn &&
+      this.expiresOn.getTime() - TOKEN_REFRESH_SKEW_MS > Date.now()
+    ) {
+      return this.accessToken;
+    }
+    if (!this.account) {
+      return null;
+    }
+    try {
+      const result = await this.pca.acquireTokenSilent({
+        account: this.account,
+        scopes: this.scopes,
+      });
+      if (!result) {
+        return null;
+      }
+      this.accept(result);
+      return this.accessToken;
+    } catch {
+      return null;
+    }
   }
 
   private accept(result: AuthenticationResult): SignInResult {
     this.accessToken = result.accessToken;
-    this.accountName = result.account?.username ?? result.account?.name ?? null;
+    this.account = result.account ?? null;
     this.expiresOn = result.expiresOn ?? null;
     return {
-      account: this.accountName ?? "unknown",
+      account: this.account?.username ?? this.account?.name ?? "unknown",
       expiresOn: this.expiresOn ? this.expiresOn.toISOString() : null,
     };
+  }
+
+  private assertCurrent(generation: number): void {
+    if (generation !== this.generation) {
+      throw new Error("Sign-in was cancelled.");
+    }
   }
 
   async signInWithDeviceCode(
     onPrompt: (prompt: DeviceCodePrompt) => void,
   ): Promise<SignInResult> {
-    const request: DeviceCodeRequest = {
-      scopes: this.scopes,
-      deviceCodeCallback: (response) => {
-        onPrompt({
-          userCode: response.userCode,
-          verificationUri: response.verificationUri,
-          message: response.message,
-          expiresInSeconds: response.expiresIn,
-        });
-      },
+    const generation = this.generation;
+    this.activeCancel = () => {
+      this.generation += 1;
     };
-    const result = await this.pca.acquireTokenByDeviceCode(request);
-    if (!result) {
-      throw new Error("Device code sign-in did not return a token.");
+    try {
+      const request: DeviceCodeRequest = {
+        scopes: this.scopes,
+        deviceCodeCallback: (response) => {
+          onPrompt({
+            userCode: response.userCode,
+            verificationUri: response.verificationUri,
+            message: response.message,
+            expiresInSeconds: response.expiresIn,
+          });
+        },
+      };
+      const result = await this.pca.acquireTokenByDeviceCode(request);
+      this.assertCurrent(generation);
+      if (!result) {
+        throw new Error("Device code sign-in did not return a token.");
+      }
+      return this.accept(result);
+    } finally {
+      this.activeCancel = null;
     }
-    return this.accept(result);
   }
 
   async signInInteractive(
     openBrowser: (url: string) => Promise<void>,
   ): Promise<SignInResult> {
+    const generation = this.generation;
     const server = createServer();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
@@ -112,38 +176,73 @@ export class AuthService {
     });
     const address = server.address() as AddressInfo;
     const redirectUri = `http://localhost:${address.port}`;
+    const { verifier, challenge } = createPkcePair();
+    const state = base64Url(randomBytes(16));
+    const controller = new AbortController();
+    this.activeCancel = () => controller.abort();
 
     const codePromise = new Promise<string>((resolve, reject) => {
+      controller.signal.addEventListener(
+        "abort",
+        () => reject(new Error("Sign-in was cancelled.")),
+        { once: true },
+      );
       server.on("request", (request, response) => {
-        const callbackUrl = new URL(request.url ?? "/", redirectUri);
-        const code = callbackUrl.searchParams.get("code");
-        const error = callbackUrl.searchParams.get("error");
+        if (request.method !== "GET") {
+          response.writeHead(405).end();
+          return;
+        }
+        let callbackUrl: URL;
+        try {
+          callbackUrl = new URL(request.url ?? "/", redirectUri);
+        } catch {
+          response.writeHead(400).end();
+          reject(new Error("Sign-in callback was malformed."));
+          return;
+        }
+        if (callbackUrl.pathname !== "/") {
+          response.writeHead(404).end();
+          return;
+        }
+        if (callbackUrl.searchParams.get("state") !== state) {
+          response.writeHead(400).end("State mismatch.");
+          reject(new Error("Sign-in state mismatch."));
+          return;
+        }
         response.writeHead(200, { "Content-Type": "text/html" });
-        response.end("<p>Sign-in complete. You can close this window.</p>");
+        response.end(
+          "<p>Authentication finished. You can close this window.</p>",
+        );
+        const error = callbackUrl.searchParams.get("error");
         if (error) {
           reject(
             new Error(callbackUrl.searchParams.get("error_description") ?? error),
           );
           return;
         }
+        const code = callbackUrl.searchParams.get("code");
         if (code) {
           resolve(code);
         }
       });
     });
 
-    const { verifier, challenge } = createPkcePair();
-    const urlRequest: AuthorizationUrlRequest = {
-      scopes: this.scopes,
-      redirectUri,
-      codeChallenge: challenge,
-      codeChallengeMethod: "S256",
-    };
-    const authUrl = await this.pca.getAuthCodeUrl(urlRequest);
-    await openBrowser(authUrl);
-
     try {
-      const code = await codePromise;
+      const urlRequest: AuthorizationUrlRequest = {
+        scopes: this.scopes,
+        redirectUri,
+        state,
+        codeChallenge: challenge,
+        codeChallengeMethod: "S256",
+      };
+      const authUrl = await this.pca.getAuthCodeUrl(urlRequest);
+      await openBrowser(authUrl);
+      const code = await withTimeout(
+        codePromise,
+        INTERACTIVE_TIMEOUT_MS,
+        "Sign-in timed out. Please try again.",
+      );
+      this.assertCurrent(generation);
       const codeRequest: AuthorizationCodeRequest = {
         code,
         scopes: this.scopes,
@@ -153,13 +252,24 @@ export class AuthService {
       const result = await this.pca.acquireTokenByCode(codeRequest);
       return this.accept(result);
     } finally {
+      this.activeCancel = null;
       server.close();
     }
   }
 
   signOut(): void {
+    this.generation += 1;
+    this.activeCancel?.();
+    this.activeCancel = null;
+    const cache = this.pca.getTokenCache();
+    void cache
+      .getAllAccounts()
+      .then((accounts) =>
+        Promise.all(accounts.map((account) => cache.removeAccount(account))),
+      )
+      .catch(() => undefined);
+    this.account = null;
     this.accessToken = null;
-    this.accountName = null;
     this.expiresOn = null;
   }
 }

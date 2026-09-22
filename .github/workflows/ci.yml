@@ -33,6 +33,31 @@ jobs:
         env:
           SKIP_ENV_VALIDATION: "1"
 
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: apps/desktop
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: apps/desktop
+        run: npm run build
+
   docker:
     runs-on: ubuntu-latest
     steps:

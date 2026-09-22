@@ -50,6 +50,7 @@ await build({
 await build({
   ...shared,
   plugins: [nodePolyfill],
+  inject: [path.join(import.meta.dirname, "src/renderer/buffer-shim.ts")],
   entryPoints: ["src/renderer/main.tsx"],
   outfile: "dist/renderer/renderer.js",
   platform: "browser",

@@ -200,6 +200,13 @@ ipcMain.handle(
     if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_SAVE_BYTES) {
       throw new Error("Invalid export payload.");
     }
+    const autoSaveDir = process.env.INTUNEDOC_AUTO_SAVE_DIR;
+    if (autoSaveDir) {
+      const target = path.join(autoSaveDir, path.basename(defaultName));
+      await fs.mkdir(autoSaveDir, { recursive: true });
+      await fs.writeFile(target, Buffer.from(bytes));
+      return target;
+    }
     const options = { defaultPath: path.basename(defaultName) };
     const result = mainWindow
       ? await dialog.showSaveDialog(mainWindow, options)

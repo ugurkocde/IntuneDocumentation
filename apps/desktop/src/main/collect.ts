@@ -19,7 +19,7 @@ export interface CollectionResult {
 export interface FullCollectionSummary {
   collectedAt: string;
   totalConfigurations: number;
-  sectionCounts: Array<{ label: string; count: number }>;
+  sectionCounts: Array<{ key: string; label: string; count: number }>;
   fetchErrors: number;
   permissionErrors: number;
 }
@@ -29,9 +29,24 @@ type FullCollection = Awaited<
 >;
 
 let lastCollection: FullCollection | null = null;
+let collectionOwner: string | null = null;
+let collecting = false;
 
 export function getLastCollection(): FullCollection | null {
   return lastCollection;
+}
+
+export function getCollectionOwner(): string | null {
+  return collectionOwner;
+}
+
+export function isCollecting(): boolean {
+  return collecting;
+}
+
+export function clearCollection(): void {
+  lastCollection = null;
+  collectionOwner = null;
 }
 
 export async function collectDeviceConfigurations(
@@ -52,19 +67,35 @@ export async function collectDeviceConfigurations(
 
 export async function collectAll(
   accessToken: string,
-  onProgress?: ProgressCallback,
+  onProgress: ProgressCallback | undefined,
+  options: { owner: string; signal?: AbortSignal; budgetMs?: number },
 ): Promise<FullCollectionSummary> {
-  const service = new DetailedIntuneService(accessToken, onProgress);
-  const data = await service.getAllDetailedConfigurations(true);
-  lastCollection = data;
-  return {
-    collectedAt: data.collectedAt,
-    totalConfigurations: data.summary.totalConfigurations,
-    sectionCounts: data.sections.map((section) => ({
-      label: section.label,
-      count: section.items.length,
-    })),
-    fetchErrors: data.fetchErrors.length,
-    permissionErrors: data.permissionErrors.length,
-  };
+  if (collecting) {
+    throw new Error("A collection is already running.");
+  }
+  collecting = true;
+  try {
+    const service = new DetailedIntuneService(
+      accessToken,
+      onProgress,
+      options.signal,
+      options.budgetMs ?? 30 * 60_000,
+    );
+    const data = await service.getAllDetailedConfigurations(true);
+    lastCollection = data;
+    collectionOwner = options.owner;
+    return {
+      collectedAt: data.collectedAt,
+      totalConfigurations: data.summary.totalConfigurations,
+      sectionCounts: data.sections.map((section) => ({
+        key: section.familyKey,
+        label: section.label,
+        count: section.items.length,
+      })),
+      fetchErrors: data.fetchErrors.length,
+      permissionErrors: data.permissionErrors.length,
+    };
+  } finally {
+    collecting = false;
+  }
 }

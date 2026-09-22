@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    "Avenir Next", "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui,
+    sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --color-petrol-950: #082f36;
+  --color-petrol-900: #0c3b43;
+  --color-petrol-800: #164c53;
+  --color-petrol-700: #285e64;
+  --color-petrol-600: #44747a;
+  --color-teal-700: #26777c;
+  --color-teal-600: #318990;
+  --color-teal-500: #45a0a5;
+  --color-teal-100: #dceff0;
+  --color-teal-50: #eef8f7;
+  --color-mint-100: #e7eeec;
+  --color-mint-50: #f1f5f3;
+  --color-surface: #f7faf9;
+  --shadow-soft: 0 24px 70px -34px rgb(8 47 54 / 0.28);
+  --shadow-card: 0 18px 50px -30px rgb(8 47 54 / 0.22);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-mint-50);
+  color: var(--color-petrol-950);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

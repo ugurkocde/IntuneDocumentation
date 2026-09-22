@@ -13,11 +13,13 @@ import type { DesktopAuthConfig } from "./config";
 export interface AuthStatus {
   signedIn: boolean;
   account: string | null;
+  tenantId: string | null;
   expiresOn: string | null;
 }
 
 export interface SignInResult {
   account: string;
+  tenantId: string | null;
   expiresOn: string | null;
 }
 
@@ -81,8 +83,16 @@ export class AuthService {
     return {
       signedIn: this.accessToken !== null,
       account: this.account?.username ?? null,
+      tenantId: this.account?.tenantId ?? null,
       expiresOn: this.expiresOn ? this.expiresOn.toISOString() : null,
     };
+  }
+
+  getOwnerKey(): string | null {
+    if (!this.account) {
+      return null;
+    }
+    return `${this.account.username ?? ""}|${this.account.tenantId ?? ""}`;
   }
 
   async getAccessToken(): Promise<string | null> {
@@ -96,12 +106,16 @@ export class AuthService {
     if (!this.account) {
       return null;
     }
+    const generation = this.generation;
     try {
       const result = await this.pca.acquireTokenSilent({
         account: this.account,
         scopes: this.scopes,
       });
       if (!result) {
+        return null;
+      }
+      if (generation !== this.generation) {
         return null;
       }
       this.accept(result);
@@ -117,6 +131,7 @@ export class AuthService {
     this.expiresOn = result.expiresOn ?? null;
     return {
       account: this.account?.username ?? this.account?.name ?? "unknown",
+      tenantId: this.account?.tenantId ?? null,
       expiresOn: this.expiresOn ? this.expiresOn.toISOString() : null,
     };
   }
@@ -198,9 +213,6 @@ export class AuthService {
         INTERACTIVE_TIMEOUT_MS,
         "Sign-in timed out. Please try again.",
       );
-      if (generation !== this.generation) {
-        throw new Error("Sign-in was cancelled.");
-      }
       const codeRequest: AuthorizationCodeRequest = {
         code,
         scopes: this.scopes,
@@ -208,6 +220,10 @@ export class AuthService {
         codeVerifier: verifier,
       };
       const result = await this.pca.acquireTokenByCode(codeRequest);
+      if (generation !== this.generation) {
+        await this.disposeCache();
+        throw new Error("Sign-in was cancelled.");
+      }
       return this.accept(result);
     } finally {
       this.activeCancel = null;
@@ -215,19 +231,23 @@ export class AuthService {
     }
   }
 
-  signOut(): void {
+  private async disposeCache(): Promise<void> {
+    const cache = this.pca.getTokenCache();
+    try {
+      const accounts = await cache.getAllAccounts();
+      await Promise.all(accounts.map((account) => cache.removeAccount(account)));
+    } catch {
+      return;
+    }
+  }
+
+  async signOut(): Promise<void> {
     this.generation += 1;
     this.activeCancel?.();
     this.activeCancel = null;
-    const cache = this.pca.getTokenCache();
-    void cache
-      .getAllAccounts()
-      .then((accounts) =>
-        Promise.all(accounts.map((account) => cache.removeAccount(account))),
-      )
-      .catch(() => undefined);
     this.account = null;
     this.accessToken = null;
     this.expiresOn = null;
+    await this.disposeCache();
   }
 }

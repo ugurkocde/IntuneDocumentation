@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { AuthService } from "./auth";
-import { collectAll } from "./collect";
+import { clearCollection, collectAll } from "./collect";
 import { DEFAULT_SCOPES } from "./config";
 import { prepareExport } from "./export";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
@@ -12,6 +12,9 @@ import { readSettings, writeSettings, type AppSettings } from "./settings";
 let auth: AuthService | null = null;
 let authKey = "";
 let mainWindow: BrowserWindow | null = null;
+let activeCollection: AbortController | null = null;
+
+const MAX_SAVE_BYTES = 300 * 1024 * 1024;
 
 function rendererUrl(): string {
   return pathToFileURL(path.join(__dirname, "../renderer/index.html")).href;
@@ -58,20 +61,29 @@ async function openAuthUrl(url: string): Promise<void> {
   await shell.openExternal(url);
 }
 
-async function requireAccessToken(): Promise<string> {
+function cancelCollection(): void {
+  activeCollection?.abort();
+  activeCollection = null;
+}
+
+async function requireSession(): Promise<{ token: string; owner: string }> {
   const service = await getAuth();
   const token = await service.getAccessToken();
-  if (!token) {
+  const owner = service.getOwnerKey();
+  if (!token || !owner) {
     throw new Error("Sign in before continuing.");
   }
-  return token;
+  return { token, owner };
 }
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1080,
-    height: 760,
+    width: 1180,
+    height: 800,
+    minWidth: 900,
+    minHeight: 640,
     title: "Intune Documentation",
+    backgroundColor: "#f1f5f3",
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.cjs"),
       sandbox: true,
@@ -101,6 +113,8 @@ ipcMain.handle("settings:get", (event) => {
 ipcMain.handle("settings:save", async (event, input: Partial<AppSettings>) => {
   assertTrustedSender(event);
   const saved = await writeSettings(input);
+  cancelCollection();
+  clearCollection();
   auth = null;
   authKey = "";
   return saved;
@@ -119,35 +133,63 @@ ipcMain.handle("auth:interactive", async (event) => {
 ipcMain.handle("auth:signOut", async (event) => {
   assertTrustedSender(event);
   const service = await getAuth();
-  service.signOut();
+  cancelCollection();
+  clearCollection();
+  await service.signOut();
   return service.getStatus();
 });
 
 ipcMain.handle("collect:all", async (event) => {
   assertTrustedSender(event);
-  const token = await requireAccessToken();
-  return collectAll(token, (progress) => {
-    if (event.sender.isDestroyed()) return;
-    event.sender.send("collect:progress", {
-      step: progress.step,
-      type: progress.type,
-      current: progress.current,
-      total: progress.total,
-      message: progress.message,
-    });
-  });
+  const { token, owner } = await requireSession();
+  cancelCollection();
+  const controller = new AbortController();
+  activeCollection = controller;
+  try {
+    return await collectAll(
+      token,
+      (progress) => {
+        if (event.sender.isDestroyed()) return;
+        event.sender.send("collect:progress", {
+          step: progress.step,
+          type: progress.type,
+          current: progress.current,
+          total: progress.total,
+          message: progress.message,
+        });
+      },
+      { owner, signal: controller.signal, budgetMs: 30 * 60_000 },
+    );
+  } finally {
+    if (activeCollection === controller) {
+      activeCollection = null;
+    }
+  }
+});
+
+ipcMain.handle("collect:cancel", (event) => {
+  assertTrustedSender(event);
+  cancelCollection();
+  return true;
 });
 
 ipcMain.handle("export:prepare", async (event) => {
   assertTrustedSender(event);
-  return prepareExport(await requireAccessToken());
+  const { token, owner } = await requireSession();
+  return prepareExport(token, owner);
 });
 
 ipcMain.handle(
   "file:save",
   async (event, defaultName: string, bytes: Uint8Array) => {
     assertTrustedSender(event);
-    const options = { defaultPath: defaultName };
+    if (typeof defaultName !== "string" || !defaultName.trim()) {
+      throw new Error("Invalid file name.");
+    }
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_SAVE_BYTES) {
+      throw new Error("Invalid export payload.");
+    }
+    const options = { defaultPath: path.basename(defaultName) };
     const result = mainWindow
       ? await dialog.showSaveDialog(mainWindow, options)
       : await dialog.showSaveDialog(options);

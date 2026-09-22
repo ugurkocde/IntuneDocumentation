@@ -1,10 +1,14 @@
-import { resolveExportData } from "../../../../src/lib/client-export-resolver";
-import { getLastCollection } from "./collect";
+import { getCollectionOwner, getLastCollection } from "./collect";
 
-export async function prepareExport(accessToken: string) {
+export async function prepareExport(accessToken: string, owner: string) {
   const data = getLastCollection();
-  if (!data) {
-    throw new Error("Collect tenant data before exporting.");
+  if (!data || getCollectionOwner() !== owner) {
+    throw new Error(
+      "Collect tenant data again for the account that is currently signed in.",
+    );
   }
+  const { resolveExportData } = await import(
+    "../../../../src/lib/client-export-resolver"
+  );
   return resolveExportData(data, accessToken);
 }

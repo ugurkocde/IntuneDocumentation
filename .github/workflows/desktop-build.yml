@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "apps/desktop/**"
+      - "src/lib/**"
+      - "src/types/**"
+      - "public/logo.png"
       - ".github/workflows/desktop-build.yml"
   workflow_dispatch:
 

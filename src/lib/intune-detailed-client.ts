@@ -389,8 +389,9 @@ export class DetailedIntuneService {
     accessToken: string,
     progressCallback?: ProgressCallback,
     signal?: AbortSignal,
+    budgetMs = 105_000,
   ) {
-    this.client = createGraphClient(accessToken, { signal, budgetMs: 105_000 });
+    this.client = createGraphClient(accessToken, { signal, budgetMs });
     this.progressCallback = progressCallback;
   }
 

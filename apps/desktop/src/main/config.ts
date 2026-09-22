@@ -13,6 +13,7 @@ export const DEFAULT_SCOPES = [
   "DeviceManagementServiceConfig.Read.All",
   "DeviceManagementScripts.Read.All",
   "Group.Read.All",
+  "Policy.Read.All",
 ];
 
 export const DEFAULT_TENANT = "organizations";

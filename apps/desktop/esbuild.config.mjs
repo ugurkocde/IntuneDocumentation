@@ -1,5 +1,6 @@
 import { build } from "esbuild";
 import { cp, mkdir } from "node:fs/promises";
+import { execSync } from "node:child_process";
 import path from "node:path";
 
 const bufferPath = path.join(
@@ -12,7 +13,9 @@ const bufferPath = path.join(
 const nodePolyfill = {
   name: "node-polyfill",
   setup(build) {
-    build.onResolve({ filter: /^(node:)?buffer$/ }, () => ({ path: bufferPath }));
+    build.onResolve({ filter: /^(node:)?buffer$/ }, () => ({
+      path: bufferPath,
+    }));
   },
 };
 
@@ -47,12 +50,19 @@ await build({
 await build({
   ...shared,
   plugins: [nodePolyfill],
-  entryPoints: ["src/renderer/renderer.ts"],
+  entryPoints: ["src/renderer/main.tsx"],
   outfile: "dist/renderer/renderer.js",
   platform: "browser",
   target: "chrome120",
   format: "iife",
+  jsx: "automatic",
 });
 
 await mkdir("dist/renderer", { recursive: true });
 await cp("src/renderer/index.html", "dist/renderer/index.html");
+await cp("../../public/logo.png", "dist/renderer/logo.png");
+
+execSync(
+  "npx --no-install @tailwindcss/cli -i src/renderer/index.css -o dist/renderer/index.css --minify",
+  { stdio: "inherit" },
+);

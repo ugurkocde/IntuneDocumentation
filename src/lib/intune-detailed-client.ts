@@ -20,7 +20,7 @@ import {
   collectConfiguredSettingDefinitionIds,
 } from "./configuration-parser";
 
-import { createGraphClient } from "./graph-client";
+import { createGraphClient, type TokenProvider } from "./graph-client";
 export { createGraphClient } from "./graph-client";
 
 // Enhanced configuration types with settings
@@ -386,7 +386,7 @@ export class DetailedIntuneService {
   private nextConfigurationSettingDefinitionRequestLane = 0;
 
   constructor(
-    accessToken: string,
+    accessToken: TokenProvider,
     progressCallback?: ProgressCallback,
     signal?: AbortSignal,
     budgetMs = 105_000,

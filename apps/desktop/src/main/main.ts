@@ -66,14 +66,22 @@ function cancelCollection(): void {
   activeCollection = null;
 }
 
-async function requireSession(): Promise<{ token: string; owner: string }> {
+async function requireOwner(): Promise<string> {
   const service = await getAuth();
-  const token = await service.getAccessToken();
   const owner = service.getOwnerKey();
-  if (!token || !owner) {
+  if (!owner || !(await service.getAccessToken())) {
     throw new Error("Sign in before continuing.");
   }
-  return { token, owner };
+  return owner;
+}
+
+async function tokenProvider(): Promise<string> {
+  const service = await getAuth();
+  const token = await service.getAccessToken();
+  if (!token) {
+    throw new Error("Sign in before continuing.");
+  }
+  return token;
 }
 
 function createWindow(): void {
@@ -144,13 +152,13 @@ ipcMain.handle("auth:signOut", async (event) => {
 
 ipcMain.handle("collect:all", async (event) => {
   assertTrustedSender(event);
-  const { token, owner } = await requireSession();
+  const owner = await requireOwner();
   cancelCollection();
   const controller = new AbortController();
   activeCollection = controller;
   try {
     return await collectAll(
-      token,
+      tokenProvider,
       (progress) => {
         if (event.sender.isDestroyed()) return;
         event.sender.send("collect:progress", {
@@ -178,8 +186,8 @@ ipcMain.handle("collect:cancel", (event) => {
 
 ipcMain.handle("export:prepare", async (event) => {
   assertTrustedSender(event);
-  const { token, owner } = await requireSession();
-  return prepareExport(token, owner);
+  const owner = await requireOwner();
+  return prepareExport(tokenProvider, owner);
 });
 
 ipcMain.handle(

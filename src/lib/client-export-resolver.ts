@@ -1,4 +1,5 @@
 import { Client } from "@microsoft/microsoft-graph-client";
+import { createGraphClient } from "./graph-client";
 import { GroupResolver } from "./group-resolver";
 import { collectAllPages } from "./graph-paging";
 import type { ConfigurationSectionData } from "./configuration-sections";
@@ -48,7 +49,7 @@ export interface ResolvedExportData extends SelectedData {
  */
 export async function resolveExportData(
   data: SelectedData,
-  accessToken: string,
+  accessToken: string | (() => Promise<string>),
   onProgress?: (progress: ExportResolverProgress) => void,
 ): Promise<ResolvedExportData> {
   // Resolve group names
@@ -131,11 +132,7 @@ export async function resolveExportData(
   try {
     onProgress?.({ stage: "devices", message: "Fetching device counts..." });
 
-    const client = Client.init({
-      authProvider: (done) => {
-        done(null, accessToken);
-      },
-    });
+    const client = createGraphClient(accessToken);
 
     const devicesResponse = await client
       .api("/deviceManagement/managedDevices")

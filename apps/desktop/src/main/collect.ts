@@ -2,7 +2,7 @@ import {
   DetailedIntuneService,
   type ProgressCallback,
 } from "../../../../src/lib/intune-detailed-client";
-import { IntuneService } from "../../../../src/lib/graph-client";
+import { IntuneService, type TokenProvider } from "../../../../src/lib/graph-client";
 
 export interface DeviceConfigurationSummary {
   id: string;
@@ -66,7 +66,7 @@ export async function collectDeviceConfigurations(
 }
 
 export async function collectAll(
-  accessToken: string,
+  accessToken: TokenProvider,
   onProgress: ProgressCallback | undefined,
   options: { owner: string; signal?: AbortSignal; budgetMs?: number },
 ): Promise<FullCollectionSummary> {

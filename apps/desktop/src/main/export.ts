@@ -1,6 +1,9 @@
 import { getCollectionOwner, getLastCollection } from "./collect";
 
-export async function prepareExport(accessToken: string, owner: string) {
+export async function prepareExport(
+  accessToken: string | (() => Promise<string>),
+  owner: string,
+) {
   const data = getLastCollection();
   if (!data || getCollectionOwner() !== owner) {
     throw new Error(

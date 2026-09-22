@@ -10,33 +10,9 @@
     "build": "node esbuild.config.mjs",
     "typecheck": "tsc --noEmit",
     "start": "electron .",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac"
-  },
-  "build": {
-    "appId": "com.ugurlabs.intunedocumentation",
-    "productName": "Intune Documentation",
-    "asar": true,
-    "directories": {
-      "output": "release",
-      "buildResources": "build"
-    },
-    "files": ["dist/**/*", "package.json"],
-    "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
-      "category": "public.app-category.business",
-      "icon": "build/icon.png"
-    },
-    "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "icon": "build/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false
-    }
+    "dist": "npm run build && electron-builder --config electron-builder.cjs",
+    "dist:win": "npm run build && electron-builder --config electron-builder.cjs --win",
+    "dist:mac": "npm run build && electron-builder --config electron-builder.cjs --mac"
   },
   "devDependencies": {
     "@azure/msal-node": "^6.0.1",

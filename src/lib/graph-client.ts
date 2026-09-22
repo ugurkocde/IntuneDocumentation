@@ -7,8 +7,10 @@ import {
   GraphPaginationError,
 } from "./graph-paging";
 
+export type TokenProvider = string | (() => Promise<string>);
+
 export function createGraphClient(
-  accessToken: string,
+  accessToken: TokenProvider,
   options: { signal?: AbortSignal; budgetMs?: number } = {},
 ) {
   const signals = [
@@ -18,7 +20,15 @@ export function createGraphClient(
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const client = Client.init({
     defaultVersion: "beta",
-    authProvider: (done) => done(null, accessToken),
+    authProvider: (done) => {
+      if (typeof accessToken === "function") {
+        accessToken()
+          .then((token) => done(null, token))
+          .catch((error) => done(error, null));
+      } else {
+        done(null, accessToken);
+      }
+    },
   });
   const run = createGraphLimiter(6);
   const api = client.api.bind(client);

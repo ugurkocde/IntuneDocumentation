@@ -1,4 +1,4 @@
-import { createGraphClient } from "./graph-client";
+import { createGraphClient, type TokenProvider } from "./graph-client";
 import {
   graphStatus,
   isTransientGraphError,
@@ -15,7 +15,7 @@ export class GroupResolver {
   }
   private groupCache = new Map<string, string>();
 
-  constructor(accessToken: string) {
+  constructor(accessToken: TokenProvider) {
     this.client = createGraphClient(accessToken);
   }
 

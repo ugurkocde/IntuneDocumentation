@@ -1,0 +1,24 @@
+{
+  "name": "@intunedocumentation/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Intune documentation desktop app",
+  "type": "module",
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@azure/msal-node": "^6.0.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "isomorphic-fetch": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "electron": "^44.4.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.8.2"
+  }
+}

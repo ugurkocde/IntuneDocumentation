@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Intune Documentation</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        padding: 24px;
+      }
+      button {
+        margin: 0 8px 8px 0;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      pre {
+        background: rgba(127, 127, 127, 0.12);
+        padding: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Intune Documentation</h1>
+    <p id="status">Checking sign-in status...</p>
+    <div>
+      <button id="sign-in-interactive">Sign in with browser</button>
+      <button id="sign-in-device">Sign in with device code</button>
+      <button id="sign-out">Sign out</button>
+      <button id="collect">Collect device configurations</button>
+    </div>
+    <p id="message"></p>
+    <pre id="device-code" hidden></pre>
+    <pre id="result" hidden></pre>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

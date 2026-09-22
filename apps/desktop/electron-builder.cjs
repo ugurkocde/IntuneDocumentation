@@ -27,7 +27,7 @@ module.exports = {
     target: [{ target: "dmg", arch: ["arm64", "x64"] }],
     category: "public.app-category.business",
     icon: "build/icon.png",
-    hardenedRuntime: signingRequested,
+    hardenedRuntime: true,
     gatekeeperAssess: false,
     entitlements: "build/entitlements.mac.plist",
     entitlementsInherit: "build/entitlements.mac.plist",

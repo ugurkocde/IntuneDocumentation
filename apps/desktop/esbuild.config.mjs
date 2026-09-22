@@ -1,10 +1,12 @@
 import { build } from "esbuild";
 import { cp, mkdir } from "node:fs/promises";
+import path from "node:path";
 
 const shared = {
   bundle: true,
   sourcemap: true,
   logLevel: "info",
+  nodePaths: [path.join(import.meta.dirname, "node_modules")],
 };
 
 await build({

@@ -32,10 +32,12 @@ module.exports = {
     entitlements: "build/entitlements.mac.plist",
     entitlementsInherit: "build/entitlements.mac.plist",
     notarize: notarizeRequested,
+    artifactName: "Intunedocumentation-${version}-${arch}.${ext}",
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
     icon: "build/icon.png",
+    artifactName: "Intunedocumentation Setup ${version}.${ext}",
     ...(winSigning
       ? {
           azureSignOptions: {

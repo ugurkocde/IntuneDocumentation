@@ -3,7 +3,6 @@ import type { IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { AuthService } from "./auth";
-import type { DeviceCodePrompt } from "./auth";
 import { collectDeviceConfigurations } from "./collect";
 import { loadAuthConfig } from "./config";
 
@@ -73,14 +72,6 @@ function createWindow(): void {
 ipcMain.handle("auth:status", (event) => {
   assertTrustedSender(event);
   return getAuth().getStatus();
-});
-
-ipcMain.handle("auth:deviceCode", (event) => {
-  assertTrustedSender(event);
-  const service = getAuth();
-  return service.signInWithDeviceCode((prompt: DeviceCodePrompt) => {
-    mainWindow?.webContents.send("auth:deviceCodePrompt", prompt);
-  });
 });
 
 ipcMain.handle("auth:interactive", (event) => {

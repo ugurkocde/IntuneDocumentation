@@ -4,19 +4,11 @@ import type {
   AuthenticationResult,
   AuthorizationCodeRequest,
   AuthorizationUrlRequest,
-  DeviceCodeRequest,
 } from "@azure/msal-node";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { DesktopAuthConfig } from "./config";
-
-export interface DeviceCodePrompt {
-  userCode: string;
-  verificationUri: string;
-  message: string;
-  expiresInSeconds: number;
-}
 
 export interface AuthStatus {
   signedIn: boolean;
@@ -129,42 +121,6 @@ export class AuthService {
     };
   }
 
-  private assertCurrent(generation: number): void {
-    if (generation !== this.generation) {
-      throw new Error("Sign-in was cancelled.");
-    }
-  }
-
-  async signInWithDeviceCode(
-    onPrompt: (prompt: DeviceCodePrompt) => void,
-  ): Promise<SignInResult> {
-    const generation = this.generation;
-    this.activeCancel = () => {
-      this.generation += 1;
-    };
-    try {
-      const request: DeviceCodeRequest = {
-        scopes: this.scopes,
-        deviceCodeCallback: (response) => {
-          onPrompt({
-            userCode: response.userCode,
-            verificationUri: response.verificationUri,
-            message: response.message,
-            expiresInSeconds: response.expiresIn,
-          });
-        },
-      };
-      const result = await this.pca.acquireTokenByDeviceCode(request);
-      this.assertCurrent(generation);
-      if (!result) {
-        throw new Error("Device code sign-in did not return a token.");
-      }
-      return this.accept(result);
-    } finally {
-      this.activeCancel = null;
-    }
-  }
-
   async signInInteractive(
     openBrowser: (url: string) => Promise<void>,
   ): Promise<SignInResult> {
@@ -242,7 +198,9 @@ export class AuthService {
         INTERACTIVE_TIMEOUT_MS,
         "Sign-in timed out. Please try again.",
       );
-      this.assertCurrent(generation);
+      if (generation !== this.generation) {
+        throw new Error("Sign-in was cancelled.");
+      }
       const codeRequest: AuthorizationCodeRequest = {
         code,
         scopes: this.scopes,

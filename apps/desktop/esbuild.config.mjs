@@ -2,11 +2,26 @@ import { build } from "esbuild";
 import { cp, mkdir } from "node:fs/promises";
 import path from "node:path";
 
+const bufferPath = path.join(
+  import.meta.dirname,
+  "node_modules",
+  "buffer",
+  "index.js",
+);
+
+const nodePolyfill = {
+  name: "node-polyfill",
+  setup(build) {
+    build.onResolve({ filter: /^(node:)?buffer$/ }, () => ({ path: bufferPath }));
+  },
+};
+
 const shared = {
   bundle: true,
   sourcemap: true,
   logLevel: "info",
   nodePaths: [path.join(import.meta.dirname, "node_modules")],
+  define: { "process.env.NODE_ENV": '"production"', global: "globalThis" },
 };
 
 await build({
@@ -31,6 +46,7 @@ await build({
 
 await build({
   ...shared,
+  plugins: [nodePolyfill],
   entryPoints: ["src/renderer/renderer.ts"],
   outfile: "dist/renderer/renderer.js",
   platform: "browser",

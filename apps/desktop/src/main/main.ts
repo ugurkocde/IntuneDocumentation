@@ -1,10 +1,12 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { AuthService } from "./auth";
-import { collectDeviceConfigurations } from "./collect";
+import { collectAll } from "./collect";
 import { loadAuthConfig } from "./config";
+import { prepareExport } from "./export";
 
 let auth: AuthService | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -41,6 +43,14 @@ async function openAuthUrl(url: string): Promise<void> {
     throw new Error("Refused to open an unexpected sign-in URL.");
   }
   await shell.openExternal(url);
+}
+
+async function requireAccessToken(): Promise<string> {
+  const token = await getAuth().getAccessToken();
+  if (!token) {
+    throw new Error("Sign in before continuing.");
+  }
+  return token;
 }
 
 function createWindow(): void {
@@ -86,14 +96,31 @@ ipcMain.handle("auth:signOut", (event) => {
   return service.getStatus();
 });
 
-ipcMain.handle("collect:deviceConfigurations", async (event) => {
+ipcMain.handle("collect:all", async (event) => {
   assertTrustedSender(event);
-  const token = await getAuth().getAccessToken();
-  if (!token) {
-    throw new Error("Sign in before collecting.");
-  }
-  return collectDeviceConfigurations(token);
+  return collectAll(await requireAccessToken());
 });
+
+ipcMain.handle("export:prepare", async (event) => {
+  assertTrustedSender(event);
+  return prepareExport(await requireAccessToken());
+});
+
+ipcMain.handle(
+  "file:save",
+  async (event, defaultName: string, bytes: Uint8Array) => {
+    assertTrustedSender(event);
+    const options = { defaultPath: defaultName };
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, options)
+      : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+    await fs.writeFile(result.filePath, Buffer.from(bytes));
+    return result.filePath;
+  },
+);
 
 void app.whenReady().then(() => {
   createWindow();

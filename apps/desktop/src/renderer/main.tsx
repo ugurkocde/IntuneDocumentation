@@ -44,6 +44,18 @@ interface CollectProgress {
   message?: string;
 }
 
+interface LicenseStatus {
+  hasKey: boolean;
+  keyHint: string | null;
+  persisted: boolean;
+  tenantId: string | null;
+  entitled: boolean;
+  plan: "pro" | "msp" | null;
+  tenants: number | null;
+  expiresAt: string | null;
+  message: string | null;
+}
+
 interface IntunedocApi {
   settingsGet(): Promise<AppSettings>;
   settingsSave(settings: AppSettings): Promise<AppSettings>;
@@ -53,6 +65,10 @@ interface IntunedocApi {
   collectAll(): Promise<FullCollectionSummary>;
   collectCancel(): Promise<boolean>;
   prepareExport(): Promise<DetailedExportData>;
+  licenseStatus(): Promise<LicenseStatus>;
+  licenseSetKey(key: string): Promise<LicenseStatus>;
+  licenseDeactivate(): Promise<LicenseStatus>;
+  licenseOpen(target: "buy" | "portal"): Promise<boolean>;
   saveFile(defaultName: string, bytes: Uint8Array): Promise<string | null>;
   onCollectProgress(callback: (progress: CollectProgress) => void): () => void;
 }
@@ -111,6 +127,157 @@ function SecondaryButton({
   );
 }
 
+function licenseSummary(license: LicenseStatus | null): string {
+  if (!license?.hasKey) return "No license";
+  if (license.entitled) return "Active";
+  if (!license.tenantId) return "Sign in to activate";
+  return "Not active for this tenant";
+}
+
+function LicensePanel({
+  license,
+  onChange,
+}: {
+  license: LicenseStatus | null;
+  onChange: () => Promise<void>;
+}) {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function run(action: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    setMessage("");
+    try {
+      await action();
+      setMessage(done);
+      setKey("");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    } finally {
+      setBusy(false);
+      await onChange();
+    }
+  }
+
+  const details = license?.entitled
+    ? [
+        { label: "Plan", value: license.plan === "msp" ? "MSP" : "Pro" },
+        { label: "Tenant", value: license.tenantId ?? "" },
+        {
+          label: "Tenants allowed",
+          value: String(license.tenants ?? ""),
+        },
+        {
+          label: "Verified until",
+          value: license.expiresAt
+            ? new Date(license.expiresAt).toLocaleString()
+            : "",
+        },
+      ]
+    : [];
+
+  return (
+    <Card>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-petrol-900">License</h2>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+            license?.entitled
+              ? "bg-teal-100 text-teal-700"
+              : "bg-mint-100 text-petrol-700"
+          }`}
+        >
+          {licenseSummary(license)}
+        </span>
+      </div>
+      <p className="mb-4 text-xs text-petrol-600">
+        Collecting and exporting need a license for the signed-in tenant.
+        Activation sends the license key, a random installation id, the tenant
+        id, and the app version to our licensing service. Tenant configuration
+        is never sent.
+      </p>
+      {details.length > 0 && (
+        <dl className="mb-4 grid gap-3 text-xs sm:grid-cols-4">
+          {details.map((item) => (
+            <div key={item.label}>
+              <dt className="text-petrol-600">{item.label}</dt>
+              <dd className="mt-0.5 truncate font-semibold text-petrol-900">
+                {item.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {license?.hasKey ? (
+        <p className="mb-4 text-xs text-petrol-700">
+          License key {license.keyHint}
+        </p>
+      ) : (
+        <label className="mb-4 block text-xs font-medium text-petrol-700">
+          License key
+          <input
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+            className="mt-1 w-full rounded-lg border border-petrol-600/30 bg-surface px-3 py-2 text-sm text-petrol-900 outline-none focus:border-teal-600"
+            placeholder="IDOC-..."
+          />
+        </label>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        {license?.hasKey ? (
+          <SecondaryButton
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => window.intunedoc.licenseDeactivate(),
+                "This machine was deactivated.",
+              )
+            }
+          >
+            Deactivate this machine
+          </SecondaryButton>
+        ) : (
+          <PrimaryButton
+            disabled={busy || !key.trim()}
+            onClick={() =>
+              void run(
+                () => window.intunedoc.licenseSetKey(key.trim()),
+                "License saved.",
+              )
+            }
+          >
+            Activate
+          </PrimaryButton>
+        )}
+        <SecondaryButton
+          onClick={() => void window.intunedoc.licenseOpen("buy")}
+        >
+          Buy a license
+        </SecondaryButton>
+        <SecondaryButton
+          onClick={() => void window.intunedoc.licenseOpen("portal")}
+        >
+          Manage subscription
+        </SecondaryButton>
+      </div>
+      {(message || license?.message) && (
+        <p className="mt-4 text-sm text-petrol-800">
+          {message || license?.message}
+        </p>
+      )}
+      {license && !license.persisted && (
+        <p className="mt-2 text-xs text-petrol-600">
+          Secure storage is not available on this system, so the license is
+          kept in memory only and must be entered again after a restart.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function App() {
   const [clientId, setClientId] = useState("");
   const [tenantId, setTenantId] = useState("organizations");
@@ -121,6 +288,15 @@ function App() {
   const [summary, setSummary] = useState<FullCollectionSummary | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [license, setLicense] = useState<LicenseStatus | null>(null);
+
+  const refreshLicense = useCallback(async () => {
+    try {
+      setLicense(await window.intunedoc.licenseStatus());
+    } catch {
+      setLicense(null);
+    }
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -129,7 +305,8 @@ function App() {
       setStatus(null);
       setMessage(errorMessage(error));
     }
-  }, []);
+    await refreshLicense();
+  }, [refreshLicense]);
 
   useEffect(() => {
     void window.intunedoc.settingsGet().then((settings) => {
@@ -207,6 +384,7 @@ function App() {
     } finally {
       setCollecting(false);
       setProgress(null);
+      await refreshLicense();
     }
   }
 
@@ -249,6 +427,7 @@ function App() {
       setMessage(errorMessage(error));
     } finally {
       setBusy(false);
+      await refreshLicense();
     }
   }
 
@@ -350,6 +529,8 @@ function App() {
             </div>
           </Card>
 
+          <LicensePanel license={license} onChange={refreshLicense} />
+
           <Card>
             <div className="flex flex-wrap items-center gap-3">
               {status?.signedIn ? (
@@ -367,7 +548,7 @@ function App() {
                 </SecondaryButton>
               ) : (
                 <PrimaryButton
-                  disabled={!status?.signedIn || busy}
+                  disabled={!status?.signedIn || !license?.hasKey || busy}
                   onClick={() => void collect()}
                 >
                   Collect tenant data

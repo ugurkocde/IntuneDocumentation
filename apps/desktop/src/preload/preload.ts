@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld("intunedoc", {
   collectAll: () => ipcRenderer.invoke("collect:all"),
   collectCancel: () => ipcRenderer.invoke("collect:cancel"),
   prepareExport: () => ipcRenderer.invoke("export:prepare"),
+  licenseStatus: () => ipcRenderer.invoke("license:status"),
+  licenseSetKey: (key: string) => ipcRenderer.invoke("license:setKey", key),
+  licenseDeactivate: () => ipcRenderer.invoke("license:deactivate"),
+  licenseOpen: (target: "buy" | "portal") =>
+    ipcRenderer.invoke("license:open", target),
   saveFile: (defaultName: string, bytes: Uint8Array) =>
     ipcRenderer.invoke("file:save", defaultName, bytes),
   onCollectProgress: (callback: (progress: unknown) => void) => {

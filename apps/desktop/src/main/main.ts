@@ -5,8 +5,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { AuthService } from "./auth";
 import { clearCollection, collectAll } from "./collect";
-import { DEFAULT_SCOPES } from "./config";
+import { DEFAULT_SCOPES, LICENSE_BUY_URL, LICENSE_PORTAL_URL } from "./config";
 import { prepareExport } from "./export";
+import { LicenseService } from "./license";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
 
 let auth: AuthService | null = null;
@@ -15,6 +16,8 @@ let mainWindow: BrowserWindow | null = null;
 let activeCollection: AbortController | null = null;
 
 const MAX_SAVE_BYTES = 300 * 1024 * 1024;
+const LICENSE_REFRESH_MS = 6 * 60 * 60_000;
+const license = new LicenseService();
 
 function rendererUrl(): string {
   return pathToFileURL(path.join(__dirname, "../renderer/index.html")).href;
@@ -73,6 +76,18 @@ async function requireOwner(): Promise<string> {
     throw new Error("Sign in before continuing.");
   }
   return owner;
+}
+
+function signedInTenant(): string | null {
+  const status = auth?.getStatus();
+  return status?.signedIn ? status.tenantId : null;
+}
+
+// Entitlement is checked here, in the privileged handlers, before an
+// operation starts. A run that has started completes even if the license
+// lapses meanwhile.
+async function requireLicense(): Promise<void> {
+  await license.requireEntitlement(signedInTenant());
 }
 
 async function tokenProvider(): Promise<string> {
@@ -138,7 +153,9 @@ ipcMain.handle("auth:status", async (event) => {
 
 ipcMain.handle("auth:interactive", async (event) => {
   assertTrustedSender(event);
-  return (await getAuth()).signInInteractive(openAuthUrl);
+  const result = await (await getAuth()).signInInteractive(openAuthUrl);
+  await license.activateForTenant(result.tenantId);
+  return result;
 });
 
 ipcMain.handle("auth:signOut", async (event) => {
@@ -153,6 +170,7 @@ ipcMain.handle("auth:signOut", async (event) => {
 ipcMain.handle("collect:all", async (event) => {
   assertTrustedSender(event);
   const owner = await requireOwner();
+  await requireLicense();
   cancelCollection();
   const controller = new AbortController();
   activeCollection = controller;
@@ -187,7 +205,41 @@ ipcMain.handle("collect:cancel", (event) => {
 ipcMain.handle("export:prepare", async (event) => {
   assertTrustedSender(event);
   const owner = await requireOwner();
+  await requireLicense();
   return prepareExport(tokenProvider, owner);
+});
+
+ipcMain.handle("license:status", (event) => {
+  assertTrustedSender(event);
+  return license.status(signedInTenant());
+});
+
+ipcMain.handle("license:setKey", (event, key: unknown) => {
+  assertTrustedSender(event);
+  if (typeof key !== "string" || key.length > 256) {
+    throw new Error("Enter a valid license key.");
+  }
+  return license.setKey(key, signedInTenant());
+});
+
+ipcMain.handle("license:deactivate", (event) => {
+  assertTrustedSender(event);
+  return license.deactivate();
+});
+
+ipcMain.handle("license:open", async (event, target: unknown) => {
+  assertTrustedSender(event);
+  const url =
+    target === "buy"
+      ? LICENSE_BUY_URL
+      : target === "portal"
+        ? LICENSE_PORTAL_URL
+        : null;
+  if (!url || new URL(url).protocol !== "https:") {
+    throw new Error("Refused to open an unexpected link.");
+  }
+  await shell.openExternal(url);
+  return true;
 });
 
 ipcMain.handle(
@@ -214,6 +266,8 @@ ipcMain.handle(
 
 void app.whenReady().then(() => {
   createWindow();
+  void license.refreshAll();
+  setInterval(() => void license.refreshAll(), LICENSE_REFRESH_MS);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

@@ -1,9 +1,16 @@
-const macSigning = Boolean(process.env.CSC_LINK);
-const macNotarize = Boolean(
-  process.env.APPLE_ID &&
-    process.env.APPLE_APP_SPECIFIC_PASSWORD &&
-    process.env.APPLE_TEAM_ID,
-);
+const signingRequested =
+  Boolean(process.env.CSC_LINK) || process.env.MAC_SIGN === "true";
+const notarizeRequested =
+  Boolean(
+    process.env.APPLE_ID &&
+      process.env.APPLE_APP_SPECIFIC_PASSWORD &&
+      process.env.APPLE_TEAM_ID,
+  ) ||
+  Boolean(
+    process.env.APPLE_API_KEY &&
+      process.env.APPLE_API_KEY_ID &&
+      process.env.APPLE_API_ISSUER,
+  );
 const winSigning = Boolean(
   process.env.AZURE_TENANT_ID &&
     process.env.AZURE_CLIENT_ID &&
@@ -20,11 +27,11 @@ module.exports = {
     target: [{ target: "dmg", arch: ["arm64", "x64"] }],
     category: "public.app-category.business",
     icon: "build/icon.png",
-    hardenedRuntime: macSigning,
+    hardenedRuntime: signingRequested,
     gatekeeperAssess: false,
     entitlements: "build/entitlements.mac.plist",
     entitlementsInherit: "build/entitlements.mac.plist",
-    notarize: macNotarize ? { teamId: process.env.APPLE_TEAM_ID } : false,
+    notarize: notarizeRequested,
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],

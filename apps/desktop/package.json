@@ -24,12 +24,12 @@
     },
     "files": ["dist/**/*", "package.json"],
     "mac": {
-      "target": ["dmg"],
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
       "category": "public.app-category.business",
       "icon": "build/icon.png"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "build/icon.png"
     },
     "nsis": {

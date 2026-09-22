@@ -1,4 +1,7 @@
-import { DetailedIntuneService } from "../../../../src/lib/intune-detailed-client";
+import {
+  DetailedIntuneService,
+  type ProgressCallback,
+} from "../../../../src/lib/intune-detailed-client";
 import { IntuneService } from "../../../../src/lib/graph-client";
 
 export interface DeviceConfigurationSummary {
@@ -49,8 +52,9 @@ export async function collectDeviceConfigurations(
 
 export async function collectAll(
   accessToken: string,
+  onProgress?: ProgressCallback,
 ): Promise<FullCollectionSummary> {
-  const service = new DetailedIntuneService(accessToken);
+  const service = new DetailedIntuneService(accessToken, onProgress);
   const data = await service.getAllDetailedConfigurations(true);
   lastCollection = data;
   return {

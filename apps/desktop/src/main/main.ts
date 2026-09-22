@@ -5,19 +5,32 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { AuthService } from "./auth";
 import { collectAll } from "./collect";
-import { loadAuthConfig } from "./config";
+import { DEFAULT_SCOPES } from "./config";
 import { prepareExport } from "./export";
+import { readSettings, writeSettings, type AppSettings } from "./settings";
 
 let auth: AuthService | null = null;
+let authKey = "";
 let mainWindow: BrowserWindow | null = null;
 
 function rendererUrl(): string {
   return pathToFileURL(path.join(__dirname, "../renderer/index.html")).href;
 }
 
-function getAuth(): AuthService {
-  if (!auth) {
-    auth = new AuthService(loadAuthConfig());
+async function getAuth(): Promise<AuthService> {
+  const settings = await readSettings();
+  const clientId = settings.clientId || process.env.INTUNEDOC_CLIENT_ID || "";
+  const tenantId =
+    settings.tenantId || process.env.INTUNEDOC_TENANT_ID || "organizations";
+  if (!clientId) {
+    throw new Error(
+      "Add your Entra app registration client id in Settings before signing in.",
+    );
+  }
+  const key = `${clientId}|${tenantId}`;
+  if (!auth || authKey !== key) {
+    auth = new AuthService({ clientId, tenantId, scopes: [...DEFAULT_SCOPES] });
+    authKey = key;
   }
   return auth;
 }
@@ -46,7 +59,8 @@ async function openAuthUrl(url: string): Promise<void> {
 }
 
 async function requireAccessToken(): Promise<string> {
-  const token = await getAuth().getAccessToken();
+  const service = await getAuth();
+  const token = await service.getAccessToken();
   if (!token) {
     throw new Error("Sign in before continuing.");
   }
@@ -55,8 +69,8 @@ async function requireAccessToken(): Promise<string> {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1024,
-    height: 720,
+    width: 1080,
+    height: 760,
     title: "Intune Documentation",
     webPreferences: {
       preload: path.join(__dirname, "../preload/preload.cjs"),
@@ -79,26 +93,49 @@ function createWindow(): void {
   void mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
 }
 
-ipcMain.handle("auth:status", (event) => {
+ipcMain.handle("settings:get", (event) => {
   assertTrustedSender(event);
-  return getAuth().getStatus();
+  return readSettings();
 });
 
-ipcMain.handle("auth:interactive", (event) => {
+ipcMain.handle("settings:save", async (event, input: Partial<AppSettings>) => {
   assertTrustedSender(event);
-  return getAuth().signInInteractive(openAuthUrl);
+  const saved = await writeSettings(input);
+  auth = null;
+  authKey = "";
+  return saved;
 });
 
-ipcMain.handle("auth:signOut", (event) => {
+ipcMain.handle("auth:status", async (event) => {
   assertTrustedSender(event);
-  const service = getAuth();
+  return (await getAuth()).getStatus();
+});
+
+ipcMain.handle("auth:interactive", async (event) => {
+  assertTrustedSender(event);
+  return (await getAuth()).signInInteractive(openAuthUrl);
+});
+
+ipcMain.handle("auth:signOut", async (event) => {
+  assertTrustedSender(event);
+  const service = await getAuth();
   service.signOut();
   return service.getStatus();
 });
 
 ipcMain.handle("collect:all", async (event) => {
   assertTrustedSender(event);
-  return collectAll(await requireAccessToken());
+  const token = await requireAccessToken();
+  return collectAll(token, (progress) => {
+    if (event.sender.isDestroyed()) return;
+    event.sender.send("collect:progress", {
+      step: progress.step,
+      type: progress.type,
+      current: progress.current,
+      total: progress.total,
+      message: progress.message,
+    });
+  });
 });
 
 ipcMain.handle("export:prepare", async (event) => {

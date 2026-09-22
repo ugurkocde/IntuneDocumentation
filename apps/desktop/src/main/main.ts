@@ -115,6 +115,9 @@ ipcMain.handle("settings:save", async (event, input: Partial<AppSettings>) => {
   const saved = await writeSettings(input);
   cancelCollection();
   clearCollection();
+  if (auth) {
+    await auth.signOut();
+  }
   auth = null;
   authKey = "";
   return saved;

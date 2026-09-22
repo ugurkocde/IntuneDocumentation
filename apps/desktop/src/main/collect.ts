@@ -82,6 +82,9 @@ export async function collectAll(
       options.budgetMs ?? 30 * 60_000,
     );
     const data = await service.getAllDetailedConfigurations(true);
+    if (options.signal?.aborted) {
+      throw new Error("Collection was cancelled.");
+    }
     lastCollection = data;
     collectionOwner = options.owner;
     return {

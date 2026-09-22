@@ -195,8 +195,12 @@ function App() {
     try {
       const result = await window.intunedoc.collectAll();
       setSummary(result);
+      const warnings = result.fetchErrors + result.permissionErrors;
       setMessage(
-        `Collected ${result.totalConfigurations} items across ${result.sectionCounts.length} sections.`,
+        `Collected ${result.totalConfigurations} items across ${result.sectionCounts.length} sections.` +
+          (warnings > 0
+            ? ` ${warnings} warning(s) may affect completeness; review the document notes.`
+            : ""),
       );
     } catch (error) {
       setMessage(errorMessage(error));
@@ -228,13 +232,19 @@ function App() {
         setMessage("Export canceled");
         return;
       }
-      if (result.errors.length > 0) {
-        setMessage(
-          `Saved to ${saved}. ${result.errors.length} section(s) reported issues; review the document notes.`,
-        );
-      } else {
-        setMessage(`Saved to ${saved}`);
-      }
+      const resolvedWarnings = resolved as DetailedExportData & {
+        resolutionWarnings?: string[];
+        fetchErrors?: unknown[];
+      };
+      const warnings =
+        result.errors.length +
+        (resolvedWarnings.resolutionWarnings?.length ?? 0) +
+        (resolvedWarnings.fetchErrors?.length ?? 0);
+      setMessage(
+        warnings > 0
+          ? `Saved to ${saved}. ${warnings} warning(s) may affect completeness; review the document notes.`
+          : `Saved to ${saved}`,
+      );
     } catch (error) {
       setMessage(errorMessage(error));
     } finally {

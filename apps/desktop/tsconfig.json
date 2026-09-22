@@ -11,7 +11,14 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@microsoft/microsoft-graph-client": [
+        "./node_modules/@microsoft/microsoft-graph-client"
+      ],
+      "isomorphic-fetch": ["./node_modules/isomorphic-fetch"]
+    }
   },
   "include": ["src/**/*.ts"]
 }

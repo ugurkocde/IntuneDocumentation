@@ -4,8 +4,15 @@ import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
 // Inline code value with a copy button, for values admins paste into the
-// Entra admin center.
-export function CopyValue({ value }: { value: string }) {
+// Entra admin center. Long values that must stay fully visible, such as
+// license keys, set wrap instead of truncating.
+export function CopyValue({
+  value,
+  wrap = false,
+}: {
+  value: string;
+  wrap?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -20,7 +27,9 @@ export function CopyValue({ value }: { value: string }) {
 
   return (
     <span className="border-petrol-950/10 bg-mint-50 inline-flex max-w-full items-center gap-1 rounded-lg border py-0.5 pr-0.5 pl-2.5 align-middle">
-      <code className="text-petrol-950 truncate font-mono text-[13px] select-all">
+      <code
+        className={`text-petrol-950 font-mono text-[13px] select-all ${wrap ? "break-all" : "truncate"}`}
+      >
         {value}
       </code>
       <button

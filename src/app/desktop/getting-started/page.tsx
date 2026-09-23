@@ -7,11 +7,16 @@ import { SiteFooter } from "~/components/site-footer";
 import { BackToTopButton } from "~/components/back-to-top-button";
 import {
   DESKTOP_DOWNLOAD_URL,
+  DESKTOP_DOWNLOADS,
   DESKTOP_GRAPH_PERMISSIONS,
   DESKTOP_INSTALLS_PER_TENANT,
   DESKTOP_PORTAL_URL,
   DESKTOP_PRICING_PATH,
 } from "~/lib/desktop-app";
+import {
+  fetchCheckoutLicenseKeys,
+  type CheckoutKeyResult,
+} from "~/lib/desktop-license/checkout-key";
 import { CopyValue } from "./copy-value";
 
 const title = "Desktop App Getting Started";
@@ -119,13 +124,90 @@ function Ui({ children }: { children: ReactNode }) {
   return <strong className="text-petrol-950 font-semibold">{children}</strong>;
 }
 
+const inlineLink =
+  "font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2";
+
+const downloads = [
+  { href: DESKTOP_DOWNLOADS.macArm64, label: "macOS Apple Silicon" },
+  { href: DESKTOP_DOWNLOADS.macX64, label: "macOS Intel" },
+  { href: DESKTOP_DOWNLOADS.windows, label: "Windows" },
+];
+
+function DownloadButtons() {
+  return (
+    <div className="flex flex-wrap gap-3">
+      {downloads.map((item) => (
+        <a
+          key={item.href}
+          href={item.href}
+          className="bg-petrol-950 hover:bg-petrol-800 inline-flex min-h-11 items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none"
+        >
+          <Download className="h-4 w-4" />
+          {item.label}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function PortalLink() {
+  return (
+    <a href={DESKTOP_PORTAL_URL} rel="noopener" className={inlineLink}>
+      customer portal
+    </a>
+  );
+}
+
+function LicenseKeyStatus({ result }: { result: CheckoutKeyResult }) {
+  if (result.status === "ready") {
+    return (
+      <div className="mt-4">
+        <p className="text-petrol-950 text-sm font-semibold">
+          Your license key
+        </p>
+        <div className="mt-2 flex flex-col items-start gap-2">
+          {result.keys.map((key) => (
+            <CopyValue key={key} value={key} wrap />
+          ))}
+        </div>
+        <p className="text-petrol-700 mt-2 text-sm leading-6">
+          Paste it in the last setup step. It is also always available in the{" "}
+          <PortalLink />.
+        </p>
+      </div>
+    );
+  }
+  if (result.status === "pending") {
+    return (
+      <p className="text-petrol-700 mt-1 text-sm leading-6">
+        Your license key is being created. Refresh this page in a minute, or
+        find it in the <PortalLink />. You paste it in the last setup step.
+      </p>
+    );
+  }
+  return (
+    <p className="text-petrol-700 mt-1 text-sm leading-6">
+      Your license key is in the <PortalLink />. Sign in there with the email
+      address you used at checkout. You paste it in the last setup step.
+    </p>
+  );
+}
+
 export default async function DesktopGettingStartedPage({
   searchParams,
 }: {
-  searchParams: Promise<{ checkout_id?: string }>;
+  searchParams: Promise<{
+    checkout_id?: string;
+    customer_session_token?: string;
+  }>;
 }) {
-  // Polar sends buyers here after checkout with ?checkout_id=...
-  const { checkout_id: checkoutId } = await searchParams;
+  // Polar sends buyers here after checkout with ?checkout_id=... and the
+  // buyer's customer portal session, used to show the new license key.
+  const { checkout_id: checkoutId, customer_session_token: sessionToken } =
+    await searchParams;
+  const licenseKey = checkoutId
+    ? await fetchCheckoutLicenseKeys(sessionToken)
+    : null;
   return (
     <div className="bg-mint-50 min-h-screen">
       <NavigationHeader />
@@ -144,9 +226,13 @@ export default async function DesktopGettingStartedPage({
             <p className="text-petrol-600 mt-5 max-w-2xl text-base leading-7 sm:text-lg">
               About ten minutes from download to your first export. You need an
               administrator who can create an app registration and grant admin
-              consent in your Entra tenant.
+              consent in your Entra tenant. If that is not you, send them{" "}
+              <a href="#register" className={inlineLink}>
+                steps 2 to 5
+              </a>
+              .
             </p>
-            {checkoutId && (
+            {licenseKey && (
               <div
                 role="status"
                 className="mt-8 max-w-2xl rounded-2xl border border-teal-600/20 bg-teal-50 p-5"
@@ -154,18 +240,13 @@ export default async function DesktopGettingStartedPage({
                 <p className="text-petrol-950 font-semibold">
                   Thank you, your trial has started.
                 </p>
-                <p className="text-petrol-700 mt-1 text-sm leading-6">
-                  Your license key is on its way to the email address you used
-                  at checkout, and it is always available in the{" "}
-                  <a
-                    href={DESKTOP_PORTAL_URL}
-                    rel="noopener"
-                    className="font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2"
-                  >
-                    customer portal
-                  </a>
-                  . Download the app below, then paste the key in the last setup
-                  step.
+                <LicenseKeyStatus result={licenseKey} />
+                <div className="mt-5">
+                  <DownloadButtons />
+                </div>
+                <p className="text-petrol-700 mt-4 text-sm leading-6">
+                  On an MSP plan, repeat steps 2 to 6 in each customer tenant.
+                  The same key covers all of them.
                 </p>
               </div>
             )}
@@ -195,16 +276,13 @@ export default async function DesktopGettingStartedPage({
 
           <div className="min-w-0 space-y-6">
             <Step id="install" number={1} heading="Download and install">
-              <p>
-                Download the latest release for your platform from GitHub. Pick
-                the newest release whose tag starts with{" "}
-                <code className="font-mono text-[13px]">desktop-v</code>.
-              </p>
+              <p>Download the newest installer for your platform.</p>
+              <DownloadButtons />
               <ul className="list-disc space-y-2 pl-5">
                 <li>
-                  <Ui>macOS:</Ui> pick the DMG for Apple Silicon (arm64) or
-                  Intel (x64), open it, and drag Intune Documentation to your
-                  Applications folder.
+                  <Ui>macOS:</Ui> choose Apple Silicon for M-series Macs or
+                  Intel for older Macs. Open the DMG and drag Intune
+                  Documentation to your Applications folder.
                 </li>
                 <li>
                   <Ui>Windows:</Ui> run the Setup installer and follow the
@@ -213,17 +291,20 @@ export default async function DesktopGettingStartedPage({
               </ul>
               <p>
                 The app tells you when an update is available and installs it
-                when you choose. To install updates automatically, turn that
-                on in Settings.
+                when you choose. To install updates without asking, turn on{" "}
+                <Ui>Install updates automatically</Ui> in Settings.
               </p>
-              <a
-                href={DESKTOP_DOWNLOAD_URL}
-                rel="noopener"
-                className="bg-petrol-950 hover:bg-petrol-800 inline-flex min-h-11 items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none"
-              >
-                <Download className="h-4 w-4" />
-                Open GitHub Releases
-              </a>
+              <p className="text-petrol-600 text-sm">
+                Older versions and release notes are on{" "}
+                <a
+                  href={DESKTOP_DOWNLOAD_URL}
+                  rel="noopener"
+                  className={inlineLink}
+                >
+                  GitHub Releases
+                </a>
+                .
+              </p>
             </Step>
 
             <Step
@@ -343,10 +424,18 @@ export default async function DesktopGettingStartedPage({
                 permission should show a green <Ui>Granted</Ui> status.
               </p>
               <p>
-                This needs an administrator who can grant tenant wide consent,
-                for example a Global Administrator. Without consent, sign-in
-                fails with AADSTS65001.
+                A Global Administrator, Privileged Role Administrator, or Cloud
+                Application Administrator can grant tenant-wide consent for
+                these delegated permissions. Without consent, sign-in fails with
+                AADSTS65001.
               </p>
+              <Note>
+                No admin at hand right now? Continue with the next steps. When
+                the app finds missing permissions after sign-in, a Global
+                Administrator can select{" "}
+                <Ui>Sign in and consent for the organization</Ui> in the app
+                instead.
+              </Note>
             </Step>
 
             <Step id="ids" number={6} heading="Copy the IDs into the app">
@@ -376,11 +465,16 @@ export default async function DesktopGettingStartedPage({
             <Step id="sign-in" number={7} heading="Sign in">
               <p>
                 Select <Ui>Sign in with Microsoft</Ui>. Your default browser
-                opens the Microsoft sign-in page. Sign in with an account that
-                has an Intune role able to read the configuration, such as
-                Intune Administrator or Read Only Operator, then return to the
+                opens the Microsoft sign-in page. Sign in, then return to the
                 app. The wizard then checks that all nine permissions were
                 granted.
+              </p>
+              <p>
+                The app sees only what the signed-in account can read.{" "}
+                <Ui>Security Reader</Ui> or <Ui>Global Reader</Ui> each cover
+                everything the app reads. Intune roles such as Intune
+                Administrator or Read Only Operator cannot read Conditional
+                Access policies, so pair them with Security Reader.
               </p>
               <p>
                 Your Microsoft access tokens stay on this machine. The app calls
@@ -390,56 +484,61 @@ export default async function DesktopGettingStartedPage({
 
             <Step id="license" number={8} heading="Enter your license key">
               <p>
-                Paste the license key from your purchase email into the last
-                wizard step, or later on the <Ui>License</Ui> screen. The app
-                activates it for the tenant you signed into. The license token
-                is stored encrypted with your operating system keychain.
+                Paste your license key into the last wizard step, or later under{" "}
+                <Ui>License and account</Ui>. You find the key in the{" "}
+                <PortalLink />. The app activates it for the tenant you signed
+                into and stores the license token encrypted with your operating
+                system keychain.
+              </p>
+              <Note>
+                <p>
+                  <Ui>Already licensed?</Ui> If a colleague activated a shared
+                  license for this tenant, you do not need a key. The app finds
+                  it when you sign in.
+                </p>
+                <p className="mt-2">
+                  A Pro license is shared with its tenant automatically. An MSP
+                  license is shared only in tenants where the key holder turns
+                  on <Ui>Let other admins in this tenant use this license</Ui>.
+                </p>
+              </Note>
+              <p>
+                Each license check sends your license key (or, for a shared
+                license, your Microsoft sign-in token), a random installation
+                ID, and your tenant ID. We check the sign-in token, read only
+                its tenant ID, and never store it.
               </p>
               <p>
-                If someone in your organization already activated a license for
-                this tenant and shares it, you do not need a key: anyone who
-                signs in to your tenant&apos;s Intune Documentation app
-                registration is licensed automatically. A Pro license is shared
-                with its tenant by default. An MSP license is shared only with the
-                tenants where the key holder turns on{" "}
-                <Ui>Let other admins in this tenant use this license</Ui>.
-              </p>
-              <p>
-                License checks send the license key or, for an organization
-                license, a Microsoft sign-in token that is verified and only its
-                tenant ID used, never stored. They also send a random
-                installation ID and the tenant ID.
-              </p>
-              <p>
-                No key yet?{" "}
-                <Link
-                  href={DESKTOP_PRICING_PATH}
-                  className="font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2"
-                >
-                  Start a 30 day free trial
-                </Link>
-                . Manage your subscription in the{" "}
-                <a
-                  href={DESKTOP_PORTAL_URL}
-                  rel="noopener"
-                  className="font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2"
-                >
-                  customer portal
-                </a>
-                .
+                {checkoutId ? null : (
+                  <>
+                    No key yet?{" "}
+                    <Link href={DESKTOP_PRICING_PATH} className={inlineLink}>
+                      Start a 30-day free trial
+                    </Link>
+                    .{" "}
+                  </>
+                )}
+                Manage your subscription in the <PortalLink />.
               </p>
             </Step>
 
             <Step id="export" number={9} heading="Collect and export">
               <p>
-                Select <Ui>Collect tenant data</Ui> to read your Intune
-                configuration. When collection finishes, the app reports any
-                sections it could not read. Then open <Ui>Export</Ui>, choose{" "}
-                <Ui>PDF report</Ui> or <Ui>Word document</Ui>, and select{" "}
-                <Ui>Start export</Ui>. For audit evidence, open{" "}
-                <Ui>Compliance Evidence</Ui>, pick a framework, and download its
-                evidence report. Files are saved wherever you choose on your
-                machine.
+                On the <Ui>Overview</Ui> screen, select <Ui>Collect</Ui> to read
+                your Intune configuration. When collection finishes, the app
+                reports any sections it could not read.
+              </p>
+              <p>
+                Then select <Ui>Export documentation</Ui>, choose{" "}
+                <Ui>PDF report</Ui> or <Ui>Word document (.docx)</Ui>, and
+                select <Ui>Start export</Ui>. Files are saved wherever you
+                choose on your machine.
+              </p>
+              <p>
+                For audit evidence, open <Ui>Compliance Evidence</Ui> in the
+                sidebar, pick a framework, and download its evidence report.
+                Collect again whenever your configuration changes, so your
+                documentation stays current.
               </p>
             </Step>
 
@@ -487,8 +586,8 @@ export default async function DesktopGettingStartedPage({
                     registration with the table in step 4. All nine permissions
                     must be Delegated and show <Ui>Granted</Ui>. If you added a
                     permission later, grant consent again, then sign out and
-                    back in. The signed-in account also needs an Intune role
-                    that can read those areas.
+                    back in. The signed-in account also needs a role that can
+                    read those areas, as described in step 7.
                   </p>
                 </div>
                 <div className="border-petrol-950/8 rounded-2xl border bg-white p-6">

@@ -5,7 +5,7 @@ import { env } from "~/env";
 // stay in one place. The legal pages state the same limits in fixed text.
 
 export const DESKTOP_APP_NAME = "Intune Documentation Desktop";
-export const DESKTOP_APP_VERSION = "0.1.0";
+export const DESKTOP_APP_VERSION = "0.1.1";
 export const DESKTOP_CURRENCY = "EUR";
 export const DESKTOP_TRIAL_DAYS = 30;
 

@@ -52,7 +52,10 @@ module.exports = {
     ...(winSigning
       ? {
           azureSignOptions: {
-            publisherName: process.env.AZURE_PUBLISHER_NAME,
+            // Must equal the CN of the Trusted Signing certificate exactly:
+            // electron-updater refuses Windows updates whose signer CN does
+            // not match this name ("not signed by the application owner").
+            publisherName: "Ugurlabs UG (haftungsbeschr\u00e4nkt)",
             endpoint: process.env.AZURE_TRUSTED_SIGNING_ENDPOINT,
             certificateProfileName: process.env.AZURE_CERT_PROFILE_NAME,
             codeSigningAccountName: process.env.AZURE_CODE_SIGNING_ACCOUNT,

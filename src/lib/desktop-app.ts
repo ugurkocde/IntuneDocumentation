@@ -17,6 +17,15 @@ export const DESKTOP_INSTALLS_PER_TENANT = 5;
 // app keeps working offline for that long after its last successful check.
 export const DESKTOP_OFFLINE_GRACE_DAYS = 14;
 
+// Minimum macOS comes from the Electron runtime (LSMinimumSystemVersion).
+// Windows builds are x64 NSIS installers (apps/desktop/electron-builder.cjs).
+export const DESKTOP_SYSTEM_REQUIREMENTS = {
+  mac: "macOS 13 Ventura or later, on Apple Silicon or Intel",
+  windows: "Windows 10 or 11, 64-bit (x64)",
+} as const;
+
+export const DESKTOP_SUPPORT_EMAIL = "support@ugurlabs.com";
+
 export const DESKTOP_PRICING_PATH = "/desktop#pricing";
 export const DESKTOP_GETTING_STARTED_PATH = "/desktop/getting-started";
 export const DESKTOP_DOWNLOAD_URL =
@@ -57,9 +66,10 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
     features: [
       "1 Microsoft Entra tenant",
       `Up to ${DESKTOP_INSTALLS_PER_TENANT} installations`,
+      "Other admins in your tenant sign in without a key",
       "Word and PDF exports",
       "Compliance evidence for 10 frameworks",
-      `${DESKTOP_OFFLINE_GRACE_DAYS} days of offline use between license checks`,
+      `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
       "Free updates, installed when you choose",
     ],
     checkoutUrl: {
@@ -82,9 +92,12 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       "10 Microsoft Entra tenants included",
       "Add tenants above 10 at any time",
       `Up to ${DESKTOP_INSTALLS_PER_TENANT} installations per tenant`,
+      "Share the license with the customer tenants you choose",
+      "Switch tenants without extra keys",
       "Word and PDF exports for every tenant",
       "Compliance evidence for 10 frameworks",
-      "Switch tenants without extra keys",
+      `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
+      "Free updates, installed when you choose",
     ],
     checkoutUrl: {
       monthly:
@@ -97,12 +110,16 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
   },
 };
 
+// Whole prices render without cents; derived per month amounts such as
+// 990 / 12 keep two decimals.
 export function formatDesktopPrice(amount: number): string {
+  const fractionDigits = Number.isInteger(amount) ? 0 : 2;
   return new Intl.NumberFormat("en-IE", {
     style: "currency",
     currency: DESKTOP_CURRENCY,
-    maximumFractionDigits: 0,
-  }).format(amount);
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(Math.round(amount * 100) / 100);
 }
 
 export interface GraphPermission {

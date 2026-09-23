@@ -174,6 +174,7 @@ export default async function RootLayout({
         {publicSite && process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (
           <PlausibleProvider
             domain="intunedocumentation.com"
+            taggedEvents
             scriptProps={{ nonce }}
           >
             {app}

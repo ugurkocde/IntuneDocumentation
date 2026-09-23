@@ -79,7 +79,9 @@ function settingCount(policy: unknown): number {
 
 function wrappedLines(text: unknown, charsPerLine: number): number {
   if (text === null || text === undefined || text === "") return 1;
-  return String(text)
+  const value =
+    typeof text === "string" ? text : (JSON.stringify(text) ?? "");
+  return value
     .split("\n")
     .reduce(
       (lines, part) =>

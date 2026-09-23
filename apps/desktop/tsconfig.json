@@ -22,6 +22,11 @@
       "jspdf": ["./node_modules/jspdf"],
       "docx": ["./node_modules/docx"],
       "clsx": ["./node_modules/clsx"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+      "lucide-react": ["./node_modules/lucide-react"],
       "@xmldom/xmldom": ["./node_modules/@xmldom/xmldom"],
       "~/*": ["../../src/*"]
     }

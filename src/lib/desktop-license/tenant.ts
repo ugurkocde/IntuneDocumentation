@@ -1,4 +1,4 @@
-import { PolarNotFound, PolarUnavailable } from "./polar";
+import { PolarNotFound, PolarNotPermitted, PolarUnavailable } from "./polar";
 import {
   activateLicense,
   checkKey,
@@ -65,7 +65,9 @@ async function release(
   try {
     key = await ctx.polar.getKeyWithSecret(input.licenseKeyId);
   } catch (error) {
-    if (error instanceof PolarNotFound) return false;
+    // A key of another organization reads as not permitted: nothing to release.
+    if (error instanceof PolarNotFound || error instanceof PolarNotPermitted)
+      return false;
     throw error;
   }
   if (

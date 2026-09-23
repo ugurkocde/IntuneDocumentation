@@ -276,7 +276,9 @@ export class LicenseService {
     }
     if (!response.ok) {
       throw new Error(
-        "The licensing service is unavailable. Please try again later.",
+        reasonCode === "tenant_quantity_unknown"
+          ? "The tenant quantity of this subscription could not be read. Please try again later or contact support."
+          : "The licensing service is unavailable. Please try again later.",
       );
     }
     return data;

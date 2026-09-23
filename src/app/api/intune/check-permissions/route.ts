@@ -11,6 +11,8 @@ interface PermissionCheck {
   error?: string;
 }
 
+export const maxDuration = 30;
+
 export async function GET(request: NextRequest) {
   try {
     // Log tenant access
@@ -25,9 +27,13 @@ export async function GET(request: NextRequest) {
     const accessToken = authHeader.replace("Bearer ", "");
 
     // Create Graph client
+    // Probes stop when the caller disconnects or after 20 seconds.
     const client = Client.init({
       authProvider: (done) => {
         done(null, accessToken);
+      },
+      fetchOptions: {
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]),
       },
     });
 
@@ -216,10 +222,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error checking permissions:", error);
     return NextResponse.json(
-      {
-        error: "Failed to check permissions",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: "Failed to check permissions" },
       { status: 500 },
     );
   }

@@ -181,7 +181,7 @@ describe("ComplianceView", () => {
       screen.getByRole("button", { name: "Download report (PDF)" }),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByText(/match;.*missing;.*different/).length,
+      screen.getAllByText(/match, .*missing, .*different/).length,
     ).toBeGreaterThan(0);
   });
 

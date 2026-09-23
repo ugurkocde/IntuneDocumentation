@@ -6,6 +6,13 @@ function abortReason(signal?: AbortSignal): Error {
 
 const exhausted = new WeakSet<object>();
 
+// Graph-supplied ids go inside an OData key literal, ('<id>'). Double any
+// quote so the id cannot end the literal, then encode it so it stays one path
+// segment and cannot add a query string.
+export function graphKey(id: unknown): string {
+  return encodeURIComponent(String(id).replace(/'/g, "''"));
+}
+
 export function graphStatus(error: any): number | undefined {
   const status = error?.statusCode ?? error?.status ?? error?.response?.status;
   return typeof status === "number" && status >= 100 ? status : undefined;
@@ -32,6 +39,10 @@ export function isTransientGraphError(error: any): boolean {
     : [408, 429, 500, 502, 503, 504].includes(status);
 }
 
+// Graph normally asks for seconds. A longer or hostile Retry-After must not
+// hold a request open; the caller's abort signal still bounds the total wait.
+export const MAX_RETRY_AFTER_MS = 60_000;
+
 export function retryAfterMs(error: any, now = Date.now()): number | undefined {
   const headers = error?.headers ?? error?.response?.headers;
   const raw =
@@ -42,9 +53,12 @@ export function retryAfterMs(error: any, now = Date.now()): number | undefined {
     error?.retryAfter;
   if (raw === undefined || raw === null) return undefined;
   const value = String(raw).trim();
-  if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value) * 1000;
-  const date = Date.parse(value);
-  return Number.isFinite(date) ? Math.max(0, date - now) : undefined;
+  const ms = /^\d+(?:\.\d+)?$/.test(value)
+    ? Number(value) * 1000
+    : Date.parse(value) - now;
+  return Number.isFinite(ms)
+    ? Math.min(MAX_RETRY_AFTER_MS, Math.max(0, ms))
+    : undefined;
 }
 
 export function waitForGraph(ms: number, signal?: AbortSignal): Promise<void> {

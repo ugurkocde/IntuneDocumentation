@@ -44,6 +44,23 @@ export interface DetailedExportData {
   deviceCounts?: Record<string, number>;
   branding?: BrandingOptions;
   includeComplianceEvidence?: boolean;
+  /**
+   * Opt in: documents part of a tenant, such as a single configuration or a
+   * section. Absent for a full export, which keeps the default layout.
+   */
+  documentScope?: DocumentScope;
+}
+
+export interface DocumentScope {
+  /** Cover title, for example the configuration or section name. */
+  title?: string;
+  /** Cover line under "Configuration Documentation". */
+  subtitle?: string;
+  /**
+   * Leaves out the executive summary, the configuration inventory and the
+   * table of contents, so a short document starts with the item details.
+   */
+  compact?: boolean;
 }
 
 export interface PolicyExportError {

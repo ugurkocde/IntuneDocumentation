@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assessCompliance, assessCapabilities } from "../compliance";
 import type { DetailedExportData } from "../configuration-analyzer";
+import { checkSummary, checkValueEntries } from "../compliance/check-results";
 
 function data(): DetailedExportData {
   return {
@@ -224,4 +225,49 @@ describe("independent assessment and configuration results", () => {
       );
     },
   );
+});
+
+describe("readable check values", () => {
+  it("turns composite values into label and value rows", () => {
+    expect(
+      checkValueEntries(
+        JSON.stringify({
+          qualityUpdatesDeferralPeriodInDays: 10,
+          deadlineGracePeriodInDays: null,
+          qualityUpdatesPaused: false,
+          automaticUpdateMode: "windowsDefault",
+        }),
+      ),
+    ).toEqual([
+      { label: "Quality updates deferral period in days", value: "10" },
+      { label: "Deadline grace period in days", value: "Not set" },
+      { label: "Quality updates paused", value: "No" },
+      { label: "Automatic update mode", value: "windowsDefault" },
+    ]);
+    expect(checkValueEntries('["a",true]')).toEqual([
+      { label: "Item 1", value: "a" },
+      { label: "Item 2", value: "Yes" },
+    ]);
+  });
+
+  it("leaves scalar and non JSON values to the text rendering", () => {
+    expect(checkValueEntries('"enabled"')).toBeNull();
+    expect(checkValueEntries("3")).toBeNull();
+    expect(checkValueEntries("Parent policy disabled")).toBeNull();
+    expect(checkValueEntries("{}")).toBeNull();
+  });
+
+  it("separates summary counts with commas", () => {
+    expect(checkSummary([])).toBe("Unable to check");
+    const summary = checkSummary([
+      {
+        assessmentStatus: "checked",
+        result: "matches",
+        settingId: "a",
+        expectedValue: "1",
+        actualValue: "1",
+      },
+    ] as never);
+    expect(summary).toBe("1 match, 0 missing, 0 different");
+  });
 });

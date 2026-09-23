@@ -22,6 +22,30 @@ export class GraphPaginationError<T = unknown> extends Error {
 export interface GraphPagingOptions {
   maxRetries?: number;
   initialDelay?: number;
+  signal?: AbortSignal;
+}
+
+// Only public-cloud Graph is supported; the client uses the SDK default host.
+const GRAPH_HOST = "graph.microsoft.com";
+
+// The SDK sends the bearer token to whatever absolute URL it is given, so a
+// continuation link must point at Graph itself before it is followed.
+export function assertGraphNextLink(link: string): void {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    throw new Error("Graph returned a continuation link that is not a URL");
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.hostname !== GRAPH_HOST ||
+    url.port
+  ) {
+    throw new Error("Graph returned a continuation link to another host");
+  }
 }
 
 export async function collectAllPages<T = any>(
@@ -71,6 +95,7 @@ export async function collectAllPagesWithStatus<T = any>(
         );
       }
       visited.add(nextLink);
+      assertGraphNextLink(nextLink);
       // The Graph SDK supports passing the absolute nextLink URL
       // Avoid adding .version() or other modifiers when following nextLink
       const page: any = await retryGraphRequest(
@@ -78,6 +103,7 @@ export async function collectAllPagesWithStatus<T = any>(
         {
           maxAttempts: options.maxRetries ?? 5,
           initialDelay: options.initialDelay ?? 1000,
+          signal: options.signal,
         },
       );
 

@@ -50,6 +50,14 @@ const WORDMARK_DETAILS: Record<
 
 const FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif";
 
+// Long words overflow the 40 unit tile with wider system fonts (for example
+// SF Pro on macOS), so they are fitted to the tile width.
+function fitWidth(text: string, maxCharacters: number) {
+  return text.length >= maxCharacters
+    ? { textLength: 34, lengthAdjust: "spacingAndGlyphs" as const }
+    : {};
+}
+
 export function FrameworkBadge({
   frameworkId,
   size = 40,
@@ -113,6 +121,7 @@ export function FrameworkBadge({
         fontWeight="700"
         textAnchor="middle"
         letterSpacing="0.6"
+        {...fitWidth(details.line1, 5)}
       >
         {details.line1}
       </text>
@@ -126,6 +135,7 @@ export function FrameworkBadge({
         fontWeight="600"
         textAnchor="middle"
         letterSpacing="0.2"
+        {...fitWidth(details.line2, 9)}
       >
         {details.line2}
       </text>

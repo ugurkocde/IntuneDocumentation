@@ -21,6 +21,50 @@ export function displayCheckValue(value: string): string {
   return [...new Set(text.split("; alternative: "))].join("; alternative: ");
 }
 
+export interface CheckValueEntry {
+  label: string;
+  value: string;
+}
+
+function readableKey(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function readableScalar(value: unknown): string {
+  if (value === null || value === undefined) return "Not set";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string") return displayCheckValue(value) || "Empty";
+  if (typeof value === "number") return String(value);
+  return displayCheckValue(JSON.stringify(value));
+}
+
+/**
+ * Label and value rows for composite values (JSON objects or arrays), or null
+ * when the value is a scalar that reads fine as text.
+ */
+export function checkValueEntries(value: string): CheckValueEntry[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+  const entries: Array<[string, unknown]> = Array.isArray(parsed)
+    ? parsed.map((item, index) => [`Item ${index + 1}`, item])
+    : Object.entries(parsed).map(([key, item]) => [readableKey(key), item]);
+  if (entries.length === 0) return null;
+  return entries.map(([label, item]) => ({
+    label,
+    value: readableScalar(item),
+  }));
+}
+
 export const ASSESSMENT_LABELS = {
   checked: "Checked",
   unableToCheck: "Unable to check",
@@ -100,5 +144,5 @@ export function checkSummary(checks: readonly TechnicalCheck[]): string {
   if (!checks.length) return "Unable to check";
   if (checks.every((row) => row.assessmentStatus === "outsideScope"))
     return "Outside selected scope";
-  return `${count("matches")} match; ${count("missing")} missing; ${count("different")} different${unchecked ? `; ${unchecked} unable to check` : ""}`;
+  return `${count("matches")} match, ${count("missing")} missing, ${count("different")} different${unchecked ? `, ${unchecked} unable to check` : ""}`;
 }

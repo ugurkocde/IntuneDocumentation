@@ -1,4 +1,4 @@
-import { createGraphClient } from "./graph-client";
+import { createGraphClient, type TokenProvider } from "./graph-client";
 import {
   graphStatus,
   isTransientGraphError,
@@ -14,9 +14,11 @@ export class GroupResolver {
     return [...this.warnings];
   }
   private groupCache = new Map<string, string>();
+  private signal?: AbortSignal;
 
-  constructor(accessToken: string) {
-    this.client = createGraphClient(accessToken);
+  constructor(accessToken: TokenProvider, signal?: AbortSignal) {
+    this.client = createGraphClient(accessToken, { signal });
+    this.signal = signal;
   }
 
   // Fetch a single group name by ID
@@ -28,7 +30,7 @@ export class GroupResolver {
 
     try {
       const group = await this.client
-        .api(`/groups/${groupId}`)
+        .api(`/groups/${encodeURIComponent(groupId)}`)
         .version("beta")
         .select("id,displayName")
         .get();
@@ -76,7 +78,7 @@ export class GroupResolver {
               requests: pending.map(({ id, groupId }) => ({
                 id,
                 method: "GET",
-                url: `/groups/${groupId}?$select=id,displayName`,
+                url: `/groups/${encodeURIComponent(groupId)}?$select=id,displayName`,
               })),
             });
         } catch (error: any) {
@@ -110,7 +112,7 @@ export class GroupResolver {
           } else unresolved(item.groupId, entry?.status);
         }
         pending = retry;
-        if (pending.length) await waitForGraph(delay);
+        if (pending.length) await waitForGraph(delay, this.signal);
       }
     }
     return result;

@@ -1,0 +1,42 @@
+{
+  "name": "@intunedocumentation/desktop",
+  "productName": "Intune Documentation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Intune documentation desktop app",
+  "author": "Ugurlabs",
+  "type": "module",
+  "main": "dist/main/main.cjs",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --config electron-builder.cjs --publish never",
+    "dist:win": "npm run build && electron-builder --config electron-builder.cjs --win --publish never",
+    "dist:mac": "npm run build && electron-builder --config electron-builder.cjs --mac --publish never"
+  },
+  "devDependencies": {
+    "@azure/msal-node": "^6.0.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/jspdf": "^1.3.3",
+    "@types/node": "^20.14.10",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@xmldom/xmldom": "^0.9.12",
+    "buffer": "^6.0.3",
+    "clsx": "^2.1.1",
+    "docx": "^8.5.0",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
+    "esbuild": "^0.28.2",
+    "isomorphic-fetch": "^3.0.0",
+    "jspdf": "3.0.2",
+    "lucide-react": "^0.542.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.8.2"
+  }
+}

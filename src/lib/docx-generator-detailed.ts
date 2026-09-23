@@ -20,6 +20,7 @@ import {
   TabStopType,
   Table,
   TableCell,
+  TableLayoutType,
   Bookmark,
   InternalHyperlink,
   TableRow,
@@ -130,6 +131,16 @@ function versionString(): string {
 // Reusable table builder
 // ---------------------------------------------------------------------------
 
+// Text width of the default A4 page with 1 inch margins, in twips. Tables get
+// explicit grid column widths and a fixed layout; without them the grid is
+// written as 100 twip columns, which LibreOffice, QuickLook and Google Docs
+// render as unreadably narrow columns.
+const CONTENT_WIDTH_TWIPS = 11906 - 2 * 1440;
+
+function gridColumns(totalTwips: number, percentages: number[]): number[] {
+  return percentages.map((pct) => Math.floor((totalTwips * pct) / 100));
+}
+
 /**
  * Create a styled table with a primary-colored header row and alternating
  * row shading.
@@ -202,6 +213,11 @@ function createSettingsTable(
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: gridColumns(
+      CONTENT_WIDTH_TWIPS,
+      headers.map(() => 100 / headers.length),
+    ),
+    layout: TableLayoutType.FIXED,
     rows: [headerRow, ...dataRows],
     borders: {
       top: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
@@ -252,6 +268,11 @@ export async function generateDetailedDOCX(
 
   const companyName = branding?.companyName ?? "";
   const department = branding?.department ?? "";
+
+  // Opt in: a scoped export titles the cover for its scope, and a compact
+  // one leaves out the summary sections.
+  const scope = data.documentScope;
+  const compactScope = scope?.compact === true;
 
   // -----------------------------------------------------------------------
   // Build sections
@@ -365,7 +386,8 @@ export async function generateDetailedDOCX(
   }
 
   // Main title
-  const titleText = branding?.coverPage?.title || "Microsoft Intune";
+  const titleText =
+    scope?.title || branding?.coverPage?.title || "Microsoft Intune";
   coverChildren.push(
     new Paragraph({
       children: [
@@ -397,6 +419,23 @@ export async function generateDetailedDOCX(
       spacing: { after: 200 },
     }),
   );
+
+  if (scope?.subtitle) {
+    coverChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: scope.subtitle,
+            color: "787878",
+            font: fontName,
+            size: bodySizeHp + 2,
+          }),
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+      }),
+    );
+  }
 
   // Custom text
   if (branding?.coverPage?.customText) {
@@ -437,6 +476,8 @@ export async function generateDetailedDOCX(
     coverChildren.push(
       new Table({
         width: { size: 60, type: WidthType.PERCENTAGE },
+        columnWidths: gridColumns((CONTENT_WIDTH_TWIPS * 60) / 100, [35, 65]),
+        layout: TableLayoutType.FIXED,
         rows: metaRows.map(
           ([label, value]) =>
             new TableRow({
@@ -786,7 +827,10 @@ export async function generateDetailedDOCX(
   };
 
   // ===== 2. TABLE OF CONTENTS =====
-  if (branding?.documentSettings?.includeTableOfContents !== false) {
+  if (
+    !compactScope &&
+    branding?.documentSettings?.includeTableOfContents !== false
+  ) {
     contentsChildren = [
       new Paragraph({
         text: "Table of Contents",
@@ -798,7 +842,7 @@ export async function generateDetailedDOCX(
   }
 
   // ===== 3. EXECUTIVE SUMMARY =====
-  if (branding?.documentSettings?.includeAnalytics !== false) {
+  if (!compactScope && branding?.documentSettings?.includeAnalytics !== false) {
     try {
       const analytics = analyzeConfigurations(data);
       const summaryChildren: (Paragraph | Table)[] = [];
@@ -1605,14 +1649,7 @@ export async function generateDetailedDOCX(
           }
 
           // Script content
-          let content = script.scriptContent || "";
-          if (!content && script.scriptContentBase64) {
-            try {
-              content = atob(script.scriptContentBase64);
-            } catch {
-              content = "(Base64 decode failed)";
-            }
-          }
+          const content = script.scriptContent || "";
           if (content === REDACTED_VALUE) {
             sectionChildren.push(
               bodyText("Script content omitted from the export for security."),
@@ -1701,14 +1738,7 @@ export async function generateDetailedDOCX(
           }
 
           // Script content
-          let content = script.scriptContent || "";
-          if (!content && script.scriptContentBase64) {
-            try {
-              content = atob(script.scriptContentBase64);
-            } catch {
-              content = "(Base64 decode failed)";
-            }
-          }
+          const content = script.scriptContent || "";
           if (content === REDACTED_VALUE) {
             sectionChildren.push(
               bodyText("Script content omitted from the export for security."),
@@ -2296,7 +2326,10 @@ export async function generateDetailedDOCX(
       );
   }
   const doc = new Document({
-    title: branding?.metadata?.title || "Intune Configuration Documentation",
+    title:
+      branding?.metadata?.title ||
+      scope?.title ||
+      "Intune Configuration Documentation",
     creator: branding?.metadata?.author || "IntuneDocumentation",
     subject:
       branding?.metadata?.subject || "Microsoft Intune Configuration Export",

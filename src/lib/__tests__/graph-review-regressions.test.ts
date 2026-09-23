@@ -216,7 +216,7 @@ describe("Graph review regressions", () => {
         (
           await collectAllPagesWithStatus(client(() => page) as any, {
             value: [{ id: "kept" }],
-            "@odata.nextLink": "next",
+            "@odata.nextLink": "https://graph.microsoft.com/beta/next",
           })
         ).complete,
       ).toBe(false);
@@ -225,11 +225,11 @@ describe("Graph review regressions", () => {
   it("stops repeated links without issuing repeated requests", async () => {
     const read = vi.fn(() => ({
       value: [{ id: "one" }],
-      "@odata.nextLink": "next",
+      "@odata.nextLink": "https://graph.microsoft.com/beta/next",
     }));
     const r = await collectAllPagesWithStatus(client(read) as any, {
       value: [],
-      "@odata.nextLink": "next",
+      "@odata.nextLink": "https://graph.microsoft.com/beta/next",
     });
     expect(read).toHaveBeenCalledTimes(1);
     expect(r).toMatchObject({ complete: false, items: [{ id: "one" }] });
@@ -238,7 +238,7 @@ describe("Graph review regressions", () => {
     expect(
       await collectAllPagesWithStatus(
         client(() => ({ value: [{ id: "next" }] })) as any,
-        { value: [], "@odata.nextLink": "next" },
+        { value: [], "@odata.nextLink": "https://graph.microsoft.com/beta/next" },
       ),
     ).toMatchObject({ complete: true, items: [{ id: "next" }] });
   });

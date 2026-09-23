@@ -13,6 +13,7 @@ import type { BrandingOptions } from "~/types/branding";
 import type { DetailedExportData } from "../configuration-analyzer";
 import { compareControlIds, COMPLIANCE_RULESET_VERSION } from "./engine";
 import { DEF_STAN_FAMILIES } from "./frameworks/def-stan-05-138";
+import { addPdfOutline, type PdfOutlineEntry } from "../pdf-outline";
 import type {
   CapabilityEvidence,
   CapabilityResult,
@@ -647,6 +648,8 @@ interface TocEntry {
   title: string;
   page: number;
   level: 0 | 1;
+  /** Control family of a level 1 entry, used to group the PDF bookmarks. */
+  family?: string;
 }
 
 interface OverviewRow {
@@ -692,6 +695,71 @@ function controlStatusCounts(
   };
 }
 
+function controlFamily(
+  frameworkId: ComplianceFrameworkId,
+  control: ControlAssessment,
+): string | undefined {
+  return frameworkId === "essential-eight"
+    ? control.control.title
+    : frameworkId === "nist-800-53-r5"
+      ? control.control.id.split("-")[0]
+      : frameworkId === "nist-800-171-r2" || frameworkId === "nist-800-171-r3"
+        ? control.control.id.split(".").slice(0, 2).join(".")
+        : frameworkId === "def-stan-05-138-i4"
+          ? (DEF_STAN_FAMILIES[control.control.id.slice(0, 2)] ??
+            control.control.id.slice(0, 2))
+          : control.control.id.split(".")[0];
+}
+
+/**
+ * Turns the flat contents list into PDF bookmarks: one per section, with the
+ * controls beneath it. Controls are grouped under a bookmark per consecutive
+ * control family, unless there is only one family or every family holds a
+ * single entry, where the extra level would add nothing.
+ */
+function buildComplianceReportOutline(
+  tocEntries: readonly TocEntry[],
+): PdfOutlineEntry[] {
+  const sections: Array<{ entry: TocEntry; controls: TocEntry[] }> = [];
+  for (const entry of tocEntries) {
+    const current = sections[sections.length - 1];
+    if (entry.level === 1 && current) current.controls.push(entry);
+    else sections.push({ entry, controls: [] });
+  }
+
+  const toOutline = (entry: TocEntry): PdfOutlineEntry => ({
+    title: entry.title,
+    pageNumber: entry.page,
+  });
+
+  return sections.map(({ entry, controls }) => {
+    const families: Array<{
+      family: string;
+      page: number;
+      controls: TocEntry[];
+    }> = [];
+    for (const control of controls) {
+      const family = control.family ?? control.title;
+      const current = families[families.length - 1];
+      if (current?.family === family) current.controls.push(control);
+      else families.push({ family, page: control.page, controls: [control] });
+    }
+    const nestFamilies =
+      families.length > 1 &&
+      families.some((group) => group.controls.length > 1);
+    return {
+      ...toOutline(entry),
+      children: nestFamilies
+        ? families.map((group) => ({
+            title: group.family,
+            pageNumber: group.page,
+            children: group.controls.map(toOutline),
+          }))
+        : controls.map(toOutline),
+    };
+  });
+}
+
 function buildOverviewRows(
   frameworkId: ComplianceFrameworkId,
   controls: readonly ControlAssessment[],
@@ -713,18 +781,7 @@ function buildOverviewRows(
 
   const controlsByPrefix = new Map<string, ControlAssessment[]>();
   for (const control of controls) {
-    const prefix =
-      frameworkId === "essential-eight"
-        ? control.control.title
-        : frameworkId === "nist-800-53-r5"
-          ? control.control.id.split("-")[0]
-          : frameworkId === "nist-800-171-r2" ||
-              frameworkId === "nist-800-171-r3"
-            ? control.control.id.split(".").slice(0, 2).join(".")
-            : frameworkId === "def-stan-05-138-i4"
-              ? (DEF_STAN_FAMILIES[control.control.id.slice(0, 2)] ??
-                control.control.id.slice(0, 2))
-              : control.control.id.split(".")[0];
+    const prefix = controlFamily(frameworkId, control);
     if (!prefix) continue;
     const existing = controlsByPrefix.get(prefix);
     if (existing) existing.push(control);
@@ -2151,6 +2208,7 @@ export async function generateComplianceReportPDF(
           : `${control.control.id} ${control.control.title}`,
         page: doc.internal.getCurrentPageInfo().pageNumber,
         level: 1,
+        family: controlFamily(options.frameworkId, control),
       });
       recordedStrategies.add(control.control.title);
     }
@@ -2336,35 +2394,74 @@ export async function generateComplianceReportPDF(
     lineHeight: 4.1,
   });
 
-  doc.setPage(tocPage);
-  let tocY = tocStartY;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.setTextColor(...primaryColor);
-  doc.text(strings.tocHeading, margin, tocY);
-  tocY += 4;
-  doc.setDrawColor(...accentColor);
-  doc.setLineWidth(0.5);
-  doc.line(margin, tocY, pageWidth - margin, tocY);
-  tocY += 6;
-  for (const entry of tocEntries) {
-    const entryX = margin + (entry.level === 1 ? 4 : 0);
-    const entryWidth = contentWidth - (entry.level === 1 ? 12 : 8);
+  const drawTocHeading = (y: number): number => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text(strings.tocHeading, margin, y);
+    doc.setDrawColor(...accentColor);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y + 4, pageWidth - margin, y + 4);
+    return y + 10;
+  };
+  const tocFirstEntryY = tocStartY + 10;
+  const tocContinuationEntryY = 18 + 10;
+
+  // Lay out the entries first: entries that do not fit on the contents page
+  // continue on pages inserted directly after it.
+  const tocRows = tocEntries.map((entry) => {
     const lines = wrap(
       entry.title,
-      entryWidth,
+      contentWidth - (entry.level === 1 ? 12 : 8),
       entry.level === 1 ? 7.1 : 7.7,
       entry.level === 1 ? "normal" : "bold",
     );
+    return {
+      entry,
+      lines,
+      height: Math.max(4.3, lines.length * 3.5 + 0.8),
+      pageOffset: 0,
+      y: 0,
+    };
+  });
+  let tocPageOffset = 0;
+  let tocY = tocFirstEntryY;
+  for (const row of tocRows) {
+    if (tocY + row.height > contentBottom && tocY > tocContinuationEntryY) {
+      tocPageOffset += 1;
+      tocY = tocContinuationEntryY;
+    }
+    row.pageOffset = tocPageOffset;
+    row.y = tocY;
+    tocY += row.height;
+  }
+
+  // Every recorded page moves back by the number of inserted contents pages.
+  for (const entry of tocEntries) entry.page += tocPageOffset;
+  for (let offset = 1; offset <= tocPageOffset; offset += 1) {
+    doc.insertPage(tocPage + offset);
+  }
+
+  for (let offset = 0; offset <= tocPageOffset; offset += 1) {
+    // Leave the first page without a heading if no entry fits beneath it.
+    if (offset === 0 && (tocRows[0]?.pageOffset ?? 0) > 0) continue;
+    doc.setPage(tocPage + offset);
+    drawTocHeading(offset === 0 ? tocStartY : 18);
+  }
+  for (const { entry, lines, height, pageOffset, y } of tocRows) {
+    doc.setPage(tocPage + pageOffset);
+    const entryX = margin + (entry.level === 1 ? 4 : 0);
     doc.setFont("helvetica", entry.level === 1 ? "normal" : "bold");
     doc.setFontSize(entry.level === 1 ? 7.1 : 7.7);
     doc.setTextColor(...textColor);
     lines.forEach((line, index) => {
-      doc.text(line, entryX, tocY + index * 3.5);
+      doc.text(line, entryX, y + index * 3.5);
     });
-    doc.text(String(entry.page), pageWidth - margin, tocY, { align: "right" });
-    tocY += Math.max(4.3, lines.length * 3.5 + 0.8);
+    doc.text(String(entry.page), pageWidth - margin, y, { align: "right" });
+    doc.link(margin, y - 3, contentWidth, height, { pageNumber: entry.page });
   }
+
+  addPdfOutline(doc, buildComplianceReportOutline(tocEntries));
 
   const pageCount = doc.internal.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {

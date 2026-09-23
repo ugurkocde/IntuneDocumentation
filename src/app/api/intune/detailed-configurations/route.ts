@@ -28,10 +28,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching detailed Intune configurations:", error);
     return NextResponse.json(
-      {
-        error: "Failed to fetch detailed configurations",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: "Failed to fetch detailed configurations" },
       { status: 500 },
     );
   }

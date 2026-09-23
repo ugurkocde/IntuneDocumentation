@@ -11,6 +11,13 @@ export const env = createEnv({
     SUPPORT_FROM_EMAIL: z.string().optional(),
     SUPPORT_TURNSTILE_SITE_KEY: z.string().optional(),
     SUPPORT_TURNSTILE_SECRET_KEY: z.string().optional(),
+    POLAR_API_BASE: z.string().url().optional(),
+    POLAR_ORGANIZATION_ID: z.string().uuid().optional(),
+    POLAR_ACCESS_TOKEN: z.string().optional(),
+    DESKTOP_LICENSE_PRO_BENEFIT_ID: z.string().uuid().optional(),
+    DESKTOP_LICENSE_MSP_BENEFIT_ID: z.string().uuid().optional(),
+    DESKTOP_LICENSE_SIGNING_KEY: z.string().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
     NODE_ENV: z.enum(["development", "test", "production"]),
   },
 
@@ -25,6 +32,11 @@ export const env = createEnv({
     NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
     NEXT_PUBLIC_CRISP_WEBSITE_ID: z.string().uuid().optional(),
+    NEXT_PUBLIC_POLAR_CHECKOUT_PRO_MONTHLY: z.string().url().optional(),
+    NEXT_PUBLIC_POLAR_CHECKOUT_PRO_YEARLY: z.string().url().optional(),
+    NEXT_PUBLIC_POLAR_CHECKOUT_MSP_MONTHLY: z.string().url().optional(),
+    NEXT_PUBLIC_POLAR_CHECKOUT_MSP_YEARLY: z.string().url().optional(),
+    NEXT_PUBLIC_POLAR_PORTAL_URL: z.string().url().optional(),
   },
 
   /**
@@ -37,11 +49,27 @@ export const env = createEnv({
     SUPPORT_FROM_EMAIL: process.env.SUPPORT_FROM_EMAIL,
     SUPPORT_TURNSTILE_SITE_KEY: process.env.SUPPORT_TURNSTILE_SITE_KEY,
     SUPPORT_TURNSTILE_SECRET_KEY: process.env.SUPPORT_TURNSTILE_SECRET_KEY,
+    POLAR_API_BASE: process.env.POLAR_API_BASE,
+    POLAR_ORGANIZATION_ID: process.env.POLAR_ORGANIZATION_ID,
+    POLAR_ACCESS_TOKEN: process.env.POLAR_ACCESS_TOKEN,
+    DESKTOP_LICENSE_PRO_BENEFIT_ID: process.env.DESKTOP_LICENSE_PRO_BENEFIT_ID,
+    DESKTOP_LICENSE_MSP_BENEFIT_ID: process.env.DESKTOP_LICENSE_MSP_BENEFIT_ID,
+    DESKTOP_LICENSE_SIGNING_KEY: process.env.DESKTOP_LICENSE_SIGNING_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     NEXT_PUBLIC_AZURE_AD_CLIENT_ID: process.env.NEXT_PUBLIC_AZURE_AD_CLIENT_ID,
     NEXT_PUBLIC_AZURE_AD_TENANT_ID: process.env.NEXT_PUBLIC_AZURE_AD_TENANT_ID,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_CRISP_WEBSITE_ID: process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID,
+    NEXT_PUBLIC_POLAR_CHECKOUT_PRO_MONTHLY:
+      process.env.NEXT_PUBLIC_POLAR_CHECKOUT_PRO_MONTHLY,
+    NEXT_PUBLIC_POLAR_CHECKOUT_PRO_YEARLY:
+      process.env.NEXT_PUBLIC_POLAR_CHECKOUT_PRO_YEARLY,
+    NEXT_PUBLIC_POLAR_CHECKOUT_MSP_MONTHLY:
+      process.env.NEXT_PUBLIC_POLAR_CHECKOUT_MSP_MONTHLY,
+    NEXT_PUBLIC_POLAR_CHECKOUT_MSP_YEARLY:
+      process.env.NEXT_PUBLIC_POLAR_CHECKOUT_MSP_YEARLY,
+    NEXT_PUBLIC_POLAR_PORTAL_URL: process.env.NEXT_PUBLIC_POLAR_PORTAL_URL,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

@@ -17,6 +17,7 @@ import { Alert } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardHeader } from "../components/ui/Card";
+import { Checkbox } from "../components/ui/Checkbox";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { ProgressBar } from "../components/ui/ProgressBar";
 import { useAsyncAction } from "../hooks/use-async-action";
@@ -53,11 +54,15 @@ function Row({
 function UpdatesCard() {
   const { state, actions } = useApp();
   const { update, appInfo } = state;
+  const automatic = state.settings?.autoUpdate === true;
   const check = useAsyncAction();
+  const toggle = useAsyncAction();
   const statusText: Record<string, string> = {
     idle: "Not checked yet",
     checking: "Checking for updates",
-    available: `Version ${update.version ?? ""} is available and downloading`,
+    available: automatic
+      ? `Version ${update.version ?? ""} is available and downloading`
+      : `Version ${update.version ?? ""} is available`,
     downloading: `Downloading version ${update.version ?? ""}`,
     ready: `Version ${update.version ?? ""} is ready to install`,
     none: "You have the latest version",
@@ -65,6 +70,8 @@ function UpdatesCard() {
     disabled: update.message ?? "Updates are checked in installed builds",
   };
   const disabled = update.state === "disabled";
+  const offer = update.state === "available" && !automatic;
+  const downloading = update.state === "downloading" || (update.state === "available" && automatic);
   return (
     <Card>
       <CardHeader
@@ -77,7 +84,11 @@ function UpdatesCard() {
             {update.state === "none" && <Badge variant="info">Up to date</Badge>}
           </span>
         }
-        description="Updates download in the background and install when you restart the app."
+        description={
+          automatic
+            ? "Updates download in the background and install when you restart the app."
+            : "The app checks for updates and tells you when one is available."
+        }
       />
       <div className="border-petrol-950/8 bg-surface mt-5 rounded-2xl border p-4" aria-live="polite">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -85,31 +96,66 @@ function UpdatesCard() {
           <div className="flex gap-2">
             {update.state === "ready" ? (
               <Button size="sm" icon={RotateCcw} onClick={() => void ipc.updateInstall()}>
-                Restart and install
+                Restart to update
               </Button>
             ) : (
-              <Button
-                size="sm"
-                variant="secondary"
-                icon={RefreshCw}
-                loading={check.busy !== null || update.state === "checking"}
-                disabled={disabled || update.state === "downloading" || update.state === "available"}
-                disabledReason={
-                  disabled
-                    ? "Update checks run in the installed app."
-                    : update.state === "downloading" || update.state === "available"
-                      ? "An update is already downloading."
-                      : null
-                }
-                onClick={() => void check.run("check", () => actions.checkForUpdates())}
-              >
-                Check for updates
-              </Button>
+              <>
+                {offer && (
+                  <Button
+                    size="sm"
+                    icon={DownloadCloud}
+                    loading={check.busy === "download"}
+                    onClick={() => void check.run("download", () => actions.downloadUpdate())}
+                  >
+                    Download update
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={RefreshCw}
+                  loading={check.busy === "check" || update.state === "checking"}
+                  disabled={disabled || downloading || check.busy !== null}
+                  disabledReason={
+                    disabled
+                      ? "Update checks run in the installed app."
+                      : downloading
+                        ? "An update is already downloading."
+                        : null
+                  }
+                  onClick={() => void check.run("check", () => actions.checkForUpdates())}
+                >
+                  Check for updates
+                </Button>
+              </>
             )}
           </div>
         </div>
         {update.state === "downloading" && typeof update.percent === "number" && (
           <ProgressBar value={update.percent} label="Update download" size="sm" className="mt-3" />
+        )}
+        {check.error && (
+          <Alert tone="danger" className="mt-3">
+            {check.error}
+          </Alert>
+        )}
+      </div>
+      <div className="mt-4">
+        <Checkbox
+          checked={automatic}
+          onChange={(value) => void toggle.run("auto", () => actions.setAutoUpdate(value))}
+        >
+          <span className="min-w-0">
+            <span className="text-petrol-950 block text-sm font-semibold">Install updates automatically</span>
+            <span className="text-petrol-600 mt-0.5 block text-[13px] leading-5">
+              When off, the app tells you when an update is available and you choose when to install it.
+            </span>
+          </span>
+        </Checkbox>
+        {toggle.error && (
+          <Alert tone="danger" className="mt-3">
+            {toggle.error}
+          </Alert>
         )}
       </div>
     </Card>

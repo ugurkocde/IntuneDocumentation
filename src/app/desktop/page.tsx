@@ -115,7 +115,7 @@ const features = [
 const faqs = [
   {
     question: "How does licensing work?",
-    answer: `You buy a Pro or MSP subscription and receive a license key by email. Paste the key into the app after signing in. The app activates the key for the tenant you signed into and stores a signed license token on your machine. Every plan starts with a ${DESKTOP_TRIAL_DAYS} day free trial. A payment card is required, and you can cancel before the trial ends without being charged.`,
+    answer: `You buy a Pro or MSP subscription and receive a license key by email. Paste the key into the app after signing in. The app activates the key for the tenant you signed into and stores a signed license token on your machine. Anyone who signs in to your tenant's Intune Documentation app registration can use a shared license, without the key. Every plan starts with a ${DESKTOP_TRIAL_DAYS} day free trial. A payment card is required, and you can cancel before the trial ends without being charged.`,
   },
   {
     question: "Can I use the app offline?",
@@ -124,7 +124,7 @@ const faqs = [
   {
     question: "What data is sent to your servers?",
     answer:
-      "Only what the licensing service needs: the license key, a random installation ID, your Entra tenant ID, the operating system, and the app version. Tenant configuration, Microsoft tokens, and exported documents never leave your machine. Graph calls go directly from the app to Microsoft.",
+      "Only what the licensing service needs: the license key or, for an organization license, a Microsoft sign-in token that is verified and only its tenant ID used, never stored. Plus a random installation ID, your Entra tenant ID, the operating system, and the app version. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine. Graph calls go directly from the app to Microsoft.",
   },
   {
     question: "How many tenants and installations are included?",
@@ -292,9 +292,11 @@ export default function DesktopPage() {
               )}
             </div>
             <p className="text-petrol-600 mt-8 max-w-3xl text-sm leading-6">
-              The licensing service receives only the license key, a random
-              installation ID, your Entra tenant ID, the operating system, and
-              the app version. It uses them to validate your subscription and
+              The licensing service receives only the license key (or, for an
+              organization license, a Microsoft sign-in token that is verified
+              and only its tenant ID used, never stored), a random installation
+              ID, your Entra tenant ID, the operating system, and the app
+              version. It uses them to validate your subscription and
               enforce tenant and installation limits. Details are in the{" "}
               <Link
                 href="/privacy-policy#desktop-app"
@@ -386,11 +388,11 @@ export default function DesktopPage() {
               <div>
                 <Eyebrow>Download</Eyebrow>
                 <h2 className="text-petrol-950 text-3xl leading-tight font-semibold tracking-[-0.035em] sm:text-4xl">
-                  Install once, stay current automatically.
+                  Install once, update when you choose.
                 </h2>
                 <p className="text-petrol-600 mt-4 text-base leading-7">
                   Installers are published on GitHub Releases, and the app
-                  updates itself from the same place.
+                  checks the same place for new versions.
                 </p>
                 <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                   <a
@@ -456,11 +458,12 @@ export default function DesktopPage() {
                 <div className="border-petrol-950/8 bg-mint-50 rounded-2xl border p-6 sm:col-span-2">
                   <RefreshCw className="h-6 w-6 text-teal-700" />
                   <h3 className="text-petrol-950 mt-5 font-semibold">
-                    Automatic updates
+                    Updates when you choose
                   </h3>
                   <p className="text-petrol-600 mt-2 text-sm leading-6">
-                    New releases are tagged with the desktop-v prefix and
-                    delivered to the installed app automatically.
+                    The app tells you when a new release is available and
+                    installs it when you choose. You can also turn on
+                    automatic installs in Settings.
                   </p>
                 </div>
               </div>

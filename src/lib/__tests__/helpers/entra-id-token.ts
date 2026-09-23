@@ -24,6 +24,8 @@ const claims = (overrides: Record<string, unknown> = {}) => ({
   tid: TENANT_ID,
   oid: "aaaaaaaa-0000-0000-0000-000000000001",
   preferred_username: "admin@example.invalid",
+  // MSAL sends a nonce on interactive sign-in, so ID tokens carry one.
+  nonce: "0c8f5b1e-test-nonce",
   ...overrides,
 });
 

@@ -10,6 +10,7 @@ import {
 } from "react";
 import type {
   AppSettings,
+  ConnectionSettings,
   FullCollectionSummary,
   UpdateStatus,
 } from "../../shared/ipc-types";
@@ -29,10 +30,12 @@ export interface AppActions {
   cancelCollect(): Promise<void>;
   loadSection(key: string): Promise<void>;
   syncCollection(): Promise<void>;
-  saveSettings(settings: AppSettings): Promise<AppSettings>;
+  saveSettings(settings: ConnectionSettings): Promise<AppSettings>;
   openWizard(): void;
   closeWizard(): void;
   checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<void>;
+  setAutoUpdate(enabled: boolean): Promise<void>;
 }
 
 interface AppContextValue {
@@ -150,6 +153,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         );
         dispatch({ type: "update", update });
       },
+      async downloadUpdate() {
+        const update = await ipc.updateDownload();
+        dispatch({ type: "update", update });
+      },
+      async setAutoUpdate(enabled) {
+        const settings = await ipc.updateSetAuto(enabled);
+        dispatch({ type: "settings", settings });
+      },
     };
   }, []);
 
@@ -158,7 +169,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void (async () => {
       const settings = await ipc
         .settingsGet()
-        .catch((): AppSettings => ({ clientId: "", tenantId: "organizations" }));
+        .catch((): AppSettings => ({
+          clientId: "",
+          tenantId: "organizations",
+          autoUpdate: false,
+        }));
       const [auth, license, appInfo, update] = await Promise.all([
         settings.clientId ? ipc.authStatus().catch(() => null) : null,
         ipc.licenseStatus().catch(() => null),

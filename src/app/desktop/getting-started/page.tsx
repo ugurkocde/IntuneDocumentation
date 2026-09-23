@@ -211,7 +211,11 @@ export default async function DesktopGettingStartedPage({
                   prompts. It installs for the current user.
                 </li>
               </ul>
-              <p>Updates install automatically once the app is set up.</p>
+              <p>
+                The app tells you when an update is available and installs it
+                when you choose. To install updates automatically, turn that
+                on in Settings.
+              </p>
               <a
                 href={DESKTOP_DOWNLOAD_URL}
                 rel="noopener"
@@ -379,7 +383,7 @@ export default async function DesktopGettingStartedPage({
                 granted.
               </p>
               <p>
-                Your Microsoft tokens stay on this machine. The app calls
+                Your Microsoft access tokens stay on this machine. The app calls
                 Microsoft Graph directly.
               </p>
             </Step>
@@ -390,6 +394,21 @@ export default async function DesktopGettingStartedPage({
                 wizard step, or later on the <Ui>License</Ui> screen. The app
                 activates it for the tenant you signed into. The license token
                 is stored encrypted with your operating system keychain.
+              </p>
+              <p>
+                If someone in your organization already activated a license for
+                this tenant and shares it, you do not need a key: anyone who
+                signs in to your tenant&apos;s Intune Documentation app
+                registration is licensed automatically. A Pro license is shared
+                with its tenant by default. An MSP license is shared only with the
+                tenants where the key holder turns on{" "}
+                <Ui>Let other admins in this tenant use this license</Ui>.
+              </p>
+              <p>
+                License checks send the license key or, for an organization
+                license, a Microsoft sign-in token that is verified and only its
+                tenant ID used, never stored. They also send a random
+                installation ID and the tenant ID.
               </p>
               <p>
                 No key yet?{" "}

@@ -5,14 +5,12 @@ import type { AppState } from "./types";
 export function collectBlocker(state: AppState): string | null {
   if (state.collection.running) return "A collection is already running.";
   if (!state.auth?.signedIn) return "Sign in to your tenant to collect data.";
+  if (state.license?.entitled) return null;
   if (!state.license?.hasKey) return "Add a license key to collect tenant data.";
-  if (!state.license.entitled) {
-    return (
-      state.license.message ??
-      "The license is not active for this tenant. Open License and account to activate it."
-    );
-  }
-  return null;
+  return (
+    state.license.message ??
+    "The license is not active for this tenant. Open License and account to activate it."
+  );
 }
 
 export function exportBlocker(state: AppState): string | null {
@@ -61,12 +59,20 @@ export function licenseView(state: AppState): LicenseView {
   const license = state.license;
   const signedIn = Boolean(state.auth?.signedIn);
   if (license?.entitled) {
-    return {
-      kind: "active",
-      label: `Active, ${license.plan === "msp" ? "MSP" : "Pro"} plan`,
-      detail: `${license.plan === "msp" ? "MSP" : "Pro"} plan active for this tenant.`,
-      tone: "active",
-    };
+    const plan = license.plan === "msp" ? "MSP" : "Pro";
+    return license.source === "tenant"
+      ? {
+          kind: "active",
+          label: `Active through your organization, ${plan} plan`,
+          detail: `Licensed through your organization (${plan}).`,
+          tone: "active",
+        }
+      : {
+          kind: "active",
+          label: `Active, ${plan} plan`,
+          detail: `${plan} plan active for this tenant.`,
+          tone: "active",
+        };
   }
   if (!signedIn && license?.cachedTenantId) {
     return {

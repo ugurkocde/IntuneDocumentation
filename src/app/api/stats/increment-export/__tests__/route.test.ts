@@ -39,6 +39,8 @@ describe("increment-export", () => {
     ["no token", undefined],
     ["an unsigned alg none token", unsignedIdToken()],
     ["a wrong audience", signedIdToken({ aud: "not-this-app" })],
+    ["an access token with scp", signedIdToken({ scp: "User.Read" })],
+    ["an app only token with roles", signedIdToken({ roles: ["Stats.Write"] })],
   ])("rejects %s with 401 without calling rpc", async (_name, token) => {
     const response = await POST(request(token));
     expect(response.status).toBe(401);

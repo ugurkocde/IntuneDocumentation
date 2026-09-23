@@ -39,7 +39,7 @@ export default function TermsOfUsePage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Terms of Use
           </h1>
-          <p className="mb-10 text-slate-600">Effective: September 22, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: September 23, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -175,9 +175,10 @@ export default function TermsOfUsePage() {
               <li>
                 <strong>License checks and updates:</strong> the Desktop App
                 checks your license with our licensing service periodically and
-                keeps working for up to 14 days without reaching it. It installs
-                updates automatically. We may add, change, or remove features to
-                improve the Desktop App.
+                keeps working for up to 14 days without reaching it. It tells
+                you when an update is available and installs it when you choose,
+                or automatically if you turn that on in Settings. We may add,
+                change, or remove features to improve the Desktop App.
               </li>
               <li>
                 <strong>Your responsibilities:</strong> you create and control

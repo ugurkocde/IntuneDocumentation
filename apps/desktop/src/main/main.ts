@@ -53,8 +53,10 @@ import { errorText, log, tailLog } from "./logger";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
 import {
   checkForUpdates,
+  downloadUpdate,
   getUpdateStatus,
   installUpdate,
+  setAutoUpdate,
   startUpdater,
 } from "./updater";
 import {
@@ -78,7 +80,18 @@ const savedExportPaths = new Set<string>();
 const MAX_SAVE_BYTES = 300 * 1024 * 1024;
 const MAX_CLIPBOARD_CHARS = 4096;
 const LICENSE_REFRESH_MS = 6 * 60 * 60_000;
-const license = new LicenseService();
+// ID tokens and the app registration only for the signed in tenant: other
+// cached tenants keep their organization license token until it expires.
+const license = new LicenseService(
+  async (tenantId) =>
+    auth && signedInTenant()?.toLowerCase() === tenantId
+      ? auth.getIdToken()
+      : null,
+  (tenantId) =>
+    auth && signedInTenant()?.toLowerCase() === tenantId
+      ? (authKey.split("|")[0] ?? null)
+      : null,
+);
 const isMac = process.platform === "darwin";
 
 function rendererUrl(): string {
@@ -382,6 +395,7 @@ async function exportDiagnostics(): Promise<string | null> {
     `License message: ${status.message ?? "none"}`,
     "",
     `Update status: ${update.state}${update.version ? ` ${update.version}` : ""}`,
+    `Automatic updates: ${settings.autoUpdate ? "on" : "off"}`,
     "",
     `Last collection: ${collection ? collection.collectedAt : "none"}`,
     ...(collection
@@ -885,6 +899,17 @@ function registerIpc(): void {
     }
   });
 
+  handle("license:setShared", async (_event, shared) => {
+    if (typeof shared !== "boolean") {
+      throw new Error("Choose whether to share the license.");
+    }
+    try {
+      return await license.setShared(signedInTenant(), shared);
+    } finally {
+      pushLicense();
+    }
+  });
+
   handle("license:deactivate", async () => {
     try {
       return await license.deactivate();
@@ -965,7 +990,17 @@ function registerIpc(): void {
 
   handle("update:status", () => getUpdateStatus());
   handle("update:check", () => checkForUpdates());
+  handle("update:download", () => downloadUpdate());
   handle("update:install", () => installUpdate());
+  handle("update:setAuto", async (_event, enabled) => {
+    if (typeof enabled !== "boolean") {
+      throw new Error("Refused an unexpected update setting.");
+    }
+    const saved = await writeSettings({ autoUpdate: enabled });
+    setAutoUpdate(saved.autoUpdate);
+    log("info", "automatic updates changed", { enabled: saved.autoUpdate });
+    return saved;
+  });
 
   handle("diagnostics:export", () => exportDiagnostics());
 
@@ -1007,8 +1042,11 @@ if (!app.requestSingleInstanceLock()) {
     }
     buildMenu();
     createWindow();
-    startUpdater((status: UpdateStatus) =>
-      broadcast("update:status", status),
+    void readSettings().then((settings) =>
+      startUpdater(
+        (status: UpdateStatus) => broadcast("update:status", status),
+        settings.autoUpdate,
+      ),
     );
     void refreshLicenses();
     setInterval(() => void refreshLicenses(), LICENSE_REFRESH_MS);

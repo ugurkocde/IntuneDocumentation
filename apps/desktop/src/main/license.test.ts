@@ -143,3 +143,224 @@ describe("LicenseService clock guard", () => {
     expect(await entitledAt(T0 + DAY)).toBe(false);
   });
 });
+
+describe("LicenseService organization licenses", () => {
+  type Call = { action: string; body: Record<string, unknown> };
+  let calls: Call[];
+  let answer: (call: Call) => Response;
+
+  const fresh = (act: string, plan = "pro") =>
+    token({
+      act,
+      plan,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 14 * 86400,
+    });
+  const granted = (act: string, extra: Record<string, unknown> = {}) =>
+    Response.json({ token: fresh(act), activationId: act, plan: "pro", ...extra });
+  const denied = (reason: string) =>
+    Response.json({ reason }, { status: 403 });
+
+  beforeEach(() => {
+    keys.dir.current = mkdtempSync(path.join(tmpdir(), "license-test-"));
+    writeFileSync(path.join(keys.dir.current, "install-id"), INSTALL);
+    calls = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        const call = {
+          action: url.split("/").pop() ?? "",
+          body: JSON.parse(init.body as string) as Record<string, unknown>,
+        };
+        calls.push(call);
+        return answer(call);
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    rmSync(keys.dir.current, { recursive: true, force: true });
+  });
+
+  const APP_ID = "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f";
+  const service = (idToken: string | null = "id.token.value") =>
+    new LicenseService(
+      async (tenant) => (tenant === TENANT ? idToken : null),
+      (tenant) => (tenant === TENANT ? APP_ID : null),
+    );
+
+  it("licenses a tenant without a key through the organization license", async () => {
+    answer = () => granted("act-org", { source: "tenant", displayKey: "****ABCDEF" });
+    const license = service();
+    await license.requireEntitlement(TENANT);
+    expect(calls).toEqual([
+      {
+        action: "tenant",
+        body: expect.objectContaining({
+          idToken: "id.token.value",
+          installId: INSTALL,
+          action: "activate",
+        }),
+      },
+    ]);
+    expect(calls[0]!.body).not.toHaveProperty("key");
+    const status = await license.status(TENANT);
+    expect(status).toMatchObject({
+      entitled: true,
+      hasKey: false,
+      keyHint: null,
+      source: "tenant",
+      displayKey: "****ABCDEF",
+      shared: null,
+    });
+    // Survives a restart without a key.
+    expect((await new LicenseService().status(TENANT)).source).toBe("tenant");
+  });
+
+  it("asks for a key without an error when the tenant has no organization license", async () => {
+    answer = () => denied("tenant_not_licensed");
+    const license = service();
+    await expect(license.requireEntitlement(TENANT)).rejects.toThrow(
+      "A license is required",
+    );
+    const status = await license.status(TENANT);
+    expect(status).toMatchObject({ entitled: false, message: null, hasKey: false });
+  });
+
+  it("refreshes a tenant activation with a fresh ID token, and keeps it without one", async () => {
+    answer = () => granted("act-org", { source: "tenant" });
+    await service().requireEntitlement(TENANT);
+    calls = [];
+    await service(null).refreshAll();
+    expect(calls).toHaveLength(0);
+    expect((await service(null).status(TENANT)).entitled).toBe(true);
+
+    await service().refreshAll();
+    expect(calls).toEqual([
+      {
+        action: "tenant",
+        body: expect.objectContaining({ action: "refresh", activationId: "act-org" }),
+      },
+    ]);
+
+    answer = () => denied("tenant_not_licensed");
+    await service().refreshAll();
+    expect((await service().status(TENANT)).entitled).toBe(false);
+  });
+
+  it("releases a tenant activation through the organization license route", async () => {
+    const KEY_ID = "5a0e2f6c-8a41-4a8e-9b33-0c6e2d1f7a10";
+    answer = () =>
+      granted("act-org", { source: "tenant", licenseKeyId: KEY_ID });
+    const license = service();
+    await license.requireEntitlement(TENANT);
+    answer = () => Response.json({ success: true });
+    await license.deactivate();
+    expect(calls.at(-1)).toEqual({
+      action: "tenant",
+      body: expect.objectContaining({
+        action: "deactivate",
+        activationId: "act-org",
+        licenseKeyId: KEY_ID,
+      }),
+    });
+    expect((await license.status(TENANT)).entitled).toBe(false);
+  });
+
+  it("lets the key holder share the license and remembers the choice", async () => {
+    answer = ({ action, body }) =>
+      action === "activate"
+        ? granted("act-key", { shared: false })
+        : granted("act-key", { shared: body.shareWithTenant });
+    const license = service();
+    await license.setKey("TEST-LICENSE-KEY", TENANT);
+    expect(calls[0]!.body).not.toHaveProperty("shareWithTenant");
+    expect(calls[0]!.body).toMatchObject({
+      clientId: APP_ID,
+      idToken: "id.token.value",
+    });
+    expect(await license.status(TENANT)).toMatchObject({
+      source: "key",
+      shared: false,
+      hasKey: true,
+    });
+
+    expect((await license.setShared(TENANT, true)).shared).toBe(true);
+    expect(calls.at(-1)).toMatchObject({
+      action: "refresh",
+      body: {
+        shareWithTenant: true,
+        key: "TEST-LICENSE-KEY",
+        clientId: APP_ID,
+        idToken: "id.token.value",
+      },
+    });
+    await license.refreshAll();
+    expect(calls.at(-1)!.body.shareWithTenant).toBe(true);
+  });
+
+  it("reports a sharing change the service could not store", async () => {
+    answer = ({ action }) =>
+      action === "activate" ? granted("act-key", { shared: true }) : granted("act-key");
+    const license = service();
+    await license.setKey("TEST-LICENSE-KEY", TENANT);
+    await expect(license.setShared(TENANT, false)).rejects.toThrow(
+      "could not be saved",
+    );
+    expect((await license.status(TENANT)).shared).toBe(true);
+  });
+
+  it("keeps the sharing choice when the service needs a fresh sign-in", async () => {
+    answer = ({ action, body }) =>
+      // Like the service: sharing needs a sign-in, stopping does not.
+      action === "activate" || body.idToken || body.shareWithTenant === false
+        ? granted("act-key", { shared: body.shareWithTenant ?? true })
+        : granted("act-key", { shared: false, sharedReason: "sign_in_required" });
+    await service().setKey("TEST-LICENSE-KEY", TENANT);
+    // A background refresh without a sign-in does not turn sharing off.
+    await service(null).refreshAll();
+    expect(calls.at(-1)!.body).toMatchObject({ shareWithTenant: true });
+    expect(calls.at(-1)!.body).not.toHaveProperty("idToken");
+    const status = await service(null).status(TENANT);
+    expect(status).toMatchObject({ shared: true, shareNeedsSignIn: true });
+    await expect(service(null).setShared(TENANT, true)).rejects.toThrow(
+      "Sign in again",
+    );
+    // Stopping needs no sign-in and sends no token.
+    await service(null).setShared(TENANT, false);
+    expect(calls.at(-1)!.body).toMatchObject({ shareWithTenant: false });
+    expect(calls.at(-1)!.body).not.toHaveProperty("idToken");
+    await service().refreshAll();
+    expect(await service().status(TENANT)).toMatchObject({
+      shared: false,
+      shareNeedsSignIn: false,
+    });
+  });
+
+  it("falls back to the organization license when the key is refused for the tenant", async () => {
+    answer = ({ action }) =>
+      action === "activate"
+        ? denied("tenant_limit")
+        : granted("act-org", { source: "tenant" });
+    const license = service();
+    await license.setKey("TEST-LICENSE-KEY", null);
+    await license.requireEntitlement(TENANT);
+    expect(calls.map((call) => call.action)).toEqual(["activate", "tenant"]);
+    expect(await license.status(TENANT)).toMatchObject({
+      entitled: true,
+      source: "tenant",
+      hasKey: true,
+    });
+  });
+
+  it("keeps the key's refusal when the tenant has no organization license", async () => {
+    answer = ({ action }) =>
+      action === "activate" ? denied("tenant_limit") : denied("tenant_not_licensed");
+    const license = service();
+    await license.setKey("TEST-LICENSE-KEY", null);
+    await expect(license.requireEntitlement(TENANT)).rejects.toThrow(
+      "maximum number of tenants",
+    );
+  });
+});

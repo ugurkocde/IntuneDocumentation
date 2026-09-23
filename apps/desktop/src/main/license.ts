@@ -4,6 +4,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { LICENSE_API_BASE, LICENSE_PUBLIC_KEY } from "./config";
 import { log } from "./logger";
+import type { LicenseStatus } from "../shared/ipc-types";
+
+export type { LicenseStatus };
 
 interface Entitlement {
   v: 1;
@@ -18,34 +21,55 @@ interface Entitlement {
   exp: number;
 }
 
+// An activation either comes from this machine's license key, or, with
+// source "tenant", from the organization license the key holder shared with
+// the tenant; those are checked with a Microsoft ID token and the key never
+// reaches this machine.
+interface StoredActivation {
+  activationId: string;
+  token: string;
+  source?: "tenant";
+  // Key activations: whether the service last confirmed the license as
+  // shared with the tenant's other admins.
+  shared?: boolean;
+  // Key activations: the service could not share the license because the
+  // request lacked a fresh sign-in to the tenant.
+  shareNeedsSignIn?: true;
+  // Tenant activations: the masked key, for display.
+  displayKey?: string;
+  // Tenant activations: the Polar id of that key (never the key itself), so
+  // the activation can be released after the tenant stops sharing it.
+  licenseKeyId?: string;
+}
+
 // One activation per signed-in tenant, keyed by lowercase tenant id. seen is
 // the latest wall clock time (ms) the app has observed.
 interface StoredLicense {
-  key: string;
-  activations: Record<string, { activationId: string; token: string }>;
+  key?: string;
+  activations: Record<string, StoredActivation>;
   seen?: number;
 }
 
-export interface LicenseStatus {
-  hasKey: boolean;
-  keyHint: string | null;
-  persisted: boolean;
-  tenantId: string | null;
-  entitled: boolean;
-  plan: "pro" | "msp" | null;
-  tenants: number | null;
-  expiresAt: string | null;
-  message: string | null;
-  // The last call to the licensing service failed to reach it.
-  offline: boolean;
-  // A tenant with a still valid cached activation, reported while no tenant
-  // is signed in.
-  cachedTenantId: string | null;
-}
+// A recent Microsoft ID token for the tenant, or null when the tenant is not
+// signed in or no token can be had silently.
+export type IdTokenProvider = (tenantId: string) => Promise<string | null>;
+// The app registration client ID the tenant is signed in with, or null when
+// the tenant is not signed in. The service pins organization licenses to it.
+export type ClientIdProvider = (tenantId: string) => string | null;
 
 // The licensing service refused (HTTP 403). Anything else, including 5xx and
 // network errors, is treated as "unreachable" and never drops a cached token.
-class LicenseDenied extends Error {}
+class LicenseDenied extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+  }
+}
+
+const LICENSE_REQUIRED =
+  "A license is required to collect and export. Add your license key under License and account.";
 
 const REASONS: Record<string, string> = {
   invalid_key: "This license key is not valid for Intune Documentation.",
@@ -62,6 +86,7 @@ const REASONS: Record<string, string> = {
     "This license has no activations left. Deactivate an installation in the customer portal.",
   activation_mismatch:
     "This installation is no longer activated. It will activate again on the next collection or export.",
+  tenant_not_licensed: "Your organization has no license for this tenant.",
 };
 
 // How far the clock may move back (an NTP correction, a restored VM snapshot,
@@ -125,6 +150,25 @@ export class LicenseService {
   private loaded: Promise<void> | null = null;
   private savedSeen = 0;
 
+  constructor(
+    private readonly idToken: IdTokenProvider = async () => null,
+    private readonly clientId: ClientIdProvider = () => null,
+  ) {}
+
+  // The proof of the tenant the service needs to share the license with it:
+  // the app registration and a fresh sign-in to it. Not needed to stop
+  // sharing. Without it the service still licenses this machine but leaves
+  // the sharing unchanged.
+  private async sharingFields(
+    tenantId: string,
+    share?: boolean,
+  ): Promise<{ clientId?: string; idToken?: string }> {
+    const clientId = this.clientId(tenantId)?.toLowerCase();
+    if (share === false || !clientId || !guidPattern.test(clientId)) return {};
+    const idToken = await this.idToken(tenantId);
+    return idToken ? { clientId, idToken } : { clientId };
+  }
+
   load(): Promise<void> {
     this.loaded ??= this.read();
     return this.loaded;
@@ -168,7 +212,7 @@ export class LicenseService {
       const parsed = JSON.parse(text) as Partial<StoredLicense> | null;
       if (
         parsed &&
-        typeof parsed.key === "string" &&
+        (parsed.key === undefined || typeof parsed.key === "string") &&
         typeof parsed.activations === "object" &&
         parsed.activations !== null
       ) {
@@ -235,7 +279,7 @@ export class LicenseService {
   }
 
   private async call(
-    action: "activate" | "refresh" | "deactivate",
+    action: "activate" | "refresh" | "deactivate" | "tenant",
     body: object,
   ): Promise<Record<string, unknown>> {
     let response: Response;
@@ -254,9 +298,10 @@ export class LicenseService {
       log("warn", "license service unreachable", { action });
       throw new Error("The licensing service could not be reached.");
     }
-    // Like a network failure, any refusal other than 403 means the service
-    // could not answer the request.
-    this.offline = !response.ok && response.status !== 403;
+    // Like a network failure, any refusal other than 403 and 401 means the
+    // service could not answer the request.
+    this.offline =
+      !response.ok && response.status !== 403 && response.status !== 401;
     const data = (await response.json().catch(() => ({}))) as Record<
       string,
       unknown
@@ -272,6 +317,13 @@ export class LicenseService {
       const reason = reasonCode ?? "";
       throw new LicenseDenied(
         REASONS[reason] ?? "The license was not accepted.",
+        reason,
+      );
+    }
+    // The organization license route could not verify the Microsoft sign-in.
+    if (response.status === 401) {
+      throw new Error(
+        "Your Microsoft sign-in could not be verified by the licensing service. Sign in again and retry.",
       );
     }
     if (!response.ok) {
@@ -287,14 +339,16 @@ export class LicenseService {
   private async store(
     tenantId: string,
     data: Record<string, unknown>,
+    source: "key" | "tenant",
   ): Promise<void> {
     if (
-      !this.state ||
       typeof data.token !== "string" ||
       typeof data.activationId !== "string"
     ) {
       throw new Error("The licensing service returned an invalid response.");
     }
+    const hadState = this.state !== null;
+    this.state ??= { activations: {} };
     // Verify the new token before it replaces the cached one: a response that
     // fails verification must not cost a still valid activation. A mark
     // ahead of both the clock and the server's issue time came from a clock
@@ -307,14 +361,42 @@ export class LicenseService {
       previousSeen ?? now,
       Number.isFinite(issued) ? Math.max(now, issued) : now,
     );
+    // shared is left out of a response when the service could not update
+    // it, and is false without sharing being changed when the request lacked
+    // a sign-in; either way the last confirmed value stands.
+    const shareNeedsSignIn = data.sharedReason === "sign_in_required";
+    const shared =
+      typeof data.shared === "boolean" && !shareNeedsSignIn
+        ? data.shared
+        : previous?.source === undefined
+          ? previous?.shared
+          : undefined;
     this.state.activations[tenantId] = {
       activationId: data.activationId,
       token: data.token,
+      ...(source === "tenant"
+        ? {
+            source,
+            ...(typeof data.displayKey === "string"
+              ? { displayKey: data.displayKey.slice(0, 20) }
+              : {}),
+            ...(typeof data.licenseKeyId === "string" &&
+            guidPattern.test(data.licenseKeyId)
+              ? { licenseKeyId: data.licenseKeyId }
+              : {}),
+          }
+        : {
+            ...(shared !== undefined ? { shared } : {}),
+            ...(shareNeedsSignIn ? { shareNeedsSignIn: true as const } : {}),
+          }),
     };
     if (!this.valid(tenantId)) {
-      if (previous) this.state.activations[tenantId] = previous;
-      else delete this.state.activations[tenantId];
-      this.state.seen = previousSeen;
+      if (!hadState) this.state = null;
+      else {
+        if (previous) this.state.activations[tenantId] = previous;
+        else delete this.state.activations[tenantId];
+        this.state.seen = previousSeen;
+      }
       throw new Error("The license token could not be verified.");
     }
     this.message = null;
@@ -322,28 +404,99 @@ export class LicenseService {
   }
 
   private async activate(tenantId: string): Promise<void> {
-    if (!this.state) throw new Error("Enter a license key first.");
+    if (!this.state?.key) throw new Error("Enter a license key first.");
     const data = await this.call("activate", {
       key: this.state.key,
       installId: this.installId,
       tenantId,
       os: process.platform,
       appVersion: app.getVersion(),
+      ...(await this.sharingFields(tenantId)),
     });
-    await this.store(tenantId, data);
+    await this.store(tenantId, data, "key");
   }
 
-  private async refresh(tenantId: string): Promise<void> {
+  // A request to the organization license route. Throws when no ID token for
+  // the tenant can be had silently.
+  private async tenantCall(
+    tenantId: string,
+    action: "activate" | "refresh" | "deactivate",
+    entry?: StoredActivation,
+    token?: string,
+  ): Promise<Record<string, unknown>> {
+    const idToken = token ?? (await this.idToken(tenantId));
+    if (!idToken) {
+      throw new Error(
+        "Sign in to this tenant again to check your organization's license.",
+      );
+    }
+    return this.call("tenant", {
+      idToken,
+      installId: this.installId,
+      os: process.platform,
+      appVersion: app.getVersion(),
+      action,
+      ...(entry ? { activationId: entry.activationId } : {}),
+      ...(entry?.licenseKeyId ? { licenseKeyId: entry.licenseKeyId } : {}),
+    });
+  }
+
+  private async activateTenant(tenantId: string): Promise<void> {
+    await this.store(
+      tenantId,
+      await this.tenantCall(tenantId, "activate"),
+      "tenant",
+    );
+  }
+
+  // Activates with this machine's key, and falls back to the tenant's
+  // organization license when there is no key or the key is refused for this
+  // tenant. A tenant without an organization license reports the key's
+  // refusal, or that a license is needed.
+  private async activateAny(tenantId: string): Promise<void> {
+    if (!this.state?.key) {
+      await this.activateTenant(tenantId);
+      return;
+    }
+    try {
+      await this.activate(tenantId);
+    } catch (keyError) {
+      if (!(keyError instanceof LicenseDenied)) throw keyError;
+      await this.activateTenant(tenantId).catch((error: unknown) => {
+        throw error instanceof LicenseDenied &&
+          error.reason === "tenant_not_licensed"
+          ? keyError
+          : error;
+      });
+    }
+  }
+
+  // share, for a key activation, asks the service to share the license with
+  // the tenant or stop; otherwise the last confirmed choice is sent again, or
+  // nothing so the service applies the plan's default. A tenant activation
+  // without an ID token keeps its cached token until it expires.
+  private async refresh(tenantId: string, share?: boolean): Promise<void> {
     const entry = this.state?.activations[tenantId];
     if (!this.state || !entry) return;
     try {
+      if (entry.source === "tenant") {
+        const idToken = await this.idToken(tenantId);
+        if (!idToken) return;
+        const data = await this.tenantCall(tenantId, "refresh", entry, idToken);
+        await this.store(tenantId, data, "tenant");
+        return;
+      }
+      if (!this.state.key) throw new Error("Enter a license key first.");
+      const shareWithTenant = share ?? entry.shared;
       const data = await this.call("refresh", {
         key: this.state.key,
         activationId: entry.activationId,
         installId: this.installId,
         tenantId,
+        ...(await this.sharingFields(tenantId, shareWithTenant)),
+        ...(shareWithTenant === undefined ? {} : { shareWithTenant }),
       });
-      await this.store(tenantId, data);
+      await this.store(tenantId, data, "key");
     } catch (error) {
       if (error instanceof LicenseDenied) {
         delete this.state.activations[tenantId];
@@ -363,6 +516,31 @@ export class LicenseService {
     }
   }
 
+  // The key holder lets the tenant's other admins use the license, or stops.
+  async setShared(
+    tenantId: string | null,
+    share: boolean,
+  ): Promise<LicenseStatus> {
+    await this.load();
+    const tenant = tenantId?.toLowerCase() ?? "";
+    const entry = this.state?.activations[tenant];
+    if (!this.state?.key || !entry || entry.source === "tenant") {
+      throw new Error(
+        "Only the machine that holds the license key can change sharing.",
+      );
+    }
+    await this.refresh(tenant, share);
+    if (share && this.state?.activations[tenant]?.shareNeedsSignIn) {
+      throw new Error("Sign in again to share the license with this tenant.");
+    }
+    if (this.state?.activations[tenant]?.shared !== share) {
+      throw new Error(
+        "The sharing setting could not be saved. Please try again later.",
+      );
+    }
+    return this.status(tenantId);
+  }
+
   async setKey(key: string, tenantId: string | null): Promise<LicenseStatus> {
     await this.load();
     const trimmed = key.trim();
@@ -370,10 +548,11 @@ export class LicenseService {
       throw new Error("Enter a valid license key.");
     }
     const previous = this.state;
+    // Organization license activations do not depend on the key and stay.
     if (
-      previous &&
+      previous?.key &&
       previous.key !== trimmed &&
-      Object.keys(previous.activations).length > 0
+      Object.values(previous.activations).some((entry) => !entry.source)
     ) {
       throw new Error(
         "Deactivate this machine before entering a different license key.",
@@ -381,7 +560,7 @@ export class LicenseService {
     }
     this.state = {
       key: trimmed,
-      activations: previous?.key === trimmed ? previous.activations : {},
+      activations: { ...previous?.activations },
       ...(previous?.seen !== undefined ? { seen: previous.seen } : {}),
     };
     if (tenantId) {
@@ -407,29 +586,37 @@ export class LicenseService {
       await this.keepSeen();
       return;
     }
-    if (!this.state) {
-      throw new Error(
-        "A license is required to collect and export. Add your license key under License and account.",
-      );
-    }
     const tenant = tenantId.toLowerCase();
     try {
-      if (this.state.activations[tenant]) {
+      if (this.state?.activations[tenant]) {
         // A refused refresh drops the activation (for example after it was
         // released in the customer portal); try one fresh activation.
         await this.refresh(tenant).catch((error: unknown) => {
           if (!(error instanceof LicenseDenied)) throw error;
-          return this.activate(tenant);
+          return this.activateAny(tenant);
         });
       } else {
-        await this.activate(tenant);
+        await this.activateAny(tenant);
       }
     } catch (error) {
+      // Without a key and an organization license there is nothing to fix
+      // but adding a key, which the panel already asks for.
+      if (
+        error instanceof LicenseDenied &&
+        error.reason === "tenant_not_licensed"
+      ) {
+        this.message = null;
+        throw new Error(LICENSE_REQUIRED);
+      }
       this.message = error instanceof Error ? error.message : String(error);
       throw error;
     }
     if (!this.valid(tenantId)) {
-      throw new Error("The license is not valid for this tenant.");
+      throw new Error(
+        this.state?.activations[tenant]?.source === "tenant"
+          ? "Sign in to this tenant again to check your organization's license."
+          : "The license is not valid for this tenant.",
+      );
     }
   }
 
@@ -445,10 +632,14 @@ export class LicenseService {
     let failure: unknown = null;
     for (const [tenantId, entry] of Object.entries(this.state.activations)) {
       try {
-        await this.call("deactivate", {
-          key: this.state.key,
-          activationId: entry.activationId,
-        });
+        if (entry.source === "tenant") {
+          await this.tenantCall(tenantId, "deactivate", entry);
+        } else if (this.state.key) {
+          await this.call("deactivate", {
+            key: this.state.key,
+            activationId: entry.activationId,
+          });
+        }
         delete this.state.activations[tenantId];
       } catch (error) {
         if (error instanceof LicenseDenied) {
@@ -477,9 +668,17 @@ export class LicenseService {
           this.valid(tenant),
         ) ?? null);
     await this.keepSeen();
+    const entry = payload
+      ? this.state?.activations[tenantId!.toLowerCase()]
+      : undefined;
+    const source = entry ? (entry.source ?? "key") : null;
     return {
-      hasKey: this.state !== null,
-      keyHint: this.state ? `****${this.state.key.slice(-4)}` : null,
+      hasKey: Boolean(this.state?.key),
+      keyHint: this.state?.key ? `****${this.state.key.slice(-4)}` : null,
+      source,
+      shared: source === "key" ? (entry?.shared ?? null) : null,
+      shareNeedsSignIn: source === "key" && Boolean(entry?.shareNeedsSignIn),
+      displayKey: source === "tenant" ? (entry?.displayKey ?? null) : null,
       persisted: safeStorage.isEncryptionAvailable(),
       tenantId,
       entitled: payload !== null,

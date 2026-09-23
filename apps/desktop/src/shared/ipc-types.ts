@@ -14,7 +14,11 @@ import type {
 export interface AppSettings {
   clientId: string;
   tenantId: string;
+  autoUpdate: boolean;
 }
+
+// The app registration fields Settings and the setup wizard save together.
+export type ConnectionSettings = Pick<AppSettings, "clientId" | "tenantId">;
 
 export interface AuthStatus {
   signedIn: boolean;
@@ -178,6 +182,16 @@ export interface ComplianceReportProgress {
 export interface LicenseStatus {
   hasKey: boolean;
   keyHint: string | null;
+  // Where the signed in tenant's active license comes from: this machine's
+  // key, or the organization license the key holder shared with the tenant.
+  source: "key" | "tenant" | null;
+  // Key licenses: whether other admins in the tenant may use it, as last
+  // confirmed by the licensing service; null when unknown.
+  shared: boolean | null;
+  // Key licenses: sharing could not be confirmed without a fresh sign-in.
+  shareNeedsSignIn: boolean;
+  // Organization licenses: the masked key, such as ****ABCDEF.
+  displayKey: string | null;
   persisted: boolean;
   tenantId: string | null;
   entitled: boolean;
@@ -223,7 +237,7 @@ export type MenuCommand = "open-settings" | "check-updates";
 
 export interface IntunedocApi {
   settingsGet(): Promise<AppSettings>;
-  settingsSave(settings: AppSettings): Promise<AppSettings>;
+  settingsSave(settings: ConnectionSettings): Promise<AppSettings>;
   authStatus(): Promise<AuthStatus>;
   signInInteractive(options?: SignInOptions): Promise<SignInResult>;
   signOut(): Promise<AuthStatus>;
@@ -238,6 +252,7 @@ export interface IntunedocApi {
   licenseSetKey(key: string): Promise<LicenseStatus>;
   licenseDeactivate(): Promise<LicenseStatus>;
   licenseRetry(): Promise<LicenseStatus>;
+  licenseSetShared(shared: boolean): Promise<LicenseStatus>;
   licenseOpen(target: "buy" | "portal"): Promise<boolean>;
   complianceAssess(request: ComplianceRequest): Promise<ComplianceView>;
   // Both return the saved path, or null when the save dialog was cancelled.
@@ -253,7 +268,10 @@ export interface IntunedocApi {
   appInfo(): Promise<AppInfo>;
   openHelp(key: HelpKey): Promise<boolean>;
   updateCheck(): Promise<UpdateStatus>;
+  // Starts downloading an available update the user chose to install.
+  updateDownload(): Promise<UpdateStatus>;
   updateInstall(): Promise<boolean>;
+  updateSetAuto(enabled: boolean): Promise<AppSettings>;
   updateStatus(): Promise<UpdateStatus>;
   exportDiagnostics(): Promise<string | null>;
   clearLocalData(): Promise<boolean>;

@@ -8,6 +8,7 @@ import type { LicenseKind } from "../../state/selectors";
 import { Alert } from "../ui/Alert";
 import { Button } from "../ui/Button";
 import { Card, CardHeader } from "../ui/Card";
+import { Checkbox } from "../ui/Checkbox";
 import { Field } from "../ui/Field";
 
 function Detail({
@@ -51,6 +52,9 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
   const view = licenseView(state);
   const busy = action.busy !== null;
   const canRetry = view.kind === "offline" || view.kind === "saved";
+  // Licensed through the tenant's organization license, without a key here.
+  const organization = view.kind === "active" && license?.source === "tenant";
+  const keyHolder = view.kind === "active" && license?.source === "key";
 
   const activate = () =>
     void action.run(
@@ -83,7 +87,20 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
         await ipc.licenseDeactivate();
         await actions.refreshLicense();
       },
-      "This machine was deactivated. You can use the key on another machine.",
+      license?.hasKey
+        ? "This machine was deactivated. You can use the key on another machine."
+        : "This machine was deactivated.",
+    );
+  const share = (shared: boolean) =>
+    void action.run(
+      "share",
+      async () => {
+        await ipc.licenseSetShared(shared);
+        await actions.refreshLicense();
+      },
+      shared
+        ? "Other admins in this tenant can now use this license after signing in."
+        : "Other admins in this tenant can no longer use this license.",
     );
 
   return (
@@ -109,12 +126,12 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
         </dl>
       )}
 
-      {!license?.hasKey && (
+      {!license?.hasKey && !organization && (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-600/20 bg-teal-50 p-4">
           <div className="min-w-0 flex-1">
             <p className="text-petrol-950 text-sm font-semibold">No license yet? Start a 30 day free trial.</p>
             <p className="text-petrol-600 mt-1 text-xs leading-5">
-              Pro covers one tenant from EUR 49 per month; MSP covers 10 or more client tenants. Your license key
+              Pro covers one tenant from EUR 99 per month; MSP covers 10 or more client tenants. Your license key
               arrives by email right after checkout, and you are not charged until the trial ends.
             </p>
           </div>
@@ -155,6 +172,39 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
                 Deactivate this machine
               </Button>
             </div>
+            {keyHolder && (
+              <div className="border-petrol-950/8 w-full border-t pt-2">
+                <Checkbox checked={license.shared === true} onChange={(checked) => !busy && share(checked)}>
+                  <span className="text-petrol-950 text-sm">Let other admins in this tenant use this license</span>
+                </Checkbox>
+                <p className="text-petrol-600 text-xs leading-5">
+                  Anyone who signs in to this tenant&apos;s Intune Documentation app registration is licensed automatically.
+                  The key stays on this machine.
+                </p>
+                {license.shareNeedsSignIn && (
+                  <p className="mt-1 text-xs leading-5 text-amber-800">
+                    Sign in again to share the license with this tenant.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : organization ? (
+          <div className="border-petrol-950/8 bg-surface flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4">
+            <div className="min-w-0">
+              <p className="text-petrol-600 text-xs font-medium">Organization license</p>
+              <p className="text-petrol-950 mt-0.5 font-mono text-sm font-semibold">{license?.displayKey ?? ""}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-petrol-600"
+              loading={action.busy === "deactivate"}
+              disabled={busy}
+              onClick={deactivate}
+            >
+              Deactivate this machine
+            </Button>
           </div>
         ) : (
           <form
@@ -199,7 +249,7 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
       <p className="text-petrol-600 mt-4 text-xs leading-5">
         {mode === "activation"
           ? "Collecting and exporting need a license for the signed in tenant. You can also add it later from License and account."
-          : "Activation sends the license key, a random installation ID, the tenant ID and the app version to our licensing service. Tenant configuration is never sent."}
+          : "License checks send the license key or, for an organization license, your Microsoft sign-in token, which is verified and only its tenant ID used, never stored. They also send a random installation ID, the tenant ID, the app registration client ID and the app version. Tenant configuration is never sent."}
         {license && !license.persisted &&
           " Secure storage is not available on this system, so the license is kept in memory only and must be entered again after a restart."}
       </p>

@@ -8,6 +8,7 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60_000;
 
 let status: UpdateStatus = { state: "idle" };
 let enabled = false;
+let autoUpdate = false;
 let notify: (status: UpdateStatus) => void = () => undefined;
 
 function set(next: UpdateStatus): void {
@@ -35,8 +36,14 @@ function testFeedUrl(): string | undefined {
 // Packaged builds read the generic feed from app-update.yml, written by
 // electron-builder, and ignore INTUNEDOC_UPDATE_TEST_FEED. That variable
 // points a development build at a local feed for testing.
-export function startUpdater(onStatus: (status: UpdateStatus) => void): void {
+// With automatic updates off, an available update waits until the user
+// chooses to download it.
+export function startUpdater(
+  onStatus: (status: UpdateStatus) => void,
+  automatic: boolean,
+): void {
   notify = onStatus;
+  autoUpdate = automatic;
   const testFeed = testFeedUrl();
   if (!app.isPackaged && !testFeed) {
     set({ state: "disabled", message: "Updates are checked in installed builds." });
@@ -47,8 +54,8 @@ export function startUpdater(onStatus: (status: UpdateStatus) => void): void {
     autoUpdater.forceDevUpdateConfig = true;
     autoUpdater.setFeedURL({ provider: "generic", url: testFeed });
   }
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoDownload = autoUpdate;
+  autoUpdater.autoInstallOnAppQuit = autoUpdate;
   autoUpdater.logger = null;
 
   autoUpdater.on("checking-for-update", () => {
@@ -79,7 +86,9 @@ export function startUpdater(onStatus: (status: UpdateStatus) => void): void {
     set({
       state: "error",
       version: status.version,
-      message: "The update could not be downloaded. It will be retried later.",
+      message: autoUpdate
+        ? "The update could not be downloaded. It will be retried later."
+        : "The update could not be downloaded. Check for updates to try again.",
     });
   });
 
@@ -103,6 +112,29 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     });
   }
   return status;
+}
+
+export async function downloadUpdate(): Promise<UpdateStatus> {
+  if (!enabled || status.state !== "available") return status;
+  log("info", "update download started", { version: status.version });
+  set({ state: "downloading", version: status.version, percent: 0 });
+  try {
+    await autoUpdater.downloadUpdate();
+  } catch (error) {
+    // The error event reports the failure to the renderer.
+    log("warn", "update download failed", { message: errorText(error) });
+  }
+  return status;
+}
+
+// Takes effect at once. Turning it on while an update waits starts the
+// download.
+export function setAutoUpdate(automatic: boolean): void {
+  autoUpdate = automatic;
+  if (!enabled) return;
+  autoUpdater.autoDownload = automatic;
+  autoUpdater.autoInstallOnAppQuit = automatic;
+  if (automatic) void downloadUpdate();
 }
 
 export function installUpdate(): boolean {

@@ -1,10 +1,16 @@
 import { z } from "zod";
+import { supabaseWriter } from "~/lib/supabase";
 import { createPolarClient, PolarUnavailable } from "./polar";
 import {
   LicenseDenied,
+  LicenseUnauthorized,
   LicenseUnavailable,
   type LicenseContext,
 } from "./service";
+import {
+  supabaseTenantLicenseStore,
+  type TenantLicenseStore,
+} from "./tenant-store";
 import { loadSigningKey } from "./token";
 
 const reply = (body: object, status = 200) =>
@@ -25,6 +31,14 @@ export const fields = {
   installId: guid,
   tenantId: guid,
   activationId: guid,
+  clientId: guid,
+  licenseKeyId: guid,
+  // An Entra ID token: three base64url segments. Tokens with many claims
+  // run to a few KB, hence the larger body limit where it is accepted.
+  idToken: z
+    .string()
+    .max(12000)
+    .regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/),
   os: z.enum(["win32", "darwin", "linux"]),
   appVersion: z
     .string()
@@ -40,6 +54,34 @@ const REQUIRED_ENV = [
   "DESKTOP_LICENSE_MSP_BENEFIT_ID",
   "DESKTOP_LICENSE_SIGNING_KEY",
 ] as const;
+
+// Organization licenses also need the service role key. Key licenses work
+// without it.
+const TENANT_REQUIRED_ENV = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+] as const;
+
+export function missingTenantConfiguration(): string[] {
+  return TENANT_REQUIRED_ENV.filter((name) => !process.env[name]);
+}
+
+let storeOverride: TenantLicenseStore | null | undefined;
+
+// Tests swap in an in-memory store; undefined restores the default.
+export function overrideTenantLicenseStore(
+  store: TenantLicenseStore | null | undefined,
+) {
+  storeOverride = store;
+}
+
+// Only the service role client: supabaseWriter falls back to the anon client,
+// which the table's RLS refuses.
+function tenantLicenseStore(): TenantLicenseStore | null {
+  if (storeOverride !== undefined) return storeOverride;
+  if (missingTenantConfiguration().length > 0 || !supabaseWriter) return null;
+  return supabaseTenantLicenseStore(supabaseWriter);
+}
 
 // Names of missing configuration, never values. Used by the health route so a
 // deploy can be smoke tested before customers hit a 503.
@@ -81,6 +123,7 @@ function context(): LicenseContext | null {
     signingKey: loadSigningKey(signing),
     proBenefitId,
     mspBenefitId,
+    tenantLicenses: tenantLicenseStore(),
   };
 }
 
@@ -150,6 +193,7 @@ export function resetRateLimit() {
 export function licenseHandler<T extends z.ZodTypeAny>(
   schema: T,
   run: (ctx: LicenseContext, input: z.infer<T>) => Promise<object>,
+  options: { maxBytes?: number } = {},
 ) {
   return async (request: Request): Promise<Response> => {
     if (limited(request))
@@ -176,7 +220,7 @@ export function licenseHandler<T extends z.ZodTypeAny>(
       );
     let input: unknown;
     try {
-      const text = await readBounded(request, 4096);
+      const text = await readBounded(request, options.maxBytes ?? 4096);
       if (text === null)
         return reply(
           { error: "Request too large.", reason: "bad_request" },
@@ -192,6 +236,14 @@ export function licenseHandler<T extends z.ZodTypeAny>(
     try {
       return reply(await run(ctx, parsed.data));
     } catch (error) {
+      if (error instanceof LicenseUnauthorized)
+        return reply(
+          {
+            error: "The Microsoft sign-in could not be verified.",
+            reason: "invalid_token",
+          },
+          401,
+        );
       if (error instanceof LicenseDenied)
         return reply(
           { error: "The license was not accepted.", reason: error.reason },

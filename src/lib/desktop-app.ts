@@ -60,7 +60,7 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       "Word and PDF exports",
       "Compliance evidence for 10 frameworks",
       `${DESKTOP_OFFLINE_GRACE_DAYS} days of offline use between license checks`,
-      "Automatic updates",
+      "Free updates, installed when you choose",
     ],
     checkoutUrl: {
       monthly:

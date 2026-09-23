@@ -14,7 +14,11 @@ import type {
 export interface AppSettings {
   clientId: string;
   tenantId: string;
+  autoUpdate: boolean;
 }
+
+// The app registration fields Settings and the setup wizard save together.
+export type ConnectionSettings = Pick<AppSettings, "clientId" | "tenantId">;
 
 export interface AuthStatus {
   signedIn: boolean;
@@ -233,7 +237,7 @@ export type MenuCommand = "open-settings" | "check-updates";
 
 export interface IntunedocApi {
   settingsGet(): Promise<AppSettings>;
-  settingsSave(settings: AppSettings): Promise<AppSettings>;
+  settingsSave(settings: ConnectionSettings): Promise<AppSettings>;
   authStatus(): Promise<AuthStatus>;
   signInInteractive(options?: SignInOptions): Promise<SignInResult>;
   signOut(): Promise<AuthStatus>;
@@ -264,7 +268,10 @@ export interface IntunedocApi {
   appInfo(): Promise<AppInfo>;
   openHelp(key: HelpKey): Promise<boolean>;
   updateCheck(): Promise<UpdateStatus>;
+  // Starts downloading an available update the user chose to install.
+  updateDownload(): Promise<UpdateStatus>;
   updateInstall(): Promise<boolean>;
+  updateSetAuto(enabled: boolean): Promise<AppSettings>;
   updateStatus(): Promise<UpdateStatus>;
   exportDiagnostics(): Promise<string | null>;
   clearLocalData(): Promise<boolean>;

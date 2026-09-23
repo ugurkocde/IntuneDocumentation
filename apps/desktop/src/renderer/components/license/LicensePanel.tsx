@@ -131,7 +131,7 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
           <div className="min-w-0 flex-1">
             <p className="text-petrol-950 text-sm font-semibold">No license yet? Start a 30 day free trial.</p>
             <p className="text-petrol-600 mt-1 text-xs leading-5">
-              Pro covers one tenant from EUR 49 per month; MSP covers 10 or more client tenants. Your license key
+              Pro covers one tenant from EUR 99 per month; MSP covers 10 or more client tenants. Your license key
               arrives by email right after checkout, and you are not charged until the trial ends.
             </p>
           </div>

@@ -12,6 +12,7 @@ import {
   Settings,
   ShieldCheck,
   User,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -92,58 +93,101 @@ function GroupLabel({ id, isOpen, children }: { id: string; isOpen: boolean; chi
   );
 }
 
+// The version the user set aside with Later, for this session only.
+const DISMISSED_UPDATE_KEY = "intunedoc.update.dismissed";
+
+function readDismissedUpdate(): string | null {
+  try {
+    return window.sessionStorage.getItem(DISMISSED_UPDATE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function UpdateBanner({ isOpen }: { isOpen: boolean }) {
-  const { state } = useApp();
+  const { state, actions } = useApp();
   const { update } = state;
-  const [installing, setInstalling] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [dismissed, setDismissed] = useState(readDismissedUpdate);
   if (!["available", "downloading", "ready"].includes(update.state)) return null;
   const ready = update.state === "ready";
+  // With automatic updates on, an available update is already downloading.
+  const offer = update.state === "available" && state.settings?.autoUpdate !== true;
+  if (offer && dismissed === (update.version ?? "")) return null;
+  const version = update.version ? `Version ${update.version}` : "A new version";
   const text = ready
-    ? `Version ${update.version ?? ""} is ready`
-    : `Downloading ${update.version ? `version ${update.version}` : "update"}${
-        typeof update.percent === "number" ? ` (${update.percent}%)` : ""
-      }`;
-  const install = () => {
-    setInstalling(true);
-    void ipc.updateInstall().finally(() => setInstalling(false));
+    ? `${version} is ready`
+    : offer
+      ? `${version} is available`
+      : `Downloading ${update.version ? `version ${update.version}` : "update"}${
+          typeof update.percent === "number" ? ` (${update.percent}%)` : ""
+        }`;
+  const label = ready ? "Restart to update" : offer ? "Download update" : null;
+  const act = () => {
+    setBusy(true);
+    const work = ready ? ipc.updateInstall() : actions.downloadUpdate();
+    void work.catch(() => undefined).finally(() => setBusy(false));
   };
+  const later = () => {
+    const value = update.version ?? "";
+    try {
+      window.sessionStorage.setItem(DISMISSED_UPDATE_KEY, value);
+    } catch {
+      // Still hidden until the app restarts.
+    }
+    setDismissed(value);
+  };
+  const Icon = ready ? RefreshCw : Download;
   if (!isOpen) {
     return (
       <button
         type="button"
-        onClick={ready ? install : undefined}
-        disabled={!ready}
-        title={ready ? "Restart to update" : text}
-        aria-label={ready ? "Restart to update" : text}
+        onClick={label ? act : undefined}
+        disabled={!label || busy}
+        title={label ?? text}
+        aria-label={label ? `${label}: ${text}` : text}
         className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700 enabled:cursor-pointer enabled:hover:bg-teal-100"
       >
-        {ready ? <RefreshCw className="h-[18px] w-[18px]" /> : <Spinner />}
+        {label ? <Icon className="h-[18px] w-[18px]" /> : <Spinner />}
       </button>
     );
   }
   return (
     <div
-      className="mb-3 flex items-center gap-3 rounded-2xl border border-teal-600/20 bg-teal-50 px-3.5 py-3"
+      className="mb-3 rounded-2xl border border-teal-600/20 bg-teal-50 px-3.5 py-3"
       role="status"
       aria-live="polite"
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700">
-        {ready ? <RefreshCw className="h-4 w-4" aria-hidden="true" /> : <Spinner />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-petrol-950 truncate text-[13px] font-semibold">
-          {ready ? "Update ready" : "Update available"}
-        </p>
-        <p className="text-petrol-600 truncate text-[11px]">{text}</p>
+      <div className="flex items-center gap-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700">
+          {label ? <Icon className="h-4 w-4" aria-hidden="true" /> : <Spinner />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-petrol-950 truncate text-[13px] font-semibold">
+            {ready ? "Update ready" : "Update available"}
+          </p>
+          <p className="text-petrol-600 truncate text-[11px]">{text}</p>
+        </div>
+        {offer && (
+          <button
+            type="button"
+            onClick={later}
+            aria-label="Later"
+            title="Later"
+            className="text-petrol-600 hover:text-petrol-950 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-white/70"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
       </div>
-      {ready && (
+      {label && (
         <button
           type="button"
-          onClick={install}
-          disabled={installing}
-          className="bg-petrol-950 hover:bg-petrol-800 min-h-8 shrink-0 cursor-pointer rounded-lg px-2.5 text-[12px] font-semibold text-white disabled:opacity-50"
+          onClick={act}
+          disabled={busy}
+          className="bg-petrol-950 hover:bg-petrol-800 mt-2.5 min-h-8 w-full cursor-pointer rounded-lg px-2.5 text-[12px] font-semibold text-white disabled:opacity-50"
         >
-          Restart
+          {label}
         </button>
       )}
     </div>

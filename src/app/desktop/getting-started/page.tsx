@@ -211,7 +211,11 @@ export default async function DesktopGettingStartedPage({
                   prompts. It installs for the current user.
                 </li>
               </ul>
-              <p>Updates install automatically once the app is set up.</p>
+              <p>
+                The app tells you when an update is available and installs it
+                when you choose. To install updates automatically, turn that
+                on in Settings.
+              </p>
               <a
                 href={DESKTOP_DOWNLOAD_URL}
                 rel="noopener"

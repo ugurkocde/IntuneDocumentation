@@ -1,18 +1,10 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Download } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import {
-  DESKTOP_GETTING_STARTED_PATH,
-  DESKTOP_TRIAL_DAYS,
-} from "~/lib/desktop-app";
 import type { SiteStats } from "~/lib/site-stats";
 import { AuthCta } from "./auth-cta";
-import { CONSENT_ROLES } from "./content";
-import {
-  DesktopDownload,
-  OtherPlatforms,
-  type Platform,
-} from "./desktop-download";
+import { CONSENT_ROLES, SAMPLE_REPORT_URL } from "./content";
+import { DesktopCallout, type Platform } from "./desktop-download";
 import { DialogTrigger } from "./dialog";
 import { buttonStyles } from "./primitives";
 import { PERMISSIONS_DIALOG_ID, SECURITY_DIALOG_ID } from "./trust-dialogs";
@@ -99,29 +91,23 @@ export function Hero({
           <p className="animate-hero-fade-up animation-delay-120 text-petrol-600 mt-6 max-w-xl text-base leading-7 sm:text-lg">
             Export policies, settings, and assignments to PDF or Word, then map
             your configuration to compliance frameworks like ISO 27001, NIST,
-            and Essential Eight. Run it on your own machine, or free in the
-            browser.
+            and Essential Eight. Free in the browser, or on your own machine
+            with the desktop app.
           </p>
 
           <div className="animate-hero-fade-up animation-delay-240 mt-8">
-            <AuthCta leadingAction={<DesktopDownload platform={platform} />} />
-            <div className="text-petrol-600 mt-5 max-w-xl space-y-2 text-xs leading-5">
+            <AuthCta
+              secondaryAction={
+                <a href={SAMPLE_REPORT_URL} className={buttonStyles.secondary}>
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  Download a sample report
+                </a>
+              }
+            />
+            <div className="text-petrol-600 mt-4 max-w-xl text-xs leading-5">
               <p>
-                <span className="text-petrol-800 font-semibold">Desktop:</span>{" "}
-                {DESKTOP_TRIAL_DAYS} day free trial at checkout (card required),
-                using your own Entra app registration.{" "}
-                <Link
-                  href={DESKTOP_GETTING_STARTED_PATH}
-                  className={buttonStyles.textLink}
-                >
-                  Setup guide
-                </Link>
-                <OtherPlatforms platform={platform} />
-              </p>
-              <p>
-                <span className="text-petrol-800 font-semibold">Web:</span> free
-                and read-only. The first sign-in in your tenant needs a one-time
-                approval from {CONSENT_ROLES}.{" "}
+                Free, delegated, read-only access. The first sign-in in your
+                tenant needs a one-time approval from {CONSENT_ROLES}.{" "}
                 <DialogTrigger
                   dialogId={SECURITY_DIALOG_ID}
                   className={buttonStyles.textLink}
@@ -137,6 +123,7 @@ export function Hero({
                 </DialogTrigger>
               </p>
             </div>
+            <DesktopCallout platform={platform} />
           </div>
 
           {heroStats.length > 0 && (

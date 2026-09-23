@@ -116,12 +116,7 @@ export function Hero({
                 >
                   Setup guide
                 </Link>
-                {platform !== "other" && (
-                  <>
-                    {" / "}
-                    <OtherPlatforms platform={platform} />
-                  </>
-                )}
+                <OtherPlatforms platform={platform} />
               </p>
               <p>
                 <span className="text-petrol-800 font-semibold">Web:</span> free

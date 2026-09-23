@@ -1,6 +1,7 @@
 import { Download } from "lucide-react";
 import Link from "next/link";
 import { DESKTOP_DOWNLOADS } from "~/lib/desktop-app";
+import { DesktopPageLink, MacDownload, trackDownload } from "./mac-download";
 import { buttonStyles } from "./primitives";
 
 export type Platform = "windows" | "mac" | "other";
@@ -12,13 +13,6 @@ export function detectPlatform(userAgent: string): Platform {
   return "other";
 }
 
-// Plausible tagged-event class names, counted as custom goals
-export const trackDownload = (name: string) =>
-  `plausible-event-name=Desktop+Download plausible-event-platform=${name}`;
-
-// Browsers cannot reliably tell Apple Silicon from Intel (Safari reports
-// Intel on every Mac), so the Mac button defaults to Apple Silicon and the
-// Intel build is offered right beside it.
 export function DesktopDownload({ platform }: { platform: Platform }) {
   if (platform === "windows") {
     return (
@@ -32,52 +26,21 @@ export function DesktopDownload({ platform }: { platform: Platform }) {
     );
   }
 
-  if (platform === "mac") {
-    return (
-      <a
-        href={DESKTOP_DOWNLOADS.macArm64}
-        className={`${buttonStyles.primary} ${trackDownload("mac-arm64")}`}
-      >
-        <Download className="h-4 w-4" aria-hidden="true" />
-        Download for macOS
-      </a>
-    );
-  }
+  if (platform === "mac") return <MacDownload />;
 
-  return (
-    <Link href="/desktop#download" className={buttonStyles.primary}>
-      <Download className="h-4 w-4" aria-hidden="true" />
-      Desktop app for Windows and macOS
-    </Link>
-  );
+  return <DesktopPageLink />;
 }
 
-// Secondary links under the hero buttons: the builds the primary button did
-// not offer.
+// Secondary link under the hero buttons for the platform the primary button
+// did not offer.
 export function OtherPlatforms({ platform }: { platform: Platform }) {
-  const linkClass = buttonStyles.textLink;
-  if (platform === "mac") {
-    return (
-      <>
-        <a
-          href={DESKTOP_DOWNLOADS.macX64}
-          className={`${linkClass} ${trackDownload("mac-x64")}`}
-        >
-          Intel Mac
-        </a>
-        {" / "}
-        <Link href="/desktop#download" className={linkClass}>
-          Windows
-        </Link>
-      </>
-    );
-  }
-  if (platform === "windows") {
-    return (
-      <Link href="/desktop#download" className={linkClass}>
-        macOS
+  if (platform === "other") return null;
+  return (
+    <>
+      {" / "}
+      <Link href="/desktop#download" className={buttonStyles.textLink}>
+        {platform === "mac" ? "Windows" : "macOS"}
       </Link>
-    );
-  }
-  return null;
+    </>
+  );
 }

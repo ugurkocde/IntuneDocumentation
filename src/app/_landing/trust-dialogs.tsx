@@ -96,13 +96,18 @@ export function SecurityDialog() {
           display or export.
         </li>
         <li>
-          <span className="font-medium">Tokens stay in your browser:</span>{" "}
-          access tokens are kept in session storage by MSAL and are not saved
-          server-side.
+          <span className="font-medium">
+            Tokens are never stored server-side:
+          </span>{" "}
+          MSAL caches access tokens in your browser&apos;s session storage. Each
+          collection request passes the token to our application server to call
+          Microsoft Graph, and it is discarded when the request ends.
         </li>
         <li>
-          <span className="font-medium">Revoke anytime:</span> remove access
-          from Entra ID &gt; Enterprise Applications, or simply sign out.
+          <span className="font-medium">Revoke anytime:</span> delete the
+          &ldquo;Intune Documentation&rdquo; app (publisher Ugurlabs) from Entra
+          ID &gt; Enterprise Applications to remove consent for your tenant.
+          Signing out only ends your session.
         </li>
       </ul>
       <DialogFooter>

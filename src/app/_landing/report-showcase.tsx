@@ -17,7 +17,7 @@ const features = [
   {
     icon: Layers,
     title: "Broad Intune coverage",
-    desc: "Core policies plus 36 additional Graph resource collections: apps, updates, enrollment, RBAC, tenant settings, connectors, and more.",
+    desc: "Core policies plus 35 additional Graph resource collections: apps, updates, enrollment, RBAC, tenant settings, connectors, and more.",
   },
   {
     icon: Users,

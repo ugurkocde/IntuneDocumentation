@@ -51,7 +51,7 @@ export const scopeDescriptions: Record<string, string> = {
 export const faqs: Array<{ question: string; answer: string }> = [
   {
     question: "Do I need admin rights to use it?",
-    answer: `The first time anyone in your organization signs in, Microsoft asks for tenant-wide admin consent, because the Intune and group read permissions are admin-consent scopes. It can be approved by ${CONSENT_ROLES}. After that, anyone with read access to Intune can sign in and generate reports, and what they see is limited by their own Intune role.`,
+    answer: `The first time anyone in your organization signs in, Microsoft asks for tenant-wide admin consent, because the Intune and group read permissions are admin-consent scopes. It can be approved by ${CONSENT_ROLES}. After that, anyone with read access to Intune can sign in and generate reports, unless your tenant requires user assignment for the app, in which case only assigned users can. What they see is limited by their own Intune role.`,
   },
   {
     question: "Is my Intune data secure?",
@@ -66,7 +66,7 @@ export const faqs: Array<{ question: string; answer: string }> = [
     question:
       "Why does Defender flag 'Suspicious application consent for offline access'?",
     answer:
-      "This is a common alert when an app requests the standard 'offline_access' permission from Microsoft identity (used to refresh tokens without repeatedly prompting you). It does NOT grant extra data access beyond your approved read-only scopes, and we use only delegated permissions (no application permissions). Tokens are kept in your browser session, and we do not store tenant data.",
+      "This is a common alert when an app requests the standard 'offline_access' permission from Microsoft identity (used to refresh tokens without repeatedly prompting you). It does NOT grant extra data access beyond your approved read-only scopes, and we use only delegated permissions (no application permissions). Tokens are cached in your browser session and are never stored on our server, and we do not store tenant data.",
   },
   {
     question: "What Intune policies can I export?",
@@ -109,6 +109,6 @@ export const faqs: Array<{ question: string; answer: string }> = [
   {
     question: "What is the Intune Documentation Generator?",
     answer:
-      "The Intune Documentation Generator is a free, read-only tool that collects your Microsoft Intune configuration through Microsoft Graph and turns it into a PDF or Word report. It covers the original policy areas plus 36 additional resource collections across updates, scripts and remediations, enrollment and provisioning, apps, assignments and RBAC, tenant settings, connectors, and specialist policies. The exact resources returned depend on your tenant, licensing, and permissions.",
+      "The Intune Documentation Generator is a free, read-only tool that collects your Microsoft Intune configuration through Microsoft Graph and turns it into a PDF or Word report. It covers the original policy areas plus 35 additional resource collections across updates, scripts and remediations, enrollment and provisioning, apps, assignments and RBAC, tenant settings, connectors, and specialist policies. The exact resources returned depend on your tenant, licensing, and permissions.",
   },
 ];

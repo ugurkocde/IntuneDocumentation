@@ -27,7 +27,7 @@ const guarantees = [
   },
   {
     title: "Revoke access anytime",
-    desc: "Remove the app from Entra ID enterprise applications, or simply sign out.",
+    desc: "Delete the Intune Documentation app from Entra ID enterprise applications to remove consent for your tenant. Signing out only ends your session.",
   },
 ];
 

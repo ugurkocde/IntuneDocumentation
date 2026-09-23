@@ -8,7 +8,28 @@ on:
       - "src/types/**"
       - "public/logo.png"
       - ".github/workflows/desktop-build.yml"
+  push:
+    tags:
+      - "desktop-v*"
+  # Manual runs can produce signed test builds that point at a test licensing
+  # server and update feed, optionally with a different version number.
   workflow_dispatch:
+    inputs:
+      license_api_base:
+        description: "Licensing service for a test build (default http://127.0.0.1:3000)"
+        required: false
+      license_public_key:
+        description: "Token public key PEM for a test build (\\n for newlines)"
+        required: false
+      update_url:
+        description: "Update feed for a test build (default: production feed)"
+        required: false
+      version:
+        description: "Version override for a test build, for example 0.1.1"
+        required: false
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -37,6 +58,59 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "desktop-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      # Release builds embed the production licensing service and token key.
+      # Other builds point at a local licensing server so test installs never
+      # create activations on real customer keys.
+      - name: Select licensing configuration
+        shell: bash
+        env:
+          RELEASE_PUBLIC_KEY: ${{ secrets.INTUNEDOC_LICENSE_PUBLIC_KEY }}
+          RELEASE_PORTAL_URL: ${{ vars.INTUNEDOC_LICENSE_PORTAL_URL }}
+          TEST_API_BASE: ${{ inputs.license_api_base }}
+          TEST_PUBLIC_KEY: ${{ inputs.license_public_key }}
+          TEST_UPDATE_URL: ${{ inputs.update_url }}
+          TEST_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/desktop-v* ]]; then
+            if [ -z "$RELEASE_PUBLIC_KEY" ] || [ -z "$RELEASE_PORTAL_URL" ]; then
+              echo "Release builds need the INTUNEDOC_LICENSE_PUBLIC_KEY secret and INTUNEDOC_LICENSE_PORTAL_URL variable" >&2
+              exit 1
+            fi
+            {
+              echo "INTUNEDOC_LICENSE_API_BASE=https://intunedocumentation.com"
+              echo "INTUNEDOC_LICENSE_BUY_URL=https://intunedocumentation.com/desktop#pricing"
+              echo "INTUNEDOC_LICENSE_PORTAL_URL=$RELEASE_PORTAL_URL"
+              echo "INTUNEDOC_LICENSE_PUBLIC_KEY<<PEM"
+              printf '%s\n' "$RELEASE_PUBLIC_KEY"
+              echo "PEM"
+            } >> "$GITHUB_ENV"
+          else
+            echo "INTUNEDOC_LICENSE_API_BASE=${TEST_API_BASE:-http://127.0.0.1:3000}" >> "$GITHUB_ENV"
+            if [ -n "$TEST_PUBLIC_KEY" ]; then
+              echo "INTUNEDOC_LICENSE_PUBLIC_KEY=$TEST_PUBLIC_KEY" >> "$GITHUB_ENV"
+            fi
+            if [ -n "$TEST_UPDATE_URL" ]; then
+              echo "INTUNEDOC_UPDATE_URL=$TEST_UPDATE_URL" >> "$GITHUB_ENV"
+            fi
+            if [ -n "$TEST_VERSION" ]; then
+              if ! [[ "$TEST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "Version override must look like 1.2.3" >&2
+                exit 1
+              fi
+              echo "BUILDER_ARGS=-c.extraMetadata.version=$TEST_VERSION" >> "$GITHUB_ENV"
+            fi
+          fi
 
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
@@ -67,7 +141,8 @@ jobs:
           fi
 
       - name: Build installer
-        run: npm run ${{ matrix.script }}
+        shell: bash
+        run: npm run ${{ matrix.script }} -- $BUILDER_ARGS
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
           CSC_FOR_PULL_REQUEST: "true"
@@ -104,5 +179,37 @@ jobs:
           name: intune-documentation-${{ matrix.os }}
           path: |
             apps/desktop/release/*.exe
+            apps/desktop/release/*.exe.blockmap
             apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.zip.blockmap
+            apps/desktop/release/latest*.yml
           if-no-files-found: error
+
+  # Tag builds publish one GitHub release with the installers and the update
+  # metadata. electron-updater reads it through the site's update feed.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          test -f dist/latest.yml
+          test -f dist/latest-mac.yml
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Intune Documentation desktop ${GITHUB_REF_NAME#desktop-v}" \
+            --notes "Desktop app ${GITHUB_REF_NAME#desktop-v}. Existing installations update automatically." \
+            --latest=false

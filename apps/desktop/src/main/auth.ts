@@ -24,6 +24,12 @@ export interface SignInResult {
 }
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+const callbackPage = (title: string, text: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Intune Documentation</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f1f5f3;color:#082f36;font-family:"Avenir Next","Segoe UI",system-ui,sans-serif}
+main{max-width:420px;padding:32px;border-radius:16px;background:#fff;border:1px solid rgb(8 47 54 / 0.06);box-shadow:0 18px 50px -30px rgb(8 47 54 / 0.22);text-align:center}
+h1{font-size:20px;margin:0 0 8px;letter-spacing:-0.02em}p{margin:0;color:#44747a;font-size:14px;line-height:1.5}</style></head>
+<body><main><h1>${title}</h1><p>${text}</p></main></body></html>`;
 const INTERACTIVE_TIMEOUT_MS = 5 * 60_000;
 
 function base64Url(buffer: Buffer): string {
@@ -68,9 +74,19 @@ export class AuthService {
   private expiresOn: Date | null = null;
   private generation = 0;
   private activeCancel: (() => void) | null = null;
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private reported = "false||";
+  private readonly onChange: (status: AuthStatus) => void;
 
-  constructor(config: DesktopAuthConfig) {
+  // onChange runs whenever the signed in state, account or tenant changes:
+  // after sign-in, sign-out, and when a silent token refresh fails or
+  // recovers.
+  constructor(
+    config: DesktopAuthConfig,
+    onChange: (status: AuthStatus) => void = () => undefined,
+  ) {
     this.scopes = config.scopes;
+    this.onChange = onChange;
     this.pca = new PublicClientApplication({
       auth: {
         clientId: config.clientId,
@@ -112,23 +128,65 @@ export class AuthService {
         account: this.account,
         scopes: this.scopes,
       });
-      if (!result) {
+      if (generation !== this.generation) {
         return null;
       }
-      if (generation !== this.generation) {
+      if (!result) {
+        this.expire();
         return null;
       }
       this.accept(result);
       return this.accessToken;
     } catch {
+      if (generation === this.generation) this.expire();
       return null;
     }
+  }
+
+  // The refresh failed: the session no longer has a usable token. The account
+  // is kept so a later silent attempt can recover without a new sign-in.
+  private expire(): void {
+    this.clearExpiryTimer();
+    this.accessToken = null;
+    this.expiresOn = null;
+    this.report();
+  }
+
+  private report(): void {
+    const status = this.getStatus();
+    const fingerprint = `${status.signedIn}|${status.account ?? ""}|${status.tenantId ?? ""}`;
+    if (fingerprint === this.reported) return;
+    this.reported = fingerprint;
+    this.onChange(status);
+  }
+
+  private clearExpiryTimer(): void {
+    if (this.expiryTimer) clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
+  }
+
+  // Refreshes shortly before the token expires, so an expired or revoked
+  // session is noticed even while nothing calls Graph.
+  private scheduleRefresh(): void {
+    this.clearExpiryTimer();
+    if (!this.expiresOn) return;
+    const delay = Math.max(
+      0,
+      this.expiresOn.getTime() - TOKEN_REFRESH_SKEW_MS - Date.now(),
+    );
+    this.expiryTimer = setTimeout(() => {
+      this.expiryTimer = null;
+      void this.getAccessToken();
+    }, delay);
+    this.expiryTimer.unref?.();
   }
 
   private accept(result: AuthenticationResult): SignInResult {
     this.accessToken = result.accessToken;
     this.account = result.account ?? null;
     this.expiresOn = result.expiresOn ?? null;
+    this.scheduleRefresh();
+    this.report();
     return {
       account: this.account?.username ?? this.account?.name ?? "unknown",
       tenantId: this.account?.tenantId ?? null,
@@ -136,8 +194,30 @@ export class AuthService {
     };
   }
 
+  // Delegated scopes granted in the current access token (the scp claim).
+  async grantedScopes(): Promise<string[] | null> {
+    const token = await this.getAccessToken();
+    if (!token) return null;
+    const payload = token.split(".")[1];
+    if (!payload) return [];
+    try {
+      const claims = JSON.parse(
+        Buffer.from(payload, "base64url").toString("utf8"),
+      ) as { scp?: unknown };
+      return typeof claims.scp === "string"
+        ? claims.scp.split(" ").filter(Boolean)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // With consent true, Microsoft shows the consent screen again; a Global
+  // Administrator can then tick "Consent on behalf of your organization".
+  // The redirect still lands on this app's own loopback listener.
   async signInInteractive(
     openBrowser: (url: string) => Promise<void>,
+    options: { consent?: boolean } = {},
   ): Promise<SignInResult> {
     const generation = this.generation;
     const server = createServer();
@@ -180,11 +260,16 @@ export class AuthService {
           reject(new Error("Sign-in state mismatch."));
           return;
         }
-        response.writeHead(200, { "Content-Type": "text/html" });
-        response.end(
-          "<p>Authentication finished. You can close this window.</p>",
-        );
         const error = callbackUrl.searchParams.get("error");
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.end(
+          callbackPage(
+            error ? "Sign in did not finish" : "You are signed in",
+            error
+              ? "Return to Intune Documentation to see what happened and try again."
+              : "Return to Intune Documentation. You can close this browser tab.",
+          ),
+        );
         if (error) {
           reject(
             new Error(callbackUrl.searchParams.get("error_description") ?? error),
@@ -205,6 +290,7 @@ export class AuthService {
         state,
         codeChallenge: challenge,
         codeChallengeMethod: "S256",
+        ...(options.consent ? { prompt: "consent" } : {}),
       };
       const authUrl = await this.pca.getAuthCodeUrl(urlRequest);
       await openBrowser(authUrl);
@@ -245,9 +331,11 @@ export class AuthService {
     this.generation += 1;
     this.activeCancel?.();
     this.activeCancel = null;
+    this.clearExpiryTimer();
     this.account = null;
     this.accessToken = null;
     this.expiresOn = null;
+    this.report();
     await this.disposeCache();
   }
 }

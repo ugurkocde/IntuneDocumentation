@@ -51,6 +51,14 @@ export function SiteFooter() {
                 </Link>
               </li>
               <li>
+                <Link
+                  href="/desktop"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Desktop app
+                </Link>
+              </li>
+              <li>
                 <a
                   href="/api/pdf/sample"
                   className="transition-colors hover:text-teal-700"

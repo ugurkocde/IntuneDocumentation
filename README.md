@@ -21,6 +21,12 @@ Endpoint Security policies represented by Microsoft Graph as configuration polic
 
 Go to [intunedocumentation.com](https://intunedocumentation.com), sign in, and start documenting your tenant. On first use, an administrator may need to grant consent for the delegated Microsoft Graph permissions.
 
+## Desktop app
+
+The paid desktop app for macOS and Windows collects your Intune configuration on your own machine with your own Entra app registration and exports Word, PDF, and compliance evidence locally. Tenant data and tokens never leave the machine; only license validation reaches our licensing service. See [intunedocumentation.com/desktop](https://intunedocumentation.com/desktop) for plans and downloads, and the [getting started guide](https://intunedocumentation.com/desktop/getting-started) for setup.
+
+The desktop app needs its own app registration with the **Mobile and desktop applications** platform and the redirect URI `http://localhost`. This is different from the website's **Single-page application** registration described below; a SPA registration fails desktop sign-in with AADSTS50011. It also needs `Policy.Read.All` in addition to the permissions listed below.
+
 ## Self-host with Docker
 
 1. Copy [`compose.yaml`](compose.yaml) into a directory on your Docker host.

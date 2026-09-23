@@ -1,0 +1,13 @@
+Intune Documentation desktop app
+Copyright Ugurlabs. All rights reserved.
+
+By installing or using this software you agree to the Terms of Service and the Privacy Policy published at:
+
+https://intunedocumentation.com/terms
+https://intunedocumentation.com/privacy-policy
+
+Use of the collection and export features requires an active subscription or trial license key. A Pro license covers one Microsoft Entra tenant on up to five installations. An MSP license covers the number of tenants in the subscription.
+
+The app reads your Microsoft Intune configuration with your own Entra app registration and read-only Microsoft Graph permissions. Tenant configuration, access tokens, and generated documents stay on your device. To validate the license, the app sends the license key, a random installation id, the tenant id, the operating system, and the app version to the licensing service.
+
+The software is provided as is, without warranty of any kind, to the extent permitted by law.

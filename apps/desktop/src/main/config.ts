@@ -4,17 +4,18 @@ export interface DesktopAuthConfig {
   scopes: string[];
 }
 
-export const DEFAULT_SCOPES = [
-  "User.Read",
-  "DeviceManagementConfiguration.Read.All",
-  "DeviceManagementApps.Read.All",
-  "DeviceManagementManagedDevices.Read.All",
-  "DeviceManagementRBAC.Read.All",
-  "DeviceManagementServiceConfig.Read.All",
-  "DeviceManagementScripts.Read.All",
-  "Group.Read.All",
-  "Policy.Read.All",
-];
+// Shared with the renderer so the setup wizard lists the same scopes.
+export { DEFAULT_SCOPES, SCOPE_REASONS } from "../shared/scopes";
+
+// The only external pages the renderer may open, by key.
+export const HELP_URLS = {
+  entraAppRegistrations:
+    "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  gettingStarted: "https://intunedocumentation.com/desktop/getting-started",
+  support: "https://intunedocumentation.com/support",
+} as const;
+
+export const WEBSITE_URL = "https://intunedocumentation.com";
 
 export const DEFAULT_TENANT = "organizations";
 

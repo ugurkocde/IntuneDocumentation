@@ -1,8 +1,11 @@
+import type { ExportResolverProgress } from "../../../../src/lib/client-export-resolver";
 import { getCollectionOwner, getLastCollection } from "./collect";
 
 export async function prepareExport(
   accessToken: string | (() => Promise<string>),
   owner: string,
+  options: { includeComplianceEvidence: boolean },
+  onProgress: (progress: ExportResolverProgress) => void,
 ) {
   const data = getLastCollection();
   if (!data || getCollectionOwner() !== owner) {
@@ -13,5 +16,9 @@ export async function prepareExport(
   const { resolveExportData } = await import(
     "../../../../src/lib/client-export-resolver"
   );
-  return resolveExportData(data, accessToken);
+  return resolveExportData(
+    { ...data, includeComplianceEvidence: options.includeComplianceEvidence },
+    accessToken,
+    onProgress,
+  );
 }

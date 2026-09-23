@@ -29,6 +29,7 @@ import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
 } from "./conditional-access-report";
+import { addPdfOutline, type PdfOutlineEntry } from "./pdf-outline";
 
 export type { PolicyExportError };
 export type PdfGenerationResult = ExportGenerationResult;
@@ -173,10 +174,7 @@ export async function generateDetailedPDF(
       doc.text(branding.footer.text, margin, pageHeight - 10);
     }
 
-    // Page number
-    doc.text(`Page ${pageNumber}`, pageWidth / 2, pageHeight - 10, {
-      align: "center",
-    });
+    // The "Page N" text is drawn in a final pass once the page order is final
 
     // Add confidentiality notice if configured
     if (branding?.footer?.enabled && branding?.footer?.confidentialityNotice) {
@@ -264,6 +262,15 @@ export async function generateDetailedPDF(
     const totalNeeded = nameHeight + 20; // name + dates + spacing
 
     checkPageBreak(totalNeeded);
+
+    // Bookmark the policy under the section that is currently being rendered
+    const currentSection = tocEntries[tocEntries.length - 1];
+    if (currentSection) {
+      (currentSection.children ??= []).push({
+        title: name,
+        pageNumber: doc.internal.getCurrentPageInfo().pageNumber,
+      });
+    }
 
     // Configuration name with secondary color
     doc.setFontSize(tempFontSize);
@@ -951,7 +958,11 @@ export async function generateDetailedPDF(
 
   // === TABLE OF CONTENTS ===
   // Track sections and their page numbers for ToC
-  const tocEntries: { title: string; pageNum: number }[] = [];
+  const tocEntries: {
+    title: string;
+    pageNum: number;
+    children?: PdfOutlineEntry[];
+  }[] = [];
 
   // Check if ToC is enabled (default to true if not specified)
   const includeToC =
@@ -3152,26 +3163,41 @@ export async function generateDetailedPDF(
   // === RENDER TABLE OF CONTENTS ===
   // Now go back and fill in the ToC if it was included
   if (includeToC && tocEntries.length > 0) {
-    // Save current page
-    const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
+    // Lay out the rows first: rows that do not fit on the first ToC page
+    // continue on pages inserted directly after it
+    const tocContinuationTop = calculateHeaderHeight();
+    let tocPageOffset = 0;
+    let tocRowY = tocYStart;
+    const tocRows = tocEntries.map(() => {
+      if (tocRowY > pageHeight - 40) {
+        tocPageOffset++;
+        tocRowY = tocContinuationTop;
+      }
+      const row = { pageOffset: tocPageOffset, y: tocRowY };
+      tocRowY += 8;
+      return row;
+    });
 
-    // Go back to ToC page (page 2, after title page)
-    doc.setPage(tocPageNumber);
-
-    // Reset position for ToC content
-    yPosition = tocYStart;
-
-    // ToC entries styling
-    doc.setFontSize(11);
-    // const dotLeaderWidth = pageWidth - 2 * margin - 80; // Space for dots (unused)
+    // Every recorded page moves back by the number of inserted ToC pages
+    if (tocPageOffset > 0) {
+      for (const entry of tocEntries) {
+        entry.pageNum += tocPageOffset;
+        for (const child of entry.children ?? []) {
+          child.pageNumber += tocPageOffset;
+        }
+      }
+      for (let offset = 1; offset <= tocPageOffset; offset++) {
+        doc.insertPage(tocPageNumber + offset);
+        addPageNumber();
+      }
+    }
 
     tocEntries.forEach((entry, index) => {
-      // Check if we need a new page for ToC
-      if (yPosition > pageHeight - 40) {
-        doc.addPage();
-        yPosition = margin;
-        doc.setFontSize(11);
-      }
+      const row = tocRows[index];
+      if (!row) return;
+      doc.setPage(tocPageNumber + row.pageOffset);
+      yPosition = row.y;
+      doc.setFontSize(11);
 
       // Section number
       doc.setFont(fontFamily, "normal");
@@ -3205,12 +3231,35 @@ export async function generateDetailedPDF(
       doc.setTextColor(pnr, png, pnb);
       doc.text(pageNumText, pageWidth - margin, yPosition, { align: "right" });
 
-      yPosition += 8;
+      // Make the whole row a link to the section page
+      doc.link(margin, yPosition - 5, maxWidth, 7, {
+        pageNumber: entry.pageNum,
+      });
     });
-
-    // Return to the page we were on
-    doc.setPage(currentPage);
   }
+
+  // Page numbers for every page after the cover, in the final page order
+  const totalPages = doc.internal.getNumberOfPages();
+  doc.setFontSize(Math.max(bodyFontSize - 2, 8));
+  doc.setFont(fontFamily, "normal");
+  doc.setTextColor(150, 150, 150);
+  for (let page = 2; page <= totalPages; page++) {
+    doc.setPage(page);
+    doc.text(`Page ${page}`, pageWidth / 2, pageHeight - 10, {
+      align: "center",
+    });
+  }
+  doc.setTextColor(0, 0, 0);
+
+  // PDF bookmarks: one per section, with its policies nested beneath it
+  addPdfOutline(
+    doc,
+    tocEntries.map((entry) => ({
+      title: entry.title,
+      pageNumber: entry.pageNum,
+      children: entry.children,
+    })),
+  );
 
   // Return PDF with error details
   return {

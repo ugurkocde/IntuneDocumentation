@@ -28,6 +28,30 @@ export const fields = {
     .regex(/^\d+\.\d+\.\d+[0-9A-Za-z.+-]*$/),
 };
 
+const REQUIRED_ENV = [
+  "POLAR_API_BASE",
+  "POLAR_ORGANIZATION_ID",
+  "POLAR_ACCESS_TOKEN",
+  "DESKTOP_LICENSE_PRO_BENEFIT_ID",
+  "DESKTOP_LICENSE_MSP_BENEFIT_ID",
+  "DESKTOP_LICENSE_SIGNING_KEY",
+] as const;
+
+// Names of missing configuration, never values. Used by the health route so a
+// deploy can be smoke tested before customers hit a 503.
+export function missingConfiguration(): string[] {
+  const missing: string[] = REQUIRED_ENV.filter((name) => !process.env[name]);
+  const signing = process.env.DESKTOP_LICENSE_SIGNING_KEY;
+  if (signing) {
+    try {
+      loadSigningKey(signing);
+    } catch {
+      missing.push("DESKTOP_LICENSE_SIGNING_KEY (invalid)");
+    }
+  }
+  return missing;
+}
+
 function context(): LicenseContext | null {
   const base = process.env.POLAR_API_BASE;
   const organizationId = process.env.POLAR_ORGANIZATION_ID;

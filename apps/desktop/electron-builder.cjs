@@ -17,16 +17,27 @@ const winSigning = Boolean(
     process.env.AZURE_CLIENT_SECRET,
 );
 
+// Update feed read by electron-updater. The site redirects every file to the
+// newest desktop-v* GitHub release (src/app/api/desktop-update).
+const updateUrl =
+  process.env.INTUNEDOC_UPDATE_URL ??
+  "https://intunedocumentation.com/api/desktop-update";
+
 module.exports = {
   appId: "com.ugurlabs.intunedocumentation",
   productName: "Intune Documentation",
   asar: true,
   directories: { output: "release", buildResources: "build" },
   files: ["dist/**/*", "package.json"],
+  publish: [{ provider: "generic", url: updateUrl }],
   mac: {
-    target: [{ target: "dmg", arch: ["arm64", "x64"] }],
+    // The zip is what electron-updater downloads on macOS.
+    target: [
+      { target: "dmg", arch: ["arm64", "x64"] },
+      { target: "zip", arch: ["arm64", "x64"] },
+    ],
     category: "public.app-category.business",
-    icon: "build/icon.png",
+    icon: "build/icon.icns",
     hardenedRuntime: true,
     gatekeeperAssess: false,
     entitlements: "build/entitlements.mac.plist",
@@ -36,8 +47,8 @@ module.exports = {
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
-    icon: "build/icon.png",
-    artifactName: "Intunedocumentation Setup ${version}.${ext}",
+    icon: "build/icon.ico",
+    artifactName: "Intunedocumentation-Setup-${version}.${ext}",
     ...(winSigning
       ? {
           azureSignOptions: {
@@ -51,6 +62,7 @@ module.exports = {
   },
   nsis: {
     oneClick: false,
+    license: "build/license_en.txt",
     allowToChangeInstallationDirectory: true,
     perMachine: false,
   },

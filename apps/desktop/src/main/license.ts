@@ -3,6 +3,7 @@ import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { LICENSE_API_BASE, LICENSE_PUBLIC_KEY } from "./config";
+import { log } from "./logger";
 
 interface Entitlement {
   v: 1;
@@ -111,16 +112,40 @@ export class LicenseService {
     if (!safeStorage.isEncryptionAvailable()) {
       return;
     }
+    let raw: Buffer;
     try {
-      const raw = await fs.readFile(userDataFile("license.bin"));
-      const parsed = JSON.parse(
-        safeStorage.decryptString(raw),
-      ) as StoredLicense;
-      if (typeof parsed.key === "string" && parsed.activations) {
-        this.state = parsed;
+      raw = await fs.readFile(userDataFile("license.bin"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        log("warn", "stored license ignored", {
+          reason: "unreadable",
+          code: (error as NodeJS.ErrnoException).code,
+        });
       }
+      return;
+    }
+    // Only the reason is logged, never the content.
+    let text: string;
+    try {
+      text = safeStorage.decryptString(raw);
     } catch {
-      this.state = null;
+      log("warn", "stored license ignored", { reason: "decrypt_failed" });
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text) as Partial<StoredLicense> | null;
+      if (
+        parsed &&
+        typeof parsed.key === "string" &&
+        typeof parsed.activations === "object" &&
+        parsed.activations !== null
+      ) {
+        this.state = parsed as StoredLicense;
+        return;
+      }
+      log("warn", "stored license ignored", { reason: "invalid_format" });
+    } catch {
+      log("warn", "stored license ignored", { reason: "invalid_json" });
     }
   }
 
@@ -173,14 +198,22 @@ export class LicenseService {
         },
       );
     } catch {
+      log("warn", "license service unreachable", { action });
       throw new Error("The licensing service could not be reached.");
     }
     const data = (await response.json().catch(() => ({}))) as Record<
       string,
       unknown
     >;
+    const reasonCode =
+      typeof data.reason === "string" ? data.reason.slice(0, 40) : undefined;
+    log(response.ok ? "info" : "warn", "license call", {
+      action,
+      status: response.status,
+      reason: reasonCode,
+    });
     if (response.status === 403) {
-      const reason = typeof data.reason === "string" ? data.reason : "";
+      const reason = reasonCode ?? "";
       throw new LicenseDenied(
         REASONS[reason] ?? "The license was not accepted.",
       );
@@ -300,7 +333,7 @@ export class LicenseService {
     if (this.valid(tenantId)) return;
     if (!this.state) {
       throw new Error(
-        "A license is required to collect and export. Add your license key in the License panel.",
+        "A license is required to collect and export. Add your license key under License and account.",
       );
     }
     const tenant = tenantId.toLowerCase();

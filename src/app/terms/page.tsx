@@ -22,6 +22,7 @@ const sections = [
   { id: "provider", label: "Service Provider" },
   { id: "access-and-eligibility", label: "Access and Eligibility" },
   { id: "use-of-the-service", label: "Use of the Service" },
+  { id: "desktop-app", label: "Desktop App" },
   { id: "privacy", label: "Privacy" },
   { id: "disclaimer", label: "Disclaimer" },
   { id: "limitation-of-liability", label: "Limitation of Liability" },
@@ -38,7 +39,7 @@ export default function TermsOfUsePage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Terms of Use
           </h1>
-          <p className="mb-10 text-slate-600">Effective: August 12, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: September 22, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -114,6 +115,82 @@ export default function TermsOfUsePage() {
               <li>
                 Do not misuse the Service (e.g., attempt to bypass security,
                 reverse engineer, or overload it).
+              </li>
+            </ul>
+
+            <h2
+              id="desktop-app"
+              className="scroll-mt-24 text-xl font-semibold text-slate-900"
+            >
+              Desktop App
+            </h2>
+            <p>
+              The Intune Documentation desktop app for macOS and Windows (the
+              &quot;Desktop App&quot;) is a paid part of the Service. These
+              Terms apply to it together with the following conditions.
+            </p>
+            <ul className="list-disc space-y-2 pl-6">
+              <li>
+                <strong>License grant:</strong> while your subscription or trial
+                is active, we grant you a non-exclusive, non-transferable,
+                non-sublicensable right to install and use the Desktop App to
+                document Microsoft Intune tenants within the limits of your
+                plan. MSP plans may be used to document the tenants of your
+                customers as part of services you provide to them.
+              </li>
+              <li>
+                <strong>Pro plan:</strong> covers one Microsoft Entra tenant and
+                up to 5 installations for that tenant.
+              </li>
+              <li>
+                <strong>MSP plan:</strong> covers the number of tenants you
+                purchase (10 included, with additional tenants billed per
+                tenant) and up to 5 installations per tenant.
+              </li>
+              <li>
+                <strong>Limits:</strong> the Desktop App enforces tenant and
+                installation limits through our licensing service. You may not
+                share license keys outside your organization or attempt to
+                bypass these limits. You can free an installation by
+                deactivating it in the app or in the Polar customer portal.
+              </li>
+              <li>
+                <strong>Trial:</strong> new subscriptions start with a 30 day
+                free trial. A payment method is required. If you do not cancel
+                before the trial ends, the subscription starts and is billed
+                automatically.
+              </li>
+              <li>
+                <strong>Payment:</strong> Polar Software Inc. is the merchant of
+                record and processes payments, invoices, and taxes. Your
+                purchase is also subject to Polar&apos;s terms. Prices are shown
+                in EUR and may be subject to applicable taxes.
+              </li>
+              <li>
+                <strong>Cancellation:</strong> you can cancel or change your
+                subscription at any time in the Polar customer portal.
+                Cancellation takes effect at the end of the current billing
+                period, and the Desktop App stays licensed until then.
+              </li>
+              <li>
+                <strong>License checks and updates:</strong> the Desktop App
+                checks your license with our licensing service periodically and
+                keeps working for up to 14 days without reaching it. It installs
+                updates automatically. We may add, change, or remove features to
+                improve the Desktop App.
+              </li>
+              <li>
+                <strong>Your responsibilities:</strong> you create and control
+                the Entra app registration the Desktop App signs in with, and
+                you are responsible for the permissions and consent you grant to
+                it.
+              </li>
+              <li>
+                <strong>No warranty:</strong> the Disclaimer and Limitation of
+                Liability sections below apply to the Desktop App. It is
+                provided &quot;as is&quot; and &quot;as available&quot;, and its
+                reports and compliance evidence do not replace your own review
+                or an audit.
               </li>
             </ul>
 

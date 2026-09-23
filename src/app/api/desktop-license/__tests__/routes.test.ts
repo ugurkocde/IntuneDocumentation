@@ -361,3 +361,19 @@ describe("entitlement token", () => {
     expect(verifyEntitlement(token, publicKey)).not.toBeNull();
   });
 });
+
+describe("health", () => {
+  it("reports missing configuration by name only", async () => {
+    const { GET } = await import("../health/route");
+    const saved = process.env.POLAR_ACCESS_TOKEN;
+    delete process.env.POLAR_ACCESS_TOKEN;
+    try {
+      const response = GET();
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as { missing: string[] };
+      expect(body.missing).toContain("POLAR_ACCESS_TOKEN");
+    } finally {
+      if (saved !== undefined) process.env.POLAR_ACCESS_TOKEN = saved;
+    }
+  });
+});

@@ -53,6 +53,16 @@ if (license.publicKey === PLACEHOLDER_LICENSE_PUBLIC_KEY) {
   );
 }
 
+// See src/main/jspdf-node.cjs.
+const jspdfNode = {
+  name: "jspdf-node",
+  setup(build) {
+    build.onResolve({ filter: /^jspdf$/ }, () => ({
+      path: path.join(import.meta.dirname, "src", "main", "jspdf-node.cjs"),
+    }));
+  },
+};
+
 const shared = {
   bundle: true,
   sourcemap: true,
@@ -63,12 +73,15 @@ const shared = {
 
 await build({
   ...shared,
+  plugins: [jspdfNode],
   entryPoints: ["src/main/main.ts"],
   outfile: "dist/main/main.cjs",
   platform: "node",
   target: "node20",
   format: "cjs",
-  external: ["electron"],
+  // jsPDF loads these lazily for HTML and SVG rendering, which the compliance
+  // report never uses.
+  external: ["electron", "canvg", "html2canvas", "dompurify"],
   define: {
     ...shared.define,
     __LICENSE_API_BASE__: JSON.stringify(license.apiBase),
@@ -103,6 +116,9 @@ await build({
 await mkdir("dist/renderer", { recursive: true });
 await cp("src/renderer/index.html", "dist/renderer/index.html");
 await cp("../../public/logo.png", "dist/renderer/logo.png");
+await cp("../../public/logo.svg", "dist/renderer/logo.svg");
+// Window, About panel and development dock icon.
+await cp("build/icon.png", "dist/icon.png");
 
 execSync(
   "npx --no-install @tailwindcss/cli -i src/renderer/index.css -o dist/renderer/index.css --minify",

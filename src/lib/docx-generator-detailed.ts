@@ -20,6 +20,7 @@ import {
   TabStopType,
   Table,
   TableCell,
+  TableLayoutType,
   Bookmark,
   InternalHyperlink,
   TableRow,
@@ -130,6 +131,16 @@ function versionString(): string {
 // Reusable table builder
 // ---------------------------------------------------------------------------
 
+// Text width of the default A4 page with 1 inch margins, in twips. Tables get
+// explicit grid column widths and a fixed layout; without them the grid is
+// written as 100 twip columns, which LibreOffice, QuickLook and Google Docs
+// render as unreadably narrow columns.
+const CONTENT_WIDTH_TWIPS = 11906 - 2 * 1440;
+
+function gridColumns(totalTwips: number, percentages: number[]): number[] {
+  return percentages.map((pct) => Math.floor((totalTwips * pct) / 100));
+}
+
 /**
  * Create a styled table with a primary-colored header row and alternating
  * row shading.
@@ -202,6 +213,11 @@ function createSettingsTable(
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: gridColumns(
+      CONTENT_WIDTH_TWIPS,
+      headers.map(() => 100 / headers.length),
+    ),
+    layout: TableLayoutType.FIXED,
     rows: [headerRow, ...dataRows],
     borders: {
       top: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
@@ -437,6 +453,8 @@ export async function generateDetailedDOCX(
     coverChildren.push(
       new Table({
         width: { size: 60, type: WidthType.PERCENTAGE },
+        columnWidths: gridColumns((CONTENT_WIDTH_TWIPS * 60) / 100, [35, 65]),
+        layout: TableLayoutType.FIXED,
         rows: metaRows.map(
           ([label, value]) =>
             new TableRow({

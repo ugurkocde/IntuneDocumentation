@@ -94,6 +94,9 @@ function polar(url: string, init?: RequestInit) {
           display_key: "****-0001",
           activations: key.activations,
         });
+  // Like Polar, an unknown key id is not found.
+  if (/^\/v1\/license-keys\/[0-9a-f-]{36}$/.test(path))
+    return Response.json({ error: "ResourceNotFound" }, { status: 404 });
   if (path === "/v1/license-keys/activate") {
     const created = { id: crypto.randomUUID(), meta: body.meta };
     key.activations.push(created);
@@ -406,6 +409,76 @@ describe("organization license sharing", () => {
     const held = await holderActivates();
     expect(held.status).toBe(200);
     expect(held.body).not.toHaveProperty("shared");
+  });
+});
+
+describe("releasing after sharing ends", () => {
+  const OTHER_KEY_ID = "8b7a6c5d-4e3f-4a1b-9c8d-7e6f5a4b3c2d";
+
+  async function claimedThenUnshared() {
+    const held = await holderActivates();
+    const claimed = await claim();
+    expect(claimed.body.licenseKeyId).toBe(KEY_ID);
+    await holderRefreshes(held.body.activationId as string, false);
+    expect(mappings.size).toBe(0);
+    expect(key.activations).toHaveLength(2);
+    return claimed.body.activationId as string;
+  }
+
+  it("releases the install's activation on deactivate", async () => {
+    const activationId = await claimedThenUnshared();
+    const released = await claim("deactivate", {
+      activationId,
+      licenseKeyId: KEY_ID,
+    });
+    expect(released.status).toBe(200);
+    expect(released.text).not.toContain(KEY);
+    expect(key.activations.map((a) => a.id)).not.toContain(activationId);
+    expect(key.activations).toHaveLength(1);
+  });
+
+  it("releases it on a refused refresh", async () => {
+    const activationId = await claimedThenUnshared();
+    const refused = await claim("refresh", {
+      activationId,
+      licenseKeyId: KEY_ID,
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.reason).toBe("tenant_not_licensed");
+    expect(refused.text).not.toContain(KEY);
+    expect(key.activations).toHaveLength(1);
+  });
+
+  it("releases nothing for another install, tenant or key", async () => {
+    const activationId = await claimedThenUnshared();
+    const attempts = [
+      post(tenant, {
+        idToken: idToken(),
+        installId: crypto.randomUUID(),
+        os: "win32",
+        appVersion: "0.1.1",
+        action: "deactivate",
+        activationId,
+        licenseKeyId: KEY_ID,
+      }),
+      post(tenant, {
+        idToken: idToken(TENANT_B),
+        installId: INSTALL_B,
+        os: "win32",
+        appVersion: "0.1.1",
+        action: "deactivate",
+        activationId,
+        licenseKeyId: KEY_ID,
+      }),
+      claim("deactivate", { activationId, licenseKeyId: OTHER_KEY_ID }),
+      claim("refresh", { activationId, licenseKeyId: OTHER_KEY_ID }),
+    ];
+    for (const attempt of attempts) {
+      const response = await attempt;
+      expect(response.status).toBe(403);
+      expect(response.body.reason).toBe("tenant_not_licensed");
+    }
+    expect(key.activations).toHaveLength(2);
   });
 });
 

@@ -32,6 +32,7 @@ export const fields = {
   tenantId: guid,
   activationId: guid,
   clientId: guid,
+  licenseKeyId: guid,
   // An Entra ID token: three base64url segments. Tokens with many claims
   // run to a few KB, hence the larger body limit where it is accepted.
   idToken: z

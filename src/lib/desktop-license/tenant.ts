@@ -1,4 +1,4 @@
-import { PolarNotFound } from "./polar";
+import { PolarNotFound, PolarUnavailable } from "./polar";
 import {
   activateLicense,
   checkKey,
@@ -29,6 +29,10 @@ export interface TenantLicenseInput {
   appVersion: string;
   action: "activate" | "refresh" | "deactivate";
   activationId?: string;
+  // The Polar id of the key this install was licensed through, returned by
+  // activate and refresh, so the install can release its activation after
+  // the organization license is withdrawn.
+  licenseKeyId?: string;
 }
 
 export function maskKey(key: string) {
@@ -45,6 +49,39 @@ async function stored<T>(operation: Promise<T>): Promise<T> {
     }
     throw error;
   }
+}
+
+// Releases an install's activation on a key the tenant no longer shares, so
+// it stops holding one of the tenant's install slots. Only an activation
+// bound to the signed-in tenant and to this install, on a key of this app,
+// is released. Returns whether it was.
+async function release(
+  ctx: LicenseContext,
+  tenantId: string,
+  input: TenantLicenseInput,
+): Promise<boolean> {
+  if (!input.licenseKeyId || !input.activationId) return false;
+  let key;
+  try {
+    key = await ctx.polar.getKeyWithSecret(input.licenseKeyId);
+  } catch (error) {
+    if (error instanceof PolarNotFound) return false;
+    throw error;
+  }
+  if (
+    key.benefit_id !== ctx.proBenefitId &&
+    key.benefit_id !== ctx.mspBenefitId
+  )
+    return false;
+  const meta = key.activations.find((a) => a.id === input.activationId)?.meta;
+  if (meta?.tenantId !== tenantId || meta?.installId !== input.installId)
+    return false;
+  try {
+    await ctx.polar.deactivate(key.key, input.activationId);
+  } catch (error) {
+    if (!(error instanceof PolarNotFound)) throw error;
+  }
+  return true;
 }
 
 // Licenses an install through its tenant's organization license. The tenant
@@ -68,9 +105,21 @@ export async function tenantLicense(
   if (
     !mapping ||
     typeof claims.aud !== "string" ||
-    claims.aud.toLowerCase() !== mapping.clientId.toLowerCase()
-  )
+    claims.aud.toLowerCase() !== mapping.clientId.toLowerCase() ||
+    (input.licenseKeyId && input.licenseKeyId !== mapping.licenseKeyId)
+  ) {
+    if (input.action === "deactivate") {
+      if (await release(ctx, tenantId, input)) return { success: true };
+    } else if (input.action === "refresh") {
+      // Best effort: the refusal stands either way and the app drops the
+      // activation, so a failed release is only logged.
+      await release(ctx, tenantId, input).catch((error: unknown) => {
+        if (!(error instanceof PolarUnavailable)) throw error;
+        console.warn(`desktop-license: release failed, ${error.message}`);
+      });
+    }
     throw new LicenseDenied("tenant_not_licensed");
+  }
   const forget = () => stored(store.delete(tenantId, mapping.licenseKeyId));
 
   let key;
@@ -94,7 +143,12 @@ export async function tenantLicense(
       os: input.os,
       appVersion: input.appVersion,
     });
-    return { ...entitlement, source: "tenant", displayKey: maskKey(key.key) };
+    return {
+      ...entitlement,
+      source: "tenant",
+      displayKey: maskKey(key.key),
+      licenseKeyId: key.id,
+    };
   }
   // Refresh and deactivate act on an existing activation of this install.
   if (!input.activationId) throw new LicenseDenied("activation_mismatch");
@@ -110,5 +164,10 @@ export async function tenantLicense(
     ...common,
     activationId: input.activationId,
   });
-  return { ...entitlement, source: "tenant", displayKey: maskKey(key.key) };
+  return {
+    ...entitlement,
+    source: "tenant",
+    displayKey: maskKey(key.key),
+    licenseKeyId: key.id,
+  };
 }

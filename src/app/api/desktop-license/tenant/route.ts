@@ -14,6 +14,7 @@ export const POST = licenseHandler(
     appVersion: fields.appVersion,
     action: z.enum(["activate", "refresh", "deactivate"]),
     activationId: fields.activationId.optional(),
+    licenseKeyId: fields.licenseKeyId.optional(),
   }),
   tenantLicense,
   { maxBytes: 16384 },

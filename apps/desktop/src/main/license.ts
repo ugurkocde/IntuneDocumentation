@@ -37,6 +37,9 @@ interface StoredActivation {
   shareNeedsSignIn?: true;
   // Tenant activations: the masked key, for display.
   displayKey?: string;
+  // Tenant activations: the Polar id of that key (never the key itself), so
+  // the activation can be released after the tenant stops sharing it.
+  licenseKeyId?: string;
 }
 
 // One activation per signed-in tenant, keyed by lowercase tenant id. seen is
@@ -377,6 +380,10 @@ export class LicenseService {
             ...(typeof data.displayKey === "string"
               ? { displayKey: data.displayKey.slice(0, 20) }
               : {}),
+            ...(typeof data.licenseKeyId === "string" &&
+            guidPattern.test(data.licenseKeyId)
+              ? { licenseKeyId: data.licenseKeyId }
+              : {}),
           }
         : {
             ...(shared !== undefined ? { shared } : {}),
@@ -414,7 +421,7 @@ export class LicenseService {
   private async tenantCall(
     tenantId: string,
     action: "activate" | "refresh" | "deactivate",
-    activationId?: string,
+    entry?: StoredActivation,
     token?: string,
   ): Promise<Record<string, unknown>> {
     const idToken = token ?? (await this.idToken(tenantId));
@@ -429,7 +436,8 @@ export class LicenseService {
       os: process.platform,
       appVersion: app.getVersion(),
       action,
-      ...(activationId ? { activationId } : {}),
+      ...(entry ? { activationId: entry.activationId } : {}),
+      ...(entry?.licenseKeyId ? { licenseKeyId: entry.licenseKeyId } : {}),
     });
   }
 
@@ -474,12 +482,7 @@ export class LicenseService {
       if (entry.source === "tenant") {
         const idToken = await this.idToken(tenantId);
         if (!idToken) return;
-        const data = await this.tenantCall(
-          tenantId,
-          "refresh",
-          entry.activationId,
-          idToken,
-        );
+        const data = await this.tenantCall(tenantId, "refresh", entry, idToken);
         await this.store(tenantId, data, "tenant");
         return;
       }
@@ -630,7 +633,7 @@ export class LicenseService {
     for (const [tenantId, entry] of Object.entries(this.state.activations)) {
       try {
         if (entry.source === "tenant") {
-          await this.tenantCall(tenantId, "deactivate", entry.activationId);
+          await this.tenantCall(tenantId, "deactivate", entry);
         } else if (this.state.key) {
           await this.call("deactivate", {
             key: this.state.key,

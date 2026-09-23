@@ -250,14 +250,20 @@ describe("LicenseService organization licenses", () => {
   });
 
   it("releases a tenant activation through the organization license route", async () => {
-    answer = () => granted("act-org", { source: "tenant" });
+    const KEY_ID = "5a0e2f6c-8a41-4a8e-9b33-0c6e2d1f7a10";
+    answer = () =>
+      granted("act-org", { source: "tenant", licenseKeyId: KEY_ID });
     const license = service();
     await license.requireEntitlement(TENANT);
     answer = () => Response.json({ success: true });
     await license.deactivate();
     expect(calls.at(-1)).toEqual({
       action: "tenant",
-      body: expect.objectContaining({ action: "deactivate", activationId: "act-org" }),
+      body: expect.objectContaining({
+        action: "deactivate",
+        activationId: "act-org",
+        licenseKeyId: KEY_ID,
+      }),
     });
     expect((await license.status(TENANT)).entitled).toBe(false);
   });

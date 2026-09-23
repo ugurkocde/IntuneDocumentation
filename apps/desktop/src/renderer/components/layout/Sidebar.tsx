@@ -14,12 +14,12 @@ import {
   User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAsyncAction } from "../../hooks/use-async-action";
 import { ipc, isMac } from "../../lib/ipc";
 import { FAMILIES, familyCounts } from "../../lib/section-catalog";
 import { useApp } from "../../state/context";
-import { busyBlocker, exportBlocker } from "../../state/selectors";
+import { busyBlocker, exportBlocker, licenseView } from "../../state/selectors";
 import { Spinner } from "../ui/Spinner";
 
 const EXTENDED_KEY = "intunedoc.sidebar.extended";
@@ -152,7 +152,7 @@ function UpdateBanner({ isOpen }: { isOpen: boolean }) {
 
 export function Sidebar() {
   const { state, actions } = useApp();
-  const { sidebarOpen: isOpen, screen, activeFamilyKey, collection, auth, license } = state;
+  const { sidebarOpen: isOpen, screen, activeFamilyKey, collection, auth } = state;
   const summary = collection.summary;
   const counts = familyCounts(summary?.sectionCounts);
   const affected = new Set(
@@ -185,10 +185,31 @@ export function Sidebar() {
       return !value;
     });
 
+  // Fades the bottom edge of the navigation while more items are below it.
+  const navRef = useRef<HTMLElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const measure = () => setMoreBelow(nav.scrollTop + nav.clientHeight < nav.scrollHeight - 1);
+    measure();
+    nav.addEventListener("scroll", measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    for (const child of Array.from(nav.children)) observer.observe(child);
+    return () => {
+      nav.removeEventListener("scroll", measure);
+      observer.disconnect();
+    };
+  }, [isOpen, showExtended, extended.length]);
+
   const sign = useAsyncAction();
+  // The Get started steps and the account card already offer sign in.
+  const hideSignIn = (screen === "overview" && !summary) || screen === "license";
   const exportReason = exportBlocker(state);
   const exportRunning = state.exportState.phase === "running";
-  const licenseNeedsAction = !license?.entitled;
+  const licenseKind = licenseView(state).kind;
+  const licenseNeedsAction = licenseKind === "none" || licenseKind === "offline" || licenseKind === "saved";
   const busy = busyBlocker(state);
 
   return (
@@ -224,7 +245,12 @@ export function Sidebar() {
         </button>
       </div>
 
-      <nav className="scroll-thin relative min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4">
+      <nav
+        ref={navRef}
+        className={`scroll-thin relative min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-4 ${
+          moreBelow ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]" : ""
+        }`}
+      >
         <section aria-labelledby="nav-main">
           <GroupLabel id="nav-main" isOpen={isOpen}>
             Main
@@ -357,7 +383,7 @@ export function Sidebar() {
               onClick={() => actions.navigate("export")}
               disabled={Boolean(exportReason) && !exportRunning && state.exportState.phase === "form"}
               title={exportReason ?? undefined}
-              className="bg-petrol-950 hover:bg-petrol-800 mt-3.5 flex min-h-10 short:mt-0 w-full cursor-pointer items-center justify-center rounded-xl px-4 text-[13px] font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+              className="bg-petrol-950 enabled:hover:bg-petrol-800 disabled:bg-mint-100 disabled:text-petrol-600 mt-3.5 flex min-h-10 short:mt-0 w-full cursor-pointer items-center justify-center rounded-xl px-4 text-[13px] font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed"
             >
               {exportRunning
                 ? "View progress"
@@ -373,7 +399,7 @@ export function Sidebar() {
             type="button"
             onClick={() => actions.navigate("export")}
             disabled={Boolean(exportReason) && !exportRunning && state.exportState.phase === "form"}
-            className="bg-petrol-950 hover:bg-petrol-800 mx-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+            className="bg-petrol-950 enabled:hover:bg-petrol-800 disabled:bg-mint-100 disabled:text-petrol-600 mx-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed"
             aria-label="Export documentation"
             title={exportReason ?? "Export documentation"}
           >
@@ -405,7 +431,7 @@ export function Sidebar() {
               >
                 {sign.busy ? <Spinner /> : <LogOut className="h-4 w-4" />}
               </button>
-            ) : (
+            ) : hideSignIn ? null : (
               <button
                 type="button"
                 onClick={() => void sign.run("in", () => actions.signIn())}

@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowRight,
   Check,
   ChevronRight,
@@ -21,7 +22,9 @@ import { Card } from "../components/ui/Card";
 import { useAsyncAction } from "../hooks/use-async-action";
 import { FAMILIES, familyCounts } from "../lib/section-catalog";
 import { useApp } from "../state/context";
-import { busyBlocker, collectBlocker, exportBlocker } from "../state/selectors";
+import { DisclosureSummary } from "../components/ui/DisclosureSummary";
+import { ipc } from "../lib/ipc";
+import { busyBlocker, collectBlocker, exportBlocker, licenseView } from "../state/selectors";
 
 function ReadinessStep({
   index,
@@ -61,8 +64,11 @@ function ReadinessStep({
 function GetStarted() {
   const { state, actions } = useApp();
   const sign = useAsyncAction();
-  const { auth, license } = state;
+  const retry = useAsyncAction();
+  const { auth } = state;
   const blocker = collectBlocker(state);
+  const license = licenseView(state);
+  const licenseWarning = license.tone === "warning";
   return (
     <Card>
       <div className="flex items-start gap-4">
@@ -106,20 +112,40 @@ function GetStarted() {
         />
         <ReadinessStep
           index={2}
-          done={Boolean(license?.entitled)}
+          done={license.kind === "active"}
           title="Activate your license"
           description={
-            license?.entitled
-              ? `${license.plan === "msp" ? "MSP" : "Pro"} plan active for this tenant`
-              : license?.hasKey
-                ? (license.message ?? "Your license activates for the tenant after you sign in.")
-                : "Add the license key from your purchase email."
+            licenseWarning ? (
+              <span className="flex items-start gap-1.5 text-amber-800" role="status">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>{retry.error ?? license.detail}</span>
+              </span>
+            ) : (
+              license.detail
+            )
           }
           action={
-            !license?.entitled && (
-              <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => actions.navigate("license")}>
-                Open License and account
+            licenseWarning ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={RefreshCw}
+                loading={retry.busy !== null}
+                onClick={() =>
+                  void retry.run("retry", async () => {
+                    await ipc.licenseRetry();
+                    await actions.refreshLicense();
+                  })
+                }
+              >
+                Retry
               </Button>
+            ) : (
+              license.kind === "none" && (
+                <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => actions.navigate("license")}>
+                  Add license key
+                </Button>
+              )
             )
           }
         />
@@ -130,19 +156,21 @@ function GetStarted() {
           description={
             state.collection.running
               ? "Collecting now. Progress is shown at the bottom right."
-              : (blocker ?? "Reads about a thousand items in a typical tenant, usually within two minutes.")
+              : blocker
+                ? "Available once you are signed in and your license is active."
+                : "Reads about a thousand items in a typical tenant, usually within two minutes."
           }
           action={
-            <Button
-              size="sm"
-              icon={RefreshCw}
-              disabled={Boolean(blocker)}
-              disabledReason={blocker}
-              loading={state.collection.running}
-              onClick={() => void actions.collect()}
-            >
-              Collect
-            </Button>
+            (!blocker || state.collection.running) && (
+              <Button
+                size="sm"
+                icon={RefreshCw}
+                loading={state.collection.running}
+                onClick={() => void actions.collect()}
+              >
+                Collect
+              </Button>
+            )
           }
         />
       </ol>
@@ -290,32 +318,32 @@ function Warnings() {
         </aside>
       )}
       {fetchErrors.length > 0 && (
-        <aside className="rounded-2xl border border-orange-600/20 bg-orange-50/80 p-4">
+        <aside className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4">
           <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-orange-700">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-amber-700">
               <AlertCircle className="h-4 w-4" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-orange-950">
+              <p className="text-sm font-semibold text-amber-950">
                 {fetchErrors.length} {fetchErrors.length === 1 ? "resource" : "resources"} could not be fully loaded
               </p>
-              <p className="mt-1 text-xs leading-5 text-orange-900/80">
+              <p className="mt-1 text-xs leading-5 text-amber-900/80">
                 Microsoft Graph did not return complete data for these resources. Everything else was loaded, and the export marks what is missing.
               </p>
               <details className="mt-3">
-                <summary className="cursor-pointer text-xs font-semibold text-orange-950 underline decoration-orange-600/30 underline-offset-2">
+                <DisclosureSummary className="text-xs font-semibold text-amber-950 hover:text-amber-800">
                   View affected resources
-                </summary>
+                </DisclosureSummary>
                 <ul className="mt-2 space-y-2">
                   {fetchErrors.map((error, index) => (
                     <li
                       key={`${error.policyType}-${error.policyName}-${index}`}
-                      className="selectable rounded-xl border border-orange-600/15 bg-white p-3 text-xs text-orange-950/85"
+                      className="selectable rounded-xl border border-amber-600/15 bg-white p-3 text-xs text-amber-950/85"
                     >
                       <strong>{error.policyType}:</strong> {error.policyName}
-                      <span className="mt-1 block text-[11px] text-orange-800">{error.error}</span>
+                      <span className="mt-1 block text-[11px] text-amber-800">{error.error}</span>
                       {error.permissionHint && (
-                        <span className="mt-1 block text-[11px] text-orange-800/80">
+                        <span className="mt-1 block text-[11px] text-amber-800/80">
                           Permission used by this endpoint: <code className="font-mono">{error.permissionHint}</code>. This hint does not confirm a permission problem.
                         </span>
                       )}
@@ -336,6 +364,9 @@ export function OverviewScreen() {
   const { collection } = state;
   const summary = collection.summary;
   const counts = familyCounts(summary?.sectionCounts);
+  // Before sign in and activation the Get started steps are the only call to
+  // action; the header control appears once collecting is possible.
+  const canCollect = collection.running || Boolean(state.auth?.signedIn && state.license?.entitled);
   return (
     <div className="space-y-5">
       <Header
@@ -345,7 +376,7 @@ export function OverviewScreen() {
             ? "Your tenant at a glance. Browse a family on the left or export the documentation."
             : "Collect your Intune configuration to browse it here and export documentation."
         }
-        actions={<CollectButton />}
+        actions={canCollect ? <CollectButton /> : undefined}
       />
       {summary ? (
         <>

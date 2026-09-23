@@ -61,14 +61,16 @@ export function WizardShell() {
     <div className="flex h-full">
       <aside className="border-petrol-950/6 flex w-72 shrink-0 xl:w-80 flex-col border-r bg-white">
         {isMac && <div className="drag-region h-10 shrink-0" aria-hidden="true" />}
-        <div className={`short:pb-4 flex items-center gap-2.5 px-6 pb-6 ${isMac ? "" : "short:pt-4 pt-6"}`}>
+        <div
+          className={`border-petrol-950/6 short:pb-4 flex items-center gap-2.5 border-b px-6 pb-5 ${isMac ? "" : "short:pt-4 pt-6"}`}
+        >
           <img src="./logo.svg" alt="" className="h-9 w-9 rounded-[10px]" draggable={false} />
           <div className="leading-tight">
             <p className="text-petrol-950 text-sm font-bold">Intune Documentation</p>
             <p className="text-petrol-600 text-[11px]">Setup</p>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4">
+        <div className="short:pt-3 min-h-0 flex-1 overflow-y-auto px-4 pt-5">
           <p className="text-petrol-600 mb-2 px-3 text-[9px] font-bold tracking-[0.14em] uppercase">Connect your tenant</p>
           <StepNav current={wizard.step} onSelect={goTo} />
         </div>
@@ -93,7 +95,8 @@ export function WizardShell() {
           )}
         </div>
       </aside>
-      <main ref={scroller} className="relative min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+      {/* Scroll padding keeps focused fields clear of the sticky step footer. */}
+      <main ref={scroller} className="relative min-w-0 flex-1 scroll-pb-24 overflow-y-auto [scrollbar-gutter:stable]">
         {isMac && <div className="drag-region absolute inset-x-0 top-0 h-8" aria-hidden="true" />}
         <div key={wizard.step} className="animate-fade-in-up h-full">
           {wizard.step === 1 && <Step1Register {...props} />}

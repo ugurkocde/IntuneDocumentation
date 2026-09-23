@@ -33,6 +33,11 @@ export interface LicenseStatus {
   tenants: number | null;
   expiresAt: string | null;
   message: string | null;
+  // The last call to the licensing service failed to reach it.
+  offline: boolean;
+  // A tenant with a still valid cached activation, reported while no tenant
+  // is signed in.
+  cachedTenantId: string | null;
 }
 
 // The licensing service refused (HTTP 403). Anything else, including 5xx and
@@ -91,6 +96,7 @@ export class LicenseService {
   private state: StoredLicense | null = null;
   private installId = "";
   private message: string | null = null;
+  private offline = false;
   private loaded: Promise<void> | null = null;
 
   load(): Promise<void> {
@@ -198,9 +204,13 @@ export class LicenseService {
         },
       );
     } catch {
+      this.offline = true;
       log("warn", "license service unreachable", { action });
       throw new Error("The licensing service could not be reached.");
     }
+    // Like a network failure, any refusal other than 403 means the service
+    // could not answer the request.
+    this.offline = !response.ok && response.status !== 403;
     const data = (await response.json().catch(() => ({}))) as Record<
       string,
       unknown
@@ -237,12 +247,16 @@ export class LicenseService {
     ) {
       throw new Error("The licensing service returned an invalid response.");
     }
+    // Verify the new token before it replaces the cached one: a response that
+    // fails verification must not cost a still valid activation.
+    const previous = this.state.activations[tenantId];
     this.state.activations[tenantId] = {
       activationId: data.activationId,
       token: data.token,
     };
     if (!this.valid(tenantId)) {
-      delete this.state.activations[tenantId];
+      if (previous) this.state.activations[tenantId] = previous;
+      else delete this.state.activations[tenantId];
       throw new Error("The license token could not be verified.");
     }
     this.message = null;
@@ -395,6 +409,11 @@ export class LicenseService {
   async status(tenantId: string | null): Promise<LicenseStatus> {
     await this.load();
     const payload = this.valid(tenantId);
+    const cachedTenantId = tenantId
+      ? null
+      : (Object.keys(this.state?.activations ?? {}).find((tenant) =>
+          this.valid(tenant),
+        ) ?? null);
     return {
       hasKey: this.state !== null,
       keyHint: this.state ? `****${this.state.key.slice(-4)}` : null,
@@ -405,6 +424,8 @@ export class LicenseService {
       tenants: payload?.tenants ?? null,
       expiresAt: payload ? new Date(payload.exp * 1000).toISOString() : null,
       message: this.message,
+      offline: this.offline,
+      cachedTenantId,
     };
   }
 }

@@ -5,6 +5,7 @@ import type {
 } from "../../../../../../src/lib/compliance/types";
 import type { ComplianceView } from "../../../shared/ipc-types";
 import { Button } from "../ui/Button";
+import { DisclosureSummary } from "../ui/DisclosureSummary";
 
 const PLATFORMS: ReadonlyArray<{ id: CompliancePlatform; label: string }> = [
   { id: "windows", label: "Windows" },
@@ -185,9 +186,9 @@ export function ScopePanel({
       </p>
 
       <details className="group">
-        <summary className="text-petrol-950 cursor-pointer text-sm font-semibold">
+        <DisclosureSummary className="text-petrol-950 text-sm font-semibold hover:text-teal-700">
           Collection and detection coverage
-        </summary>
+        </DisclosureSummary>
         <div className="border-petrol-950/6 mt-3 overflow-x-auto rounded-xl border">
           <table className="selectable w-full text-left text-xs">
             <thead className="bg-surface text-petrol-700">

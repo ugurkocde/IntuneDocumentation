@@ -33,12 +33,70 @@ export function busyBlocker(state: AppState): string | null {
   return null;
 }
 
-export function licenseLabel(state: AppState): string {
+export type LicenseKind = "none" | "signedOut" | "cached" | "offline" | "saved" | "active";
+
+export interface LicenseView {
+  kind: LicenseKind;
+  // Short status for badges and headings.
+  label: string;
+  // One sentence that explains the status and what to do next.
+  detail: string;
+  tone: "neutral" | "warning" | "active";
+}
+
+// The single license status shown everywhere, so the Overview, the license
+// panel and the sidebar never disagree.
+export function licenseView(state: AppState): LicenseView {
   const license = state.license;
-  if (!license?.hasKey) return "No license";
-  if (license.entitled) return license.plan === "msp" ? "MSP plan" : "Pro plan";
-  if (!license.tenantId) return "Sign in to activate";
-  return "Not active for this tenant";
+  const signedIn = Boolean(state.auth?.signedIn);
+  if (license?.entitled) {
+    return {
+      kind: "active",
+      label: `Active, ${license.plan === "msp" ? "MSP" : "Pro"} plan`,
+      detail: `${license.plan === "msp" ? "MSP" : "Pro"} plan active for this tenant.`,
+      tone: "active",
+    };
+  }
+  if (!signedIn && license?.cachedTenantId) {
+    return {
+      kind: "cached",
+      label: "Active",
+      detail: `Active, last verified for tenant ${license.cachedTenantId}. Sign in to that tenant to collect.`,
+      tone: "active",
+    };
+  }
+  if (!license?.hasKey) {
+    return {
+      kind: "none",
+      label: "No license key",
+      detail: "Add the license key from your purchase email.",
+      tone: "neutral",
+    };
+  }
+  if (!signedIn) {
+    return {
+      kind: "signedOut",
+      label: "Not signed in",
+      detail: "Your license key is saved. It activates for your tenant after you sign in.",
+      tone: "neutral",
+    };
+  }
+  if (license.offline) {
+    return {
+      kind: "offline",
+      label: "Offline",
+      detail: "The licensing service could not be reached. Check the connection and retry.",
+      tone: "warning",
+    };
+  }
+  return {
+    kind: "saved",
+    label: "Key saved, not active",
+    detail:
+      license.message ??
+      "Your license key is saved but not active for this tenant. Retry the activation or check your subscription.",
+    tone: "warning",
+  };
 }
 
 export function warningCount(state: AppState): number {

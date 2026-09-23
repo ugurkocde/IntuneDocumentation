@@ -32,7 +32,7 @@ export function StepLayout({
         {description && <p className="text-petrol-600 mt-2 text-[15px] leading-6">{description}</p>}
         <div className="mt-8 space-y-5">{children}</div>
       </div>
-      <div className="border-petrol-950/6 sticky bottom-0 border-t bg-white/90 backdrop-blur">
+      <div className="border-petrol-950/6 sticky bottom-0 border-t bg-white/95 shadow-[0_-10px_24px_-18px_rgb(8_47_54/0.3)] backdrop-blur">
         <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center justify-between gap-3 px-8 py-4">
           {footer}
         </div>

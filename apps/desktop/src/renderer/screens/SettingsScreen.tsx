@@ -138,6 +138,7 @@ export function SettingsScreen() {
               <Button
                 size="sm"
                 variant="secondary"
+                icon={RotateCcw}
                 disabled={Boolean(busyBlocker(state))}
                 disabledReason={busyBlocker(state)}
                 onClick={() => {
@@ -154,7 +155,7 @@ export function SettingsScreen() {
             title="Getting started guide"
             description="Step by step instructions on intunedocumentation.com."
             action={
-              <Button size="sm" variant="ghost" icon={ExternalLink} onClick={() => void ipc.openHelp("gettingStarted")}>
+              <Button size="sm" variant="secondary" icon={ExternalLink} onClick={() => void ipc.openHelp("gettingStarted")}>
                 Open guide
               </Button>
             }
@@ -164,7 +165,7 @@ export function SettingsScreen() {
             title="Support"
             description="Contact us when something does not work as expected."
             action={
-              <Button size="sm" variant="ghost" icon={ExternalLink} onClick={() => void ipc.openHelp("support")}>
+              <Button size="sm" variant="secondary" icon={ExternalLink} onClick={() => void ipc.openHelp("support")}>
                 Get support
               </Button>
             }
@@ -177,6 +178,7 @@ export function SettingsScreen() {
               <Button
                 size="sm"
                 variant="secondary"
+                icon={FileDown}
                 loading={support.busy === "diagnostics"}
                 onClick={() =>
                   void support.run("diagnostics", () => ipc.exportDiagnostics(), (path) =>

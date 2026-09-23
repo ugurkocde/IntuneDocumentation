@@ -14,6 +14,8 @@ import type {
   ControlStatus,
 } from "../../../../../../src/lib/compliance/types";
 import type { ComplianceCapabilityView } from "../../../shared/ipc-types";
+import { DisclosureSummary } from "../ui/DisclosureSummary";
+import { CheckValue } from "./CheckValue";
 
 // Ported from the website's compliance view
 // (src/components/dashboard/compliance-view.tsx); container queries replace
@@ -34,8 +36,8 @@ const CONTROL_STATUS_DETAILS: Record<
 > = {
   notApplicable: {
     label: "Outside selected scope",
-    chipClassName: "bg-slate-100 text-slate-700",
-    dotClassName: "bg-slate-500",
+    chipClassName: "bg-mint-100 text-petrol-700",
+    dotClassName: "bg-petrol-600",
   },
   notAssessed: {
     label: "Not assessed",
@@ -59,8 +61,8 @@ const CONTROL_STATUS_DETAILS: Record<
   },
   noEvidence: {
     label: "No recognized configuration evidence",
-    chipClassName: "bg-slate-100 text-slate-700",
-    dotClassName: "bg-slate-500",
+    chipClassName: "bg-mint-100 text-petrol-700",
+    dotClassName: "bg-petrol-600",
   },
 };
 
@@ -84,7 +86,7 @@ function CapabilityStatusChip({ status }: { status: CapabilityStatus }) {
         ? "bg-amber-50 text-amber-800"
         : status === "disabledByPolicy"
           ? "bg-red-50 text-red-800"
-          : "bg-slate-100 text-slate-700";
+          : "bg-mint-100 text-petrol-700";
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${className}`}>
       {CAPABILITY_STATUS_LABELS[status]}
@@ -187,7 +189,7 @@ function SettingChecks({ capability }: { capability: ComplianceCapabilityView })
           className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold">
+            <span className="bg-mint-100 text-petrol-700 rounded-full px-2 py-1 font-semibold">
               {ASSESSMENT_LABELS[check.assessmentStatus]}
             </span>
             {check.result && (
@@ -206,7 +208,7 @@ function SettingChecks({ capability }: { capability: ComplianceCapabilityView })
           </div>
           {check.policyName && <p className="text-petrol-950 mt-2 font-semibold">{check.policyName}</p>}
           <p className="mt-2 font-mono text-[10px] break-all text-slate-600">{check.settingId}</p>
-          <dl className="mt-2 grid gap-2 @xl:grid-cols-2">
+          <dl className="mt-2 grid gap-3 @xl:grid-cols-2">
             <div>
               <dt className="font-semibold">Expected value</dt>
               <dd className="mt-1 break-words">
@@ -215,9 +217,11 @@ function SettingChecks({ capability }: { capability: ComplianceCapabilityView })
             </div>
             <div>
               <dt className="font-semibold">Actual value</dt>
-              <dd className="mt-1 break-all">
-                {(check.actualValue === null ? null : displayCheckValue(check.actualValue)) ??
-                  (check.result === "missing" ? "Not found" : "Unavailable")}
+              <dd className="mt-1 min-w-0">
+                <CheckValue
+                  value={check.actualValue}
+                  fallback={check.result === "missing" ? "Not found" : "Unavailable"}
+                />
               </dd>
             </div>
           </dl>
@@ -304,9 +308,9 @@ export function ControlRow({
         >
           {control.unassessedAspects.length > 0 && (
             <details className="py-4 text-xs text-slate-600">
-              <summary className="cursor-pointer font-semibold">
+              <DisclosureSummary className="font-semibold hover:text-teal-700">
                 {control.unavailableCheck ? "Unable to check" : "Scope of these policy checks"}
-              </summary>
+              </DisclosureSummary>
               <ul className="mt-2 list-disc space-y-1 pl-4">
                 {control.unassessedAspects.map((item) => (
                   <li key={item}>{item}</li>
@@ -333,9 +337,9 @@ export function ControlRow({
                 <SettingChecks capability={capability} />
                 {capability.evidence.length > 0 && (
                   <details className="mt-3 text-xs">
-                    <summary className="text-petrol-950 cursor-pointer font-semibold">
+                    <DisclosureSummary className="text-petrol-950 font-semibold hover:text-teal-700">
                       Deployment and supporting evidence
-                    </summary>
+                    </DisclosureSummary>
                     <div className="mt-2">
                       <CapabilityStatusChip status={capability.status} />
                     </div>

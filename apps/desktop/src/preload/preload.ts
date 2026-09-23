@@ -42,6 +42,7 @@ const api: IntunedocApi = {
   licenseStatus: () => invoke("license:status"),
   licenseSetKey: (key) => invoke("license:setKey", key),
   licenseDeactivate: () => invoke("license:deactivate"),
+  licenseRetry: () => invoke("license:retry"),
   licenseOpen: (target) => invoke("license:open", target),
   complianceAssess: (request) => invoke("compliance:assess", request),
   complianceSaveReport: (request) => invoke("compliance:saveReport", request),

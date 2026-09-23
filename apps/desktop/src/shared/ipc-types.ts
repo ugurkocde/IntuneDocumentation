@@ -182,6 +182,11 @@ export interface LicenseStatus {
   tenants: number | null;
   expiresAt: string | null;
   message: string | null;
+  // The last call to the licensing service failed to reach it.
+  offline: boolean;
+  // A tenant with a still valid cached activation, reported while no tenant
+  // is signed in.
+  cachedTenantId: string | null;
 }
 
 export type UpdateState =
@@ -228,6 +233,7 @@ export interface IntunedocApi {
   licenseStatus(): Promise<LicenseStatus>;
   licenseSetKey(key: string): Promise<LicenseStatus>;
   licenseDeactivate(): Promise<LicenseStatus>;
+  licenseRetry(): Promise<LicenseStatus>;
   licenseOpen(target: "buy" | "portal"): Promise<boolean>;
   complianceAssess(request: ComplianceRequest): Promise<ComplianceView>;
   // Both return the saved path, or null when the save dialog was cancelled.

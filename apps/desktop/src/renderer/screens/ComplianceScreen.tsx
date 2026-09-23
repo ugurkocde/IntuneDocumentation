@@ -93,7 +93,7 @@ function FrameworkPicker({
                 <span className="mt-auto block pt-3 text-xs font-semibold text-teal-700">
                   {framework.id === "essential-eight"
                     ? summary.coverageLabel
-                    : `${summary.totalControls} of ${summary.totalRequirements} requirements mapped; supporting evidence only.`}
+                    : `${summary.totalControls} of ${summary.totalRequirements} requirements mapped. Supporting evidence only.`}
                 </span>
               )}
             </button>
@@ -219,7 +219,7 @@ export function ComplianceScreen() {
             state.collection.running
               ? "Compliance evidence is assessed from the collected configuration. It appears here as soon as the collection finishes."
               : needsCollection
-                ? "Compliance evidence is assessed from your collected Intune configuration and assignments. Collect your tenant on the Overview, then come back to choose a framework."
+                ? "Collect your tenant on the Overview page, then come back here to choose a framework."
                 : blocker
           }
           action={

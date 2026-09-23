@@ -6,16 +6,19 @@ type Variant = "primary" | "accent" | "secondary" | "ghost" | "danger" | "danger
 type Size = "sm" | "md";
 
 const VARIANTS: Record<Variant, string> = {
+  // Disabled primary buttons turn light instead of fading, so they no longer
+  // compete with the actions that are available. A loading button keeps its
+  // color.
   primary:
-    "bg-petrol-950 text-white shadow-sm hover:bg-petrol-800 hover:shadow-md disabled:hover:bg-petrol-950 disabled:hover:shadow-sm",
+    "bg-petrol-950 text-white shadow-sm enabled:hover:bg-petrol-800 enabled:hover:shadow-md disabled:not-aria-busy:bg-mint-100 disabled:not-aria-busy:text-petrol-600 disabled:not-aria-busy:shadow-none aria-busy:opacity-80",
   accent:
-    "bg-teal-600 text-white shadow-sm hover:bg-teal-700 hover:shadow-md disabled:hover:bg-teal-600",
+    "bg-teal-600 text-white shadow-sm hover:bg-teal-700 hover:shadow-md disabled:opacity-45 disabled:hover:bg-teal-600",
   secondary:
-    "border border-petrol-950/12 bg-white text-petrol-950 hover:border-petrol-950/20 hover:bg-mint-50 disabled:hover:bg-white",
-  ghost: "text-petrol-700 hover:bg-mint-50 hover:text-petrol-950 disabled:hover:bg-transparent",
-  danger: "bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:hover:bg-red-600",
+    "border border-petrol-950/12 bg-white text-petrol-950 hover:border-petrol-950/20 hover:bg-mint-50 disabled:opacity-45 disabled:hover:bg-white",
+  ghost: "text-petrol-700 hover:bg-mint-50 hover:text-petrol-950 disabled:opacity-45 disabled:hover:bg-transparent",
+  danger: "bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:opacity-45 disabled:hover:bg-red-600",
   dangerOutline:
-    "border border-red-200 bg-white text-red-700 hover:border-red-300 hover:bg-red-50 disabled:hover:bg-white",
+    "border border-red-200 bg-white text-red-700 hover:border-red-300 hover:bg-red-50 disabled:opacity-45 disabled:hover:bg-white",
 };
 
 const SIZES: Record<Size, string> = {
@@ -55,7 +58,7 @@ export function Button({
       type={type}
       disabled={isDisabled}
       aria-busy={loading || undefined}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-xl font-semibold whitespace-nowrap transition-[background-color,border-color,box-shadow,color] focus-visible:ring-2 focus-visible:ring-teal-600/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45 ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-xl font-semibold whitespace-nowrap transition-[background-color,border-color,box-shadow,color] focus-visible:ring-2 focus-visible:ring-teal-600/40 focus-visible:outline-none disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...rest}
     >
       {loading ? (

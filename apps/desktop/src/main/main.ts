@@ -788,6 +788,16 @@ function registerIpc(): void {
     }
   });
 
+  // Retries activation for the signed in tenant after a failed attempt.
+  handle("license:retry", async () => {
+    try {
+      await license.activateForTenant(signedInTenant());
+      return await license.status(signedInTenant());
+    } finally {
+      pushLicense();
+    }
+  });
+
   handle("license:deactivate", async () => {
     try {
       return await license.deactivate();

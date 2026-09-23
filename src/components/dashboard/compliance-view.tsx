@@ -10,12 +10,13 @@ import {
 import {
   Check,
   ChevronDown,
+  ChevronRight,
   Download,
   LoaderCircle,
   ShieldCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   FrameworkBadge,
   type FrameworkId,
@@ -28,6 +29,7 @@ import {
   ASSESSMENT_LABELS,
   CHECK_RESULT_LABELS,
   checkSummary,
+  checkValueEntries,
   displayCheckValue,
 } from "~/lib/compliance/check-results";
 import {
@@ -163,7 +165,7 @@ const CONTROL_STATUS_DETAILS: Record<
 > = {
   notApplicable: {
     label: "Outside selected scope",
-    chipClassName: "bg-slate-100 text-slate-700",
+    chipClassName: "bg-mint-100 text-petrol-700",
     dotClassName: "bg-slate-500",
   },
   notAssessed: {
@@ -188,7 +190,7 @@ const CONTROL_STATUS_DETAILS: Record<
   },
   noEvidence: {
     label: "No recognized configuration evidence",
-    chipClassName: "bg-slate-100 text-slate-700",
+    chipClassName: "bg-mint-100 text-petrol-700",
     dotClassName: "bg-slate-500",
   },
 };
@@ -237,7 +239,7 @@ function CapabilityStatusChip({ status }: { status: CapabilityStatus }) {
         ? "bg-amber-50 text-amber-800"
         : status === "disabledByPolicy"
           ? "bg-red-50 text-red-800"
-          : "bg-slate-100 text-slate-700";
+          : "bg-mint-100 text-petrol-700";
 
   return (
     <span
@@ -365,6 +367,65 @@ function EvidenceList({ capability }: { capability: CapabilityResult }) {
   );
 }
 
+// Summary with a rotating chevron in place of the default marker. The rotation
+// keys off the nearest <details>, so nested disclosures stay independent.
+function DisclosureSummary({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <summary
+      className={`inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none [&::-webkit-details-marker]:hidden ${className}`}
+    >
+      <ChevronRight
+        className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 motion-reduce:transition-none [details[open]>summary>&]:rotate-90"
+        aria-hidden="true"
+      />
+      {children}
+    </summary>
+  );
+}
+
+// Composite values read as a short label and value list; the raw value stays
+// one click away for evidence purposes.
+function CheckValue({
+  value,
+  fallback,
+}: {
+  value: string | null;
+  fallback: string;
+}) {
+  if (value === null) return <span>{fallback}</span>;
+  const entries = checkValueEntries(value);
+  if (!entries)
+    return <span className="break-all">{displayCheckValue(value)}</span>;
+  return (
+    <div className="min-w-0">
+      <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1">
+        {entries.map((entry, index) => (
+          <Fragment key={`${entry.label}-${index}`}>
+            <dt className="text-petrol-600">{entry.label}</dt>
+            <dd className="text-petrol-950 font-medium break-words">
+              {entry.value}
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+      <details className="mt-2">
+        <DisclosureSummary className="text-petrol-600 text-[11px] font-semibold hover:text-teal-700">
+          Show raw
+        </DisclosureSummary>
+        <pre className="bg-mint-50 text-petrol-800 mt-1.5 rounded-lg p-2 font-mono text-[10px] leading-4 break-all whitespace-pre-wrap">
+          {value}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 function SettingChecks({ capability }: { capability: CapabilityResult }) {
   return (
     <div className="mt-3 space-y-3">
@@ -374,7 +435,7 @@ function SettingChecks({ capability }: { capability: CapabilityResult }) {
           className="rounded-xl border border-slate-200 bg-white p-3 text-xs"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold">
+            <span className="bg-mint-100 text-petrol-700 rounded-full px-2 py-1 font-semibold">
               {ASSESSMENT_LABELS[check.assessmentStatus]}
             </span>
             {check.result && (
@@ -401,11 +462,13 @@ function SettingChecks({ capability }: { capability: CapabilityResult }) {
             </div>
             <div>
               <dt className="font-semibold">Actual value</dt>
-              <dd className="mt-1 break-all">
-                {(check.actualValue === null
-                  ? null
-                  : displayCheckValue(check.actualValue)) ??
-                  (check.result === "missing" ? "Not found" : "Unavailable")}
+              <dd className="mt-1 min-w-0">
+                <CheckValue
+                  value={check.actualValue}
+                  fallback={
+                    check.result === "missing" ? "Not found" : "Unavailable"
+                  }
+                />
               </dd>
             </div>
           </dl>
@@ -521,11 +584,11 @@ function ControlRow({
         >
           {control.unassessedAspects.length > 0 && (
             <details className="py-4 text-xs text-slate-600">
-              <summary className="cursor-pointer font-semibold">
+              <DisclosureSummary className="font-semibold hover:text-teal-700">
                 {control.unavailableCheck
                   ? "Unable to check"
                   : "Scope of these policy checks"}
-              </summary>
+              </DisclosureSummary>
               <ul className="mt-2 list-disc space-y-1 pl-4">
                 {control.unassessedAspects.map((item) => (
                   <li key={item}>{item}</li>
@@ -558,9 +621,9 @@ function ControlRow({
                 <SettingChecks capability={capability} />
                 {capability.evidence.length > 0 && (
                   <details className="mt-3 text-xs">
-                    <summary className="cursor-pointer font-semibold">
+                    <DisclosureSummary className="font-semibold hover:text-teal-700">
                       Deployment and supporting evidence
-                    </summary>
+                    </DisclosureSummary>
                     <div className="mt-2">
                       <CapabilityStatusChip status={capability.status} />
                     </div>
@@ -991,7 +1054,7 @@ export function ComplianceView({
                             <>
                               {assessmentFramework.summary.totalControls} of{" "}
                               {assessmentFramework.framework.totalRequirements}{" "}
-                              requirements mapped; supporting evidence only.
+                              requirements mapped. Supporting evidence only.
                             </>
                           )}
                         </span>

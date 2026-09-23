@@ -25,8 +25,9 @@ function PlanCard({
   featured: boolean;
 }) {
   const unit = interval === "monthly" ? "month" : "year";
-  const checkout = plan.checkoutUrl[interval];
-  const external = checkout.startsWith("http");
+  const extraTenant = plan.extraTenantPrice
+    ? ` Each additional tenant ${formatDesktopPrice(plan.extraTenantPrice[interval])} per ${unit}.`
+    : "";
 
   return (
     <article
@@ -40,7 +41,7 @@ function PlanCard({
         <h3 className="text-petrol-950 text-xl font-semibold">{plan.name}</h3>
         {featured && (
           <span className="rounded-full bg-teal-50 px-3 py-1 text-[11px] font-bold tracking-[0.14em] text-teal-700 uppercase">
-            Multi tenant
+            Best value per tenant
           </span>
         )}
       </div>
@@ -53,23 +54,28 @@ function PlanCard({
         <span className="text-petrol-600 text-sm">per {unit}</span>
       </div>
       <p className="text-petrol-600 mt-2 min-h-10 text-sm leading-5">
-        {plan.extraTenantPrice
-          ? `Includes ${plan.tenantsIncluded} tenants. Each additional tenant ${formatDesktopPrice(plan.extraTenantPrice[interval])} per ${unit}.`
-          : `One tenant, billed ${interval}.`}
-        {interval === "yearly" && " Two months free compared to monthly."}
+        {interval === "yearly"
+          ? `Equals ${formatDesktopPrice(plan.price.yearly / 12)} per month, two months free.`
+          : plan.extraTenantPrice
+            ? `Includes ${plan.tenantsIncluded} tenants.`
+            : "One tenant, billed monthly."}
+        {extraTenant}
       </p>
 
       <a
-        href={checkout}
-        {...(external ? { rel: "noopener" } : {})}
-        className={`mt-6 inline-flex min-h-11 items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none ${
+        href={plan.checkoutUrl[interval]}
+        className={`mt-6 inline-flex min-h-11 items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none ${
           featured
-            ? "bg-teal-600 text-white hover:bg-teal-700"
-            : "bg-petrol-950 hover:bg-petrol-800 text-white"
+            ? "hover:bg-petrol-800 bg-teal-700"
+            : "bg-petrol-950 hover:bg-petrol-800"
         }`}
       >
-        Start {DESKTOP_TRIAL_DAYS} day free trial
+        Start {DESKTOP_TRIAL_DAYS}-day free trial
       </a>
+      <p className="text-petrol-600 mt-2 text-center text-xs leading-5">
+        Card required. Cancel before day {DESKTOP_TRIAL_DAYS} and you pay
+        nothing.
+      </p>
 
       <ul className="border-petrol-950/8 mt-7 space-y-3 border-t pt-6">
         {plan.features.map((feature) => (
@@ -77,7 +83,10 @@ function PlanCard({
             key={feature}
             className="text-petrol-700 flex items-start gap-3 text-sm leading-6"
           >
-            <Check className="mt-1 h-4 w-4 shrink-0 text-teal-700" />
+            <Check
+              className="mt-1 h-4 w-4 shrink-0 text-teal-700"
+              aria-hidden="true"
+            />
             <span>{feature}</span>
           </li>
         ))}

@@ -4,6 +4,7 @@ import {
   DESKTOP_INSTALLS_PER_TENANT,
   DESKTOP_OFFLINE_GRACE_DAYS,
   DESKTOP_PLANS,
+  formatDesktopPrice,
 } from "~/lib/desktop-app";
 import { INSTALLS_PER_TENANT } from "~/lib/desktop-license/service";
 import { DEFAULT_SCOPES } from "../../../apps/desktop/src/shared/scopes";
@@ -29,5 +30,11 @@ describe("desktop app constants", () => {
         expect(url).toMatch(/^https:\/\/buy\.polar\.sh\/polar_cl_\w+$/);
       }
     }
+  });
+
+  it("formats whole prices without cents and monthly equivalents with cents", () => {
+    expect(formatDesktopPrice(99)).toBe("€99");
+    expect(formatDesktopPrice(990 / 12)).toBe("€82.50");
+    expect(formatDesktopPrice(1990 / 12)).toBe("€165.83");
   });
 });

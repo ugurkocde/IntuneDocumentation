@@ -272,7 +272,7 @@ export function NavigationHeader() {
                     onClick={handleSignIn}
                     size="sm"
                     loading={signingIn}
-                    className="min-h-11 rounded-full bg-teal-600 px-5 text-white shadow-none hover:bg-teal-700 focus:ring-teal-600"
+                    className="min-h-11 rounded-full bg-teal-700 px-5 text-white shadow-none hover:bg-petrol-800 focus:ring-teal-600"
                   >
                     Get Started
                   </Button>
@@ -352,7 +352,7 @@ export function NavigationHeader() {
                       onClick={handleSignIn}
                       size="sm"
                       loading={signingIn}
-                      className="min-h-11 flex-1 rounded-full bg-teal-600 text-white hover:bg-teal-700 focus:ring-teal-600"
+                      className="min-h-11 flex-1 rounded-full bg-teal-700 text-white hover:bg-petrol-800 focus:ring-teal-600"
                     >
                       Get Started
                     </Button>

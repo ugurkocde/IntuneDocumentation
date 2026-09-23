@@ -412,7 +412,7 @@ export function OverviewScreen() {
               {[
                 "Tenant data is read with your own sign in and stays on this computer.",
                 "Only read permissions are used. Nothing in your tenant is changed.",
-                "License checks send the license key, an installation ID and the tenant ID. Never configuration.",
+                "License checks send the license key or, for an organization license, a Microsoft sign-in token that is verified and only its tenant ID used, never stored. Plus an installation ID and the tenant ID. Never configuration.",
               ].map((line) => (
                 <li key={line} className="flex items-start gap-2.5">
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />

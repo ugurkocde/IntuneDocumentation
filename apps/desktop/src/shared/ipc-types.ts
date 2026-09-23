@@ -178,6 +178,16 @@ export interface ComplianceReportProgress {
 export interface LicenseStatus {
   hasKey: boolean;
   keyHint: string | null;
+  // Where the signed in tenant's active license comes from: this machine's
+  // key, or the organization license the key holder shared with the tenant.
+  source: "key" | "tenant" | null;
+  // Key licenses: whether other admins in the tenant may use it, as last
+  // confirmed by the licensing service; null when unknown.
+  shared: boolean | null;
+  // Key licenses: sharing could not be confirmed without a fresh sign-in.
+  shareNeedsSignIn: boolean;
+  // Organization licenses: the masked key, such as ****ABCDEF.
+  displayKey: string | null;
   persisted: boolean;
   tenantId: string | null;
   entitled: boolean;
@@ -238,6 +248,7 @@ export interface IntunedocApi {
   licenseSetKey(key: string): Promise<LicenseStatus>;
   licenseDeactivate(): Promise<LicenseStatus>;
   licenseRetry(): Promise<LicenseStatus>;
+  licenseSetShared(shared: boolean): Promise<LicenseStatus>;
   licenseOpen(target: "buy" | "portal"): Promise<boolean>;
   complianceAssess(request: ComplianceRequest): Promise<ComplianceView>;
   // Both return the saved path, or null when the save dialog was cancelled.

@@ -25,6 +25,21 @@ export interface SignInResult {
 }
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+// Well inside the licensing service's 15 minute window.
+const ID_TOKEN_MAX_AGE_MS = 5 * 60_000;
+
+// Issue time (ms) of a JWT, read without verification: the licensing service
+// verifies the token, the app only decides whether to renew it.
+export function idTokenIssuedAt(token: string): number | null {
+  try {
+    const claims = JSON.parse(
+      Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+    ) as { iat?: unknown };
+    return typeof claims.iat === "number" ? claims.iat * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 
 const callbackPage = (title: string, text: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Intune Documentation</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f1f5f3;color:#082f36;font-family:"Avenir Next","Segoe UI",system-ui,sans-serif}
@@ -227,6 +242,33 @@ export class AuthService {
       if (generation === this.generation) this.expire();
       return null;
     }
+  }
+
+  // A recent Microsoft ID token for the organization license check, or null
+  // when none can be had without user interaction. The licensing service only
+  // accepts tokens issued within the last 15 minutes, so an older cached one
+  // is renewed with the refresh token.
+  async getIdToken(): Promise<string | null> {
+    if (!this.account) return null;
+    const generation = this.generation;
+    for (const forceRefresh of [false, true]) {
+      try {
+        const result = await this.pca.acquireTokenSilent({
+          account: this.account,
+          scopes: this.scopes,
+          forceRefresh,
+        });
+        if (generation !== this.generation || !result?.idToken) return null;
+        this.accept(result);
+        const issued = idTokenIssuedAt(result.idToken);
+        if (issued !== null && Date.now() - issued < ID_TOKEN_MAX_AGE_MS) {
+          return result.idToken;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 
   // The refresh failed: the session no longer has a usable token. The account

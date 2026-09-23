@@ -115,7 +115,7 @@ const features = [
 const faqs = [
   {
     question: "How does licensing work?",
-    answer: `You buy a Pro or MSP subscription and receive a license key by email. Paste the key into the app after signing in. The app activates the key for the tenant you signed into and stores a signed license token on your machine. Every plan starts with a ${DESKTOP_TRIAL_DAYS} day free trial. A payment card is required, and you can cancel before the trial ends without being charged.`,
+    answer: `You buy a Pro or MSP subscription and receive a license key by email. Paste the key into the app after signing in. The app activates the key for the tenant you signed into and stores a signed license token on your machine. Anyone who signs in to your tenant's Intune Documentation app registration can use a shared license, without the key. Every plan starts with a ${DESKTOP_TRIAL_DAYS} day free trial. A payment card is required, and you can cancel before the trial ends without being charged.`,
   },
   {
     question: "Can I use the app offline?",
@@ -124,7 +124,7 @@ const faqs = [
   {
     question: "What data is sent to your servers?",
     answer:
-      "Only what the licensing service needs: the license key, a random installation ID, your Entra tenant ID, the operating system, and the app version. Tenant configuration, Microsoft tokens, and exported documents never leave your machine. Graph calls go directly from the app to Microsoft.",
+      "Only what the licensing service needs: the license key or, for an organization license, a Microsoft sign-in token that is verified and only its tenant ID used, never stored. Plus a random installation ID, your Entra tenant ID, the operating system, and the app version. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine. Graph calls go directly from the app to Microsoft.",
   },
   {
     question: "How many tenants and installations are included?",
@@ -292,9 +292,11 @@ export default function DesktopPage() {
               )}
             </div>
             <p className="text-petrol-600 mt-8 max-w-3xl text-sm leading-6">
-              The licensing service receives only the license key, a random
-              installation ID, your Entra tenant ID, the operating system, and
-              the app version. It uses them to validate your subscription and
+              The licensing service receives only the license key (or, for an
+              organization license, a Microsoft sign-in token that is verified
+              and only its tenant ID used, never stored), a random installation
+              ID, your Entra tenant ID, the operating system, and the app
+              version. It uses them to validate your subscription and
               enforce tenant and installation limits. Details are in the{" "}
               <Link
                 href="/privacy-policy#desktop-app"

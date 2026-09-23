@@ -78,7 +78,18 @@ const savedExportPaths = new Set<string>();
 const MAX_SAVE_BYTES = 300 * 1024 * 1024;
 const MAX_CLIPBOARD_CHARS = 4096;
 const LICENSE_REFRESH_MS = 6 * 60 * 60_000;
-const license = new LicenseService();
+// ID tokens and the app registration only for the signed in tenant: other
+// cached tenants keep their organization license token until it expires.
+const license = new LicenseService(
+  async (tenantId) =>
+    auth && signedInTenant()?.toLowerCase() === tenantId
+      ? auth.getIdToken()
+      : null,
+  (tenantId) =>
+    auth && signedInTenant()?.toLowerCase() === tenantId
+      ? (authKey.split("|")[0] ?? null)
+      : null,
+);
 const isMac = process.platform === "darwin";
 
 function rendererUrl(): string {
@@ -880,6 +891,17 @@ function registerIpc(): void {
     try {
       await license.activateForTenant(signedInTenant());
       return await license.status(signedInTenant());
+    } finally {
+      pushLicense();
+    }
+  });
+
+  handle("license:setShared", async (_event, shared) => {
+    if (typeof shared !== "boolean") {
+      throw new Error("Choose whether to share the license.");
+    }
+    try {
+      return await license.setShared(signedInTenant(), shared);
     } finally {
       pushLicense();
     }

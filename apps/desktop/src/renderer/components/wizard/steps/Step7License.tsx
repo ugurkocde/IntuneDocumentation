@@ -7,14 +7,18 @@ import { StepLayout, type StepProps } from "../StepLayout";
 export function Step7License({ step, goBack, onFinish }: StepProps & { onFinish: () => void }) {
   const { state } = useApp();
   const entitled = Boolean(state.license?.entitled);
+  // Found automatically after sign-in: the tenant has an organization license.
+  const organization = entitled && state.license?.source === "tenant";
   return (
     <StepLayout
       step={step}
-      title="Activate your license"
+      title={organization ? "Your organization's license is active" : "Activate your license"}
       description={
-        entitled
-          ? "Your license is active for the signed in tenant. Finish setup to start documenting."
-          : "Paste the license key from your purchase email. You can skip this and add it later."
+        organization
+          ? "Your organization already has a license for this tenant, so it was applied automatically. No key is needed. Finish setup to start documenting."
+          : entitled
+            ? "Your license is active for the signed in tenant. Finish setup to start documenting."
+            : "Paste the license key from your purchase email. You can skip this and add it later."
       }
       footer={
         <>

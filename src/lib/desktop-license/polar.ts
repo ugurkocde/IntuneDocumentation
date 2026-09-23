@@ -30,6 +30,9 @@ export type PolarActivation = z.infer<typeof activation>;
 
 const validated = licenseKey.extend({ activation: activation.nullish() });
 const withActivations = licenseKey.extend({ activations: z.array(activation) });
+// The same read, keeping the key string. Only the organization license route
+// uses it, to act for an install that never sees the key.
+const withSecret = withActivations.extend({ key: z.string().min(1) });
 const grants = z.object({
   items: z.array(
     z.object({
@@ -95,6 +98,8 @@ export function createPolarClient(config: PolarConfig) {
         `/v1/license-keys/${encodeURIComponent(id)}`,
         withActivations,
       ),
+    getKeyWithSecret: (id: string) =>
+      call("GET", `/v1/license-keys/${encodeURIComponent(id)}`, withSecret),
     activate: (key: string, label: string, meta: Record<string, string>) =>
       call("POST", "/v1/license-keys/activate", activation, {
         key,

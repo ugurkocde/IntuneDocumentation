@@ -8,7 +8,13 @@ const msal = vi.hoisted(() => ({
   lastUrlRequest: null as null | { redirectUri: string; state?: string },
   nextAccount: { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" },
   removed: [] as string[],
+  // Age (ms) of the cached ID token, and every forceRefresh flag seen.
+  cachedIdTokenAge: 0,
+  silent: [] as boolean[],
 }));
+
+const idTokenIssued = (ms: number) =>
+  `h.${Buffer.from(JSON.stringify({ iat: Math.floor(ms / 1000) })).toString("base64url")}.s`;
 
 vi.mock("@azure/msal-node", () => ({
   PublicClientApplication: class {
@@ -19,6 +25,16 @@ vi.mock("@azure/msal-node", () => ({
     acquireTokenByCode() {
       return Promise.resolve({
         accessToken: `token-${msal.nextAccount.homeAccountId}`,
+        account: { ...msal.nextAccount },
+        expiresOn: new Date(Date.now() + 3600_000),
+      });
+    }
+    acquireTokenSilent(request: { forceRefresh?: boolean }) {
+      msal.silent.push(Boolean(request.forceRefresh));
+      const age = request.forceRefresh ? 0 : msal.cachedIdTokenAge;
+      return Promise.resolve({
+        accessToken: `token-${msal.nextAccount.homeAccountId}`,
+        idToken: idTokenIssued(Date.now() - age),
         account: { ...msal.nextAccount },
         expiresOn: new Date(Date.now() + 3600_000),
       });
@@ -180,5 +196,30 @@ describe("AuthService.signInInteractive", () => {
     });
     expect(await service.getAccessToken()).toBe("token-a");
     expect(msal.removed).toEqual(["b"]);
+  });
+});
+
+describe("AuthService.getIdToken", () => {
+  const config = { clientId: "c", tenantId: "organizations", scopes: ["User.Read"] };
+
+  it("returns a recent cached ID token and renews an old one", async () => {
+    const service = new AuthService(config);
+    expect(await service.getIdToken()).toBeNull();
+    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+    await signIn(service);
+
+    msal.cachedIdTokenAge = 60_000;
+    msal.silent = [];
+    expect(await service.getIdToken()).toMatch(/^h\./);
+    expect(msal.silent).toEqual([false]);
+
+    msal.cachedIdTokenAge = 30 * 60_000;
+    msal.silent = [];
+    const token = await service.getIdToken();
+    expect(msal.silent).toEqual([false, true]);
+    const iat = JSON.parse(
+      Buffer.from(token!.split(".")[1]!, "base64url").toString(),
+    ) as { iat: number };
+    expect(Date.now() / 1000 - iat.iat).toBeLessThan(5);
   });
 });

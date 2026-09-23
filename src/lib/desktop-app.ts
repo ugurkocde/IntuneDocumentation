@@ -52,7 +52,7 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
     name: "Pro",
     audience: "For one organization documenting its own tenant.",
     tenantsIncluded: 1,
-    price: { monthly: 49, yearly: 490 },
+    price: { monthly: 99, yearly: 990 },
     extraTenantPrice: null,
     features: [
       "1 Microsoft Entra tenant",

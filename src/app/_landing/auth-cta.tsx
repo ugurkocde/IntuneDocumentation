@@ -16,9 +16,11 @@ import { buttonStyles } from "./primitives";
 // sign-in for visitors, dashboard access for signed-in users.
 export function AuthCta({
   inverted = false,
+  leadingAction,
   secondaryAction,
 }: {
   inverted?: boolean;
+  leadingAction?: ReactNode;
   secondaryAction?: ReactNode;
 }) {
   const { publicSite, appOrigin } = useSiteBoundary();
@@ -79,6 +81,7 @@ export function AuthCta({
           </p>
         )}
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+          {leadingAction}
           <button
             onClick={() => router.push("/dashboard")}
             className={buttonStyles.primary}
@@ -104,11 +107,12 @@ export function AuthCta({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+        {leadingAction}
         <button
           onClick={handleSignIn}
           disabled={signingIn}
           className={cn(
-            "inline-block min-h-11 rounded-md bg-white transition-[transform,box-shadow,opacity] duration-200 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
+            "plausible-event-name=Web+Sign+In inline-block min-h-11 rounded-md bg-white transition-[transform,box-shadow,opacity] duration-200 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
             inverted
               ? "focus-visible:ring-offset-petrol-950 ring-1 ring-white/20 focus-visible:ring-teal-500"
               : "ring-petrol-950/10 shadow-card ring-1 focus-visible:ring-teal-600",

@@ -1,8 +1,18 @@
-import { Download } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
+import {
+  DESKTOP_GETTING_STARTED_PATH,
+  DESKTOP_TRIAL_DAYS,
+} from "~/lib/desktop-app";
 import type { SiteStats } from "~/lib/site-stats";
 import { AuthCta } from "./auth-cta";
-import { CONSENT_ROLES, SAMPLE_REPORT_URL } from "./content";
+import { CONSENT_ROLES } from "./content";
+import {
+  DesktopDownload,
+  OtherPlatforms,
+  type Platform,
+} from "./desktop-download";
 import { DialogTrigger } from "./dialog";
 import { buttonStyles } from "./primitives";
 import { PERMISSIONS_DIALOG_ID, SECURITY_DIALOG_ID } from "./trust-dialogs";
@@ -56,7 +66,13 @@ function ReportPreview() {
   );
 }
 
-export function Hero({ stats }: { stats: SiteStats }) {
+export function Hero({
+  stats,
+  platform,
+}: {
+  stats: SiteStats;
+  platform: Platform;
+}) {
   const heroStats = formatStats(stats);
 
   return (
@@ -66,9 +82,16 @@ export function Hero({ stats }: { stats: SiteStats }) {
     >
       <div className="mx-auto grid max-w-6xl items-center gap-14 px-5 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10 lg:px-10">
         <div className="relative z-10">
-          <p className="animate-hero-fade-up mb-5 text-[11px] font-bold tracking-[0.2em] text-teal-700 uppercase">
-            Free and read-only for Microsoft Intune
-          </p>
+          <Link
+            href="/desktop"
+            className="animate-hero-fade-up border-petrol-950/8 text-petrol-800 mb-6 inline-flex min-h-11 items-center gap-2 rounded-full border bg-white px-4 py-2 text-xs font-semibold transition-colors hover:border-teal-600/30 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+          >
+            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-teal-700 uppercase">
+              New
+            </span>
+            Desktop app for MSPs and local-only teams
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
           <h1 className="animate-hero-fade-up text-petrol-950 max-w-3xl text-[2.5rem] leading-[1.02] font-semibold tracking-[-0.05em] sm:text-[3.4rem] lg:text-[3.7rem]">
             Audit-ready Intune documentation, straight from your tenant.
           </h1>
@@ -76,35 +99,49 @@ export function Hero({ stats }: { stats: SiteStats }) {
           <p className="animate-hero-fade-up animation-delay-120 text-petrol-600 mt-6 max-w-xl text-base leading-7 sm:text-lg">
             Export policies, settings, and assignments to PDF or Word, then map
             your configuration to compliance frameworks like ISO 27001, NIST,
-            and Essential Eight. Your tenant data is never stored.
+            and Essential Eight. Run it on your own machine, or free in the
+            browser.
           </p>
 
           <div className="animate-hero-fade-up animation-delay-240 mt-8">
-            <AuthCta
-              secondaryAction={
-                <a href={SAMPLE_REPORT_URL} className={buttonStyles.secondary}>
-                  <Download className="h-4 w-4" />
-                  Download a sample report
-                </a>
-              }
-            />
-            <p className="text-petrol-600 mt-4 max-w-xl text-xs leading-5">
-              Delegated, read-only access. The first sign-in in your tenant
-              needs a one-time approval from {CONSENT_ROLES}.{" "}
-              <DialogTrigger
-                dialogId={SECURITY_DIALOG_ID}
-                className={buttonStyles.textLink}
-              >
-                How sign-in works
-              </DialogTrigger>
-              {" / "}
-              <DialogTrigger
-                dialogId={PERMISSIONS_DIALOG_ID}
-                className={buttonStyles.textLink}
-              >
-                Permissions
-              </DialogTrigger>
-            </p>
+            <AuthCta leadingAction={<DesktopDownload platform={platform} />} />
+            <div className="text-petrol-600 mt-5 max-w-xl space-y-2 text-xs leading-5">
+              <p>
+                <span className="text-petrol-800 font-semibold">Desktop:</span>{" "}
+                {DESKTOP_TRIAL_DAYS} day free trial at checkout (card required),
+                using your own Entra app registration.{" "}
+                <Link
+                  href={DESKTOP_GETTING_STARTED_PATH}
+                  className={buttonStyles.textLink}
+                >
+                  Setup guide
+                </Link>
+                {platform !== "other" && (
+                  <>
+                    {" / "}
+                    <OtherPlatforms platform={platform} />
+                  </>
+                )}
+              </p>
+              <p>
+                <span className="text-petrol-800 font-semibold">Web:</span> free
+                and read-only. The first sign-in in your tenant needs a one-time
+                approval from {CONSENT_ROLES}.{" "}
+                <DialogTrigger
+                  dialogId={SECURITY_DIALOG_ID}
+                  className={buttonStyles.textLink}
+                >
+                  How sign-in works
+                </DialogTrigger>
+                {" / "}
+                <DialogTrigger
+                  dialogId={PERMISSIONS_DIALOG_ID}
+                  className={buttonStyles.textLink}
+                >
+                  Permissions
+                </DialogTrigger>
+              </p>
+            </div>
           </div>
 
           {heroStats.length > 0 && (

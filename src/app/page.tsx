@@ -6,6 +6,7 @@ import { SiteFooter } from "~/components/site-footer";
 import { getSiteStats } from "~/lib/site-stats";
 import { Compliance } from "./_landing/compliance";
 import { faqs } from "./_landing/content";
+import { detectPlatform } from "./_landing/desktop-download";
 import { Editions } from "./_landing/editions";
 import { Faq } from "./_landing/faq";
 import { FinalCta } from "./_landing/final-cta";
@@ -80,7 +81,9 @@ export const revalidate = 300;
 
 export default async function Page() {
   const stats = await getSiteStats();
-  const nonce = (await headers()).get("x-nonce") ?? "";
+  const requestHeaders = await headers();
+  const nonce = requestHeaders.get("x-nonce") ?? "";
+  const platform = detectPlatform(requestHeaders.get("user-agent") ?? "");
   return (
     <>
       <script
@@ -106,7 +109,7 @@ export default async function Page() {
       </a>
       <NavigationHeader />
       <main id="main-content" className="overflow-hidden">
-        <Hero stats={stats} />
+        <Hero stats={stats} platform={platform} />
         <HowItWorks />
         <ReportShowcase />
         <Compliance />

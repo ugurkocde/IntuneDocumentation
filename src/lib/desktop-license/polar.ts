@@ -14,6 +14,7 @@ export class PolarUnavailable extends Error {}
 const activation = z.object({
   id: z.string(),
   meta: z.record(z.unknown()).nullish(),
+  created_at: z.string().nullish(),
 });
 
 const licenseKey = z.object({

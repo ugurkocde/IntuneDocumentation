@@ -9,11 +9,15 @@ const REPOSITORY = "ugurkocde/IntuneDocumentation";
 const TAG_PREFIX = "desktop-v";
 
 // Stable names for download links on the website.
-const ALIASES: Record<string, RegExp> = {
-  "mac-arm64": /-arm64\.dmg$/,
-  "mac-x64": /-x64\.dmg$/,
-  windows: /\.exe$/,
-};
+const ALIASES = new Map<string, RegExp>([
+  ["mac-arm64", /-arm64\.dmg$/],
+  ["mac-x64", /-x64\.dmg$/],
+  ["windows", /\.exe$/],
+]);
+
+// GitHub returns at most 100 releases per page, newest first.
+const PER_PAGE = 100;
+const MAX_PAGES = 10;
 
 interface ReleaseAsset {
   name: string;
@@ -27,7 +31,8 @@ interface Release {
   assets: ReleaseAsset[];
 }
 
-export type FetchReleases = () => Promise<Release[]>;
+// Receives the pinned tag so a fetcher can keep paging until it appears.
+export type FetchReleases = (pinnedTag?: string) => Promise<Release[]>;
 
 function version(tag: string): number[] | null {
   const match = /^desktop-v(\d+)\.(\d+)\.(\d+)$/.exec(tag);
@@ -71,9 +76,9 @@ export async function resolveDesktopAsset(
   fetchReleases: FetchReleases,
   pinnedTag?: string,
 ): Promise<string | null> {
-  const release = selectRelease(await fetchReleases(), pinnedTag);
+  const release = selectRelease(await fetchReleases(pinnedTag), pinnedTag);
   if (!release) return null;
-  const alias = ALIASES[file];
+  const alias = ALIASES.get(file);
   const asset = release.assets.find((candidate) =>
     alias ? alias.test(candidate.name) : candidate.name === file,
   );
@@ -83,9 +88,9 @@ export async function resolveDesktopAsset(
 }
 
 export function githubReleases(token?: string): FetchReleases {
-  return async () => {
+  const fetchPage = async (page: number) => {
     const response = await fetch(
-      `https://api.github.com/repos/${REPOSITORY}/releases?per_page=50`,
+      `https://api.github.com/repos/${REPOSITORY}/releases?per_page=${PER_PAGE}&page=${page}`,
       {
         headers: {
           Accept: "application/vnd.github+json",
@@ -100,5 +105,16 @@ export function githubReleases(token?: string): FetchReleases {
       throw new Error(`GitHub releases request failed: ${response.status}`);
     }
     return (await response.json()) as Release[];
+  };
+  // Stops at the first page that yields a matching release, so a pinned
+  // older tag is still found once newer releases push it off page one.
+  return async (pinnedTag) => {
+    const releases: Release[] = [];
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const batch = await fetchPage(page);
+      releases.push(...batch);
+      if (batch.length < PER_PAGE || selectRelease(releases, pinnedTag)) break;
+    }
+    return releases;
   };
 }

@@ -30,6 +30,21 @@ module.exports = {
   directories: { output: "release", buildResources: "build" },
   files: ["dist/**/*", "package.json"],
   publish: [{ provider: "generic", url: updateUrl }],
+  // Flipped in the packaged binary right before signing. Nothing in the app
+  // runs Electron as Node, reads NODE_OPTIONS or loads code outside app.asar
+  // (every dependency is bundled into dist, nothing is unpacked).
+  electronFuses: {
+    runAsNode: false,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    enableEmbeddedAsarIntegrityValidation: true,
+    onlyLoadAppFromAsar: true,
+    enableCookieEncryption: true,
+    // Flipping fuses breaks the ad hoc signature of an arm64 macOS binary.
+    // Re-sign ad hoc so unsigned local builds still launch; real signing
+    // replaces it afterwards. Only affects .app bundles.
+    resetAdHocDarwinSignature: true,
+  },
   mac: {
     // The zip is what electron-updater downloads on macOS.
     target: [

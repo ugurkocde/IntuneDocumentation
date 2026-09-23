@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ get: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), fail: undefined as any }));
 vi.mock("@microsoft/microsoft-graph-client", () => ({
   Client: {
     init: () => ({
@@ -23,6 +23,7 @@ vi.mock("../intune-detailed-client", () => ({
       this.callback = callback;
     }
     async getAllDetailedConfigurations() {
+      if (mocks.fail) throw mocks.fail;
       this.callback({
         step: "Compliance Policies",
         type: "error",
@@ -90,5 +91,29 @@ it("rejects unknown retry categories before starting a stream", async () => {
       }) as any,
     );
     expect(response.status).toBe(400);
+  }
+});
+
+it("sends a fixed error message without stack or internal details", async () => {
+  const internal = Object.assign(
+    new Error("connect ECONNREFUSED 10.0.0.5:443 at /var/task/secret.js"),
+    { statusCode: 503 },
+  );
+  mocks.fail = internal;
+  try {
+    const response = await stream(
+      new Request("http://localhost/api", {
+        headers: { Authorization: "Bearer test" },
+      }) as any,
+    );
+    const body = await response.text();
+    expect(body).toContain(
+      'event: error\ndata: {"error":"Failed to fetch configurations","status":503}',
+    );
+    expect(body).not.toContain("ECONNREFUSED");
+    expect(body).not.toContain("secret.js");
+    expect(body).not.toContain(internal.stack!.split("\n")[1]!.trim());
+  } finally {
+    mocks.fail = undefined;
   }
 });

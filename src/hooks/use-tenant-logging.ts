@@ -1,24 +1,26 @@
 import { useEffect } from "react";
 import { useMsal } from "@azure/msal-react";
+import { getIdToken } from "~/lib/id-token";
 
 export function useTenantLogging(context: string) {
-  const { accounts } = useMsal();
+  const { instance, accounts } = useMsal();
 
   useEffect(() => {
     if (accounts.length > 0) {
-      // Get the access token and send to server for logging
+      // Send the verified ID token to the server for MAU logging
       const logTenantAccess = async () => {
         try {
           const account = accounts[0];
           if (!account) return;
 
-          // Send tenant info to server for logging
+          const idToken = await getIdToken(instance, account);
+          if (!idToken) return;
+
           await fetch("/api/log-tenant", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              // Include basic auth info for server-side logging
-              "Authorization": `Bearer ${account.idToken || ""}`,
+              Authorization: `Bearer ${idToken}`,
             },
             body: JSON.stringify({ context }),
           });
@@ -29,5 +31,5 @@ export function useTenantLogging(context: string) {
 
       void logTenantAccess();
     }
-  }, [accounts, context]);
+  }, [instance, accounts, context]);
 }

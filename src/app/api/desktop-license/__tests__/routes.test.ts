@@ -22,7 +22,11 @@ const signingPem = privateKey.export({
   type: "pkcs8",
 }) as string;
 
-type Activation = { id: string; meta: Record<string, string> };
+type Activation = {
+  id: string;
+  meta: Record<string, string>;
+  created_at?: string;
+};
 let key: {
   benefit_id: string;
   status: string;
@@ -76,11 +80,15 @@ function polar(url: string, init?: RequestInit) {
   return Response.json({ error: "unexpected" }, { status: 500 });
 }
 
-const post = (handler: (r: Request) => Promise<Response>, data: object) =>
+const post = (
+  handler: (r: Request) => Promise<Response>,
+  data: object,
+  headers: Record<string, string> = {},
+) =>
   handler(
     new Request("https://intunedocumentation.com/api/desktop-license", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(data),
     }),
   );
@@ -201,6 +209,66 @@ describe("desktop license activation", () => {
     expect(key.activations.map((a) => a.meta.tenantId)).toEqual([TENANT_B]);
   });
 
+  it("keeps exactly the older of two racing activations", async () => {
+    // Hold each activate response until both requests have activated, so both
+    // pass the first check and both see the other in the re-read.
+    let release!: () => void;
+    const bothActivated = new Promise<void>((resolve) => (release = resolve));
+    let activations = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const response = polar(url, init);
+      if (new URL(url).pathname === "/v1/license-keys/activate") {
+        if (++activations === 2) release();
+        await bothActivated;
+      }
+      return response;
+    });
+    const [first, second] = await Promise.all([
+      post(activate, activation(TENANT_A)),
+      post(activate, activation(TENANT_B)),
+    ]);
+    expect(activations).toBe(2);
+    expect([first.status, second.status].sort()).toEqual([200, 403]);
+    expect(key.activations).toHaveLength(1);
+  });
+
+  it("retries a failed rollback once", async () => {
+    let deactivations = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      if (path === "/v1/license-keys/activate")
+        key.activations.push(act(TENANT_B, crypto.randomUUID()));
+      if (path === "/v1/license-keys/deactivate" && deactivations++ === 0)
+        return Promise.resolve(new Response("busy", { status: 503 }));
+      return Promise.resolve(polar(url, init));
+    });
+    const response = await post(activate, activation(TENANT_A));
+    expect(response.status).toBe(403);
+    expect(deactivations).toBe(2);
+    expect(key.activations.map((a) => a.meta.tenantId)).toEqual([TENANT_B]);
+  });
+
+  it("logs a rollback that fails twice and still refuses", async () => {
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname;
+      if (path === "/v1/license-keys/activate")
+        key.activations.push(act(TENANT_B, crypto.randomUUID()));
+      if (path === "/v1/license-keys/deactivate")
+        return Promise.resolve(new Response("busy", { status: 503 }));
+      return Promise.resolve(polar(url, init));
+    });
+    const response = await post(activate, activation(TENANT_A));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ reason: "tenant_limit" });
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("rollback of over-limit activation"),
+      expect.anything(),
+    );
+  });
+
   it("allows MSP keys up to the subscription tenant quantity", async () => {
     key.benefit_id = MSP;
     key.units = 3;
@@ -219,10 +287,107 @@ describe("desktop license activation", () => {
     expect(await refused.json()).toMatchObject({ reason: "tenant_limit" });
   });
 
-  it("falls back to ten tenants when no tenant quantity is found", async () => {
+  it("fails closed with a retryable 503 when no tenant quantity is found", async () => {
     key.benefit_id = MSP;
     const response = await post(activate, activation());
-    expect(await response.json()).toMatchObject({ tenants: 10 });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      reason: "tenant_quantity_unknown",
+    });
+    expect(key.activations).toHaveLength(0);
+
+    const existing = act(TENANT_A, INSTALL);
+    key.activations.push(existing);
+    const refreshed = await post(refresh, {
+      key: "IDOC-GOOD-KEY-0001",
+      activationId: existing.id,
+      installId: INSTALL,
+      tenantId: TENANT_A,
+    });
+    expect(refreshed.status).toBe(503);
+  });
+
+  it("stops licensing tenants beyond a lowered MSP quantity on refresh and reuse", async () => {
+    key.benefit_id = MSP;
+    key.units = 3;
+    const tenants = [
+      TENANT_A,
+      TENANT_B,
+      "cccccccc-0000-4000-8000-000000000003",
+    ];
+    const ids: string[] = [];
+    for (const tenant of tenants) {
+      const response = await post(activate, activation(tenant));
+      expect(response.status).toBe(200);
+      ids.push(
+        ((await response.json()) as { activationId: string }).activationId,
+      );
+    }
+    key.units = 1;
+    const refreshOf = (i: number) =>
+      post(refresh, {
+        key: "IDOC-GOOD-KEY-0001",
+        activationId: ids[i],
+        installId: INSTALL,
+        tenantId: tenants[i],
+      });
+
+    const refused = await refreshOf(2);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ reason: "tenant_limit" });
+    const reused = await post(activate, activation(tenants[2]));
+    expect(reused.status).toBe(403);
+    expect(await reused.json()).toMatchObject({ reason: "tenant_limit" });
+    // Another install cannot pick up an unlicensed tenant either.
+    const other = await post(
+      activate,
+      activation(tenants[1], crypto.randomUUID()),
+    );
+    expect(await other.json()).toMatchObject({ reason: "tenant_limit" });
+
+    // The oldest tenant keeps working.
+    const kept = await refreshOf(0);
+    expect(kept.status).toBe(200);
+    expect(await kept.json()).toMatchObject({ tenants: 1 });
+    expect((await post(activate, activation(tenants[0]))).status).toBe(200);
+    expect(key.activations).toHaveLength(3);
+  });
+
+  it("ranks tenants by activation creation time when Polar provides it", async () => {
+    key.benefit_id = MSP;
+    key.units = 1;
+    const newer = {
+      ...act(TENANT_A, INSTALL),
+      created_at: "2026-09-02T00:00:00Z",
+    };
+    const older = {
+      ...act(TENANT_B, INSTALL),
+      created_at: "2026-09-01T00:00:00Z",
+    };
+    key.activations.push(newer, older);
+    expect((await post(activate, activation(TENANT_B))).status).toBe(200);
+    const refused = await post(activate, activation(TENANT_A));
+    expect(await refused.json()).toMatchObject({ reason: "tenant_limit" });
+  });
+
+  it("applies the one tenant Pro rule to tenants that are already bound", async () => {
+    const first = act(TENANT_A, INSTALL);
+    const second = act(TENANT_B, INSTALL);
+    key.activations.push(first, second);
+    const refused = await post(refresh, {
+      key: "IDOC-GOOD-KEY-0001",
+      activationId: second.id,
+      installId: INSTALL,
+      tenantId: TENANT_B,
+    });
+    expect(await refused.json()).toMatchObject({ reason: "tenant_limit" });
+    const kept = await post(refresh, {
+      key: "IDOC-GOOD-KEY-0001",
+      activationId: first.id,
+      installId: INSTALL,
+      tenantId: TENANT_A,
+    });
+    expect(kept.status).toBe(200);
   });
 
   it("rejects a sixth install on the same tenant", async () => {
@@ -342,6 +507,52 @@ describe("desktop license refresh and deactivate", () => {
     });
     expect(response.status).toBe(200);
     expect(key.activations).toHaveLength(0);
+  });
+});
+
+describe("rate limit", () => {
+  const bad = { ...activation(), installId: "1234" };
+
+  it("keys on the platform client IP, not a caller supplied X-Forwarded-For", async () => {
+    for (let i = 0; i < 20; i++) {
+      const response = await post(activate, bad, {
+        "x-real-ip": "203.0.113.7",
+        "x-forwarded-for": `198.51.100.${i}`,
+      });
+      expect(response.status).toBe(400);
+    }
+    const limitedResponse = await post(activate, bad, {
+      "x-real-ip": "203.0.113.7",
+      "x-forwarded-for": "198.51.100.99",
+    });
+    expect(limitedResponse.status).toBe(429);
+    // Another client is unaffected.
+    expect(
+      (await post(activate, bad, { "x-real-ip": "203.0.113.8" })).status,
+    ).toBe(400);
+  });
+
+  it("falls back to X-Vercel-Forwarded-For, then the first X-Forwarded-For entry", async () => {
+    for (let i = 0; i < 20; i++)
+      await post(activate, bad, {
+        "x-vercel-forwarded-for": "203.0.113.9",
+      });
+    expect(
+      (await post(activate, bad, { "x-vercel-forwarded-for": "203.0.113.9" }))
+        .status,
+    ).toBe(429);
+    for (let i = 0; i < 20; i++)
+      await post(activate, bad, {
+        "x-forwarded-for": `192.0.2.1, 10.0.0.${i}`,
+      });
+    expect(
+      (await post(activate, bad, { "x-forwarded-for": "192.0.2.1" })).status,
+    ).toBe(429);
+  });
+
+  it("does not put callers without an address into one shared bucket", async () => {
+    for (let i = 0; i < 25; i++)
+      expect((await post(activate, bad)).status).toBe(400);
   });
 });
 

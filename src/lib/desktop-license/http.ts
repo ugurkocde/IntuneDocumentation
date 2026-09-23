@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { createPolarClient, PolarUnavailable } from "./polar";
-import { LicenseDenied, type LicenseContext } from "./service";
+import {
+  LicenseDenied,
+  LicenseUnavailable,
+  type LicenseContext,
+} from "./service";
 import { loadSigningKey } from "./token";
 
 const reply = (body: object, status = 200) =>
@@ -82,17 +86,31 @@ function context(): LicenseContext | null {
 
 // Best-effort per-IP limiter. It lives in one server instance's memory, so
 // serverless instances each count separately and a restart resets it; the
-// Vercel firewall is the place for a hard limit. The client IP comes from the
-// proxy's X-Forwarded-For, which is only trustworthy behind a proxy that sets it.
+// Vercel firewall is the place for a hard limit.
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS = 20;
 const hits = new Map<string, { count: number; reset: number }>();
 
+// Vercel overwrites X-Real-IP and X-Vercel-Forwarded-For with the connecting
+// client's address (X-Real-IP is what ipAddress() in @vercel/functions reads),
+// so a caller cannot choose its bucket there. The first X-Forwarded-For entry
+// is the fallback for other proxies that set it.
+export function clientIp(request: Request): string | null {
+  const first = (name: string) =>
+    request.headers.get(name)?.split(",")[0]?.trim() || null;
+  return (
+    first("x-real-ip") ??
+    first("x-vercel-forwarded-for") ??
+    first("x-forwarded-for")
+  );
+}
+
 function limited(request: Request): boolean {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
+  const ip = clientIp(request);
+  // Without an address (no proxy in front, as in local development) there is
+  // nothing to key on. One shared bucket would let a single caller lock out
+  // every other one, so such requests are not limited here.
+  if (!ip) return false;
   const now = Date.now();
   if (hits.size > 10000) {
     for (const [key, entry] of hits) if (entry.reset <= now) hits.delete(key);
@@ -178,6 +196,14 @@ export function licenseHandler<T extends z.ZodTypeAny>(
         return reply(
           { error: "The license was not accepted.", reason: error.reason },
           403,
+        );
+      if (error instanceof LicenseUnavailable)
+        return reply(
+          {
+            error: "The license could not be checked. Please try again later.",
+            reason: error.reason,
+          },
+          503,
         );
       if (error instanceof PolarUnavailable)
         console.warn(`desktop-license: ${error.message}`);

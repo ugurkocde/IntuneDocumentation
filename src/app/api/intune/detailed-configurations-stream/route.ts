@@ -1,6 +1,7 @@
 import { COLLECTION_STEPS } from "~/lib/collection-progress";
 import type { NextRequest } from "next/server";
 import { DetailedIntuneService } from "~/lib/intune-detailed-client";
+import { graphStatus } from "~/lib/graph-request";
 
 export const maxDuration = 120; // Increased from 60s to 120s for better reliability with large tenants
 export const dynamic = "force-dynamic";
@@ -196,11 +197,15 @@ export async function GET(request: NextRequest) {
           controller.close();
         }
       } catch (error: any) {
+        // Details stay in the server log; the client gets a fixed message.
         console.error("Error in SSE stream:", error);
-
+        const status = graphStatus(error);
         const errorMessage = `event: error\ndata: ${JSON.stringify({
-          error: error?.message || "Failed to fetch configurations",
-          details: error?.stack,
+          error:
+            status === 401
+              ? "Microsoft Graph rejected the sign-in. Sign in again and retry."
+              : "Failed to fetch configurations",
+          status,
         })}\n\n`;
 
         if (!closed && !signal.aborted)

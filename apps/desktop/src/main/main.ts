@@ -70,6 +70,7 @@ let mainWindow: BrowserWindow | null = null;
 let activeCollection: AbortController | null = null;
 let preparingExports = 0;
 let writingReports = 0;
+let assessingCompliance = 0;
 let lastSavedExportPath: string | null = null;
 // Every path this session saved; open and reveal accept nothing else.
 const savedExportPaths = new Set<string>();
@@ -107,11 +108,24 @@ function sendMenuCommand(command: MenuCommand): void {
   broadcast("menu:command", command);
 }
 
+// Development builds may take the app registration from the environment.
+// Installed builds use Settings only.
+function devOverride(
+  name: string,
+  valid: (value: string) => boolean,
+): string | undefined {
+  const value = app.isPackaged ? undefined : process.env[name]?.trim();
+  return value && valid(value) ? value : undefined;
+}
+
 async function getAuth(): Promise<AuthService> {
   const settings = await readSettings();
-  const clientId = settings.clientId || process.env.INTUNEDOC_CLIENT_ID || "";
+  const clientId =
+    settings.clientId || devOverride("INTUNEDOC_CLIENT_ID", isGuid) || "";
   const tenantId =
-    settings.tenantId || process.env.INTUNEDOC_TENANT_ID || "organizations";
+    settings.tenantId ||
+    devOverride("INTUNEDOC_TENANT_ID", isTenantIdentifier) ||
+    "organizations";
   if (!clientId) {
     throw new Error(
       "Add your Entra app registration client ID in Settings before signing in.",
@@ -173,6 +187,7 @@ function runningWork(): string | null {
   if (activeCollection) return "a collection";
   if (preparingExports > 0) return "an export";
   if (writingReports > 0) return "an evidence report";
+  if (assessingCompliance > 0) return "a compliance assessment";
   return null;
 }
 
@@ -388,27 +403,61 @@ async function exportDiagnostics(): Promise<string | null> {
   return target;
 }
 
+// Everything the app keeps in userData, apart from Chromium's own storage.
+const LOCAL_DATA = [
+  "settings.json",
+  "license.bin",
+  "install-id",
+  "window-state.json",
+  "logs",
+];
+
 async function clearLocalData(): Promise<void> {
   log("info", "clearing local data");
   cancelCollection();
   clearCollection();
-  await license.deactivate().catch((error: unknown) => {
-    log("warn", "license deactivation during reset failed", {
-      message: errorText(error),
-    });
-  });
+  const released = await license.deactivate().then(
+    () => true,
+    (error: unknown) => {
+      log("warn", "license deactivation during reset failed", {
+        message: errorText(error),
+      });
+      return false;
+    },
+  );
   if (auth) await auth.signOut().catch(() => undefined);
   auth = null;
   authKey = "";
   const userData = app.getPath("userData");
   await Promise.all(
-    ["settings.json", "license.bin"].map((name) =>
-      fs.rm(path.join(userData, name), { force: true }),
+    LOCAL_DATA.map((name) =>
+      fs.rm(path.join(userData, name), { recursive: true, force: true }),
     ),
   );
   await session.defaultSession.clearStorageData({ storages: ["localstorage"] });
+  if (!released) await explainUnreleasedActivation();
   app.relaunch();
   app.exit(0);
+}
+
+// The local data is gone either way; the activation may still count against
+// the license until it is released in the customer portal.
+async function explainUnreleasedActivation(): Promise<void> {
+  const notice = {
+    type: "warning" as const,
+    buttons: ["Open customer portal", "Continue"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "The license could not be deactivated",
+    detail:
+      "The licensing service did not confirm the deactivation, so this machine may still use one of your license's activations. You can release it in the customer portal.",
+  };
+  const answer = mainWindow
+    ? await dialog.showMessageBox(mainWindow, notice)
+    : await dialog.showMessageBox(notice);
+  if (answer.response === 0 && new URL(LICENSE_PORTAL_URL).protocol === "https:") {
+    await shell.openExternal(LICENSE_PORTAL_URL).catch(() => undefined);
+  }
 }
 
 function buildMenu(): void {
@@ -540,9 +589,15 @@ function createWindow(): void {
       event.preventDefault();
     }
   });
+  // Subframes never navigate, and nothing redirects.
+  mainWindow.webContents.on("will-frame-navigate", (event) => {
+    if (!event.isMainFrame) event.preventDefault();
+  });
+  mainWindow.webContents.on("will-redirect", (event) => event.preventDefault());
   mainWindow.webContents.session.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false),
   );
+  mainWindow.webContents.session.setPermissionCheckHandler(() => false);
 
   void mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
 }
@@ -596,8 +651,16 @@ function registerIpc(): void {
       options !== null &&
       (options as { consent?: unknown }).consent === true;
     try {
+      // Work may have started while the browser sign-in was open. It reads
+      // tokens from the current account, so the account must not change now.
       const result = await (await getAuth()).signInInteractive(openAuthUrl, {
         consent,
+        blockedBy: () => {
+          const busy = runningWork();
+          return busy
+            ? `The sign-in was not applied because ${busy} started meanwhile. Sign in again when it has finished.`
+            : null;
+        },
       });
       log("info", "signed in", { consent });
       await license.activateForTenant(result.tenantId);
@@ -738,9 +801,14 @@ function registerIpc(): void {
   // The assessment feeds the evidence report, so it is licensed like an export.
   handle("compliance:assess", async (_event, input) => {
     const request = parseComplianceRequest(input, false);
-    const owner = await requireOwner();
-    await requireLicense();
-    return complianceView(owner, tokenProvider, request);
+    assessingCompliance += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      return await complianceView(owner, tokenProvider, request);
+    } finally {
+      assessingCompliance -= 1;
+    }
   });
 
   handle("compliance:saveReport", async (event, input) => {
@@ -778,10 +846,15 @@ function registerIpc(): void {
 
   handle("compliance:saveRecord", async (_event, input) => {
     const request = parseComplianceRequest(input, false);
-    const owner = await requireOwner();
-    await requireLicense();
-    const record = await complianceRecord(owner, tokenProvider, request);
-    return saveWithDialog(record.fileName, record.bytes);
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      const record = await complianceRecord(owner, tokenProvider, request);
+      return await saveWithDialog(record.fileName, record.bytes);
+    } finally {
+      writingReports -= 1;
+    }
   });
 
   handle("compliance:openSource", async (_event, frameworkId) => {

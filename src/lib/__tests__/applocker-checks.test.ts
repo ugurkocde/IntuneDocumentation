@@ -25,6 +25,74 @@ describe("AppLocker rule inspection", () => {
       matches: false,
     });
   });
+  it.each([
+    "./Device/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
+    "./device/vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
+  ])("detects an override under the equivalent URI %s", (omaUri) => {
+    const input = policy();
+    input.omaSettings.push({ omaUri, value: "AuditOnly" });
+    expect(inspectAppLocker(input)).toMatchObject({
+      complete: true,
+      matches: false,
+    });
+  });
+  it("treats overrides under both device spellings as ambiguous", () => {
+    const input = policy();
+    const uri =
+      "./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode";
+    input.omaSettings.push(
+      { omaUri: uri, value: "Enabled" },
+      { omaUri: uri.replace("./", "./Device/"), value: "AuditOnly" },
+    );
+    expect(inspectAppLocker(input)).toMatchObject({
+      complete: false,
+      matches: false,
+    });
+  });
+  it("does not treat a user-scope or differently cased CSP node as the device override", () => {
+    const input = policy();
+    input.omaSettings.push(
+      {
+        omaUri:
+          "./User/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
+        value: "AuditOnly",
+      },
+      {
+        omaUri:
+          "./Vendor/MSFT/applocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
+        value: "AuditOnly",
+      },
+    );
+    expect(inspectAppLocker(input)!.matches).toBe(true);
+  });
+  it("reports a mode override without rule collections as contrary evidence", () => {
+    const override = (value: string) => ({
+      omaSettings: [
+        {
+          omaUri:
+            "./Device/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/DLL/EnforcementMode",
+          value,
+        },
+      ],
+    });
+    expect(inspectAppLocker(override("AuditOnly"))).toMatchObject({
+      complete: true,
+      matches: false,
+    });
+    expect(inspectAppLocker(override("Enabled"))).toBeUndefined();
+    expect(inspectAppLocker(override("Sometimes"))).toMatchObject({
+      complete: false,
+    });
+    const input = policy();
+    input.omaSettings.push(override("AuditOnly").omaSettings[0]!);
+    input.omaSettings.forEach((setting) => {
+      setting.omaUri = setting.omaUri.replace(
+        "/group/DLL/Policy",
+        "/other/DLL/Policy",
+      );
+    });
+    expect(inspectAppLocker(input)!.matches).toBe(false);
+  });
   it("inspects collection types, mode, counts and rule paths", () => {
     const result = inspectAppLocker(policy())!;
     expect(result).toMatchObject({ complete: true, matches: true });

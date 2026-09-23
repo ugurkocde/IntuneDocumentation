@@ -1649,14 +1649,7 @@ export async function generateDetailedDOCX(
           }
 
           // Script content
-          let content = script.scriptContent || "";
-          if (!content && script.scriptContentBase64) {
-            try {
-              content = atob(script.scriptContentBase64);
-            } catch {
-              content = "(Base64 decode failed)";
-            }
-          }
+          const content = script.scriptContent || "";
           if (content === REDACTED_VALUE) {
             sectionChildren.push(
               bodyText("Script content omitted from the export for security."),
@@ -1745,14 +1738,7 @@ export async function generateDetailedDOCX(
           }
 
           // Script content
-          let content = script.scriptContent || "";
-          if (!content && script.scriptContentBase64) {
-            try {
-              content = atob(script.scriptContentBase64);
-            } catch {
-              content = "(Base64 decode failed)";
-            }
-          }
+          const content = script.scriptContent || "";
           if (content === REDACTED_VALUE) {
             sectionChildren.push(
               bodyText("Script content omitted from the export for security."),

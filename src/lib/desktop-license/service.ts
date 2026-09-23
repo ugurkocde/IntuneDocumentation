@@ -13,7 +13,6 @@ import {
 } from "./token";
 
 export const INSTALLS_PER_TENANT = 5;
-export const MSP_FALLBACK_TENANTS = 10;
 
 // A confirmed refusal. The route answers 403 with this reason so the desktop
 // app can tell it apart from an outage (502) and drop its cached token.
@@ -30,6 +29,15 @@ export class LicenseDenied extends Error {
       | "activation_limit"
       | "activation_mismatch",
   ) {
+    super(reason);
+  }
+}
+
+// The license could not be evaluated, for example because the MSP tenant
+// quantity is missing. The route answers 503 so the desktop app keeps its
+// cached token and retries later.
+export class LicenseUnavailable extends Error {
+  constructor(readonly reason: "tenant_quantity_unknown") {
     super(reason);
   }
 }
@@ -80,10 +88,9 @@ async function tenantAllowance(
     key.id,
   );
   if (units) return units;
-  console.warn(
-    `desktop-license: no tenant quantity for key ${key.id}, using ${MSP_FALLBACK_TENANTS}`,
-  );
-  return MSP_FALLBACK_TENANTS;
+  // Fail closed: granting a default could license more tenants than paid for.
+  console.warn(`desktop-license: no tenant quantity for key ${key.id}`);
+  throw new LicenseUnavailable("tenant_quantity_unknown");
 }
 
 function metaOf(activation: PolarActivation) {
@@ -94,22 +101,43 @@ function metaOf(activation: PolarActivation) {
   };
 }
 
-// Whether adding (installId, tenantId) to these activations would exceed the
-// tenant allowance or the per-tenant install limit.
+// Activations oldest first. Polar's created_at decides when every activation
+// has one; otherwise Polar's own order stands. The order is the same on every
+// call, so the same tenants stay licensed after a downgrade.
+function activationsOf(key: { activations: PolarActivation[] }) {
+  const list = [...key.activations];
+  if (
+    list.every((a) => a.created_at && !Number.isNaN(Date.parse(a.created_at)))
+  )
+    list.sort((a, b) => Date.parse(a.created_at!) - Date.parse(b.created_at!));
+  return list.map((a) => ({ id: a.id, ...metaOf(a) }));
+}
+
+// Position of value among the distinct values in order; a value not yet
+// present ranks last.
+function rankOf(values: string[], value: string) {
+  const distinct = [...new Set(values)];
+  const index = distinct.indexOf(value);
+  return index === -1 ? distinct.length : index;
+}
+
+// Whether (installId, tenantId), bound or about to be bound, is outside the
+// tenant allowance or the per-tenant install limit. Tenants rank by their
+// oldest activation and only the first `tenants` of them are licensed, and
+// likewise the first installs of each tenant. So a lowered quantity takes
+// effect on refresh and reuse, not only on new activations, and of two racing
+// activations exactly the older one stays.
 function limitViolation(
   activations: { installId: string; tenantId: string }[],
   input: { installId: string; tenantId: string },
   tenants: number,
 ): "tenant_limit" | "install_limit" | null {
-  const knownTenants = new Set(activations.map((a) => a.tenantId));
-  if (!knownTenants.has(input.tenantId) && knownTenants.size >= tenants)
-    return "tenant_limit";
-  const installs = new Set(
-    activations
-      .filter((a) => a.tenantId === input.tenantId)
-      .map((a) => a.installId),
-  );
-  if (!installs.has(input.installId) && installs.size >= INSTALLS_PER_TENANT)
+  const tenantIds = activations.map((a) => a.tenantId);
+  if (rankOf(tenantIds, input.tenantId) >= tenants) return "tenant_limit";
+  const installs = activations
+    .filter((a) => a.tenantId === input.tenantId)
+    .map((a) => a.installId);
+  if (rankOf(installs, input.installId) >= INSTALLS_PER_TENANT)
     return "install_limit";
   return null;
 }
@@ -149,6 +177,29 @@ async function validateOrDeny(
   }
 }
 
+// Remove an activation that lost a race, retrying once. If it still fails the
+// activation stays bound in Polar without a token; the limit check on refresh
+// and reuse keeps it from being licensed while the key is over its limits.
+async function rollBack(
+  ctx: LicenseContext,
+  key: string,
+  activationId: string,
+) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await ctx.polar.deactivate(key, activationId);
+      return;
+    } catch (error) {
+      if (error instanceof PolarNotFound) return;
+      if (attempt === 2)
+        console.error(
+          `desktop-license: rollback of over-limit activation ${activationId} failed, it stays bound until deactivated`,
+          error,
+        );
+    }
+  }
+}
+
 export async function activateLicense(
   ctx: LicenseContext,
   input: {
@@ -162,17 +213,21 @@ export async function activateLicense(
   const now = ctx.now?.() ?? Date.now();
   const validated = await validateOrDeny(ctx, input.key);
   const plan = checkKey(ctx, validated, now);
-  const full = await ctx.polar.getKey(validated.id);
-  const tenants = await tenantAllowance(ctx, plan, validated);
+  const [full, tenants] = await Promise.all([
+    ctx.polar.getKey(validated.id),
+    tenantAllowance(ctx, plan, validated),
+  ]);
 
-  const activations = full.activations.map((a) => ({ id: a.id, ...metaOf(a) }));
+  const activations = activationsOf(full);
+  // Checked for an existing activation too, so reuse honours a lowered
+  // allowance.
+  const violation = limitViolation(activations, input, tenants);
+  if (violation) throw new LicenseDenied(violation);
   let activationId = activations.find(
     (a) => a.installId === input.installId && a.tenantId === input.tenantId,
   )?.id;
 
   if (!activationId) {
-    const violation = limitViolation(activations, input, tenants);
-    if (violation) throw new LicenseDenied(violation);
     try {
       const created = await ctx.polar.activate(
         input.key,
@@ -192,15 +247,13 @@ export async function activateLicense(
       throw error;
     }
 
-    // Concurrent activations can both pass the check above. Re-read and roll
-    // back our own activation if the key is now over a limit; a racing
-    // request may do the same, which fails closed and a retry succeeds.
-    const after = (await ctx.polar.getKey(validated.id)).activations
-      .filter((a) => a.id !== activationId)
-      .map((a) => ({ id: a.id, ...metaOf(a) }));
+    // Concurrent activations can both pass the check above. Re-read, our own
+    // activation included, and roll it back if it ranks outside the limits.
+    // Both racers see the same order, so only the newer one gives way.
+    const after = activationsOf(await ctx.polar.getKey(validated.id));
     const raced = limitViolation(after, input, tenants);
     if (raced) {
-      await ctx.polar.deactivate(input.key, activationId);
+      await rollBack(ctx, input.key, activationId);
       throw new LicenseDenied(raced);
     }
   }
@@ -233,7 +286,14 @@ export async function refreshLicense(
   const meta = metaOf(current);
   if (meta.installId !== input.installId || meta.tenantId !== input.tenantId)
     throw new LicenseDenied("activation_mismatch");
-  const tenants = await tenantAllowance(ctx, plan, validated);
+  // Re-check the limits on every refresh so a lowered allowance applies to
+  // tenants that are already bound.
+  const [full, tenants] = await Promise.all([
+    ctx.polar.getKey(validated.id),
+    tenantAllowance(ctx, plan, validated),
+  ]);
+  const violation = limitViolation(activationsOf(full), input, tenants);
+  if (violation) throw new LicenseDenied(violation);
   return issue(ctx, now, {
     sub: validated.id,
     act: current.id,

@@ -445,6 +445,26 @@ describe("compound detectors and legacy representations", () => {
         );
     },
   );
+  it.each([
+    [{ includeUsers: ["None"] }, { includeApplications: ["All"] }],
+    [{ includeUsers: ["All"] }, { includeApplications: ["None"] }],
+  ])(
+    "does not count a CA policy that targets the None sentinel",
+    (users, applications) => {
+      const exportData = data();
+      exportData.conditionalAccessPolicies = [
+        {
+          id: "ca",
+          state: "enabled",
+          grantControls: { operator: "AND", builtInControls: ["mfa"] },
+          conditions: { users, applications },
+        },
+      ];
+      expect(capability(exportData, "tenant-mfa-required").status).toBe(
+        "noEvidence",
+      );
+    },
+  );
   it("does not accept an OR alternative in authentication strength as mandatory MFA", () => {
     const exportData = data();
     exportData.conditionalAccessPolicies = [
@@ -487,6 +507,66 @@ describe("compound detectors and legacy representations", () => {
         "windows-disk-encryption",
       ).status,
     ).toBe("noEvidence");
+  });
+  it("matches equivalent device-scope OMA-URI spellings, not user scope", () => {
+    const status = (...uris: Array<[string, number]>) =>
+      capability(
+        data(
+          ...uris.map(([omaUri, value], index) =>
+            policy(
+              "windows10CustomConfiguration",
+              { omaSettings: [{ omaUri, value }] },
+              `policy-${index}`,
+            ),
+          ),
+        ),
+        "windows-disk-encryption",
+      ).status;
+    expect(status(["./Vendor/MSFT/BitLocker/RequireDeviceEncryption", 1])).toBe(
+      "enforced",
+    );
+    expect(
+      status(
+        ["./Device/Vendor/MSFT/BitLocker/RequireDeviceEncryption", 1],
+        ["./Vendor/MSFT/BitLocker/RequireDeviceEncryption", 0],
+      ),
+    ).toBe("conflictingEvidence");
+    expect(
+      status(["./User/Vendor/MSFT/BitLocker/RequireDeviceEncryption", 1]),
+    ).toBe("noEvidence");
+  });
+  it("reports an AppLocker AuditOnly override in another profile as conflicting", () => {
+    const types = { EXE: "Exe", DLL: "Dll", MSI: "Msi", Script: "Script" };
+    const rules = policy(
+      "windows10CustomConfiguration",
+      {
+        omaSettings: Object.entries(types).map(([path, type]) => ({
+          omaUri: `./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/${path}/Policy`,
+          value: `<RuleCollection Type="${type}" EnforcementMode="Enabled"><FilePathRule Id="rule" Name="Approved" UserOrGroupSid="S-1-1-0" Action="Allow"><Conditions><FilePathCondition Path="%PROGRAMFILES%\\*"/></Conditions></FilePathRule></RuleCollection>`,
+        })),
+      },
+      "rules",
+    );
+    const override = policy(
+      "windows10CustomConfiguration",
+      {
+        omaSettings: [
+          {
+            omaUri:
+              "./Device/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
+            value: "AuditOnly",
+          },
+        ],
+      },
+      "override",
+    );
+    expect(
+      capability(data(rules), "windows-applocker-rule-collections").status,
+    ).toBe("enforced");
+    expect(
+      capability(data(rules, override), "windows-applocker-rule-collections")
+        .status,
+    ).toBe("conflictingEvidence");
   });
   it.each(["administrativeTemplate", "securityBaseline"] as const)(
     "matches exact verified %s identifiers only",

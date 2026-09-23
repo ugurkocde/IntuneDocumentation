@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMsal } from "@azure/msal-react";
 import type {
   ExportFormat,
   ExportConfig,
@@ -6,6 +7,7 @@ import type {
   ExportOptions,
   PolicyExportError,
 } from "~/components/export-modal";
+import { getIdToken } from "~/lib/id-token";
 
 export interface ExportProgress {
   stage: number;
@@ -32,6 +34,7 @@ export function useExportHandler({
   getAccessToken,
   onProgress,
 }: UseExportHandlerProps) {
+  const { instance, accounts } = useMsal();
   const [showExportModal, setShowExportModal] = useState(false);
 
   const getSelectedSections = () =>
@@ -251,9 +254,20 @@ export function useExportHandler({
         message: "Preparing download...",
       });
 
-      // Fire-and-forget: increment export counter
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      fetch("/api/stats/increment-export", { method: "POST" }).catch(() => {});
+      // Fire and forget: increment the export counter as the signed in user
+      const account = accounts[0];
+      if (account) {
+        void getIdToken(instance, account)
+          .then((idToken) =>
+            idToken
+              ? fetch("/api/stats/increment-export", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${idToken}` },
+                })
+              : undefined,
+          )
+          .catch(() => undefined);
+      }
 
       const date = new Date().toISOString().split("T")[0];
       const filename =

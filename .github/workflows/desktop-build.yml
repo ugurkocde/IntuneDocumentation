@@ -47,10 +47,12 @@ jobs:
         working-directory: apps/desktop
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -66,6 +68,46 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           if [ "desktop-v$version" != "$GITHUB_REF_NAME" ]; then
             echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      # electron-builder silently skips signing when credentials are missing, so
+      # a release must prove it has them before building.
+      - name: Require signing credentials for release
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
+        env:
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
+          AZURE_CODE_SIGNING_ACCOUNT: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
+        run: |
+          missing=()
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            for name in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TRUSTED_SIGNING_ENDPOINT AZURE_CERT_PROFILE_NAME AZURE_CODE_SIGNING_ACCOUNT; do
+              [ -n "${!name}" ] || missing+=("$name")
+            done
+          else
+            for name in MAC_CERT_P12_BASE64 MAC_CERT_PASSWORD; do
+              [ -n "${!name}" ] || missing+=("$name")
+            done
+            if ! { [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; } &&
+              ! { [ -n "$APPLE_API_KEY_CONTENT" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; }; then
+              missing+=("APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID, or APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER")
+            fi
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Release builds must be signed. Missing secrets: %s\n' "${missing[*]}" >&2
             exit 1
           fi
 
@@ -91,17 +133,44 @@ jobs:
               echo "INTUNEDOC_LICENSE_API_BASE=https://intunedocumentation.com"
               echo "INTUNEDOC_LICENSE_BUY_URL=https://intunedocumentation.com/desktop#pricing"
               echo "INTUNEDOC_LICENSE_PORTAL_URL=$RELEASE_PORTAL_URL"
-              echo "INTUNEDOC_LICENSE_PUBLIC_KEY<<PEM"
+              delimiter="EOF_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+              echo "INTUNEDOC_LICENSE_PUBLIC_KEY<<$delimiter"
               printf '%s\n' "$RELEASE_PUBLIC_KEY"
-              echo "PEM"
+              echo "$delimiter"
             } >> "$GITHUB_ENV"
           else
-            echo "INTUNEDOC_LICENSE_API_BASE=${TEST_API_BASE:-http://127.0.0.1:3000}" >> "$GITHUB_ENV"
+            # Dispatch inputs are free text, and the REST API accepts newlines,
+            # so a raw value could add lines to GITHUB_ENV (BASH_ENV, for
+            # example) that later secret-holding steps would load. Allow only
+            # plain URL and PEM characters, and write through heredocs with a
+            # random delimiter.
+            url_pattern='^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/-]*)?$'
+            api_base="${TEST_API_BASE:-http://127.0.0.1:3000}"
+            if ! [[ "$api_base" =~ $url_pattern ]]; then
+              echo "license_api_base must be a plain http(s) URL" >&2
+              exit 1
+            fi
+            if [ -n "$TEST_UPDATE_URL" ] && ! [[ "$TEST_UPDATE_URL" =~ $url_pattern ]]; then
+              echo "update_url must be a plain http(s) URL" >&2
+              exit 1
+            fi
+            # A PEM with \n escapes for newlines; esbuild.config.mjs expands
+            # them and rejects anything that is not an Ed25519 public key.
+            if [ -n "$TEST_PUBLIC_KEY" ] && ! [[ "$TEST_PUBLIC_KEY" =~ ^-----BEGIN\ PUBLIC\ KEY-----[A-Za-z0-9+/=\\]+-----END\ PUBLIC\ KEY-----(\\n)?$ ]]; then
+              echo "license_public_key must be a PEM public key on one line with \\n for newlines" >&2
+              exit 1
+            fi
+            write_env() {
+              local delimiter
+              delimiter="EOF_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+              printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
+            }
+            write_env INTUNEDOC_LICENSE_API_BASE "$api_base"
             if [ -n "$TEST_PUBLIC_KEY" ]; then
-              echo "INTUNEDOC_LICENSE_PUBLIC_KEY=$TEST_PUBLIC_KEY" >> "$GITHUB_ENV"
+              write_env INTUNEDOC_LICENSE_PUBLIC_KEY "$TEST_PUBLIC_KEY"
             fi
             if [ -n "$TEST_UPDATE_URL" ]; then
-              echo "INTUNEDOC_UPDATE_URL=$TEST_UPDATE_URL" >> "$GITHUB_ENV"
+              write_env INTUNEDOC_UPDATE_URL "$TEST_UPDATE_URL"
             fi
             if [ -n "$TEST_VERSION" ]; then
               if ! [[ "$TEST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -112,8 +181,10 @@ jobs:
             fi
           fi
 
+      # Pull request builds stay unsigned so branch code never runs next to the
+      # signing identities. Manual and tag builds are signed.
       - name: Import macOS signing certificate
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && github.event_name != 'pull_request'
         env:
           MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
@@ -131,7 +202,7 @@ jobs:
           fi
 
       - name: Prepare Apple API key
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && github.event_name != 'pull_request'
         env:
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
         run: |
@@ -141,11 +212,18 @@ jobs:
           fi
 
       - name: Build installer
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: npm run ${{ matrix.script }} -- $BUILDER_ARGS
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Build and sign installer
+        if: github.event_name != 'pull_request'
         shell: bash
         run: npm run ${{ matrix.script }} -- $BUILDER_ARGS
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
-          CSC_FOR_PULL_REQUEST: "true"
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -159,8 +237,40 @@ jobs:
           AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
           AZURE_CODE_SIGNING_ACCOUNT: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
 
+      - name: Verify Windows signature
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem release -Filter *.exe -File)
+          if ($installers.Count -eq 0) { throw "No installers found to verify" }
+          foreach ($file in $installers) {
+            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "$($file.Name) signature status is $($signature.Status): $($signature.StatusMessage)"
+            }
+            Write-Host "$($file.Name) signed by $($signature.SignerCertificate.Subject)"
+          }
+
+      - name: Verify macOS signature
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/desktop-v')
+        run: |
+          shopt -s nullglob
+          apps=(release/mac*/*.app)
+          if [ "${#apps[@]}" -eq 0 ]; then
+            echo "No app bundles found to verify" >&2
+            exit 1
+          fi
+          for app in "${apps[@]}"; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            details="$(codesign -dvv "$app" 2>&1)"
+            if ! grep -q '^Authority=Developer ID Application:' <<< "$details"; then
+              echo "$app is not signed with a Developer ID Application certificate" >&2
+              exit 1
+            fi
+          done
+
       - name: Notarize and staple DMG
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && github.event_name != 'pull_request'
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -174,7 +284,7 @@ jobs:
           fi
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: intune-documentation-${{ matrix.os }}
           path: |
@@ -196,7 +306,7 @@ jobs:
       contents: write
     steps:
       - name: Download installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true

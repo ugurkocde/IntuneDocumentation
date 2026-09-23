@@ -1,4 +1,4 @@
-import { retryGraphRequest } from "./graph-request";
+import { graphKey, retryGraphRequest } from "./graph-request";
 import type { Client } from "@microsoft/microsoft-graph-client";
 import "isomorphic-fetch";
 import {
@@ -181,6 +181,7 @@ export type ProgressCallback = (event: {
 
 export class DetailedIntuneService {
   private client: ReturnType<typeof createGraphClient>;
+  private signal: AbortSignal;
   private permissionErrors: PermissionError[] = [];
   private fetchErrors: FetchError[] = [];
   private async readComplianceScheduledActions(policy: any) {
@@ -391,7 +392,14 @@ export class DetailedIntuneService {
     signal?: AbortSignal,
     budgetMs = 105_000,
   ) {
-    this.client = createGraphClient(accessToken, { signal, budgetMs });
+    // One signal for requests and for the waits between retries, so neither
+    // outlives a disconnect or the collection budget.
+    this.signal = AbortSignal.any(
+      [signal, budgetMs ? AbortSignal.timeout(budgetMs) : undefined].filter(
+        (item): item is AbortSignal => !!item,
+      ),
+    );
+    this.client = createGraphClient(accessToken, { signal: this.signal });
     this.progressCallback = progressCallback;
   }
 
@@ -696,7 +704,7 @@ export class DetailedIntuneService {
           for (const child of entry.childCollections || []) {
             try {
               let childRequest = this.client
-                .api(`${entry.path}('${item.id}')/${child.path}`)
+                .api(`${entry.path}('${graphKey(item.id)}')/${child.path}`)
                 .version("beta");
               if (child.expand)
                 childRequest = childRequest.expand(child.expand);
@@ -830,7 +838,11 @@ export class DetailedIntuneService {
     maxRetries: number = 5,
     initialDelay: number = 1000,
   ): Promise<T> {
-    return retryGraphRequest(fn, { maxAttempts: maxRetries, initialDelay });
+    return retryGraphRequest(fn, {
+      maxAttempts: maxRetries,
+      initialDelay,
+      signal: this.signal,
+    });
   }
 
   // 1. Settings Catalog with full settings
@@ -888,7 +900,7 @@ export class DetailedIntuneService {
                   async () => {
                     return await this.client
                       .api(
-                        `/deviceManagement/configurationPolicies('${policy.id}')/settings`,
+                        `/deviceManagement/configurationPolicies('${graphKey(policy.id)}')/settings`,
                       )
                       .version("beta")
                       .top(1000)
@@ -916,7 +928,7 @@ export class DetailedIntuneService {
                     async () => {
                       return await this.client
                         .api(
-                          `/deviceManagement/configurationPolicies('${policy.id}')/settings`,
+                          `/deviceManagement/configurationPolicies('${graphKey(policy.id)}')/settings`,
                         )
                         .version("beta")
                         .top(1000)
@@ -953,7 +965,7 @@ export class DetailedIntuneService {
                 const assignmentsResponse = await this.retryWithBackoff(() =>
                   this.client
                     .api(
-                      `/deviceManagement/configurationPolicies('${policy.id}')/assignments`,
+                      `/deviceManagement/configurationPolicies('${graphKey(policy.id)}')/assignments`,
                     )
                     .version("beta")
                     .get(),
@@ -984,7 +996,7 @@ export class DetailedIntuneService {
                   policyName: policy.name,
                   policyType: "Settings Catalog",
                   familyKey: "settingsCatalog",
-                  endpoint: `/deviceManagement/configurationPolicies('${policy.id}')`,
+                  endpoint: `/deviceManagement/configurationPolicies('${graphKey(policy.id)}')`,
                   error: [...new Set(policyWarnings)].join("; "),
                   partial: true,
                 });
@@ -1035,7 +1047,7 @@ export class DetailedIntuneService {
                 policyName: policy.name,
                 policyType: "Settings Catalog",
                 familyKey: "settingsCatalog",
-                endpoint: `/deviceManagement/configurationPolicies('${policy.id}')`,
+                endpoint: `/deviceManagement/configurationPolicies('${graphKey(policy.id)}')`,
                 error: errorMessage,
                 errorCode: errorCode,
                 statusCode: statusCode,
@@ -1104,7 +1116,7 @@ export class DetailedIntuneService {
             const assignmentResult = await this.readPolicyRelation(
               config,
               "deviceConfigurations",
-              `/deviceManagement/deviceConfigurations('${config.id}')/assignments`,
+              `/deviceManagement/deviceConfigurations('${graphKey(config.id)}')/assignments`,
             );
             const assignments = assignmentResult.items;
 
@@ -1182,7 +1194,7 @@ export class DetailedIntuneService {
               const definitionValues = await this.retryWithBackoff(() =>
                 this.client
                   .api(
-                    `/deviceManagement/groupPolicyConfigurations('${config.id}')/definitionValues`,
+                    `/deviceManagement/groupPolicyConfigurations('${graphKey(config.id)}')/definitionValues`,
                   )
                   .version("beta")
                   .expand("definition")
@@ -1219,7 +1231,7 @@ export class DetailedIntuneService {
                     () =>
                       this.client
                         .api(
-                          `/deviceManagement/groupPolicyConfigurations('${config.id}')/definitionValues('${definitionValue.id}')/presentationValues`,
+                          `/deviceManagement/groupPolicyConfigurations('${graphKey(config.id)}')/definitionValues('${graphKey(definitionValue.id)}')/presentationValues`,
                         )
                         .version("beta")
                         .expand("presentation")
@@ -1266,7 +1278,7 @@ export class DetailedIntuneService {
               const assignmentsResponse = await this.retryWithBackoff(() =>
                 this.client
                   .api(
-                    `/deviceManagement/groupPolicyConfigurations('${config.id}')/assignments`,
+                    `/deviceManagement/groupPolicyConfigurations('${graphKey(config.id)}')/assignments`,
                   )
                   .version("beta")
                   .get(),
@@ -1298,7 +1310,7 @@ export class DetailedIntuneService {
                 policyName: config.displayName,
                 policyType: "Administrative Template",
                 familyKey: "administrativeTemplates",
-                endpoint: `/deviceManagement/groupPolicyConfigurations('${config.id}')`,
+                endpoint: `/deviceManagement/groupPolicyConfigurations('${graphKey(config.id)}')`,
                 error: [...new Set(policyWarnings)].join("; "),
                 partial: true,
               });
@@ -1338,7 +1350,7 @@ export class DetailedIntuneService {
               policyName: config.displayName,
               policyType: "Administrative Template",
               familyKey: "administrativeTemplates",
-              endpoint: `/deviceManagement/groupPolicyConfigurations('${config.id}')`,
+              endpoint: `/deviceManagement/groupPolicyConfigurations('${graphKey(config.id)}')`,
               error:
                 error instanceof Error ? error.message : "Detail fetch failed",
               partial: true,
@@ -1390,7 +1402,7 @@ export class DetailedIntuneService {
             const assignmentResult = await this.readPolicyRelation(
               policy,
               "compliancePolicies",
-              `/deviceManagement/deviceCompliancePolicies('${policy.id}')/assignments`,
+              `/deviceManagement/deviceCompliancePolicies('${graphKey(policy.id)}')/assignments`,
             );
             const assignments = assignmentResult.items;
 
@@ -1517,11 +1529,11 @@ export class DetailedIntuneService {
             // Determine the correct API endpoint based on platform
             let endpoint = "";
             if (policy.platform === "iOS") {
-              endpoint = `/deviceAppManagement/iosManagedAppProtections('${policy.id}')/assignments`;
+              endpoint = `/deviceAppManagement/iosManagedAppProtections('${graphKey(policy.id)}')/assignments`;
             } else if (policy.platform === "Android") {
-              endpoint = `/deviceAppManagement/androidManagedAppProtections('${policy.id}')/assignments`;
+              endpoint = `/deviceAppManagement/androidManagedAppProtections('${graphKey(policy.id)}')/assignments`;
             } else if (policy.platform === "Windows") {
-              endpoint = `/deviceAppManagement/windowsManagedAppProtections('${policy.id}')/assignments`;
+              endpoint = `/deviceAppManagement/windowsManagedAppProtections('${graphKey(policy.id)}')/assignments`;
             }
 
             const [assignmentResult, appsResult] = await Promise.all([
@@ -1605,7 +1617,7 @@ export class DetailedIntuneService {
                 this.readPolicyRelation(
                   intent,
                   "securityBaselines",
-                  `/deviceManagement/intents('${intent.id}')/categories`,
+                  `/deviceManagement/intents('${graphKey(intent.id)}')/categories`,
                   undefined,
                   {
                     endpoint: `/deviceManagement/intents/${encodeURIComponent(intent.id)}`,
@@ -1615,12 +1627,12 @@ export class DetailedIntuneService {
                 this.readPolicyRelation(
                   intent,
                   "securityBaselines",
-                  `/deviceManagement/intents('${intent.id}')/settings`,
+                  `/deviceManagement/intents('${graphKey(intent.id)}')/settings`,
                 ),
                 this.readPolicyRelation(
                   intent,
                   "securityBaselines",
-                  `/deviceManagement/intents('${intent.id}')/assignments`,
+                  `/deviceManagement/intents('${graphKey(intent.id)}')/assignments`,
                 ),
               ]);
             const categoriesAll = categoriesResult.items;
@@ -1978,7 +1990,7 @@ export class DetailedIntuneService {
       const detailedConfigs = await Promise.all(
         (allConfigs || []).map(async (config: any) => {
           try {
-            const endpoint = `/deviceAppManagement/mobileAppConfigurations('${config.id}')`;
+            const endpoint = `/deviceAppManagement/mobileAppConfigurations('${graphKey(config.id)}')`;
             const [details, assignments] = await Promise.all([
               this.readPolicyDetails(config, "appConfigurations", endpoint),
               this.readPolicyRelation(
@@ -2048,7 +2060,7 @@ export class DetailedIntuneService {
             this.readPolicyRelation(
               policy,
               "windowsUpdatePolicies",
-              `/deviceManagement/deviceConfigurations('${policy.id}')/assignments`,
+              `/deviceManagement/deviceConfigurations('${graphKey(policy.id)}')/assignments`,
             ),
             this.readPolicyDetails(policy, "windowsUpdatePolicies", endpoint),
           ]);

@@ -19,12 +19,25 @@ export function getUpdateStatus(): UpdateStatus {
   return status;
 }
 
+// Development builds only: an http(s) URL of a local test feed.
+function testFeedUrl(): string | undefined {
+  const value = app.isPackaged
+    ? undefined
+    : process.env.INTUNEDOC_UPDATE_TEST_FEED?.trim();
+  if (!value) return undefined;
+  try {
+    return /^https?:$/.test(new URL(value).protocol) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // Packaged builds read the generic feed from app-update.yml, written by
-// electron-builder. INTUNEDOC_UPDATE_TEST_FEED points a development build at
-// a local feed for testing.
+// electron-builder, and ignore INTUNEDOC_UPDATE_TEST_FEED. That variable
+// points a development build at a local feed for testing.
 export function startUpdater(onStatus: (status: UpdateStatus) => void): void {
   notify = onStatus;
-  const testFeed = process.env.INTUNEDOC_UPDATE_TEST_FEED;
+  const testFeed = testFeedUrl();
   if (!app.isPackaged && !testFeed) {
     set({ state: "disabled", message: "Updates are checked in installed builds." });
     return;

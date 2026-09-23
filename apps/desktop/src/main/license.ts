@@ -13,14 +13,17 @@ interface Entitlement {
   tenantId: string;
   installId: string;
   tenants: number;
+  status: "granted";
   iat: number;
   exp: number;
 }
 
-// One activation per signed-in tenant, keyed by lowercase tenant id.
+// One activation per signed-in tenant, keyed by lowercase tenant id. seen is
+// the latest wall clock time (ms) the app has observed.
 interface StoredLicense {
   key: string;
   activations: Record<string, { activationId: string; token: string }>;
+  seen?: number;
 }
 
 export interface LicenseStatus {
@@ -61,6 +64,28 @@ const REASONS: Record<string, string> = {
     "This installation is no longer activated. It will activate again on the next collection or export.",
 };
 
+// How far the clock may move back (an NTP correction, a restored VM snapshot,
+// a time zone or RTC mix-up) before cached tokens stop counting offline. A
+// larger rollback could otherwise keep an expired token alive indefinitely;
+// this bounds that to two days past expiry.
+export const CLOCK_TOLERANCE_MS = 48 * 60 * 60_000;
+// The high-water mark is written at most this often outside other saves.
+const SEEN_PERSIST_MS = 60 * 60_000;
+
+// Time and status checks for a token whose signature already verified.
+export function entitlementCurrent(
+  payload: Pick<Entitlement, "exp" | "status">,
+  now: number,
+  seen: number,
+): boolean {
+  return (
+    payload.status === "granted" &&
+    Number.isFinite(payload.exp) &&
+    payload.exp * 1000 > now &&
+    seen - now <= CLOCK_TOLERANCE_MS
+  );
+}
+
 const publicKey = createPublicKey(LICENSE_PUBLIC_KEY);
 const guidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -98,6 +123,7 @@ export class LicenseService {
   private message: string | null = null;
   private offline = false;
   private loaded: Promise<void> | null = null;
+  private savedSeen = 0;
 
   load(): Promise<void> {
     this.loaded ??= this.read();
@@ -147,6 +173,8 @@ export class LicenseService {
         parsed.activations !== null
       ) {
         this.state = parsed as StoredLicense;
+        if (!Number.isFinite(this.state.seen)) delete this.state.seen;
+        this.savedSeen = this.state.seen ?? 0;
         return;
       }
       log("warn", "stored license ignored", { reason: "invalid_format" });
@@ -169,6 +197,23 @@ export class LicenseService {
       safeStorage.encryptString(JSON.stringify(this.state)),
       { mode: 0o600 },
     );
+    this.savedSeen = this.state.seen ?? 0;
+  }
+
+  // Advances the high-water mark of observed time and returns the current
+  // time.
+  private observe(): number {
+    const now = Date.now();
+    if (this.state && now > (this.state.seen ?? 0)) this.state.seen = now;
+    return now;
+  }
+
+  // Persists the mark now and then, so a restart with a clock set back
+  // still sees it. Failures only cost precision.
+  private async keepSeen(): Promise<void> {
+    const seen = this.state?.seen ?? 0;
+    if (seen - this.savedSeen < SEEN_PERSIST_MS) return;
+    await this.save().catch(() => undefined);
   }
 
   private valid(tenantId: string | null): Entitlement | null {
@@ -176,9 +221,10 @@ export class LicenseService {
     const entry = this.state.activations[tenantId.toLowerCase()];
     if (!entry) return null;
     const payload = decodeToken(entry.token);
+    const now = this.observe();
     if (
       !payload ||
-      payload.exp * 1000 <= Date.now() ||
+      !entitlementCurrent(payload, now, this.state.seen ?? now) ||
       payload.tenantId !== tenantId.toLowerCase() ||
       payload.installId !== this.installId ||
       payload.act !== entry.activationId
@@ -248,8 +294,17 @@ export class LicenseService {
       throw new Error("The licensing service returned an invalid response.");
     }
     // Verify the new token before it replaces the cached one: a response that
-    // fails verification must not cost a still valid activation.
+    // fails verification must not cost a still valid activation. A mark
+    // ahead of both the clock and the server's issue time came from a clock
+    // that once ran ahead, so it comes down to the later of the two.
     const previous = this.state.activations[tenantId];
+    const previousSeen = this.state.seen;
+    const issued = (decodeToken(data.token)?.iat ?? NaN) * 1000;
+    const now = Date.now();
+    this.state.seen = Math.min(
+      previousSeen ?? now,
+      Number.isFinite(issued) ? Math.max(now, issued) : now,
+    );
     this.state.activations[tenantId] = {
       activationId: data.activationId,
       token: data.token,
@@ -257,6 +312,7 @@ export class LicenseService {
     if (!this.valid(tenantId)) {
       if (previous) this.state.activations[tenantId] = previous;
       else delete this.state.activations[tenantId];
+      this.state.seen = previousSeen;
       throw new Error("The license token could not be verified.");
     }
     this.message = null;
@@ -324,6 +380,7 @@ export class LicenseService {
     this.state = {
       key: trimmed,
       activations: previous?.key === trimmed ? previous.activations : {},
+      ...(previous?.seen !== undefined ? { seen: previous.seen } : {}),
     };
     if (tenantId) {
       try {
@@ -344,7 +401,10 @@ export class LicenseService {
   async requireEntitlement(tenantId: string | null): Promise<void> {
     await this.load();
     if (!tenantId) throw new Error("Sign in before continuing.");
-    if (this.valid(tenantId)) return;
+    if (this.valid(tenantId)) {
+      await this.keepSeen();
+      return;
+    }
     if (!this.state) {
       throw new Error(
         "A license is required to collect and export. Add your license key under License and account.",
@@ -414,6 +474,7 @@ export class LicenseService {
       : (Object.keys(this.state?.activations ?? {}).find((tenant) =>
           this.valid(tenant),
         ) ?? null);
+    await this.keepSeen();
     return {
       hasKey: this.state !== null,
       keyHint: this.state ? `****${this.state.key.slice(-4)}` : null,

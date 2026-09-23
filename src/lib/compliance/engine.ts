@@ -8,6 +8,7 @@ import { summarizeAssignments } from "./assignments";
 import { evaluatePolicyCheck } from "./policy-checks";
 import { comparableValue, expectedValue } from "./check-results";
 import { policyCheckObservation } from "./policy-check-observation";
+import { canonicalOmaUri } from "./oma-uri";
 import {
   buildCollectionCoverage,
   collectConfigurations,
@@ -224,10 +225,12 @@ function legacyValues(
           .map((value: any) => value.value);
       });
   }
-  if (signal.source === "omaUri")
+  if (signal.source === "omaUri") {
+    const uri = canonicalOmaUri(signal.settingId);
     return (config.omaSettings ?? [])
-      .filter((value: any) => value?.omaUri === signal.settingId)
+      .filter((value: any) => canonicalOmaUri(value?.omaUri) === uri)
       .map((value: any) => value.value);
+  }
   const settings = [
     ...(Array.isArray(config.settings) ? config.settings : []),
     ...(config.categories ?? []).flatMap(

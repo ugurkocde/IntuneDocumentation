@@ -404,6 +404,7 @@ const REDACTED_FIELDS = new Set([
   "detectionscriptcontent",
   "encodedsettingxml",
   "hardwareconfigurationfilecontent",
+  "kioskmodeexitcode",
   "largeicon",
   "password",
   "payload",
@@ -412,9 +413,19 @@ const REDACTED_FIELDS = new Set([
   "qrcodeimage",
   "remediationscriptcontent",
   "scriptcontent",
+  "scriptcontentbase64",
   "secret",
   "tokenvalue",
 ]);
+
+// Property names that hold secrets only on specific Graph types. The same
+// names are harmless identifiers elsewhere, such as Store app product keys.
+const TYPE_REDACTED_FIELDS: Record<string, Set<string>> = {
+  "#microsoft.graph.editionupgradeconfiguration": new Set([
+    "license",
+    "productkey",
+  ]),
+};
 
 export const REDACTED_VALUE = "[Redacted]";
 
@@ -427,6 +438,57 @@ const SENSITIVE_OMA_URI_PATTERN =
 const SENSITIVE_OMA_LABEL_PATTERN =
   /(api key|password value|shared secret|token value|private key|pre[- ]shared key|credential value)/i;
 
+// Settings Catalog ids join words without a delimiter, for example
+// com.apple.extensiblesso_registrationtoken, so a secret word is also
+// matched as the final word of the id.
+const SENSITIVE_DEFINITION_ID_SUFFIX_PATTERN =
+  /(apikey|password|passphrase|secret|token|privatekey|presharedkey|credential)$/i;
+
+// App configuration keys and custom setting names are identifiers such as
+// "apiKey", "api_key" or "ServerToken", matched by suffix without separators.
+const SENSITIVE_CONFIG_KEY_PATTERN =
+  /(apikey|password|passwd|pwd|passcode|passphrase|secret|token|privatekey|presharedkey|credentials?)$/i;
+
+const SENSITIVE_PRESENTATION_LABEL_PATTERN =
+  /(password|passphrase|passcode|shared secret|pre[- ]?shared key|api key|private key)/i;
+
+const SECRET_SETTING_VALUE_TYPE =
+  "#microsoft.graph.deviceManagementConfigurationSecretSettingValue";
+
+const PAIR_VALUE_KEYS = new Set([
+  "value",
+  "values",
+  "omasettingstringvalue",
+  "appconfigkeyvalue",
+]);
+
+const SETTING_VALUE_KEYS = new Set([
+  "simplesettingvalue",
+  "simplesettingcollectionvalue",
+]);
+
+function isSensitiveConfigKey(name: unknown) {
+  return (
+    typeof name === "string" &&
+    SENSITIVE_CONFIG_KEY_PATTERN.test(name.replace(/[^a-z0-9]/gi, ""))
+  );
+}
+
+// ADMX free text fields labelled as passwords. Dropdowns, numbers and
+// check boxes carry no typed secret and stay readable.
+function isSensitivePresentationValue(record: Record<string, unknown>) {
+  const presentation = record.presentation as
+    | Record<string, unknown>
+    | undefined;
+  return (
+    typeof presentation?.label === "string" &&
+    SENSITIVE_PRESENTATION_LABEL_PATTERN.test(presentation.label) &&
+    presentation["@odata.type"] !==
+      "#microsoft.graph.groupPolicyPresentationDropdownList" &&
+    (typeof record.value === "string" || Array.isArray(record.values))
+  );
+}
+
 export function sanitizeGraphData(
   value: unknown,
   additionalSensitiveFields: string[] = [],
@@ -436,33 +498,66 @@ export function sanitizeGraphData(
     ...additionalSensitiveFields.map((field) => field.toLowerCase()),
   ]);
 
-  const visit = (current: unknown): unknown => {
-    if (Array.isArray(current)) return current.map((item) => visit(item));
+  // secretValue marks a Settings Catalog value record whose parent
+  // settingInstance names a secret definition id.
+  const visit = (current: unknown, secretValue = false): unknown => {
+    if (Array.isArray(current))
+      return current.map((item) => visit(item, secretValue));
     if (!current || typeof current !== "object") return current;
 
     const record = current as Record<string, unknown>;
-    const sensitiveOmaValue =
+    const sensitiveDefinition =
+      typeof record.settingDefinitionId === "string" &&
+      (SENSITIVE_OMA_URI_PATTERN.test(record.settingDefinitionId) ||
+        SENSITIVE_DEFINITION_ID_SUFFIX_PATTERN.test(
+          record.settingDefinitionId,
+        ));
+    const sensitivePairValue =
+      secretValue ||
+      sensitiveDefinition ||
+      record["@odata.type"] === SECRET_SETTING_VALUE_TYPE ||
       (typeof record.omaUri === "string" &&
         SENSITIVE_OMA_URI_PATTERN.test(record.omaUri)) ||
       [record.displayName, record.name].some(
         (hint) =>
           typeof hint === "string" && SENSITIVE_OMA_LABEL_PATTERN.test(hint),
       ) ||
-      (typeof record.settingDefinitionId === "string" &&
-        SENSITIVE_OMA_URI_PATTERN.test(record.settingDefinitionId));
+      isSensitiveConfigKey(record.name) ||
+      (isSensitiveConfigKey(record.appConfigKey) &&
+        record.appConfigKeyType !== "booleanType") ||
+      isSensitivePresentationValue(record);
+    const typeFields =
+      typeof record["@odata.type"] === "string"
+        ? TYPE_REDACTED_FIELDS[record["@odata.type"].toLowerCase()]
+        : undefined;
 
     return Object.fromEntries(
       Object.entries(record)
         .filter(([key]) => !["@odata.context", "@odata.nextLink"].includes(key))
-        .map(([key, nested]) => [
-          key,
-          sensitiveFields.has(key.toLowerCase()) ||
-          SENSITIVE_FIELD_PATTERN.test(key) ||
-          (sensitiveOmaValue &&
-            ["value", "omasettingstringvalue"].includes(key.toLowerCase()))
-            ? REDACTED_VALUE
-            : visit(nested),
-        ]),
+        .map(([key, nested]) => {
+          const lowerKey = key.toLowerCase();
+          if (
+            sensitivePairValue &&
+            PAIR_VALUE_KEYS.has(lowerKey) &&
+            typeof nested !== "boolean"
+          ) {
+            return [
+              key,
+              Array.isArray(nested) ? [REDACTED_VALUE] : REDACTED_VALUE,
+            ];
+          }
+          return [
+            key,
+            sensitiveFields.has(lowerKey) ||
+            typeFields?.has(lowerKey) ||
+            SENSITIVE_FIELD_PATTERN.test(key)
+              ? REDACTED_VALUE
+              : visit(
+                  nested,
+                  sensitiveDefinition && SETTING_VALUE_KEYS.has(lowerKey),
+                ),
+          ];
+        }),
     );
   };
 

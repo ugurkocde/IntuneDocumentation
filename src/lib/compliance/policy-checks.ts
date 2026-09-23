@@ -168,12 +168,14 @@ export function evaluatePolicyCheck(
   if (config.state !== "enabled") return;
   const users = config.conditions?.users;
   const apps = config.conditions?.applications;
+  // Graph uses the "None" sentinel for an include list that targets nobody.
+  const targets = (value: unknown) =>
+    Array.isArray(value) && value.some((item) => item !== "None");
   if (
     ![users?.includeUsers, users?.includeGroups, users?.includeRoles].some(
-      (value) => Array.isArray(value) && value.length > 0,
+      targets,
     ) ||
-    !Array.isArray(apps?.includeApplications) ||
-    apps.includeApplications.length === 0
+    !targets(apps?.includeApplications)
   )
     return;
   return {

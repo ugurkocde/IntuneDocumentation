@@ -7,6 +7,7 @@ import type {
 } from "@azure/msal-node";
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
+import type { IncomingMessage, RequestListener, Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { DesktopAuthConfig } from "./config";
 
@@ -64,6 +65,91 @@ function withTimeout<T>(
       },
     );
   });
+}
+
+export type CallbackOutcome =
+  // Answer with this status and keep waiting for the real redirect.
+  | { kind: "ignore"; status: number }
+  | { kind: "code"; code: string }
+  | { kind: "error"; message: string };
+
+// Classifies one request to the loopback listener. Only a GET to "/" on the
+// listener's own host with the expected state can finish the sign-in; any
+// other request is answered and ignored, so a stray or forged request cannot
+// abort a sign-in that is still in progress.
+export function readCallback(
+  request: Pick<IncomingMessage, "method" | "url" | "headers">,
+  expected: { state: string; port: number },
+): CallbackOutcome {
+  if (request.method !== "GET") return { kind: "ignore", status: 405 };
+  const host = (request.headers.host ?? "").toLowerCase();
+  const hosts = ["localhost", "127.0.0.1", "[::1]"].map(
+    (name) => `${name}:${expected.port}`,
+  );
+  if (!hosts.includes(host)) return { kind: "ignore", status: 400 };
+  let url: URL;
+  try {
+    url = new URL(request.url ?? "/", `http://localhost:${expected.port}`);
+  } catch {
+    return { kind: "ignore", status: 400 };
+  }
+  if (url.pathname !== "/") return { kind: "ignore", status: 404 };
+  if (url.searchParams.get("state") !== expected.state) {
+    return { kind: "ignore", status: 400 };
+  }
+  const error = url.searchParams.get("error");
+  if (error) {
+    return {
+      kind: "error",
+      message: url.searchParams.get("error_description") ?? error,
+    };
+  }
+  const code = url.searchParams.get("code");
+  return code ? { kind: "code", code } : { kind: "ignore", status: 400 };
+}
+
+function listen(server: Server, port: number, host: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+// The redirect URI registered in Entra is http://localhost (Microsoft ignores
+// the port), and a browser may resolve localhost to either loopback address.
+// The listener therefore holds the same port on 127.0.0.1 and ::1, so no other
+// local process can take that port on the other address and receive the code.
+export async function listenLoopback(
+  onRequest: RequestListener,
+): Promise<{ port: number; close: () => void }> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const v4 = createServer(onRequest);
+    await listen(v4, 0, "127.0.0.1");
+    const { port } = v4.address() as AddressInfo;
+    const v6 = createServer(onRequest);
+    try {
+      await listen(v6, port, "::1");
+      return {
+        port,
+        close: () => {
+          v4.close();
+          v6.close();
+        },
+      };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Without an IPv6 loopback nothing else can listen there either.
+      if (code === "EADDRNOTAVAIL" || code === "EAFNOSUPPORT") {
+        return { port, close: () => v4.close() };
+      }
+      v4.close();
+      if (code !== "EADDRINUSE") throw error;
+    }
+  }
+  throw new Error("The sign-in listener could not start. Please try again.");
 }
 
 export class AuthService {
@@ -215,73 +301,50 @@ export class AuthService {
   // With consent true, Microsoft shows the consent screen again; a Global
   // Administrator can then tick "Consent on behalf of your organization".
   // The redirect still lands on this app's own loopback listener.
+  // blockedBy runs once the browser sign-in has finished. A non-null reason
+  // refuses to switch to the new account and becomes the error message.
   async signInInteractive(
     openBrowser: (url: string) => Promise<void>,
-    options: { consent?: boolean } = {},
+    options: { consent?: boolean; blockedBy?: () => string | null } = {},
   ): Promise<SignInResult> {
     const generation = this.generation;
-    const server = createServer();
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => resolve());
-    });
-    const address = server.address() as AddressInfo;
-    const redirectUri = `http://localhost:${address.port}`;
-    const { verifier, challenge } = createPkcePair();
     const state = base64Url(randomBytes(16));
     const controller = new AbortController();
-    this.activeCancel = () => controller.abort();
-
+    let port = 0;
+    let resolveCode!: (code: string) => void;
+    let rejectCode!: (error: Error) => void;
     const codePromise = new Promise<string>((resolve, reject) => {
+      resolveCode = resolve;
+      rejectCode = reject;
       controller.signal.addEventListener(
         "abort",
         () => reject(new Error("Sign-in was cancelled.")),
         { once: true },
       );
-      server.on("request", (request, response) => {
-        if (request.method !== "GET") {
-          response.writeHead(405).end();
-          return;
-        }
-        let callbackUrl: URL;
-        try {
-          callbackUrl = new URL(request.url ?? "/", redirectUri);
-        } catch {
-          response.writeHead(400).end();
-          reject(new Error("Sign-in callback was malformed."));
-          return;
-        }
-        if (callbackUrl.pathname !== "/") {
-          response.writeHead(404).end();
-          return;
-        }
-        if (callbackUrl.searchParams.get("state") !== state) {
-          response.writeHead(400).end("State mismatch.");
-          reject(new Error("Sign-in state mismatch."));
-          return;
-        }
-        const error = callbackUrl.searchParams.get("error");
-        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        response.end(
-          callbackPage(
-            error ? "Sign in did not finish" : "You are signed in",
-            error
-              ? "Return to Intune Documentation to see what happened and try again."
-              : "Return to Intune Documentation. You can close this browser tab.",
-          ),
-        );
-        if (error) {
-          reject(
-            new Error(callbackUrl.searchParams.get("error_description") ?? error),
-          );
-          return;
-        }
-        const code = callbackUrl.searchParams.get("code");
-        if (code) {
-          resolve(code);
-        }
-      });
     });
+    const listener = await listenLoopback((request, response) => {
+      const outcome = readCallback(request, { state, port });
+      if (outcome.kind === "ignore") {
+        response.writeHead(outcome.status).end();
+        return;
+      }
+      const failed = outcome.kind === "error";
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      response.end(
+        callbackPage(
+          failed ? "Sign in did not finish" : "You are signed in",
+          failed
+            ? "Return to Intune Documentation to see what happened and try again."
+            : "Return to Intune Documentation. You can close this browser tab.",
+        ),
+      );
+      if (outcome.kind === "error") rejectCode(new Error(outcome.message));
+      else resolveCode(outcome.code);
+    });
+    port = listener.port;
+    const redirectUri = `http://localhost:${port}`;
+    const { verifier, challenge } = createPkcePair();
+    this.activeCancel = () => controller.abort();
 
     try {
       const urlRequest: AuthorizationUrlRequest = {
@@ -310,11 +373,28 @@ export class AuthService {
         await this.disposeCache();
         throw new Error("Sign-in was cancelled.");
       }
+      const blocked = options.blockedBy?.() ?? null;
+      if (blocked) {
+        await this.forget(result.account);
+        throw new Error(blocked);
+      }
       return this.accept(result);
     } finally {
       this.activeCancel = null;
-      server.close();
+      listener.close();
     }
+  }
+
+  // Drops an account the refused sign-in added to the token cache, unless it
+  // is the account already in use.
+  private async forget(account: AccountInfo | null): Promise<void> {
+    if (!account || account.homeAccountId === this.account?.homeAccountId) {
+      return;
+    }
+    await this.pca
+      .getTokenCache()
+      .removeAccount(account)
+      .catch(() => undefined);
   }
 
   private async disposeCache(): Promise<void> {

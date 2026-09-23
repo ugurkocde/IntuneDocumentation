@@ -35,6 +35,7 @@ import {
   DESKTOP_TRIAL_DAYS,
   formatDesktopPrice,
 } from "~/lib/desktop-app";
+import { unstable_cache } from "next/cache";
 import { getSiteStats } from "~/lib/site-stats";
 import { detectPlatform } from "../_landing/desktop-download";
 import { trackDownload } from "../_landing/desktop-shared";
@@ -75,8 +76,11 @@ export const metadata: Metadata = {
   },
 };
 
-// Re-render at most every 5 minutes so the export count stays fresh
-export const revalidate = 300;
+// headers() renders the page per request, so the stats are cached on their
+// own and refreshed at most every 5 minutes
+const getCachedSiteStats = unstable_cache(getSiteStats, ["site-stats"], {
+  revalidate: 300,
+});
 
 const pro = DESKTOP_PLANS.pro;
 const msp = DESKTOP_PLANS.msp;
@@ -445,7 +449,7 @@ export default async function DesktopPage() {
   const requestHeaders = await headers();
   const nonce = requestHeaders.get("x-nonce") ?? "";
   const platform = detectPlatform(requestHeaders.get("user-agent") ?? "");
-  const stats = await getSiteStats();
+  const stats = await getCachedSiteStats();
   // Visitors see their own operating system first
   const platformOrder =
     platform === "windows"
@@ -689,7 +693,7 @@ export default async function DesktopPage() {
             centered
             eyebrow="Pricing"
             title="One plan per organization, one for partners."
-            lead="Both plans include every feature and differ in how many tenants they cover. Prices in EUR, taxes calculated at checkout."
+            lead="Both plans include Word and PDF exports, compliance evidence, offline use, and updates. MSP adds more tenants and switching between them. Prices in EUR, taxes calculated at checkout."
           />
           <ol className="mx-auto mt-10 grid max-w-4xl gap-3 sm:grid-cols-3">
             {steps.map((step, index) => (
@@ -732,8 +736,10 @@ export default async function DesktopPage() {
                 title="Install once, update when you choose."
                 lead={
                   <>
-                    The app needs a license key to collect and export. Start the
-                    free trial first; the key arrives by email.
+                    The app needs an active license to collect and export. If a
+                    colleague already shares one with your tenant, just sign in.
+                    Otherwise start the free trial first; the key arrives by
+                    email.
                   </>
                 }
               />

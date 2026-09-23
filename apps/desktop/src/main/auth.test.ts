@@ -213,6 +213,13 @@ describe("AuthService.getIdToken", () => {
     expect(await service.getIdToken()).toMatch(/^h\./);
     expect(msal.silent).toEqual([false]);
 
+    // Entra backdates iat by five minutes: a token issued two minutes ago
+    // reads as seven minutes old and must not be renewed again.
+    msal.cachedIdTokenAge = 7 * 60_000;
+    msal.silent = [];
+    expect(await service.getIdToken()).toMatch(/^h\./);
+    expect(msal.silent).toEqual([false]);
+
     msal.cachedIdTokenAge = 30 * 60_000;
     msal.silent = [];
     const token = await service.getIdToken();

@@ -344,7 +344,8 @@ export async function refreshLicense(
 }
 
 // A fresh sign-in, not a token kept around: the desktop app asks MSAL for a
-// new ID token when its cached one is older than a few minutes.
+// new ID token when its cached one is older than a few minutes. Entra
+// backdates iat by five minutes, so this allows about ten real minutes.
 export const ID_TOKEN_MAX_AGE_SECONDS = 15 * 60;
 
 // Verifies a Microsoft ID token for a license request: an ID token (no scp

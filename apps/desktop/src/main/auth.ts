@@ -25,8 +25,10 @@ export interface SignInResult {
 }
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
-// Well inside the licensing service's 15 minute window.
-const ID_TOKEN_MAX_AGE_MS = 5 * 60_000;
+// Entra backdates iat by five minutes to allow for clock skew, so a token
+// issued just now reads as five minutes old. Ten minutes means at most five
+// real minutes, well inside the licensing service's 15 minute window.
+const ID_TOKEN_MAX_AGE_MS = 10 * 60_000;
 
 // Issue time (ms) of a JWT, read without verification: the licensing service
 // verifies the token, the app only decides whether to renew it.

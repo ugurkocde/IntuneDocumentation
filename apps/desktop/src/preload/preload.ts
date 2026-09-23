@@ -39,6 +39,7 @@ const api: IntunedocApi = {
   collectSectionItems: (key) => invoke("collect:sectionItems", key),
   collectLast: () => invoke("collect:last"),
   prepareExport: (options) => invoke("export:prepare", options),
+  estimateExport: (scope) => invoke("export:estimate", scope),
   licenseStatus: () => invoke("license:status"),
   licenseSetKey: (key) => invoke("license:setKey", key),
   licenseDeactivate: () => invoke("license:deactivate"),

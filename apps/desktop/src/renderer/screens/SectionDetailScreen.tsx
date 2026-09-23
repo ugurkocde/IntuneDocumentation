@@ -1,12 +1,18 @@
 import { AlertCircle, Clock, FileText, Search, SearchX, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { scopeKey } from "../../shared/export-scope";
 import type { SectionCount, SectionItemSummary } from "../../shared/ipc-types";
 import { CollectButton } from "../components/collection/CollectButton";
+import { ExportMenu } from "../components/export/ExportMenu";
+import { SelectionBar } from "../components/export/SelectionBar";
 import { Header } from "../components/layout/Header";
 import { Alert } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
+import { Checkbox } from "../components/ui/Checkbox";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Spinner } from "../components/ui/Spinner";
+import { useStartExport } from "../hooks/use-start-export";
+import { itemTarget, sectionTarget } from "../lib/export-targets";
 import { errorMessage } from "../lib/ipc";
 import {
   familyMeta,
@@ -15,6 +21,8 @@ import {
   friendlyType,
 } from "../lib/section-catalog";
 import { useApp } from "../state/context";
+import { quickExportBlocker } from "../state/selectors";
+import type { ExportFormat } from "../state/types";
 
 function assignmentText(item: SectionItemSummary): string | null {
   if (item.assignmentCount === null) return null;
@@ -27,50 +35,70 @@ function assignmentText(item: SectionItemSummary): string | null {
   return parts.length ? `Assigned to ${parts.join(" and ")}` : "Not assigned";
 }
 
-function ItemRow({ item }: { item: SectionItemSummary }) {
+function ItemRow({
+  item,
+  selected,
+  onSelect,
+  onExport,
+  exportBlocker,
+}: {
+  item: SectionItemSummary;
+  selected: boolean;
+  onSelect: (selected: boolean) => void;
+  onExport: (format: ExportFormat) => void;
+  exportBlocker: string | null;
+}) {
   const type = friendlyType(item.odataType);
   const platforms = friendlyPlatforms(item.platforms);
   const technologies = friendlyTechnologies(item.technologies);
   const assignment = assignmentText(item);
   return (
-    <li className="hover:bg-mint-50/60 px-5 py-4 transition-colors [contain-intrinsic-size:1px_76px] [content-visibility:auto]">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="text-petrol-950 selectable min-w-0 text-sm font-semibold break-words">{item.displayName}</p>
-        {item.hasFetchError && (
-          <Badge variant="warning" title="Settings could not be loaded from Microsoft Graph">
-            <AlertCircle className="h-3 w-3" aria-hidden="true" />
-            Settings unavailable
-          </Badge>
+    <li
+      className={`flex items-start gap-2 py-3 pr-4 pl-2.5 transition-colors [contain-intrinsic-size:1px_76px] [content-visibility:auto] ${
+        selected ? "bg-teal-50/60" : "hover:bg-mint-50/60"
+      }`}
+    >
+      <Checkbox checked={selected} onChange={onSelect} label={`Select ${item.displayName}`} />
+      <div className="min-w-0 flex-1 pt-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-petrol-950 selectable min-w-0 text-sm font-semibold break-words">{item.displayName}</p>
+          {item.hasFetchError && (
+            <Badge variant="warning" title="Settings could not be loaded from Microsoft Graph">
+              <AlertCircle className="h-3 w-3" aria-hidden="true" />
+              Settings unavailable
+            </Badge>
+          )}
+          {platforms.map((platform) => (
+            <Badge key={platform} variant="info">
+              {platform}
+            </Badge>
+          ))}
+          {technologies.map((technology) => (
+            <Badge key={technology}>{technology}</Badge>
+          ))}
+        </div>
+        {item.description && (
+          <p className="text-petrol-600 selectable mt-1 line-clamp-2 max-w-4xl text-xs leading-5">{item.description}</p>
         )}
-        {platforms.map((platform) => (
-          <Badge key={platform} variant="info">
-            {platform}
-          </Badge>
-        ))}
-        {technologies.map((technology) => (
-          <Badge key={technology}>{technology}</Badge>
-        ))}
+        <div className="text-petrol-600 mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+          {type && <span className="font-medium">{type}</span>}
+          {item.lastModifiedDateTime && (
+            <span className="inline-flex items-center gap-1.5 tabular-nums">
+              <Clock className="h-3 w-3" aria-hidden="true" />
+              Modified {new Date(item.lastModifiedDateTime).toLocaleDateString()}
+            </span>
+          )}
+          {assignment && (
+            <span
+              className={`inline-flex items-center gap-1.5 ${assignment === "Not assigned" ? "text-amber-800" : ""}`}
+            >
+              <Users className="h-3 w-3" aria-hidden="true" />
+              {assignment}
+            </span>
+          )}
+        </div>
       </div>
-      {item.description && (
-        <p className="text-petrol-600 selectable mt-1 line-clamp-2 max-w-4xl text-xs leading-5">{item.description}</p>
-      )}
-      <div className="text-petrol-600 mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
-        {type && <span className="font-medium">{type}</span>}
-        {item.lastModifiedDateTime && (
-          <span className="inline-flex items-center gap-1.5 tabular-nums">
-            <Clock className="h-3 w-3" aria-hidden="true" />
-            Modified {new Date(item.lastModifiedDateTime).toLocaleDateString()}
-          </span>
-        )}
-        {assignment && (
-          <span
-            className={`inline-flex items-center gap-1.5 ${assignment === "Not assigned" ? "text-amber-800" : ""}`}
-          >
-            <Users className="h-3 w-3" aria-hidden="true" />
-            {assignment}
-          </span>
-        )}
-      </div>
+      <ExportMenu targetName={item.displayName} onExport={onExport} disabledReason={exportBlocker} compact />
     </li>
   );
 }
@@ -85,7 +113,9 @@ function matches(item: SectionItemSummary, query: string): boolean {
 }
 
 function SectionCard({ section, query }: { section: SectionCount; query: string }) {
-  const { state, actions } = useApp();
+  const { state, dispatch, actions } = useApp();
+  const startExport = useStartExport();
+  const blocker = quickExportBlocker(state);
   const loaded = state.sections[section.key];
   const [error, setError] = useState<string | null>(null);
   const family = familyMeta(section.familyKey);
@@ -108,6 +138,23 @@ function SectionCard({ section, query }: { section: SectionCount; query: string 
   );
   if (query && loaded && items.length === 0) return null;
 
+  const isSelected = (item: SectionItemSummary) =>
+    Boolean(state.selection[scopeKey({ sectionKey: section.key, itemId: item.id })]);
+  const select = (targets: SectionItemSummary[], selected: boolean) =>
+    dispatch({
+      type: "select",
+      selected,
+      items: targets.map((item) => ({
+        sectionKey: section.key,
+        itemId: item.id,
+        name: item.displayName,
+        sectionLabel: section.label,
+      })),
+    });
+  const selectedHere = loaded ? loaded.items.filter(isSelected).length : 0;
+  const visibleSelected = items.filter(isSelected).length;
+  const allVisibleSelected = items.length > 0 && visibleSelected === items.length;
+
   return (
     <section className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white" aria-label={section.label}>
       <div className="border-petrol-950/6 flex min-h-16 items-center gap-3 border-b px-5 py-3">
@@ -118,6 +165,14 @@ function SectionCard({ section, query }: { section: SectionCount; query: string 
         <span className="bg-mint-100 text-petrol-700 rounded-full px-2.5 py-1 text-[10px] font-bold tabular-nums">
           {query && loaded ? `${items.length} of ${section.count}` : section.count.toLocaleString()}
         </span>
+        {section.count > 0 && (
+          <ExportMenu
+            targetName={section.label}
+            triggerLabel="Export section"
+            disabledReason={blocker ?? (loaded ? null : "Available when the items have loaded.")}
+            onExport={(format) => loaded && startExport(sectionTarget(loaded), format)}
+          />
+        )}
       </div>
       {section.error && (
         <div className="border-petrol-950/6 border-b px-5 py-3">
@@ -138,11 +193,33 @@ function SectionCard({ section, query }: { section: SectionCount; query: string 
           <Spinner /> Loading items
         </div>
       ) : (
-        <ul className="divide-petrol-950/6 divide-y">
-          {items.map((item) => (
-            <ItemRow key={item.id} item={item} />
-          ))}
-        </ul>
+        <>
+          <div className="border-petrol-950/6 bg-surface/60 flex min-h-11 items-center justify-between gap-3 border-b py-1 pr-5 pl-2.5">
+            <Checkbox
+              checked={allVisibleSelected}
+              mixed={visibleSelected > 0 && !allVisibleSelected}
+              onChange={() => select(items, !allVisibleSelected)}
+              label={`${query ? "Select all matches" : "Select all"} in ${section.label}`}
+            >
+              <span className="text-petrol-800 text-xs font-semibold">{query ? "Select all matches" : "Select all"}</span>
+            </Checkbox>
+            {selectedHere > 0 && (
+              <span className="text-petrol-600 text-xs tabular-nums">{selectedHere.toLocaleString()} selected</span>
+            )}
+          </div>
+          <ul className="divide-petrol-950/6 divide-y">
+            {items.map((item) => (
+              <ItemRow
+                key={item.id}
+                item={item}
+                selected={isSelected(item)}
+                onSelect={(selected) => select([item], selected)}
+                onExport={(format) => startExport(itemTarget(section, item), format)}
+                exportBlocker={blocker}
+              />
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
@@ -242,6 +319,7 @@ export function SectionDetailScreen() {
               description="Try a different name, description or type."
             />
           )}
+          <SelectionBar />
         </>
       )}
     </div>

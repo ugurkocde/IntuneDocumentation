@@ -1,25 +1,65 @@
 import {
   AlertCircle,
+  ArrowLeft,
+  Building2,
   Check,
   CheckCircle2,
   Download,
   File,
   FileText,
   FolderOpen,
+  ListChecks,
   Loader2,
   RotateCcw,
+  ShieldCheck,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { MAX_SCOPE_ITEMS } from "../../../shared/export-scope";
+import type { PdfEstimate } from "../../../shared/ipc-types";
 import { useAsyncAction } from "../../hooks/use-async-action";
 import { EXPORT_STAGES, runExport } from "../../lib/export-runner";
+import { selectionTarget, TENANT_TARGET } from "../../lib/export-targets";
 import { ipc } from "../../lib/ipc";
+import { familyMeta } from "../../lib/section-catalog";
 import { useApp } from "../../state/context";
 import { initialExportState } from "../../state/reducer";
 import { exportBlocker, warningCount } from "../../state/selectors";
+import type { SelectedItem } from "../../state/types";
 import { Alert } from "../ui/Alert";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
-import { Toggle } from "../ui/Toggle";
+
+// "Ring 1, Ring 2 and 3 more"
+function namesPreview(items: SelectedItem[]): string {
+  const names = items.slice(0, 2).map((item) => item.name);
+  const rest = items.length - names.length;
+  if (rest <= 0) return names.join(" and ");
+  return `${names.join(", ")} and ${rest.toLocaleString()} more`;
+}
+
+// The PDF length of the selected items, estimated in main without Graph
+// calls. Null while loading or when no selection is exported.
+function useSelectionEstimate(items: SelectedItem[] | null): PdfEstimate | null {
+  const [estimate, setEstimate] = useState<PdfEstimate | null>(null);
+  const key = items?.map((item) => `${item.sectionKey}\n${item.itemId}`).join("\n") ?? "";
+  useEffect(() => {
+    setEstimate(null);
+    if (!items?.length || items.length > MAX_SCOPE_ITEMS) return;
+    let cancelled = false;
+    ipc
+      .estimateExport({ items: items.map(({ sectionKey, itemId }) => ({ sectionKey, itemId })) })
+      .then((result) => {
+        if (!cancelled) setEstimate(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // The key stands for the items.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return estimate;
+}
 
 function FormatOption({
   label,
@@ -109,7 +149,16 @@ export function ExportPanel() {
   const { state, dispatch, actions } = useApp();
   const exportState = state.exportState;
   const summary = state.collection.summary;
-  const blocker = exportBlocker(state);
+  const selected = useMemo(() => Object.values(state.selection), [state.selection]);
+  const exportsSelection = selected.length > 0 && exportState.scope === "selection";
+  const selectionEstimate = useSelectionEstimate(
+    exportsSelection && exportState.phase !== "running" ? selected : null,
+  );
+  const blocker =
+    exportBlocker(state) ??
+    (exportsSelection && selected.length > MAX_SCOPE_ITEMS
+      ? `Select up to ${MAX_SCOPE_ITEMS.toLocaleString()} configurations, or export the whole tenant.`
+      : null);
   const warnings = warningCount(state);
   const fileAction = useAsyncAction();
   const patch = (value: Partial<typeof exportState>) => dispatch({ type: "export", patch: value });
@@ -117,7 +166,10 @@ export function ExportPanel() {
   const start = () =>
     void runExport(
       dispatch,
-      { format: exportState.format, includeEvidence: exportState.includeEvidence },
+      {
+        format: exportState.format,
+        target: exportsSelection ? selectionTarget(selected) : TENANT_TARGET,
+      },
       () => void actions.refreshLicense(),
     );
 
@@ -172,6 +224,12 @@ export function ExportPanel() {
 
   if (exportState.phase === "done" && exportState.savedPath) {
     const hasWarnings = exportState.warnings > 0;
+    const returnFamily = familyMeta(exportState.returnFamilyKey);
+    const resetPatch = {
+      ...initialExportState,
+      format: exportState.format,
+      scope: selected.length > 0 ? ("selection" as const) : ("tenant" as const),
+    };
     return (
       <Card className="animate-fade-in">
         <div className="py-4 text-center">
@@ -190,7 +248,9 @@ export function ExportPanel() {
           <p className="text-petrol-600 mx-auto mt-2 max-w-md text-sm leading-6">
             {hasWarnings
               ? `${exportState.warnings} ${exportState.warnings === 1 ? "item is" : "items are"} marked as partial or unavailable in the document.`
-              : "Your documentation was saved."}
+              : exportState.label
+                ? `The documentation for ${exportState.label} was saved.`
+                : "Your documentation was saved."}
           </p>
           <div className="border-petrol-950/8 bg-surface mx-auto mt-5 flex max-w-lg items-center gap-3 rounded-2xl border p-3.5 text-left">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700">
@@ -218,9 +278,22 @@ export function ExportPanel() {
             >
               {navigator.userAgent.includes("Mac OS X") ? "Show in Finder" : "Show in folder"}
             </Button>
-            <Button variant="ghost" icon={RotateCcw} onClick={() => dispatch({ type: "export", patch: { ...initialExportState, format: exportState.format, includeEvidence: exportState.includeEvidence } })}>
-              Export again
-            </Button>
+            {returnFamily ? (
+              <Button
+                variant="ghost"
+                icon={ArrowLeft}
+                onClick={() => {
+                  dispatch({ type: "export", patch: resetPatch });
+                  actions.navigate("section", exportState.returnFamilyKey);
+                }}
+              >
+                Back to {returnFamily.label}
+              </Button>
+            ) : (
+              <Button variant="ghost" icon={RotateCcw} onClick={() => dispatch({ type: "export", patch: resetPatch })}>
+                Export again
+              </Button>
+            )}
           </div>
           {fileAction.error && (
             <Alert tone="danger" className="mx-auto mt-4 max-w-lg text-left">
@@ -232,12 +305,8 @@ export function ExportPanel() {
     );
   }
 
-  const estimate = summary?.pdfEstimate;
-  const pages = estimate
-    ? exportState.includeEvidence
-      ? estimate.pages
-      : estimate.pagesWithoutEvidence
-    : null;
+  const estimate = exportsSelection ? selectionEstimate : (summary?.pdfEstimate ?? null);
+  const total = summary?.totalConfigurations ?? 0;
 
   return (
     <Card padded={false} className="animate-fade-in">
@@ -253,6 +322,29 @@ export function ExportPanel() {
             This document will include {warnings} collection {warnings === 1 ? "warning" : "warnings"}. Partial or unavailable data is identified in the export.
           </Alert>
         )}
+        {selected.length > 0 && (
+          <div>
+            <p className="text-petrol-800 mb-3 text-[13px] font-semibold" id="export-scope-label">
+              What to export
+            </p>
+            <div role="radiogroup" aria-labelledby="export-scope-label" className="grid gap-3 @2xl:grid-cols-2">
+              <FormatOption
+                label="Whole tenant"
+                description={`All ${total.toLocaleString()} configurations from the last collection.`}
+                icon={<Building2 className="h-5 w-5" />}
+                selected={!exportsSelection}
+                onClick={() => patch({ scope: "tenant" })}
+              />
+              <FormatOption
+                label={`Only selected items (${selected.length.toLocaleString()})`}
+                description={namesPreview(selected)}
+                icon={<ListChecks className="h-5 w-5" />}
+                selected={exportsSelection}
+                onClick={() => patch({ scope: "selection" })}
+              />
+            </div>
+          </div>
+        )}
         <div>
           <p className="text-petrol-800 mb-3 text-[13px] font-semibold" id="export-format-label">
             Format
@@ -260,7 +352,11 @@ export function ExportPanel() {
           <div role="radiogroup" aria-labelledby="export-format-label" className="grid gap-3 @2xl:grid-cols-2">
             <FormatOption
               label="PDF report"
-              description="Complete documentation with every policy and setting, ready to share."
+              description={
+                exportsSelection
+                  ? "Every setting and assignment of the selected configurations, ready to share."
+                  : "Complete documentation with every policy and setting, ready to share."
+              }
               icon={<FileText className="h-5 w-5" />}
               selected={exportState.format === "pdf"}
               onClick={() => patch({ format: "pdf" })}
@@ -274,32 +370,38 @@ export function ExportPanel() {
             />
           </div>
         </div>
-        <div>
-          <p className="text-petrol-800 mb-3 text-[13px] font-semibold">Document content</p>
-          <Toggle
-            checked={exportState.includeEvidence}
-            onChange={(checked) => patch({ includeEvidence: checked })}
-            label="Include compliance evidence preview"
-            description="Adds the framework to control evidence mapping. Turn off to export only the configuration details."
-          />
+        <div className="border-petrol-950/8 bg-surface flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border p-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700">
+            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1 basis-64">
+            <p className="text-petrol-950 text-sm font-semibold">Configuration details and assignments only</p>
+            <p className="text-petrol-600 mt-0.5 text-[13px] leading-5">
+              Compliance evidence is not part of this document. For audit evidence per framework, use the Compliance Evidence screen.
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => actions.navigate("compliance")}>
+            Open Compliance Evidence
+          </Button>
         </div>
-        {pages !== null && exportState.format === "pdf" && estimate && (
+        {estimate && exportState.format === "pdf" && (
           estimate.isLarge ? (
-            <Alert tone="warning" title={`Large document, about ${pages.toLocaleString()} pages`}>
+            <Alert tone="warning" title={`Large document, about ${estimate.pages.toLocaleString()} pages`}>
               Generating can take a few minutes and the window may pause briefly. For very large tenants the Word document is quicker to create and easier to work with.
-              {exportState.includeEvidence && estimate.pages - estimate.pagesWithoutEvidence >= 20
-                ? ` Turning off compliance evidence saves about ${(estimate.pages - estimate.pagesWithoutEvidence).toLocaleString()} pages.`
-                : ""}
             </Alert>
           ) : (
-            <p className="text-petrol-600 text-xs">Estimated length: about {pages.toLocaleString()} pages.</p>
+            <p className="text-petrol-600 text-xs">
+              Estimated length: about {estimate.pages.toLocaleString()} {estimate.pages === 1 ? "page" : "pages"}.
+            </p>
           )
         )}
       </div>
       <div className="border-petrol-950/6 bg-surface flex flex-wrap items-center justify-between gap-3 border-t px-5 py-4 sm:px-6">
         <p className={`text-xs ${blocker ? "text-amber-800" : "text-petrol-600"}`}>
           {blocker ??
-            `${summary?.totalConfigurations.toLocaleString() ?? 0} configurations from the last collection.`}
+            (exportsSelection
+              ? `${selected.length.toLocaleString()} selected ${selected.length === 1 ? "configuration" : "configurations"}.`
+              : `${total.toLocaleString()} configurations from the last collection.`)}
         </p>
         <Button icon={Download} disabled={Boolean(blocker)} disabledReason={blocker} onClick={start}>
           {exportState.phase === "error" ? "Try again" : "Start export"}

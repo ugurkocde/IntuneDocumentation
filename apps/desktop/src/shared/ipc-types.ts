@@ -1,6 +1,7 @@
 // Types shared by the main process, the preload bridge and the renderer.
 // Keep this file free of runtime imports so every bundle can use it.
 import type { ResolvedExportData } from "../../../../src/lib/client-export-resolver";
+import type { ExportScopeRequest } from "./export-scope";
 import type {
   AssessmentScope,
   CapabilityResult,
@@ -59,9 +60,10 @@ export interface PermissionErrorSummary {
   message: string;
 }
 
+// Estimated PDF length of a configuration export, which never includes
+// compliance evidence.
 export interface PdfEstimate {
   pages: number;
-  pagesWithoutEvidence: number;
   isLarge: boolean;
 }
 
@@ -108,7 +110,8 @@ export interface SectionItemsResult {
 }
 
 export interface ExportOptions {
-  includeComplianceEvidence: boolean;
+  // Without a scope the export covers the whole tenant.
+  scope?: ExportScopeRequest;
 }
 
 export interface ExportProgress {
@@ -230,6 +233,7 @@ export interface IntunedocApi {
   collectSectionItems(key: string): Promise<SectionItemsResult>;
   collectLast(): Promise<FullCollectionSummary | null>;
   prepareExport(options: ExportOptions): Promise<PreparedExport>;
+  estimateExport(scope: ExportScopeRequest): Promise<PdfEstimate>;
   licenseStatus(): Promise<LicenseStatus>;
   licenseSetKey(key: string): Promise<LicenseStatus>;
   licenseDeactivate(): Promise<LicenseStatus>;

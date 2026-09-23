@@ -2,8 +2,9 @@ import type { Dispatch } from "react";
 import type { DetailedExportData } from "../../../../../src/lib/configuration-analyzer";
 import { generateDetailedDOCX } from "../../../../../src/lib/docx-generator-detailed";
 import { generateDetailedPDF } from "../../../../../src/lib/pdf-generator-detailed";
-import { localDateStamp } from "../../shared/dates";
+import { COMPACT_SCOPE_MAX_ITEMS } from "../../shared/export-scope";
 import type { Action, ExportFormat } from "../state/types";
+import { targetFileName, type ExportTarget } from "./export-targets";
 import { errorMessage, ipc } from "./ipc";
 
 export const EXPORT_STAGES = [
@@ -31,18 +32,28 @@ function nextPaint(): Promise<void> {
 let running = false;
 
 // Runs outside React components so an export keeps going while the user
-// browses other screens; progress lands in the store.
+// browses other screens; progress lands in the store. Configuration exports
+// never include compliance evidence.
 export async function runExport(
   dispatch: Dispatch<Action>,
-  options: { format: ExportFormat; includeEvidence: boolean },
+  options: {
+    format: ExportFormat;
+    target: ExportTarget;
+    returnFamilyKey?: string | null;
+  },
   onFinished: () => void,
 ): Promise<void> {
   if (running) return;
   running = true;
+  const { format, target } = options;
+  const scoped = target.kind !== "tenant";
   dispatch({
     type: "export",
     patch: {
       phase: "running",
+      format,
+      label: scoped ? target.title : null,
+      returnFamilyKey: options.returnFamilyKey ?? null,
       stage: 0,
       percent: EXPORT_STAGES[0].percent,
       error: null,
@@ -56,22 +67,31 @@ export async function runExport(
     stage(dispatch, progress.stage === "groups" ? 1 : 2),
   );
   try {
-    const data = await ipc.prepareExport({
-      includeComplianceEvidence: options.includeEvidence,
-    });
+    const data = await ipc.prepareExport(
+      scoped ? { scope: { items: target.items } } : {},
+    );
     unsubscribe();
     stage(dispatch, 3);
     await nextPaint();
-    const exportData = data as unknown as DetailedExportData;
+    const exportData: DetailedExportData = {
+      ...(data as unknown as DetailedExportData),
+      includeComplianceEvidence: false,
+      ...(scoped
+        ? {
+            documentScope: {
+              title: target.title,
+              subtitle: target.subtitle,
+              compact: target.items.length <= COMPACT_SCOPE_MAX_ITEMS,
+            },
+          }
+        : {}),
+    };
     const result =
-      options.format === "docx"
+      format === "docx"
         ? await generateDetailedDOCX(exportData)
         : await generateDetailedPDF(exportData);
     stage(dispatch, 4);
-    const saved = await ipc.saveFile(
-      `Intune-Configuration-Documentation-${localDateStamp()}.${options.format}`,
-      result.buffer,
-    );
+    const saved = await ipc.saveFile(targetFileName(target, format), result.buffer);
     if (!saved) {
       dispatch({
         type: "export",
@@ -95,7 +115,7 @@ export async function runExport(
         percent: 100,
         stage: EXPORT_STAGES.length,
         savedPath: saved,
-        savedFormat: options.format,
+        savedFormat: format,
         warnings,
       },
     });

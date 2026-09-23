@@ -44,20 +44,15 @@ export function clearCollection(): void {
   collectionOwner = null;
 }
 
+// Configuration exports from the desktop app never include compliance
+// evidence, so neither does the estimate.
 function estimate(data: FullCollection): PdfEstimate | null {
   try {
-    const withEvidence = estimatePdfPageCount(
-      data as unknown as DetailedExportData,
-    );
-    const without = estimatePdfPageCount({
+    const result = estimatePdfPageCount({
       ...(data as unknown as DetailedExportData),
       includeComplianceEvidence: false,
     });
-    return {
-      pages: withEvidence.pages,
-      pagesWithoutEvidence: without.pages,
-      isLarge: withEvidence.isLarge,
-    };
+    return { pages: result.pages, isLarge: result.isLarge };
   } catch {
     return null;
   }

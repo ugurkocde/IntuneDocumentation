@@ -23,6 +23,17 @@ export function exportBlocker(state: AppState): string | null {
   return null;
 }
 
+// Exports started from a section screen: the export blockers, and one
+// export at a time.
+export function quickExportBlocker(state: AppState): string | null {
+  const blocker = exportBlocker(state);
+  if (blocker) return blocker;
+  if (state.exportState.phase === "running") {
+    return "Available when the current export finishes.";
+  }
+  return null;
+}
+
 // Sign out, settings changes and resets wait for running work to finish.
 export function busyBlocker(state: AppState): string | null {
   if (state.collection.running) return "Available when the collection finishes.";

@@ -33,6 +33,7 @@ const NAME_COLUMN_CHARS = 30;
 const TEXT_COLUMN_CHARS = 42;
 const DESCRIPTION_LINE_CHARS = 95;
 const FIXED_PAGES = 4; // cover, contents, tenant overview and inventory
+const COMPACT_FIXED_PAGES = 1; // a compact scoped export has only the cover
 const COMPLIANCE_PREVIEW_PAGES = 3;
 
 interface TableRow {
@@ -186,7 +187,7 @@ export function estimatePdfPageCount(
   }
 
   const fixedPages =
-    FIXED_PAGES +
+    (data.documentScope?.compact ? COMPACT_FIXED_PAGES : FIXED_PAGES) +
     (data.includeComplianceEvidence === false ? 0 : COMPLIANCE_PREVIEW_PAGES);
   // A section starts on a fresh page, leaving on average half a page unused.
   const pages = Math.round(

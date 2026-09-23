@@ -269,6 +269,11 @@ export async function generateDetailedDOCX(
   const companyName = branding?.companyName ?? "";
   const department = branding?.department ?? "";
 
+  // Opt in: a scoped export titles the cover for its scope, and a compact
+  // one leaves out the summary sections.
+  const scope = data.documentScope;
+  const compactScope = scope?.compact === true;
+
   // -----------------------------------------------------------------------
   // Build sections
   // -----------------------------------------------------------------------
@@ -381,7 +386,8 @@ export async function generateDetailedDOCX(
   }
 
   // Main title
-  const titleText = branding?.coverPage?.title || "Microsoft Intune";
+  const titleText =
+    scope?.title || branding?.coverPage?.title || "Microsoft Intune";
   coverChildren.push(
     new Paragraph({
       children: [
@@ -413,6 +419,23 @@ export async function generateDetailedDOCX(
       spacing: { after: 200 },
     }),
   );
+
+  if (scope?.subtitle) {
+    coverChildren.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: scope.subtitle,
+            color: "787878",
+            font: fontName,
+            size: bodySizeHp + 2,
+          }),
+        ],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+      }),
+    );
+  }
 
   // Custom text
   if (branding?.coverPage?.customText) {
@@ -804,7 +827,10 @@ export async function generateDetailedDOCX(
   };
 
   // ===== 2. TABLE OF CONTENTS =====
-  if (branding?.documentSettings?.includeTableOfContents !== false) {
+  if (
+    !compactScope &&
+    branding?.documentSettings?.includeTableOfContents !== false
+  ) {
     contentsChildren = [
       new Paragraph({
         text: "Table of Contents",
@@ -816,7 +842,7 @@ export async function generateDetailedDOCX(
   }
 
   // ===== 3. EXECUTIVE SUMMARY =====
-  if (branding?.documentSettings?.includeAnalytics !== false) {
+  if (!compactScope && branding?.documentSettings?.includeAnalytics !== false) {
     try {
       const analytics = analyzeConfigurations(data);
       const summaryChildren: (Paragraph | Table)[] = [];
@@ -2314,7 +2340,10 @@ export async function generateDetailedDOCX(
       );
   }
   const doc = new Document({
-    title: branding?.metadata?.title || "Intune Configuration Documentation",
+    title:
+      branding?.metadata?.title ||
+      scope?.title ||
+      "Intune Configuration Documentation",
     creator: branding?.metadata?.author || "IntuneDocumentation",
     subject:
       branding?.metadata?.subject || "Microsoft Intune Configuration Export",

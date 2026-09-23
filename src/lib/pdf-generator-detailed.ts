@@ -61,6 +61,11 @@ export async function generateDetailedPDF(
   // Analyze configurations for overview
   const analytics = analyzeConfigurations(data);
 
+  // Opt in: a scoped export titles the cover for its scope, and a compact
+  // one leaves out the summary pages.
+  const scope = data.documentScope;
+  const compactScope = scope?.compact === true;
+
   // Extract branding options with defaults
   const branding = data.branding;
   const primaryColor = branding?.colors?.primary || "#003366";
@@ -809,9 +814,27 @@ export async function generateDetailedPDF(
   const [tr, tg, tb] = hexToRgb(primaryColor);
   doc.setTextColor(tr, tg, tb);
 
-  const coverTitle = branding?.coverPage?.title || "Microsoft Intune";
-  doc.text(coverTitle, pageWidth / 2, titleY, { align: "center" });
-  titleY += 18;
+  if (scope?.title) {
+    // A configuration name can be long: a smaller size, wrapped to at most
+    // three lines.
+    const scopeTitleSize = Math.max(headerFontSize * 2, 26);
+    doc.setFontSize(scopeTitleSize);
+    const wrapped: string[] = doc.splitTextToSize(scope.title, maxWidth);
+    const titleLines = wrapped.slice(0, 3);
+    if (wrapped.length > 3) {
+      let last = titleLines[2] ?? "";
+      while (last && doc.getTextWidth(`${last}...`) > maxWidth) {
+        last = last.slice(0, -1);
+      }
+      titleLines[2] = `${last.trimEnd()}...`;
+    }
+    doc.text(titleLines, pageWidth / 2, titleY, { align: "center" });
+    titleY += 18 + (titleLines.length - 1) * scopeTitleSize * 0.45;
+  } else {
+    const coverTitle = branding?.coverPage?.title || "Microsoft Intune";
+    doc.text(coverTitle, pageWidth / 2, titleY, { align: "center" });
+    titleY += 18;
+  }
 
   // Subtitle - Configuration Documentation (lighter gray for less emphasis)
   doc.setFontSize(Math.max(headerFontSize * 1.4, 18));
@@ -827,10 +850,19 @@ export async function generateDetailedPDF(
   doc.setFont(fontFamily, "normal");
   doc.setTextColor(120, 120, 120);
   const tagline =
+    scope?.subtitle ||
     branding?.coverPage?.subtitle ||
     "Comprehensive export of Intune policies, profiles, and assignments";
-  doc.text(tagline, pageWidth / 2, titleY, { align: "center" });
-  titleY += 40;
+  if (scope?.subtitle) {
+    const taglineLines: string[] = doc
+      .splitTextToSize(tagline, maxWidth)
+      .slice(0, 2);
+    doc.text(taglineLines, pageWidth / 2, titleY, { align: "center" });
+    titleY += 40 + (taglineLines.length - 1) * 6;
+  } else {
+    doc.text(tagline, pageWidth / 2, titleY, { align: "center" });
+    titleY += 40;
+  }
 
   // === METADATA SECTION: Centered Table ===
   // Position the metadata box in the center of remaining space
@@ -966,6 +998,7 @@ export async function generateDetailedPDF(
 
   // Check if ToC is enabled (default to true if not specified)
   const includeToC =
+    !compactScope &&
     branding?.documentSettings?.includeTableOfContents !== false;
 
   // Variables for ToC page reference (declared outside if block)
@@ -1332,7 +1365,7 @@ export async function generateDetailedPDF(
     );
   };
 
-  addTenantOverview();
+  if (!compactScope) addTenantOverview();
   if (data.includeComplianceEvidence !== false) {
     addComplianceOverview();
   }
@@ -1380,317 +1413,104 @@ export async function generateDetailedPDF(
     }
   }
 
-  // Continue with existing content but replace the old metrics section
-  yPosition += 10;
+  // A compact scoped export goes straight from the cover to the details.
+  if (!compactScope) {
+    // Continue with existing content but replace the old metrics section
+    yPosition += 10;
 
-  // === CONFIGURATION INVENTORY WITH ENHANCED FORMATTING ===
+    // === CONFIGURATION INVENTORY WITH ENHANCED FORMATTING ===
 
-  // Enhanced table rows without emoji icons - define first
-  const inventory = analytics.inventory.map((item) => ({
-    type: item.label,
-    count: item.total,
-    assigned: item.assigned,
-    unassigned: item.unassigned,
-    unknown: item.unknown,
-    notApplicable: item.notApplicable,
-  }));
+    // Enhanced table rows without emoji icons - define first
+    const inventory = analytics.inventory.map((item) => ({
+      type: item.label,
+      count: item.total,
+      assigned: item.assigned,
+      unassigned: item.unassigned,
+      unknown: item.unknown,
+      notApplicable: item.notApplicable,
+    }));
 
-  // Check if we need to start a new page for Configuration Inventory
-  // Calculate total height needed for the table
-  const inventoryHeaderHeight = 12 + 10; // Title + table header
-  const activeInventoryCount = inventory.filter(
-    (item) => item.count > 0,
-  ).length;
-  const inventoryRowHeight = 9;
-  const inventoryTotalHeight =
-    inventoryHeaderHeight + activeInventoryCount * inventoryRowHeight + 20; // +20 for spacing
+    // Check if we need to start a new page for Configuration Inventory
+    // Calculate total height needed for the table
+    const inventoryHeaderHeight = 12 + 10; // Title + table header
+    const activeInventoryCount = inventory.filter(
+      (item) => item.count > 0,
+    ).length;
+    const inventoryRowHeight = 9;
+    const inventoryTotalHeight =
+      inventoryHeaderHeight + activeInventoryCount * inventoryRowHeight + 20; // +20 for spacing
 
-  // Check if table would overlap with footer (leave 40mm for footer to be safe)
-  if (yPosition + inventoryTotalHeight > pageHeight - 40) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-  }
-
-  doc.setFontSize(12);
-  doc.setFont(fontFamily, "bold");
-  doc.setTextColor(0, 0, 0);
-  doc.text("Configuration Inventory", margin, yPosition);
-  yPosition += 10;
-
-  // Enhanced table header with color
-  const tableWidth = 180;
-  const [thr, thg, thb] = hexToRgb(primaryColor);
-  doc.setFillColor(thr, thg, thb);
-  doc.rect(margin, yPosition, tableWidth, 10, "F");
-
-  doc.setFontSize(10);
-  doc.setFont(fontFamily, "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("Policy Type", margin + 3, yPosition + 7);
-  doc.text("Total", margin + 80, yPosition + 7);
-  doc.text("Assigned", margin + 100, yPosition + 7);
-  doc.text("Unassigned", margin + 125, yPosition + 7);
-  doc.text("Unknown", margin + 155, yPosition + 7);
-  yPosition += 10;
-
-  doc.setFont(fontFamily, "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
-
-  const activeInventory = inventory.filter((item) => item.count > 0);
-  activeInventory.forEach((item, index) => {
-    const rowHeight = 9;
-
-    // Check if we're too close to the bottom of the page (leave 40mm for footer to be safe)
-    if (yPosition + rowHeight > pageHeight - 40) {
-      // Start a new page
+    // Check if table would overlap with footer (leave 40mm for footer to be safe)
+    if (yPosition + inventoryTotalHeight > pageHeight - 40) {
       doc.addPage();
       yPosition = margin;
       pageNumber++;
       addPageNumber();
-
-      // Redraw table header on new page
-      doc.setFillColor(thr, thg, thb);
-      doc.rect(margin, yPosition, tableWidth, 10, "F");
-
-      doc.setFontSize(10);
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(255, 255, 255);
-      doc.text("Policy Type", margin + 3, yPosition + 7);
-      doc.text("Total", margin + 80, yPosition + 7);
-      doc.text("Assigned", margin + 100, yPosition + 7);
-      doc.text("Unassigned", margin + 125, yPosition + 7);
-      yPosition += 10;
-
-      doc.text("Unknown", margin + 155, yPosition - 3);
-
-      // Reset text settings
-      doc.setFont(fontFamily, "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(0, 0, 0);
     }
-
-    // Alternating row backgrounds
-    if (index % 2 === 0) {
-      doc.setFillColor(248, 249, 250);
-      doc.rect(margin, yPosition, tableWidth, rowHeight, "F");
-    }
-
-    // Row border
-    doc.setDrawColor(230, 230, 230);
-    doc.setLineWidth(0.1);
-    doc.line(
-      margin,
-      yPosition + rowHeight,
-      margin + tableWidth,
-      yPosition + rowHeight,
-    );
-
-    // Policy type
-    doc.setFontSize(9);
-    doc.setFont(fontFamily, "normal");
-    doc.text(item.type, margin + 3, yPosition + 6);
-
-    // Total count
-    doc.setFont(fontFamily, "bold");
-    doc.setTextColor(52, 152, 219); // Blue
-    doc.text(item.count.toString(), margin + 85, yPosition + 6);
-
-    // Assigned count
-    doc.setTextColor(39, 174, 96); // Green
-    doc.text(
-      item.notApplicable === item.count ? "N/A" : item.assigned.toString(),
-      margin + 110,
-      yPosition + 6,
-    );
-
-    // Unassigned count (red if > 0, gray if 0)
-    const unassigned = item.unassigned;
-    doc.setTextColor(
-      unassigned > 0 ? 231 : 149,
-      unassigned > 0 ? 76 : 165,
-      unassigned > 0 ? 60 : 166,
-    );
-    doc.text(
-      item.notApplicable === item.count ? "N/A" : unassigned.toString(),
-      margin + 135,
-      yPosition + 6,
-    );
-    doc.setTextColor(100, 100, 100);
-    doc.text(
-      item.notApplicable === item.count ? "N/A" : item.unknown.toString(),
-      margin + 165,
-      yPosition + 6,
-    );
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFont(fontFamily, "normal");
-    yPosition += rowHeight;
-  });
-
-  yPosition += 15;
-
-  // === PLATFORM COVERAGE CHART ===
-  if (Object.keys(analytics.platformCounts).length > 0 || data.deviceCounts) {
-    // Combine configuration counts with device counts first to calculate space needed
-    const platformData: Record<string, { configs: number; devices: number }> =
-      {};
-
-    // Add configuration counts
-    Object.entries(analytics.platformCounts).forEach(([platform, count]) => {
-      platformData[platform] = { configs: count, devices: 0 };
-    });
-
-    // Add device counts (normalize OS names to match configuration platforms)
-    if (data.deviceCounts) {
-      Object.entries(data.deviceCounts).forEach(([os, count]) => {
-        const normalizedPlatform = (() => {
-          if (typeof os !== "string") return String(os);
-          const lower = os.toLowerCase();
-          if (lower.includes("windows")) return "Windows";
-          if (lower.includes("mac")) return "macOS";
-          if (lower.includes("ios")) return "iOS";
-          if (lower.includes("android")) return "Android";
-          if (lower.includes("linux")) return "Linux";
-          return os;
-        })();
-
-        if (platformData[normalizedPlatform]) {
-          platformData[normalizedPlatform].devices += count;
-        } else {
-          platformData[normalizedPlatform] = { configs: 0, devices: count };
-        }
-      });
-    }
-
-    // Sort platforms by total activity
-    const sortedPlatforms = Object.entries(platformData)
-      .sort(
-        (a, b) => b[1].configs + b[1].devices - (a[1].configs + a[1].devices),
-      )
-      .slice(0, 5); // Show top 5 platforms
-
-    // Calculate total space needed for Platform Coverage section
-    const barHeight = 14;
-    const barSpacing = 5;
-    const platformChartHeight =
-      10 + sortedPlatforms.length * (barHeight + barSpacing) + 20; // Title + bars + bottom margin
-
-    // Check if entire Platform Coverage section fits
-    checkPageBreak(platformChartHeight);
 
     doc.setFontSize(12);
     doc.setFont(fontFamily, "bold");
     doc.setTextColor(0, 0, 0);
-    doc.text("Platform Coverage", margin, yPosition);
+    doc.text("Configuration Inventory", margin, yPosition);
     yPosition += 10;
 
-    // Platform colors
-    const platformColors: Record<string, [number, number, number]> = {
-      Windows: [52, 152, 219], // Blue
-      macOS: [155, 89, 182], // Purple
-      iOS: [46, 204, 113], // Green
-      Android: [230, 126, 34], // Orange
-      Linux: [231, 76, 60], // Red
-    };
+    // Enhanced table header with color
+    const tableWidth = 180;
+    const [thr, thg, thb] = hexToRgb(primaryColor);
+    doc.setFillColor(thr, thg, thb);
+    doc.rect(margin, yPosition, tableWidth, 10, "F");
 
-    // Find maximum value for chart scaling
-    const maxConfigs = Math.max(
-      ...sortedPlatforms.map(([_, data]) => data.configs),
-      1,
-    );
-    const chartWidth = 100; // Reduced from 120 to fit better
-
-    sortedPlatforms.forEach(([platform, data], index) => {
-      const barY = yPosition + index * (barHeight + barSpacing);
-
-      const color: [number, number, number] = platformColors[platform] || [
-        52, 152, 219,
-      ];
-
-      // Platform name - simple text, no colored box
-      doc.setFontSize(9);
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(60, 60, 60);
-      doc.text(platform, margin, barY + 9);
-
-      // Background bar - adjusted position since no colored box
-      const barStartX = margin + 45;
-      doc.setFillColor(245, 245, 245);
-      doc.rect(barStartX, barY, chartWidth, barHeight, "F");
-
-      // Data bar (configurations)
-      if (data.configs > 0) {
-        const barWidth = Math.min(
-          (data.configs / maxConfigs) * chartWidth,
-          chartWidth,
-        );
-        doc.setFillColor(color[0], color[1], color[2]);
-        doc.rect(barStartX, barY, barWidth, barHeight, "F");
-      }
-
-      // Bar border
-      doc.setDrawColor(220, 220, 220);
-      doc.setLineWidth(0.3);
-      doc.rect(barStartX, barY, chartWidth, barHeight, "S");
-
-      // Value labels - positioned to right of bar, showing only configs
-      doc.setFontSize(8);
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(color[0], color[1], color[2]);
-
-      // Show only configuration count
-      const labelText = `${data.configs} configs`;
-
-      // Position text to the right of the bar
-      const textX = barStartX + chartWidth + 3;
-      doc.text(labelText, textX, barY + 9);
-    });
-
-    yPosition += sortedPlatforms.length * (barHeight + barSpacing) + 15;
-
-    // Check if we're too close to bottom after drawing platform coverage
-    checkPageBreak(10);
-  }
-
-  // === TOP GROUPS TABLE WITH ENHANCED FORMATTING ===
-  if (analytics.topGroups.length > 0) {
-    checkPageBreak(80);
-    doc.setFontSize(12);
-    doc.setFont(fontFamily, "bold");
-    doc.setTextColor(0, 0, 0);
-    doc.text("Top Assigned Groups", margin, yPosition);
-    yPosition += 10;
-
-    // Table header - adjusted width to fit page
-    const groupTableWidth = pageWidth - 2 * margin; // Use full available width
-    const [gthr, gthg, gthb] = hexToRgb(secondaryColor);
-    doc.setFillColor(gthr, gthg, gthb);
-    doc.rect(margin, yPosition, groupTableWidth, 9, "F");
-
-    doc.setFontSize(9);
+    doc.setFontSize(10);
     doc.setFont(fontFamily, "bold");
     doc.setTextColor(255, 255, 255);
-    doc.text("Rank", margin + 3, yPosition + 6);
-    doc.text("Group Name", margin + 20, yPosition + 6);
-    doc.text("Assignments", margin + 95, yPosition + 6);
-    doc.text("Platforms", margin + 135, yPosition + 6);
-    yPosition += 9;
+    doc.text("Policy Type", margin + 3, yPosition + 7);
+    doc.text("Total", margin + 80, yPosition + 7);
+    doc.text("Assigned", margin + 100, yPosition + 7);
+    doc.text("Unassigned", margin + 125, yPosition + 7);
+    doc.text("Unknown", margin + 155, yPosition + 7);
+    yPosition += 10;
 
-    // Group data rows
-    const topGroupsData = analytics.topGroups.slice(0, 5);
     doc.setFont(fontFamily, "normal");
+    doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
 
-    topGroupsData.forEach(([groupId, count], index) => {
-      const rowHeight = 10;
+    const activeInventory = inventory.filter((item) => item.count > 0);
+    activeInventory.forEach((item, index) => {
+      const rowHeight = 9;
+
+      // Check if we're too close to the bottom of the page (leave 40mm for footer to be safe)
+      if (yPosition + rowHeight > pageHeight - 40) {
+        // Start a new page
+        doc.addPage();
+        yPosition = margin;
+        pageNumber++;
+        addPageNumber();
+
+        // Redraw table header on new page
+        doc.setFillColor(thr, thg, thb);
+        doc.rect(margin, yPosition, tableWidth, 10, "F");
+
+        doc.setFontSize(10);
+        doc.setFont(fontFamily, "bold");
+        doc.setTextColor(255, 255, 255);
+        doc.text("Policy Type", margin + 3, yPosition + 7);
+        doc.text("Total", margin + 80, yPosition + 7);
+        doc.text("Assigned", margin + 100, yPosition + 7);
+        doc.text("Unassigned", margin + 125, yPosition + 7);
+        yPosition += 10;
+
+        doc.text("Unknown", margin + 155, yPosition - 3);
+
+        // Reset text settings
+        doc.setFont(fontFamily, "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(0, 0, 0);
+      }
 
       // Alternating row backgrounds
       if (index % 2 === 0) {
         doc.setFillColor(248, 249, 250);
-        doc.rect(margin, yPosition, groupTableWidth, rowHeight, "F");
+        doc.rect(margin, yPosition, tableWidth, rowHeight, "F");
       }
 
       // Row border
@@ -1699,80 +1519,296 @@ export async function generateDetailedPDF(
       doc.line(
         margin,
         yPosition + rowHeight,
-        margin + groupTableWidth,
+        margin + tableWidth,
         yPosition + rowHeight,
       );
 
-      // Rank number with colored background for top 3
-      if (index < 3) {
-        const rankColors: Array<[number, number, number]> = [
-          [255, 215, 0], // Gold
-          [192, 192, 192], // Silver
-          [205, 127, 50], // Bronze
-        ];
-        const rankColor = rankColors[index]!;
-        doc.setFillColor(rankColor[0], rankColor[1], rankColor[2]);
-        doc.circle(margin + 6, yPosition + 5, 3, "F");
-        doc.setFontSize(7);
-        doc.setFont(fontFamily, "bold");
-        doc.setTextColor(255, 255, 255);
-        doc.text((index + 1).toString(), margin + 6, yPosition + 6.5, {
-          align: "center",
-        });
-      } else {
-        doc.setFontSize(8);
-        doc.setFont(fontFamily, "normal");
-        doc.setTextColor(100, 100, 100);
-        doc.text(`${index + 1}.`, margin + 3, yPosition + 6);
-      }
-
-      // Group name (truncate if too long)
+      // Policy type
       doc.setFontSize(9);
       doc.setFont(fontFamily, "normal");
-      doc.setTextColor(0, 0, 0);
-      const groupName = data.groupNames?.get(groupId) || groupId;
-      // Calculate max width for group name to avoid overflow
-      const maxNameWidth = 70; // Reduced to ensure it fits
-      const nameLines = doc.splitTextToSize(groupName, maxNameWidth);
-      doc.text(nameLines[0], margin + 20, yPosition + 6);
+      doc.text(item.type, margin + 3, yPosition + 6);
 
-      // Assignment count with visual indicator
-      const barMaxWidth = 18; // Slightly reduced
-      const barWidth = Math.min(
-        (count / Math.max(...analytics.topGroups.map((g) => g[1]))) *
-          barMaxWidth,
-        barMaxWidth,
-      );
-      const barColor: [number, number, number] =
-        count >= 10
-          ? [39, 174, 96] // Green for high activity
-          : count >= 5
-            ? [52, 152, 219] // Blue for moderate
-            : [230, 126, 34]; // Orange for low
-
-      // Small bar chart
-      doc.setFillColor(240, 240, 240);
-      doc.rect(margin + 95, yPosition + 3, barMaxWidth, 4, "F");
-      doc.setFillColor(barColor[0], barColor[1], barColor[2]);
-      doc.rect(margin + 95, yPosition + 3, barWidth, 4, "F");
-
-      // Count number
+      // Total count
       doc.setFont(fontFamily, "bold");
-      doc.setFontSize(8);
-      doc.setTextColor(barColor[0], barColor[1], barColor[2]);
-      doc.text(count.toString(), margin + 115, yPosition + 6);
+      doc.setTextColor(52, 152, 219); // Blue
+      doc.text(item.count.toString(), margin + 85, yPosition + 6);
 
-      // Platform indicator
-      doc.setFont(fontFamily, "normal");
+      // Assigned count
+      doc.setTextColor(39, 174, 96); // Green
+      doc.text(
+        item.notApplicable === item.count ? "N/A" : item.assigned.toString(),
+        margin + 110,
+        yPosition + 6,
+      );
+
+      // Unassigned count (red if > 0, gray if 0)
+      const unassigned = item.unassigned;
+      doc.setTextColor(
+        unassigned > 0 ? 231 : 149,
+        unassigned > 0 ? 76 : 165,
+        unassigned > 0 ? 60 : 166,
+      );
+      doc.text(
+        item.notApplicable === item.count ? "N/A" : unassigned.toString(),
+        margin + 135,
+        yPosition + 6,
+      );
       doc.setTextColor(100, 100, 100);
-      doc.setFontSize(8);
-      doc.text("Multi", margin + 140, yPosition + 6);
+      doc.text(
+        item.notApplicable === item.count ? "N/A" : item.unknown.toString(),
+        margin + 165,
+        yPosition + 6,
+      );
 
       doc.setTextColor(0, 0, 0);
+      doc.setFont(fontFamily, "normal");
       yPosition += rowHeight;
     });
 
     yPosition += 15;
+
+    // === PLATFORM COVERAGE CHART ===
+    if (Object.keys(analytics.platformCounts).length > 0 || data.deviceCounts) {
+      // Combine configuration counts with device counts first to calculate space needed
+      const platformData: Record<string, { configs: number; devices: number }> =
+        {};
+
+      // Add configuration counts
+      Object.entries(analytics.platformCounts).forEach(([platform, count]) => {
+        platformData[platform] = { configs: count, devices: 0 };
+      });
+
+      // Add device counts (normalize OS names to match configuration platforms)
+      if (data.deviceCounts) {
+        Object.entries(data.deviceCounts).forEach(([os, count]) => {
+          const normalizedPlatform = (() => {
+            if (typeof os !== "string") return String(os);
+            const lower = os.toLowerCase();
+            if (lower.includes("windows")) return "Windows";
+            if (lower.includes("mac")) return "macOS";
+            if (lower.includes("ios")) return "iOS";
+            if (lower.includes("android")) return "Android";
+            if (lower.includes("linux")) return "Linux";
+            return os;
+          })();
+
+          if (platformData[normalizedPlatform]) {
+            platformData[normalizedPlatform].devices += count;
+          } else {
+            platformData[normalizedPlatform] = { configs: 0, devices: count };
+          }
+        });
+      }
+
+      // Sort platforms by total activity
+      const sortedPlatforms = Object.entries(platformData)
+        .sort(
+          (a, b) => b[1].configs + b[1].devices - (a[1].configs + a[1].devices),
+        )
+        .slice(0, 5); // Show top 5 platforms
+
+      // Calculate total space needed for Platform Coverage section
+      const barHeight = 14;
+      const barSpacing = 5;
+      const platformChartHeight =
+        10 + sortedPlatforms.length * (barHeight + barSpacing) + 20; // Title + bars + bottom margin
+
+      // Check if entire Platform Coverage section fits
+      checkPageBreak(platformChartHeight);
+
+      doc.setFontSize(12);
+      doc.setFont(fontFamily, "bold");
+      doc.setTextColor(0, 0, 0);
+      doc.text("Platform Coverage", margin, yPosition);
+      yPosition += 10;
+
+      // Platform colors
+      const platformColors: Record<string, [number, number, number]> = {
+        Windows: [52, 152, 219], // Blue
+        macOS: [155, 89, 182], // Purple
+        iOS: [46, 204, 113], // Green
+        Android: [230, 126, 34], // Orange
+        Linux: [231, 76, 60], // Red
+      };
+
+      // Find maximum value for chart scaling
+      const maxConfigs = Math.max(
+        ...sortedPlatforms.map(([_, data]) => data.configs),
+        1,
+      );
+      const chartWidth = 100; // Reduced from 120 to fit better
+
+      sortedPlatforms.forEach(([platform, data], index) => {
+        const barY = yPosition + index * (barHeight + barSpacing);
+
+        const color: [number, number, number] = platformColors[platform] || [
+          52, 152, 219,
+        ];
+
+        // Platform name - simple text, no colored box
+        doc.setFontSize(9);
+        doc.setFont(fontFamily, "normal");
+        doc.setTextColor(60, 60, 60);
+        doc.text(platform, margin, barY + 9);
+
+        // Background bar - adjusted position since no colored box
+        const barStartX = margin + 45;
+        doc.setFillColor(245, 245, 245);
+        doc.rect(barStartX, barY, chartWidth, barHeight, "F");
+
+        // Data bar (configurations)
+        if (data.configs > 0) {
+          const barWidth = Math.min(
+            (data.configs / maxConfigs) * chartWidth,
+            chartWidth,
+          );
+          doc.setFillColor(color[0], color[1], color[2]);
+          doc.rect(barStartX, barY, barWidth, barHeight, "F");
+        }
+
+        // Bar border
+        doc.setDrawColor(220, 220, 220);
+        doc.setLineWidth(0.3);
+        doc.rect(barStartX, barY, chartWidth, barHeight, "S");
+
+        // Value labels - positioned to right of bar, showing only configs
+        doc.setFontSize(8);
+        doc.setFont(fontFamily, "bold");
+        doc.setTextColor(color[0], color[1], color[2]);
+
+        // Show only configuration count
+        const labelText = `${data.configs} configs`;
+
+        // Position text to the right of the bar
+        const textX = barStartX + chartWidth + 3;
+        doc.text(labelText, textX, barY + 9);
+      });
+
+      yPosition += sortedPlatforms.length * (barHeight + barSpacing) + 15;
+
+      // Check if we're too close to bottom after drawing platform coverage
+      checkPageBreak(10);
+    }
+
+    // === TOP GROUPS TABLE WITH ENHANCED FORMATTING ===
+    if (analytics.topGroups.length > 0) {
+      checkPageBreak(80);
+      doc.setFontSize(12);
+      doc.setFont(fontFamily, "bold");
+      doc.setTextColor(0, 0, 0);
+      doc.text("Top Assigned Groups", margin, yPosition);
+      yPosition += 10;
+
+      // Table header - adjusted width to fit page
+      const groupTableWidth = pageWidth - 2 * margin; // Use full available width
+      const [gthr, gthg, gthb] = hexToRgb(secondaryColor);
+      doc.setFillColor(gthr, gthg, gthb);
+      doc.rect(margin, yPosition, groupTableWidth, 9, "F");
+
+      doc.setFontSize(9);
+      doc.setFont(fontFamily, "bold");
+      doc.setTextColor(255, 255, 255);
+      doc.text("Rank", margin + 3, yPosition + 6);
+      doc.text("Group Name", margin + 20, yPosition + 6);
+      doc.text("Assignments", margin + 95, yPosition + 6);
+      doc.text("Platforms", margin + 135, yPosition + 6);
+      yPosition += 9;
+
+      // Group data rows
+      const topGroupsData = analytics.topGroups.slice(0, 5);
+      doc.setFont(fontFamily, "normal");
+      doc.setTextColor(0, 0, 0);
+
+      topGroupsData.forEach(([groupId, count], index) => {
+        const rowHeight = 10;
+
+        // Alternating row backgrounds
+        if (index % 2 === 0) {
+          doc.setFillColor(248, 249, 250);
+          doc.rect(margin, yPosition, groupTableWidth, rowHeight, "F");
+        }
+
+        // Row border
+        doc.setDrawColor(230, 230, 230);
+        doc.setLineWidth(0.1);
+        doc.line(
+          margin,
+          yPosition + rowHeight,
+          margin + groupTableWidth,
+          yPosition + rowHeight,
+        );
+
+        // Rank number with colored background for top 3
+        if (index < 3) {
+          const rankColors: Array<[number, number, number]> = [
+            [255, 215, 0], // Gold
+            [192, 192, 192], // Silver
+            [205, 127, 50], // Bronze
+          ];
+          const rankColor = rankColors[index]!;
+          doc.setFillColor(rankColor[0], rankColor[1], rankColor[2]);
+          doc.circle(margin + 6, yPosition + 5, 3, "F");
+          doc.setFontSize(7);
+          doc.setFont(fontFamily, "bold");
+          doc.setTextColor(255, 255, 255);
+          doc.text((index + 1).toString(), margin + 6, yPosition + 6.5, {
+            align: "center",
+          });
+        } else {
+          doc.setFontSize(8);
+          doc.setFont(fontFamily, "normal");
+          doc.setTextColor(100, 100, 100);
+          doc.text(`${index + 1}.`, margin + 3, yPosition + 6);
+        }
+
+        // Group name (truncate if too long)
+        doc.setFontSize(9);
+        doc.setFont(fontFamily, "normal");
+        doc.setTextColor(0, 0, 0);
+        const groupName = data.groupNames?.get(groupId) || groupId;
+        // Calculate max width for group name to avoid overflow
+        const maxNameWidth = 70; // Reduced to ensure it fits
+        const nameLines = doc.splitTextToSize(groupName, maxNameWidth);
+        doc.text(nameLines[0], margin + 20, yPosition + 6);
+
+        // Assignment count with visual indicator
+        const barMaxWidth = 18; // Slightly reduced
+        const barWidth = Math.min(
+          (count / Math.max(...analytics.topGroups.map((g) => g[1]))) *
+            barMaxWidth,
+          barMaxWidth,
+        );
+        const barColor: [number, number, number] =
+          count >= 10
+            ? [39, 174, 96] // Green for high activity
+            : count >= 5
+              ? [52, 152, 219] // Blue for moderate
+              : [230, 126, 34]; // Orange for low
+
+        // Small bar chart
+        doc.setFillColor(240, 240, 240);
+        doc.rect(margin + 95, yPosition + 3, barMaxWidth, 4, "F");
+        doc.setFillColor(barColor[0], barColor[1], barColor[2]);
+        doc.rect(margin + 95, yPosition + 3, barWidth, 4, "F");
+
+        // Count number
+        doc.setFont(fontFamily, "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(barColor[0], barColor[1], barColor[2]);
+        doc.text(count.toString(), margin + 115, yPosition + 6);
+
+        // Platform indicator
+        doc.setFont(fontFamily, "normal");
+        doc.setTextColor(100, 100, 100);
+        doc.setFontSize(8);
+        doc.text("Multi", margin + 140, yPosition + 6);
+
+        doc.setTextColor(0, 0, 0);
+        yPosition += rowHeight;
+      });
+
+      yPosition += 15;
+    }
   }
 
   // Settings Catalog Section

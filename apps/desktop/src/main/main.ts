@@ -23,6 +23,7 @@ import type {
   UpdateStatus,
 } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
+import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
 import { AuthService } from "./auth";
 import {
@@ -46,7 +47,7 @@ import {
   frameworkSourceUrl,
   parseComplianceRequest,
 } from "./compliance";
-import { prepareExport } from "./export";
+import { estimateScopedExport, prepareExport } from "./export";
 import { LicenseService } from "./license";
 import { errorText, log, tailLog } from "./logger";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
@@ -689,21 +690,26 @@ function registerIpc(): void {
     return getSectionItems(key, auth?.getOwnerKey() ?? null);
   });
 
+  // Configuration exports never include compliance evidence, whatever the
+  // renderer sends. A scope limits the export to items of the collection.
   handle("export:prepare", async (event, options) => {
-    const includeComplianceEvidence =
-      typeof options === "object" &&
-      options !== null &&
-      (options as { includeComplianceEvidence?: unknown })
-        .includeComplianceEvidence !== false;
+    const scope = parseExportScope(
+      typeof options === "object" && options !== null
+        ? (options as { scope?: unknown }).scope
+        : undefined,
+    );
     preparingExports += 1;
     try {
       const owner = await requireOwner();
       await requireLicense();
-      log("info", "export prepare started", { includeComplianceEvidence });
+      log("info", "export prepare started", {
+        scoped: scope !== null,
+        items: scope?.length ?? null,
+      });
       return await prepareExport(
         tokenProvider,
         owner,
-        { includeComplianceEvidence },
+        scope,
         (progress) => {
           if (event.sender.isDestroyed()) return;
           event.sender.send("export:progress", {
@@ -719,6 +725,14 @@ function registerIpc(): void {
       preparingExports -= 1;
       pushLicense();
     }
+  });
+
+  handle("export:estimate", (_event, input) => {
+    const scope = parseExportScope(input);
+    if (!scope) throw new Error("Choose at least one configuration to export.");
+    const owner = auth?.getOwnerKey() ?? null;
+    if (!owner) throw new Error("Sign in before continuing.");
+    return estimateScopedExport(owner, scope);
   });
 
   // The assessment feeds the evidence report, so it is licensed like an export.

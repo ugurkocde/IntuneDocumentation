@@ -1,3 +1,4 @@
+import { scopeKey } from "../../shared/export-scope";
 import {
   applyProgress,
   completeSteps,
@@ -33,7 +34,9 @@ export function persistSidebar(open: boolean): void {
 export const initialExportState: ExportState = {
   phase: "form",
   format: "pdf",
-  includeEvidence: true,
+  scope: "tenant",
+  label: null,
+  returnFamilyKey: null,
   stage: 0,
   percent: 0,
   savedPath: null,
@@ -82,9 +85,25 @@ export function createInitialState(): AppState {
       toast: "hidden",
     },
     sections: {},
+    selection: {},
     exportState: initialExportState,
     compliance: { scope: {}, report: initialComplianceReport },
   };
+}
+
+// The Export screen follows the selection: it offers the selected items once
+// something is selected and falls back to the whole tenant when cleared.
+function withSelection(
+  state: AppState,
+  selection: AppState["selection"],
+): AppState {
+  const had = Object.keys(state.selection).length > 0;
+  const has = Object.keys(selection).length > 0;
+  const exportState =
+    had === has || state.exportState.phase === "running"
+      ? state.exportState
+      : { ...state.exportState, scope: has ? "selection" : "tenant" } as const;
+  return { ...state, selection, exportState };
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -156,6 +175,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         sections: {},
+        selection: {},
         exportState:
           state.exportState.phase === "running"
             ? state.exportState
@@ -193,6 +213,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         sections: {},
+        selection: {},
         exportState:
           state.exportState.phase === "running"
             ? state.exportState
@@ -219,6 +240,16 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         exportState: { ...state.exportState, ...action.patch },
       };
+    case "select": {
+      const selection = { ...state.selection };
+      for (const item of action.items) {
+        if (action.selected) selection[scopeKey(item)] = item;
+        else delete selection[scopeKey(item)];
+      }
+      return withSelection(state, selection);
+    }
+    case "clearSelection":
+      return withSelection(state, {});
     case "complianceScope":
       return {
         ...state,

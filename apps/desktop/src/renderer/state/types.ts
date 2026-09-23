@@ -10,6 +10,7 @@ import type {
   SectionItemsResult,
   UpdateStatus,
 } from "../../shared/ipc-types";
+import type { ScopeItemRef } from "../../shared/export-scope";
 import type { CollectionStep } from "../lib/collection-steps";
 
 export type Screen =
@@ -34,10 +35,23 @@ export interface CollectionState {
 
 export type ExportFormat = "pdf" | "docx";
 
+// A configuration chosen on a section screen. Keyed by section and stable
+// item id; the names are kept for titles and file names.
+export interface SelectedItem extends ScopeItemRef {
+  name: string;
+  sectionLabel: string;
+}
+
 export interface ExportState {
   phase: "form" | "running" | "done" | "error";
   format: ExportFormat;
-  includeEvidence: boolean;
+  // What the Export screen exports when a selection exists.
+  scope: "tenant" | "selection";
+  // The scope title of the running or finished export; null for the whole
+  // tenant.
+  label: string | null;
+  // The family screen a scoped export was started from.
+  returnFamilyKey: string | null;
   stage: number;
   percent: number;
   savedPath: string | null;
@@ -75,6 +89,8 @@ export interface AppState {
   sidebarOpen: boolean;
   collection: CollectionState;
   sections: Record<string, SectionItemsResult>;
+  // Keyed by scopeKey(); cleared by a new collection or sign out.
+  selection: Record<string, SelectedItem>;
   exportState: ExportState;
   compliance: ComplianceState;
 }
@@ -105,5 +121,7 @@ export type Action =
   | { type: "resetCollection" }
   | { type: "sectionLoaded"; result: SectionItemsResult }
   | { type: "export"; patch: Partial<ExportState> }
+  | { type: "select"; items: SelectedItem[]; selected: boolean }
+  | { type: "clearSelection" }
   | { type: "complianceScope"; scope: AssessmentScope }
   | { type: "complianceReport"; patch: Partial<ComplianceReportState> };

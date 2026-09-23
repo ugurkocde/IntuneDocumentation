@@ -109,6 +109,21 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
         </dl>
       )}
 
+      {!license?.hasKey && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-600/20 bg-teal-50 p-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-petrol-950 text-sm font-semibold">No license yet? Start a 30 day free trial.</p>
+            <p className="text-petrol-600 mt-1 text-xs leading-5">
+              Pro covers one tenant from EUR 49 per month; MSP covers 10 or more client tenants. Your license key
+              arrives by email right after checkout, and you are not charged until the trial ends.
+            </p>
+          </div>
+          <Button icon={ExternalLink} onClick={() => void ipc.licenseOpen("buy")}>
+            Start free trial
+          </Button>
+        </div>
+      )}
+
       <div className="mt-5">
         {license?.hasKey ? (
           <div className="border-petrol-950/8 bg-surface flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4">
@@ -171,11 +186,6 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {!license?.hasKey && (
-          <Button variant="secondary" size="sm" icon={ExternalLink} onClick={() => void ipc.licenseOpen("buy")}>
-            Buy a license
-          </Button>
-        )}
         <Button variant="ghost" size="sm" icon={ExternalLink} onClick={() => void ipc.licenseOpen("portal")}>
           Manage subscription
         </Button>

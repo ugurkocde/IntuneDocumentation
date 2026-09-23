@@ -69,7 +69,7 @@ const licenseMessages = [
   {
     message: "A license is required to collect and export.",
     action:
-      "Open the License panel and paste your key. Sign in first so the app knows which tenant to activate.",
+      "Open License and account in the app and paste your key. Sign in first so the app knows which tenant to activate.",
   },
 ];
 
@@ -119,7 +119,13 @@ function Ui({ children }: { children: ReactNode }) {
   return <strong className="text-petrol-950 font-semibold">{children}</strong>;
 }
 
-export default function DesktopGettingStartedPage() {
+export default async function DesktopGettingStartedPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ checkout_id?: string }>;
+}) {
+  // Polar sends buyers here after checkout with ?checkout_id=...
+  const { checkout_id: checkoutId } = await searchParams;
   return (
     <div className="bg-mint-50 min-h-screen">
       <NavigationHeader />
@@ -140,6 +146,29 @@ export default function DesktopGettingStartedPage() {
               administrator who can create an app registration and grant admin
               consent in your Entra tenant.
             </p>
+            {checkoutId && (
+              <div
+                role="status"
+                className="mt-8 max-w-2xl rounded-2xl border border-teal-600/20 bg-teal-50 p-5"
+              >
+                <p className="text-petrol-950 font-semibold">
+                  Thank you, your trial has started.
+                </p>
+                <p className="text-petrol-700 mt-1 text-sm leading-6">
+                  Your license key is on its way to the email address you used
+                  at checkout, and it is always available in the{" "}
+                  <a
+                    href={DESKTOP_PORTAL_URL}
+                    rel="noopener"
+                    className="font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2"
+                  >
+                    customer portal
+                  </a>
+                  . Download the app below, then paste the key in the last setup
+                  step.
+                </p>
+              </div>
+            )}
           </div>
         </section>
 

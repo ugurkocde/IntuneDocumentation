@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   Download,
+  ExternalLink,
   KeyRound,
   ListChecks,
   LogIn,
@@ -142,9 +143,14 @@ function GetStarted() {
               </Button>
             ) : (
               license.kind === "none" && (
-                <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => actions.navigate("license")}>
-                  Add license key
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" icon={ExternalLink} onClick={() => void ipc.licenseOpen("buy")}>
+                    Start free trial
+                  </Button>
+                  <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => actions.navigate("license")}>
+                    Add license key
+                  </Button>
+                </div>
               )
             )
           }

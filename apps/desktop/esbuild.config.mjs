@@ -35,7 +35,8 @@ const license = {
     process.env.INTUNEDOC_LICENSE_PUBLIC_KEY ?? PLACEHOLDER_LICENSE_PUBLIC_KEY
   ).replace(/\\n/g, "\n"),
   buyUrl:
-    process.env.INTUNEDOC_LICENSE_BUY_URL ?? "https://intunedocumentation.com",
+    process.env.INTUNEDOC_LICENSE_BUY_URL ??
+    "https://intunedocumentation.com/desktop#pricing",
   portalUrl:
     process.env.INTUNEDOC_LICENSE_PORTAL_URL ??
     "https://sandbox.polar.sh/ugurlabs-sandbox/portal",

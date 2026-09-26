@@ -292,7 +292,9 @@ export default async function DesktopGettingStartedPage({
               <p>
                 The app tells you when an update is available and installs it
                 when you choose. To install updates without asking, turn on{" "}
-                <Ui>Install updates automatically</Ui> in Settings.
+                <Ui>Install updates automatically</Ui> in Settings. To stop the
+                app from checking for updates in the background, turn off{" "}
+                <Ui>Check for updates automatically</Ui> in Settings.
               </p>
               <p className="text-petrol-600 text-sm">
                 Older versions and release notes are on{" "}

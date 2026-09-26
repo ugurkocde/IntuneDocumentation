@@ -8,12 +8,14 @@ export function Checkbox({
   mixed = false,
   onChange,
   label,
+  disabled = false,
   children,
   className = "",
 }: {
   checked: boolean;
   mixed?: boolean;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
   // Accessible name when no visible text follows the box.
   label?: string;
   children?: ReactNode;
@@ -25,22 +27,27 @@ export function Checkbox({
   }, [mixed]);
   const on = checked || mixed;
   return (
-    <label className={`group inline-flex min-h-9 shrink-0 cursor-pointer items-center gap-2.5 ${className}`}>
+    <label
+      className={`group inline-flex min-h-9 shrink-0 items-center gap-2.5 ${
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+      } ${className}`}
+    >
       <span className="relative flex h-9 w-9 items-center justify-center">
         <input
           ref={input}
           type="checkbox"
           checked={checked}
           aria-label={label}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.checked)}
-          className="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          className="peer absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
         />
         <span
           aria-hidden="true"
           className={`flex h-[18px] w-[18px] items-center justify-center rounded-md border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-teal-600 peer-focus-visible:ring-offset-2 ${
             on
               ? "border-teal-600 bg-teal-600 text-white"
-              : "border-petrol-950/25 group-hover:border-petrol-950/45 bg-white"
+              : `border-petrol-950/25 bg-white ${disabled ? "" : "group-hover:border-petrol-950/45"}`
           }`}
         >
           {mixed ? (

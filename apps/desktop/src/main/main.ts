@@ -57,6 +57,7 @@ import {
   getUpdateStatus,
   installUpdate,
   setAutoUpdate,
+  setCheckForUpdates,
   startUpdater,
 } from "./updater";
 import {
@@ -396,6 +397,7 @@ async function exportDiagnostics(): Promise<string | null> {
     "",
     `Update status: ${update.state}${update.version ? ` ${update.version}` : ""}`,
     `Automatic updates: ${settings.autoUpdate ? "on" : "off"}`,
+    `Automatic update checks: ${settings.checkForUpdates ? "on" : "off"}`,
     "",
     `Last collection: ${collection ? collection.collectedAt : "none"}`,
     ...(collection
@@ -1001,6 +1003,17 @@ function registerIpc(): void {
     log("info", "automatic updates changed", { enabled: saved.autoUpdate });
     return saved;
   });
+  handle("update:setCheck", async (_event, enabled) => {
+    if (typeof enabled !== "boolean") {
+      throw new Error("Refused an unexpected update setting.");
+    }
+    const saved = await writeSettings({ checkForUpdates: enabled });
+    setCheckForUpdates(saved.checkForUpdates);
+    log("info", "automatic update checks changed", {
+      enabled: saved.checkForUpdates,
+    });
+    return saved;
+  });
 
   handle("diagnostics:export", () => exportDiagnostics());
 
@@ -1046,6 +1059,7 @@ if (!app.requestSingleInstanceLock()) {
       startUpdater(
         (status: UpdateStatus) => broadcast("update:status", status),
         settings.autoUpdate,
+        settings.checkForUpdates,
       ),
     );
     void refreshLicenses();

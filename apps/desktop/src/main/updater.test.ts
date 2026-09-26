@@ -33,7 +33,7 @@ vi.mock("./logger", () => ({
 
 type Updater = typeof import("./updater");
 
-async function load(automatic: boolean) {
+async function load(automatic: boolean, checkAutomatically = true) {
   vi.resetModules();
   fake.updater.removeAllListeners();
   fake.updater.autoDownload = true;
@@ -52,7 +52,7 @@ async function load(automatic: boolean) {
   });
   const updater: Updater = await import("./updater");
   const seen: UpdateStatus[] = [];
-  updater.startUpdater((status) => seen.push(status), automatic);
+  updater.startUpdater((status) => seen.push(status), automatic, checkAutomatically);
   return { updater, download, seen };
 }
 
@@ -157,5 +157,110 @@ describe("updater", () => {
 
     expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(download).not.toHaveBeenCalled();
+  });
+
+  it("keeps checking every 4 hours", async () => {
+    await load(false);
+
+    await vi.advanceTimersByTimeAsync(10_000 + 4 * 60 * 60_000);
+
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("updater with automatic checks off", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("schedules nothing and makes no background request", async () => {
+    const { download } = await load(false, false);
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 60_000);
+
+    expect(fake.updater.checkForUpdates).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("still checks when the user asks and lets them download", async () => {
+    const { updater, download } = await load(false, false);
+
+    await updater.checkForUpdates();
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(updater.getUpdateStatus()).toEqual({ state: "available", version: "0.2.0" });
+    expect(download).not.toHaveBeenCalled();
+
+    const result = await updater.downloadUpdate();
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ state: "ready", version: "0.2.0" });
+  });
+
+  it("does not download on its own even with automatic updates on", async () => {
+    const { updater, download } = await load(true, false);
+    expect(fake.updater.autoDownload).toBe(false);
+    expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+
+    await updater.checkForUpdates();
+
+    expect(download).not.toHaveBeenCalled();
+    expect(updater.getUpdateStatus().state).toBe("available");
+  });
+
+  it("starts the timers once when turned on", async () => {
+    const { updater } = await load(false, false);
+
+    updater.setCheckForUpdates(true);
+    updater.setCheckForUpdates(true);
+    expect(vi.getTimerCount()).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+
+    updater.setCheckForUpdates(true);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(4 * 60 * 60_000);
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears both timers when turned off", async () => {
+    const { updater } = await load(false, true);
+    expect(vi.getTimerCount()).toBe(2);
+
+    updater.setCheckForUpdates(false);
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 60_000);
+    expect(fake.updater.checkForUpdates).not.toHaveBeenCalled();
+  });
+
+  it("clears the interval after the first check ran", async () => {
+    const { updater } = await load(false, true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
+
+    updater.setCheckForUpdates(false);
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 60_000);
+    expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes automatic updates when checks are turned back on", async () => {
+    const { updater, download } = await load(true, false);
+    await updater.checkForUpdates();
+    expect(download).not.toHaveBeenCalled();
+
+    updater.setCheckForUpdates(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fake.updater.autoDownload).toBe(true);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(updater.getUpdateStatus().state).toBe("ready");
   });
 });

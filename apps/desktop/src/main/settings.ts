@@ -9,6 +9,9 @@ export interface AppSettings {
   // Off unless the user turns it on, including installs from before the
   // setting existed.
   autoUpdate: boolean;
+  // On unless the user turns it off, including installs from before the
+  // setting existed. Off means no background update requests.
+  checkForUpdates: boolean;
 }
 
 function settingsPath(): string {
@@ -22,7 +25,12 @@ function normalize(input: Partial<AppSettings>): AppSettings {
     typeof input.tenantId === "string" && input.tenantId.trim()
       ? input.tenantId.trim()
       : DEFAULT_TENANT;
-  return { clientId, tenantId, autoUpdate: input.autoUpdate === true };
+  return {
+    clientId,
+    tenantId,
+    autoUpdate: input.autoUpdate === true,
+    checkForUpdates: input.checkForUpdates !== false,
+  };
 }
 
 export async function readSettings(): Promise<AppSettings> {
@@ -30,7 +38,7 @@ export async function readSettings(): Promise<AppSettings> {
     const raw = await fs.readFile(settingsPath(), "utf8");
     return normalize(JSON.parse(raw) as Partial<AppSettings>);
   } catch {
-    return { clientId: "", tenantId: DEFAULT_TENANT, autoUpdate: false };
+    return normalize({});
   }
 }
 

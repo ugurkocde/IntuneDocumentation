@@ -112,7 +112,9 @@ function UpdateBanner({ isOpen }: { isOpen: boolean }) {
   if (!["available", "downloading", "ready"].includes(update.state)) return null;
   const ready = update.state === "ready";
   // With automatic updates on, an available update is already downloading.
-  const offer = update.state === "available" && state.settings?.autoUpdate !== true;
+  // They only apply while automatic checks are on.
+  const automatic = state.settings?.autoUpdate === true && state.settings.checkForUpdates;
+  const offer = update.state === "available" && !automatic;
   if (offer && dismissed === (update.version ?? "")) return null;
   const version = update.version ? `Version ${update.version}` : "A new version";
   const text = ready

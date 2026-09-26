@@ -15,6 +15,7 @@ export interface AppSettings {
   clientId: string;
   tenantId: string;
   autoUpdate: boolean;
+  checkForUpdates: boolean;
 }
 
 // The app registration fields Settings and the setup wizard save together.
@@ -272,6 +273,8 @@ export interface IntunedocApi {
   updateDownload(): Promise<UpdateStatus>;
   updateInstall(): Promise<boolean>;
   updateSetAuto(enabled: boolean): Promise<AppSettings>;
+  // Turns background update checks on or off.
+  updateSetCheck(enabled: boolean): Promise<AppSettings>;
   updateStatus(): Promise<UpdateStatus>;
   exportDiagnostics(): Promise<string | null>;
   clearLocalData(): Promise<boolean>;

@@ -40,6 +40,7 @@ describe("settings", () => {
       clientId: "client",
       tenantId: "contoso.com",
       autoUpdate: false,
+      checkForUpdates: true,
     });
   });
 
@@ -51,6 +52,7 @@ describe("settings", () => {
       clientId: "client",
       tenantId: "organizations",
       autoUpdate: true,
+      checkForUpdates: true,
     });
   });
 
@@ -62,6 +64,30 @@ describe("settings", () => {
       clientId: "client",
       tenantId: "contoso.com",
       autoUpdate: true,
+      checkForUpdates: true,
+    });
+  });
+
+  it("checks for updates automatically without a settings file", async () => {
+    expect((await readSettings()).checkForUpdates).toBe(true);
+  });
+
+  it("checks for updates automatically for settings saved before the option existed", async () => {
+    writeFileSync(file(), JSON.stringify({ clientId: "client", autoUpdate: true }));
+
+    expect((await readSettings()).checkForUpdates).toBe(true);
+  });
+
+  it("keeps automatic update checks off once turned off", async () => {
+    await writeSettings({ checkForUpdates: false });
+    await writeSettings({ clientId: "client", tenantId: "contoso.com" });
+    await writeSettings({ autoUpdate: true });
+
+    expect(await readSettings()).toEqual({
+      clientId: "client",
+      tenantId: "contoso.com",
+      autoUpdate: true,
+      checkForUpdates: false,
     });
   });
 });

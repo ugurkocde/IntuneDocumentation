@@ -337,8 +337,10 @@ export default function PrivacyPolicyPage() {
               <strong>Update checks:</strong> unless you turn off automatic
               update checks in the app&apos;s settings, the app asks our update
               service for the latest version shortly after launch and every
-              four hours. The request contains no tenant or account data; our
-              hosting provider processes your IP address at the request level.
+              four hours. The request contains no tenant or account data. It
+              includes a random identifier that the update component creates on
+              your device for staged rollouts, and our hosting provider
+              processes your IP address at the request level.
               Installer files are downloaded from GitHub, which receives
               standard request data such as your IP address.
             </p>

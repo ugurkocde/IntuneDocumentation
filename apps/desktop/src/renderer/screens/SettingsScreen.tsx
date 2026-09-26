@@ -152,7 +152,7 @@ function UpdatesCard() {
           <span className="min-w-0">
             <span className="text-petrol-950 block text-sm font-semibold">Check for updates automatically</span>
             <span className="text-petrol-600 mt-0.5 block text-[13px] leading-5">
-              When off, the app makes no update requests unless you select Check for updates.
+              When off, the app never checks for updates in the background. You can still check for and download updates yourself.
             </span>
           </span>
         </Checkbox>

@@ -246,7 +246,7 @@ const faqs = [
     id: "data",
     question: "What data is sent to your servers?",
     answer:
-      "Only what the licensing service needs: the license key or, for an organization license, a Microsoft sign-in token. We verify the token, read only its tenant ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft.",
+      "License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify the token, read only its tenant ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Update checks request the latest version from our update service, which sees only standard request data such as your IP address; you can turn automatic update checks off in Settings. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft.",
   },
   {
     id: "limits",

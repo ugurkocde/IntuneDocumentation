@@ -36,6 +36,7 @@ export interface AppActions {
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   setAutoUpdate(enabled: boolean): Promise<void>;
+  setCheckForUpdates(enabled: boolean): Promise<void>;
 }
 
 interface AppContextValue {
@@ -161,6 +162,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const settings = await ipc.updateSetAuto(enabled);
         dispatch({ type: "settings", settings });
       },
+      async setCheckForUpdates(enabled) {
+        const settings = await ipc.updateSetCheck(enabled);
+        dispatch({ type: "settings", settings });
+      },
     };
   }, []);
 
@@ -173,6 +178,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           clientId: "",
           tenantId: "organizations",
           autoUpdate: false,
+          checkForUpdates: true,
         }));
       const [auth, license, appInfo, update] = await Promise.all([
         settings.clientId ? ipc.authStatus().catch(() => null) : null,

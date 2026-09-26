@@ -54,7 +54,9 @@ function Row({
 function UpdatesCard() {
   const { state, actions } = useApp();
   const { update, appInfo } = state;
-  const automatic = state.settings?.autoUpdate === true;
+  const checksOn = state.settings?.checkForUpdates !== false;
+  // Automatic updates need automatic checks, as in the main process.
+  const automatic = state.settings?.autoUpdate === true && checksOn;
   const check = useAsyncAction();
   const toggle = useAsyncAction();
   const statusText: Record<string, string> = {
@@ -87,7 +89,9 @@ function UpdatesCard() {
         description={
           automatic
             ? "Updates download in the background and install when you restart the app."
-            : "The app checks for updates and tells you when one is available."
+            : checksOn
+              ? "The app checks for updates and tells you when one is available."
+              : "The app checks for updates only when you select Check for updates."
         }
       />
       <div className="border-petrol-950/8 bg-surface mt-5 rounded-2xl border p-4" aria-live="polite">
@@ -140,15 +144,29 @@ function UpdatesCard() {
           </Alert>
         )}
       </div>
-      <div className="mt-4">
+      <div className="mt-4 space-y-1">
+        <Checkbox
+          checked={checksOn}
+          onChange={(value) => void toggle.run("check", () => actions.setCheckForUpdates(value))}
+        >
+          <span className="min-w-0">
+            <span className="text-petrol-950 block text-sm font-semibold">Check for updates automatically</span>
+            <span className="text-petrol-600 mt-0.5 block text-[13px] leading-5">
+              When off, the app makes no update requests unless you select Check for updates.
+            </span>
+          </span>
+        </Checkbox>
         <Checkbox
           checked={automatic}
+          disabled={!checksOn}
           onChange={(value) => void toggle.run("auto", () => actions.setAutoUpdate(value))}
         >
           <span className="min-w-0">
             <span className="text-petrol-950 block text-sm font-semibold">Install updates automatically</span>
             <span className="text-petrol-600 mt-0.5 block text-[13px] leading-5">
-              When off, the app tells you when an update is available and you choose when to install it.
+              {checksOn
+                ? "When off, the app tells you when an update is available and you choose when to install it."
+                : "Needs automatic update checks. Turn them on to install updates automatically."}
             </span>
           </span>
         </Checkbox>

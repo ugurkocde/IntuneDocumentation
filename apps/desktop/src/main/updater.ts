@@ -9,6 +9,9 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60_000;
 let status: UpdateStatus = { state: "idle" };
 let enabled = false;
 let autoUpdate = false;
+let checkAutomatically = true;
+let firstCheck: ReturnType<typeof setTimeout> | undefined;
+let interval: ReturnType<typeof setInterval> | undefined;
 let notify: (status: UpdateStatus) => void = () => undefined;
 
 function set(next: UpdateStatus): void {
@@ -37,13 +40,17 @@ function testFeedUrl(): string | undefined {
 // electron-builder, and ignore INTUNEDOC_UPDATE_TEST_FEED. That variable
 // points a development build at a local feed for testing.
 // With automatic updates off, an available update waits until the user
-// chooses to download it.
+// chooses to download it. With automatic checks off, the app makes no
+// update requests of its own; Check for updates still works. Automatic
+// updates need automatic checks, so they only apply while both are on.
 export function startUpdater(
   onStatus: (status: UpdateStatus) => void,
   automatic: boolean,
+  checkAuto: boolean,
 ): void {
   notify = onStatus;
   autoUpdate = automatic;
+  checkAutomatically = checkAuto;
   const testFeed = testFeedUrl();
   if (!app.isPackaged && !testFeed) {
     set({ state: "disabled", message: "Updates are checked in installed builds." });
@@ -54,8 +61,7 @@ export function startUpdater(
     autoUpdater.forceDevUpdateConfig = true;
     autoUpdater.setFeedURL({ provider: "generic", url: testFeed });
   }
-  autoUpdater.autoDownload = autoUpdate;
-  autoUpdater.autoInstallOnAppQuit = autoUpdate;
+  applyAutoDownload();
   autoUpdater.logger = null;
 
   autoUpdater.on("checking-for-update", () => {
@@ -86,14 +92,36 @@ export function startUpdater(
     set({
       state: "error",
       version: status.version,
-      message: autoUpdate
+      message: autoUpdate && checkAutomatically
         ? "The update could not be downloaded. It will be retried later."
         : "The update could not be downloaded. Check for updates to try again.",
     });
   });
 
-  setTimeout(() => void checkForUpdates(), FIRST_CHECK_MS);
-  setInterval(() => void checkForUpdates(), CHECK_INTERVAL_MS);
+  if (checkAutomatically) scheduleChecks();
+}
+
+function applyAutoDownload(): void {
+  const on = autoUpdate && checkAutomatically;
+  autoUpdater.autoDownload = on;
+  autoUpdater.autoInstallOnAppQuit = on;
+}
+
+// The first check runs shortly after start, then every four hours.
+function scheduleChecks(): void {
+  if (firstCheck || interval) return;
+  firstCheck = setTimeout(() => {
+    firstCheck = undefined;
+    void checkForUpdates();
+  }, FIRST_CHECK_MS);
+  interval = setInterval(() => void checkForUpdates(), CHECK_INTERVAL_MS);
+}
+
+function clearChecks(): void {
+  clearTimeout(firstCheck);
+  clearInterval(interval);
+  firstCheck = undefined;
+  interval = undefined;
 }
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
@@ -132,9 +160,22 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
 export function setAutoUpdate(automatic: boolean): void {
   autoUpdate = automatic;
   if (!enabled) return;
-  autoUpdater.autoDownload = automatic;
-  autoUpdater.autoInstallOnAppQuit = automatic;
-  if (automatic) void downloadUpdate();
+  applyAutoDownload();
+  if (autoUpdate && checkAutomatically) void downloadUpdate();
+}
+
+// Takes effect at once. Turning it off stops all background checks; turning
+// it on schedules them again, and resumes automatic updates if they are on.
+export function setCheckForUpdates(on: boolean): void {
+  checkAutomatically = on;
+  if (!enabled) return;
+  applyAutoDownload();
+  if (!on) {
+    clearChecks();
+    return;
+  }
+  scheduleChecks();
+  if (autoUpdate) void downloadUpdate();
 }
 
 export function installUpdate(): boolean {

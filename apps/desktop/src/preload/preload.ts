@@ -61,6 +61,7 @@ const api: IntunedocApi = {
   updateDownload: () => invoke("update:download"),
   updateInstall: () => invoke("update:install"),
   updateSetAuto: (enabled) => invoke("update:setAuto", enabled),
+  updateSetCheck: (enabled) => invoke("update:setCheck", enabled),
   updateStatus: () => invoke("update:status"),
   exportDiagnostics: () => invoke("diagnostics:export"),
   clearLocalData: () => invoke("data:clear"),

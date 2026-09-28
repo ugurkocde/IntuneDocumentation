@@ -44,11 +44,13 @@ export function DesktopCallout({ platform }: { platform: Platform }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-petrol-950 text-sm font-semibold">
-            Data must stay on your machines, or many tenants?
+            Can&apos;t sign in to third-party apps with your work account?
           </p>
           <p className="text-petrol-600 mt-1 text-xs leading-5">
-            Desktop app for Windows and macOS. {DESKTOP_TRIAL_DAYS} day free
-            trial, card required.
+            Run the desktop app instead. It connects through an app registration
+            you create in your own Microsoft tenant, so we never get access to
+            it, and tenant data stays on your computer. Windows and macOS,{" "}
+            {DESKTOP_TRIAL_DAYS} day free trial, card required.
           </p>
         </div>
         <Link

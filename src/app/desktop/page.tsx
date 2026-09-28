@@ -30,6 +30,7 @@ import {
   DESKTOP_OFFLINE_GRACE_DAYS,
   DESKTOP_PLANS,
   DESKTOP_PORTAL_URL,
+  DESKTOP_SECURITY_OVERVIEW_PATH,
   DESKTOP_SUPPORT_EMAIL,
   DESKTOP_SYSTEM_REQUIREMENTS,
   DESKTOP_TRIAL_DAYS,
@@ -39,8 +40,9 @@ import { unstable_cache } from "next/cache";
 import { getSiteStats } from "~/lib/site-stats";
 import { detectPlatform } from "../_landing/desktop-download";
 import { trackDownload } from "../_landing/desktop-shared";
-import { GITHUB_URL } from "../_landing/content";
+import { CONSENT_ROLES, GITHUB_URL } from "../_landing/content";
 import { buttonStyles, Section, SectionHeading } from "../_landing/primitives";
+import { SecurityOverviewCard } from "../_landing/security-overview-card";
 import { PricingPlans } from "./pricing-plans";
 import reportCover from "../../../public/landing/report-cover.png";
 import reportSummary from "../../../public/landing/report-summary.png";
@@ -97,7 +99,7 @@ const staysLocal = [
 
 const sentToLicensing = [
   "License key",
-  "Sign-in token, verified and not stored (organization licenses)",
+  "Sign-in token, verified and not stored",
   "App registration client ID",
   "Random installation ID",
   "Entra tenant ID",
@@ -108,9 +110,9 @@ const sentToLicensing = [
 const localPrinciples = [
   {
     icon: ShieldCheck,
-    title: "Your own app registration",
+    title: "Your own app registration, in your own tenant",
     detail:
-      "Sign in with an Entra app registration in your tenant. You control consent, the nine read-only permissions, and Conditional Access.",
+      "You create the app registration in your own Microsoft tenant. It is free, needs no Azure subscription, and gives us no access to your tenant. You control consent, the nine read-only permissions, and Conditional Access.",
   },
   {
     icon: Laptop,
@@ -197,7 +199,8 @@ const steps = [
   },
   {
     title: "Set up in about 10 minutes",
-    detail: "Create the app registration, sign in, and paste the key.",
+    detail:
+      "Create the app registration in your own tenant, sign in, and paste the key.",
   },
 ];
 
@@ -246,7 +249,7 @@ const faqs = [
     id: "data",
     question: "What data is sent to your servers?",
     answer:
-      "License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify the token, read only its tenant ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Update checks request the latest version from our update service with a random update identifier and standard request data such as your IP address; you can turn automatic update checks off in Settings. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft.",
+      "License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify its signature with Microsoft, use only its tenant ID and app registration ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Update checks request the latest version from our update service with a random update identifier and standard request data such as your IP address; you can turn automatic update checks off in Settings. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft.",
   },
   {
     id: "limits",
@@ -257,7 +260,7 @@ const faqs = [
     id: "app-registration",
     question: "Why do I need my own app registration?",
     answer:
-      "The desktop app signs in with an Entra app registration in your tenant, so you control consent, permissions, and Conditional Access. In Entra it uses the platform type called Mobile and desktop applications, which is a different registration from the one the web version uses. The getting started guide walks through every step.",
+      "Because the app never connects through us. You create the app registration in your own Microsoft tenant, which is free and needs no Azure subscription, so you own it, you control consent, permissions, and Conditional Access, and you can delete it at any time. We never get an app, an account, or any access in your tenant. In Entra it uses the platform type called Mobile and desktop applications, which is a different registration from the one the web version uses. The getting started guide walks through every step.",
   },
   {
     id: "requirements",
@@ -388,6 +391,62 @@ function ReportPreview() {
   );
 }
 
+const beforeYouStart = [
+  {
+    icon: KeyRound,
+    title: "Your own app registration",
+    detail:
+      "You create it in your own Microsoft tenant in about 10 minutes. It is free, needs no Azure subscription, and gives us no access to your tenant.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "One-time admin consent",
+    detail: `Granted once by ${CONSENT_ROLES} for the read-only permissions.`,
+  },
+  {
+    icon: FileText,
+    title: "Security approval, if your organization needs it",
+    detail:
+      "Send your security team the one-page security overview before you start the trial.",
+    link: true,
+  },
+];
+
+function BeforeYouStart() {
+  return (
+    <div className="border-petrol-950/8 mx-auto mt-6 max-w-4xl rounded-2xl border bg-white p-5 sm:p-6">
+      <p className="text-petrol-950 text-sm font-semibold">
+        Before you start the trial
+      </p>
+      <ul className="mt-4 grid gap-5 sm:grid-cols-3">
+        {beforeYouStart.map(({ icon: Icon, title, detail, link }) => (
+          <li key={title} className="flex gap-3">
+            <Icon
+              className="mt-0.5 h-4 w-4 shrink-0 text-teal-700"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="text-petrol-950 text-sm font-semibold">{title}</p>
+              <p className="text-petrol-600 mt-0.5 text-xs leading-5">
+                {detail}
+              </p>
+              {link && (
+                <a
+                  href={DESKTOP_SECURITY_OVERVIEW_PATH}
+                  download
+                  className={`${textLink} plausible-event-name=Security+Overview+Download mt-1 inline-block text-xs`}
+                >
+                  Download the security overview (PDF)
+                </a>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function DataFlowCard() {
   return (
     <div className="border-petrol-950/8 shadow-soft rounded-3xl border bg-white p-6 sm:p-8">
@@ -487,9 +546,10 @@ export default async function DesktopPage() {
                 Intune documentation that never leaves your machine.
               </h1>
               <p className="text-petrol-600 mt-6 max-w-xl text-base leading-7 sm:text-lg">
-                Collect your Intune configuration with your own Entra app
-                registration, then export Word, PDF, and compliance evidence on
-                your own machine. Built for admins and MSPs whose policies rule
+                Collect your Intune configuration through an app registration
+                you create in your own Microsoft tenant, then export Word, PDF,
+                and compliance evidence on your own machine. We never get access
+                to your tenant. Built for admins and MSPs whose policies rule
                 out third-party processing of tenant data.
               </p>
               <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
@@ -508,6 +568,16 @@ export default async function DesktopPage() {
                 <Link href={DESKTOP_GETTING_STARTED_PATH} className={textLink}>
                   Getting started guide
                 </Link>
+              </p>
+              <p className="text-petrol-600 mt-3 text-sm leading-6">
+                Need approval from your security team?{" "}
+                <a
+                  href={DESKTOP_SECURITY_OVERVIEW_PATH}
+                  download
+                  className={`${textLink} plausible-event-name=Security+Overview+Download`}
+                >
+                  Download the security overview (PDF)
+                </a>
               </p>
               {stats.exportCount > 0 && (
                 <p className="text-petrol-600 mt-3 text-sm leading-6">
@@ -640,12 +710,14 @@ export default async function DesktopPage() {
             </div>
             <DataFlowCard />
           </div>
+          <SecurityOverviewCard className="mt-12" />
           <p className="text-petrol-600 mt-10 max-w-3xl text-sm leading-6">
-            For an organization license, the app sends a Microsoft sign-in token
-            instead of the key. We verify it, read only its tenant ID, and never
-            store it. The licensing service uses this data only to validate your
-            subscription and enforce tenant and installation limits. Details are
-            in the{" "}
+            License checks also send a short-lived Microsoft sign-in token, or
+            only the token for an organization license. We verify its signature
+            with Microsoft, use only its tenant ID and app registration ID, and
+            never store it. The licensing service uses this data only to
+            validate your subscription and enforce tenant and installation
+            limits. Details are in the{" "}
             <Link href="/privacy-policy#desktop-app" className={textLink}>
               privacy policy
             </Link>
@@ -715,6 +787,7 @@ export default async function DesktopPage() {
               </li>
             ))}
           </ol>
+          <BeforeYouStart />
           <div className="mt-10">
             <PricingPlans />
           </div>

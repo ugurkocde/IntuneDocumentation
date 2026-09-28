@@ -81,7 +81,7 @@ export function Hero({
             <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold tracking-wide text-teal-700 uppercase">
               New
             </span>
-            Desktop app for MSPs and local-only teams
+            Third-party apps blocked in your tenant? Run it locally
             <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>
           <h1 className="animate-hero-fade-up text-petrol-950 max-w-3xl text-[2.5rem] leading-[1.02] font-semibold tracking-[-0.05em] sm:text-[3.4rem] lg:text-[3.7rem]">

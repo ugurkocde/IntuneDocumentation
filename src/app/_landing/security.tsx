@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { DialogTrigger } from "./dialog";
 import { buttonStyles, Section, SectionHeading } from "./primitives";
+import { SecurityOverviewCard } from "./security-overview-card";
 import { PERMISSIONS_DIALOG_ID, SECURITY_DIALOG_ID } from "./trust-dialogs";
 
 const guarantees = [
@@ -151,6 +152,7 @@ export function Security() {
           </div>
         </div>
       </div>
+      <SecurityOverviewCard className="mt-12" />
     </Section>
   );
 }

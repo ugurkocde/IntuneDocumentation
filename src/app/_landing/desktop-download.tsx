@@ -47,8 +47,9 @@ export function DesktopCallout({ platform }: { platform: Platform }) {
             Can&apos;t sign in to third-party apps with your work account?
           </p>
           <p className="text-petrol-600 mt-1 text-xs leading-5">
-            Run the desktop app instead: it uses an app registration you own and
-            keeps tenant data on your computer. Windows and macOS,{" "}
+            Run the desktop app instead. It connects through an app registration
+            you create in your own Microsoft tenant, so we never get access to
+            it, and tenant data stays on your computer. Windows and macOS,{" "}
             {DESKTOP_TRIAL_DAYS} day free trial, card required.
           </p>
         </div>

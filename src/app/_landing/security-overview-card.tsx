@@ -26,10 +26,12 @@ export function SecurityOverviewCard({
               Getting the desktop app approved internally?
             </h3>
             <p className="text-petrol-600 mt-2 max-w-2xl text-sm leading-6">
-              Share the one-page security and architecture overview with your
-              security team. It covers the app registration you own, every
-              read-only Graph permission, and each connection the app makes,
-              including what our licensing service receives.
+              The app connects through an app registration you create in your
+              own Microsoft tenant, so we never get access to it. Share the
+              one-page security and architecture overview with your security
+              team: it covers every read-only Graph permission and each
+              connection the app makes, including what our licensing service
+              receives.
             </p>
           </div>
         </div>

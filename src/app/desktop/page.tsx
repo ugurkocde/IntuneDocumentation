@@ -30,6 +30,7 @@ import {
   DESKTOP_OFFLINE_GRACE_DAYS,
   DESKTOP_PLANS,
   DESKTOP_PORTAL_URL,
+  DESKTOP_SECURITY_OVERVIEW_PATH,
   DESKTOP_SUPPORT_EMAIL,
   DESKTOP_SYSTEM_REQUIREMENTS,
   DESKTOP_TRIAL_DAYS,
@@ -41,6 +42,7 @@ import { detectPlatform } from "../_landing/desktop-download";
 import { trackDownload } from "../_landing/desktop-shared";
 import { GITHUB_URL } from "../_landing/content";
 import { buttonStyles, Section, SectionHeading } from "../_landing/primitives";
+import { SecurityOverviewCard } from "../_landing/security-overview-card";
 import { PricingPlans } from "./pricing-plans";
 import reportCover from "../../../public/landing/report-cover.png";
 import reportSummary from "../../../public/landing/report-summary.png";
@@ -97,7 +99,7 @@ const staysLocal = [
 
 const sentToLicensing = [
   "License key",
-  "Sign-in token, verified and not stored (organization licenses)",
+  "Sign-in token, verified and not stored",
   "App registration client ID",
   "Random installation ID",
   "Entra tenant ID",
@@ -509,6 +511,16 @@ export default async function DesktopPage() {
                   Getting started guide
                 </Link>
               </p>
+              <p className="text-petrol-600 mt-3 text-sm leading-6">
+                Need approval from your security team?{" "}
+                <a
+                  href={DESKTOP_SECURITY_OVERVIEW_PATH}
+                  download
+                  className={`${textLink} plausible-event-name=Security+Overview+Download`}
+                >
+                  Download the security overview (PDF)
+                </a>
+              </p>
               {stats.exportCount > 0 && (
                 <p className="text-petrol-600 mt-3 text-sm leading-6">
                   Same report engine as the free web version, used for{" "}
@@ -640,12 +652,13 @@ export default async function DesktopPage() {
             </div>
             <DataFlowCard />
           </div>
+          <SecurityOverviewCard className="mt-12" />
           <p className="text-petrol-600 mt-10 max-w-3xl text-sm leading-6">
-            For an organization license, the app sends a Microsoft sign-in token
-            instead of the key. We verify it, read only its tenant ID, and never
-            store it. The licensing service uses this data only to validate your
-            subscription and enforce tenant and installation limits. Details are
-            in the{" "}
+            License checks also send a short-lived Microsoft sign-in token, or
+            only the token for an organization license. We verify it, read only
+            its tenant ID, and never store it. The licensing service uses this
+            data only to validate your subscription and enforce tenant and
+            installation limits. Details are in the{" "}
             <Link href="/privacy-policy#desktop-app" className={textLink}>
               privacy policy
             </Link>

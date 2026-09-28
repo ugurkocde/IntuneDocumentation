@@ -28,6 +28,10 @@ export const DESKTOP_SUPPORT_EMAIL = "support@ugurlabs.com";
 
 export const DESKTOP_PRICING_PATH = "/desktop#pricing";
 export const DESKTOP_GETTING_STARTED_PATH = "/desktop/getting-started";
+// One-page security and architecture overview for customers' internal
+// security reviews. Update the PDF when permissions or data flows change.
+export const DESKTOP_SECURITY_OVERVIEW_PATH =
+  "/desktop/intune-documentation-desktop-security-overview.pdf";
 export const DESKTOP_DOWNLOAD_URL =
   "https://github.com/ugurkocde/IntuneDocumentation/releases?q=desktop-v";
 

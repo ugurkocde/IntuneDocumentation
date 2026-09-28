@@ -249,7 +249,7 @@ const faqs = [
     id: "data",
     question: "What data is sent to your servers?",
     answer:
-      "License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify the token, read only its tenant ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Update checks request the latest version from our update service with a random update identifier and standard request data such as your IP address; you can turn automatic update checks off in Settings. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft.",
+      "License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify its signature with Microsoft, use only its tenant ID and app registration ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Update checks request the latest version from our update service with a random update identifier and standard request data such as your IP address; you can turn automatic update checks off in Settings. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft.",
   },
   {
     id: "limits",
@@ -713,10 +713,11 @@ export default async function DesktopPage() {
           <SecurityOverviewCard className="mt-12" />
           <p className="text-petrol-600 mt-10 max-w-3xl text-sm leading-6">
             License checks also send a short-lived Microsoft sign-in token, or
-            only the token for an organization license. We verify it, read only
-            its tenant ID, and never store it. The licensing service uses this
-            data only to validate your subscription and enforce tenant and
-            installation limits. Details are in the{" "}
+            only the token for an organization license. We verify its signature
+            with Microsoft, use only its tenant ID and app registration ID, and
+            never store it. The licensing service uses this data only to
+            validate your subscription and enforce tenant and installation
+            limits. Details are in the{" "}
             <Link href="/privacy-policy#desktop-app" className={textLink}>
               privacy policy
             </Link>

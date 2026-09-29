@@ -30,10 +30,10 @@ import {
   DESKTOP_OFFLINE_GRACE_DAYS,
   DESKTOP_PLANS,
   DESKTOP_PORTAL_URL,
+  DESKTOP_REFUND_DAYS,
   DESKTOP_SECURITY_OVERVIEW_PATH,
   DESKTOP_SUPPORT_EMAIL,
   DESKTOP_SYSTEM_REQUIREMENTS,
-  DESKTOP_TRIAL_DAYS,
   formatDesktopPrice,
 } from "~/lib/desktop-app";
 import { unstable_cache } from "next/cache";
@@ -49,7 +49,7 @@ import reportSummary from "../../../public/landing/report-summary.png";
 
 const SITE_URL = "https://intunedocumentation.com";
 const title = "Intune Documentation Desktop App";
-const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 10 frameworks, and multi-tenant support for MSPs. ${DESKTOP_TRIAL_DAYS}-day free trial.`;
+const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 10 frameworks, and multi-tenant support for MSPs. ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`;
 
 export const metadata: Metadata = {
   title,
@@ -190,8 +190,8 @@ const features = [
 
 const steps = [
   {
-    title: "Start the trial",
-    detail: "Pick a plan and add a payment card at checkout.",
+    title: "Buy a license",
+    detail: "Pick a plan and pay at checkout.",
   },
   {
     title: "Get your license key",
@@ -238,7 +238,7 @@ const faqs = [
   {
     id: "licensing",
     question: "How does licensing work?",
-    answer: `You buy a Pro or MSP subscription and receive a license key by email. Paste the key into the app after signing in. The app activates the key for the tenant you signed in to and stores a signed license token on your machine. Colleagues can share an organization license: once a key holder shares it with a tenant, anyone who signs in to that tenant's Intune Documentation app registration is licensed without a key. A Pro license is shared with its tenant by default; an MSP key holder turns sharing on per customer tenant. Every plan starts with a ${DESKTOP_TRIAL_DAYS}-day free trial. A payment card is required, and you are not charged if you cancel before the trial ends.`,
+    answer: `You buy a Pro or MSP subscription and receive a license key by email. Paste the key into the app after signing in. The app activates the key for the tenant you signed in to and stores a signed license token on your machine. Colleagues can share an organization license: once a key holder shares it with a tenant, anyone who signs in to that tenant's Intune Documentation app registration is licensed without a key. A Pro license is shared with its tenant by default; an MSP key holder turns sharing on per customer tenant. Every plan comes with a ${DESKTOP_REFUND_DAYS}-day money-back guarantee: if you are not satisfied, email support within ${DESKTOP_REFUND_DAYS} days of your first payment for a full refund. Subscriptions renew until you cancel.`,
   },
   {
     id: "offline",
@@ -407,7 +407,7 @@ const beforeYouStart = [
     icon: FileText,
     title: "Security approval, if your organization needs it",
     detail:
-      "Send your security team the one-page security overview before you start the trial.",
+      "Send your security team the one-page security overview before you buy.",
     link: true,
   },
 ];
@@ -415,9 +415,7 @@ const beforeYouStart = [
 function BeforeYouStart() {
   return (
     <div className="border-petrol-950/8 mx-auto mt-6 max-w-4xl rounded-2xl border bg-white p-5 sm:p-6">
-      <p className="text-petrol-950 text-sm font-semibold">
-        Before you start the trial
-      </p>
+      <p className="text-petrol-950 text-sm font-semibold">Before you buy</p>
       <ul className="mt-4 grid gap-5 sm:grid-cols-3">
         {beforeYouStart.map(({ icon: Icon, title, detail, link }) => (
           <li key={title} className="flex gap-3">
@@ -554,7 +552,7 @@ export default async function DesktopPage() {
               </p>
               <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                 <a href="#pricing" className={buttonStyles.primary}>
-                  Start {DESKTOP_TRIAL_DAYS}-day free trial
+                  Buy a license
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </a>
                 <a href="#compare" className={buttonStyles.secondary}>
@@ -562,9 +560,8 @@ export default async function DesktopPage() {
                 </a>
               </div>
               <p className="text-petrol-600 mt-5 text-sm leading-6">
-                From {formatDesktopPrice(pro.price.monthly)} per month. Card
-                required, cancel before day {DESKTOP_TRIAL_DAYS} and you pay
-                nothing.{" "}
+                From {formatDesktopPrice(pro.price.monthly)} per month.{" "}
+                {DESKTOP_REFUND_DAYS}-day money-back guarantee. Cancel anytime.{" "}
                 <Link href={DESKTOP_GETTING_STARTED_PATH} className={textLink}>
                   Getting started guide
                 </Link>
@@ -811,14 +808,13 @@ export default async function DesktopPage() {
                   <>
                     The app needs an active license to collect and export. If a
                     colleague already shares one with your tenant, just sign in.
-                    Otherwise start the free trial first; the key arrives by
-                    email.
+                    Otherwise buy a license first; the key arrives by email.
                   </>
                 }
               />
               <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                 <a href="#pricing" className={buttonStyles.primary}>
-                  Start {DESKTOP_TRIAL_DAYS}-day free trial
+                  Buy a license
                 </a>
                 <Link
                   href={DESKTOP_GETTING_STARTED_PATH}

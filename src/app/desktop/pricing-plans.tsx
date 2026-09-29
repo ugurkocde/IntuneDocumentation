@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import {
   DESKTOP_PLANS,
-  DESKTOP_TRIAL_DAYS,
+  DESKTOP_REFUND_DAYS,
   formatDesktopPrice,
   type BillingInterval,
   type DesktopPlan,
@@ -70,11 +70,10 @@ function PlanCard({
             : "bg-petrol-950 hover:bg-petrol-800"
         }`}
       >
-        Start {DESKTOP_TRIAL_DAYS}-day free trial
+        Buy {plan.name}
       </a>
       <p className="text-petrol-600 mt-2 text-center text-xs leading-5">
-        Card required. Cancel before day {DESKTOP_TRIAL_DAYS} and you pay
-        nothing.
+        {DESKTOP_REFUND_DAYS}-day money-back guarantee. Cancel anytime.
       </p>
 
       <ul className="border-petrol-950/8 mt-7 space-y-3 border-t pt-6">

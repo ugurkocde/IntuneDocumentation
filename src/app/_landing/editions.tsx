@@ -13,7 +13,6 @@ import {
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { DESKTOP_TRIAL_DAYS } from "~/lib/desktop-app";
 import { cn } from "~/lib/utils";
 import { DESKTOP_STARTING_PRICE, GITHUB_URL } from "./content";
 import { buttonStyles, Section, SectionHeading } from "./primitives";
@@ -129,7 +128,7 @@ export function Editions() {
           ]}
         >
           <Link href="/desktop" className={buttonStyles.secondary}>
-            {DESKTOP_TRIAL_DAYS} day free trial
+            See desktop plans
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </Edition>

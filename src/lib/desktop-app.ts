@@ -7,7 +7,9 @@ import { env } from "~/env";
 export const DESKTOP_APP_NAME = "Intune Documentation Desktop";
 export const DESKTOP_APP_VERSION = "0.1.3";
 export const DESKTOP_CURRENCY = "EUR";
-export const DESKTOP_TRIAL_DAYS = 30;
+// Refund window for the first payment of a new subscription. The terms page
+// states the same guarantee in fixed text.
+export const DESKTOP_REFUND_DAYS = 30;
 
 // Mirrors INSTALLS_PER_TENANT in src/lib/desktop-license/service.ts. That
 // module pulls in node:crypto, so it cannot be imported by client pages.

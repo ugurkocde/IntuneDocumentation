@@ -145,7 +145,7 @@ function GetStarted() {
               license.kind === "none" && (
                 <div className="flex flex-wrap items-center gap-2">
                   <Button size="sm" icon={ExternalLink} onClick={() => void ipc.licenseOpen("buy")}>
-                    Start free trial
+                    Buy a license
                   </Button>
                   <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => actions.navigate("license")}>
                     Add license key

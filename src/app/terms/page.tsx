@@ -132,7 +132,8 @@ export default function TermsOfUsePage() {
             <ul className="list-disc space-y-2 pl-6">
               <li>
                 <strong>License grant:</strong> while your subscription is
-                active, we grant you a non-exclusive, non-transferable,
+                active, or while a trial that started before September 29, 2026
+                runs, we grant you a non-exclusive, non-transferable,
                 non-sublicensable right to install and use the Desktop App to
                 document Microsoft Intune tenants within the limits of your
                 plan. MSP plans may be used to document the tenants of your

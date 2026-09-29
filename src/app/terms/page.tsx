@@ -39,7 +39,7 @@ export default function TermsOfUsePage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Terms of Use
           </h1>
-          <p className="mb-10 text-slate-600">Effective: September 23, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: September 29, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -131,8 +131,8 @@ export default function TermsOfUsePage() {
             </p>
             <ul className="list-disc space-y-2 pl-6">
               <li>
-                <strong>License grant:</strong> while your subscription or trial
-                is active, we grant you a non-exclusive, non-transferable,
+                <strong>License grant:</strong> while your subscription is
+                active, we grant you a non-exclusive, non-transferable,
                 non-sublicensable right to install and use the Desktop App to
                 document Microsoft Intune tenants within the limits of your
                 plan. MSP plans may be used to document the tenants of your
@@ -155,10 +155,21 @@ export default function TermsOfUsePage() {
                 deactivating it in the app or in the Polar customer portal.
               </li>
               <li>
-                <strong>Trial:</strong> new subscriptions start with a 30 day
-                free trial. A payment method is required. If you do not cancel
-                before the trial ends, the subscription starts and is billed
-                automatically.
+                <strong>Money-back guarantee:</strong> if you are not satisfied,
+                you can request a full refund of the first payment of a new
+                subscription within 30 days of that payment by emailing{" "}
+                <a
+                  href="mailto:support@ugurlabs.com"
+                  className="text-blue-700 underline"
+                >
+                  support@ugurlabs.com
+                </a>
+                . Refunds are processed through Polar, the merchant of record,
+                and the license key is revoked when the refund is issued. The
+                guarantee applies once per customer and does not cover renewals.
+                Subscriptions renew automatically until cancelled. Trials that
+                started before September 29, 2026 continue under their original
+                terms. This guarantee does not affect your statutory rights.
               </li>
               <li>
                 <strong>Payment:</strong> Polar Software Inc. is the merchant of

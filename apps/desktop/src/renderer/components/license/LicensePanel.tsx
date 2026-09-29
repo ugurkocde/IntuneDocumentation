@@ -144,14 +144,14 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
       {!license?.hasKey && !organization && (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-600/20 bg-teal-50 p-4">
           <div className="min-w-0 flex-1">
-            <p className="text-petrol-950 text-sm font-semibold">No license yet? Start a 30 day free trial.</p>
+            <p className="text-petrol-950 text-sm font-semibold">No license yet? Buy a license.</p>
             <p className="text-petrol-600 mt-1 text-xs leading-5">
               Pro covers one tenant from EUR 99 per month; MSP covers 10 or more client tenants. Your license key
-              arrives by email right after checkout, and you are not charged until the trial ends.
+              arrives by email right after checkout, with a 30-day money-back guarantee.
             </p>
           </div>
           <Button icon={ExternalLink} onClick={() => void ipc.licenseOpen("buy")}>
-            Start free trial
+            Buy a license
           </Button>
         </div>
       )}

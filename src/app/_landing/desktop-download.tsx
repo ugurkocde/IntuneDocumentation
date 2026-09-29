@@ -3,7 +3,7 @@ import Link from "next/link";
 import {
   DESKTOP_DOWNLOADS,
   DESKTOP_PRICING_PATH,
-  DESKTOP_TRIAL_DAYS,
+  DESKTOP_REFUND_DAYS,
 } from "~/lib/desktop-app";
 import { MacDownloadLinks } from "./mac-download";
 import { buttonStyles } from "./primitives";
@@ -19,7 +19,7 @@ export function detectPlatform(userAgent: string): Platform {
 }
 
 // Installers only help people who already have a license key, so the direct
-// download is a quiet link; new visitors are sent to the trial first.
+// download is a quiet link; new visitors are sent to pricing first.
 function LicensedDownload({ platform }: { platform: Platform }) {
   if (platform === "mac") return <MacDownloadLinks />;
   if (platform === "windows") {
@@ -50,14 +50,14 @@ export function DesktopCallout({ platform }: { platform: Platform }) {
             Run the desktop app instead. It connects through an app registration
             you create in your own Microsoft tenant, so we never get access to
             it, and tenant data stays on your computer. Windows and macOS,{" "}
-            {DESKTOP_TRIAL_DAYS} day free trial, card required.
+            {DESKTOP_REFUND_DAYS}-day money-back guarantee.
           </p>
         </div>
         <Link
           href={DESKTOP_PRICING_PATH}
           className={`${buttonStyles.secondary} shrink-0 bg-white`}
         >
-          Try the desktop app
+          See desktop plans
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Link>
       </div>

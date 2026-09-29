@@ -238,7 +238,7 @@ export default async function DesktopGettingStartedPage({
                 className="mt-8 max-w-2xl rounded-2xl border border-teal-600/20 bg-teal-50 p-5"
               >
                 <p className="text-petrol-950 font-semibold">
-                  Thank you, your trial has started.
+                  Thank you for your purchase.
                 </p>
                 <LicenseKeyStatus result={licenseKey} />
                 <div className="mt-5">
@@ -515,7 +515,7 @@ export default async function DesktopGettingStartedPage({
                   <>
                     No key yet?{" "}
                     <Link href={DESKTOP_PRICING_PATH} className={inlineLink}>
-                      Start a 30-day free trial
+                      Buy a license
                     </Link>
                     .{" "}
                   </>

@@ -1,6 +1,6 @@
 import {
   DESKTOP_PLANS,
-  DESKTOP_TRIAL_DAYS,
+  DESKTOP_REFUND_DAYS,
   formatDesktopPrice,
 } from "~/lib/desktop-app";
 
@@ -60,7 +60,7 @@ export const faqs: Array<{ question: string; answer: string }> = [
   },
   {
     question: "Is the Intune Documentation tool really free?",
-    answer: `Yes. The web tool is free with no usage limits and no credit card. A separate, paid desktop app is available for teams that want collection to run entirely on their own machines and for MSPs that document many tenants. It starts at ${DESKTOP_STARTING_PRICE} per month with a ${DESKTOP_TRIAL_DAYS} day free trial.`,
+    answer: `Yes. The web tool is free with no usage limits and no credit card. A separate, paid desktop app is available for teams that want collection to run entirely on their own machines and for MSPs that document many tenants. It starts at ${DESKTOP_STARTING_PRICE} per month with a ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`,
   },
   {
     question:

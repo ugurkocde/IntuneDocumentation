@@ -16,6 +16,8 @@ const keys = await vi.hoisted(async () => {
 });
 
 vi.mock("electron", () => ({
+  // Routed through the global fetch that each test stubs.
+  net: { fetch: (...args: Parameters<typeof fetch>) => fetch(...args) },
   app: {
     getPath: () => keys.dir.current,
     getVersion: () => "0.0.0-test",
@@ -351,6 +353,88 @@ describe("LicenseService organization licenses", () => {
       entitled: true,
       source: "tenant",
       hasKey: true,
+    });
+  });
+
+  it("reports why the service could not be reached, and clears it after an answer", async () => {
+    answer = () => {
+      throw new Error("net::ERR_CERT_AUTHORITY_INVALID");
+    };
+    const license = service();
+    await expect(license.setKey("TEST-LICENSE-KEY", TENANT)).rejects.toThrow(
+      "could not be verified",
+    );
+    expect(await license.status(TENANT)).toMatchObject({
+      offline: true,
+      connectionIssue: {
+        cause: "certificate",
+        code: "net::ERR_CERT_AUTHORITY_INVALID",
+        endpoint: "http://127.0.0.1:9/api/desktop-license/activate",
+        appVersion: "0.0.0-test",
+      },
+    });
+
+    answer = () => granted("act-1");
+    await license.activateForTenant(TENANT);
+    expect(await license.status(TENANT)).toMatchObject({
+      entitled: true,
+      offline: false,
+      connectionIssue: null,
+    });
+  });
+
+  it("treats a timeout and a proxy sign-in as connection issues", async () => {
+    const license = service();
+    answer = () => {
+      throw Object.assign(new Error("aborted"), { name: "TimeoutError" });
+    };
+    await license.setKey("TEST-LICENSE-KEY", TENANT).catch(() => undefined);
+    expect((await license.status(TENANT)).connectionIssue).toMatchObject({
+      cause: "timeout",
+      code: "Timeout",
+    });
+
+    answer = () => new Response(null, { status: 407 });
+    await license.activateForTenant(TENANT);
+    expect((await license.status(TENANT)).connectionIssue).toMatchObject({
+      cause: "proxyAuth",
+      code: "HTTP 407",
+    });
+  });
+
+  it("keeps the cached activation when a firewall answers with a block page", async () => {
+    answer = () => granted("act-1");
+    const license = service();
+    await license.setKey("TEST-LICENSE-KEY", TENANT);
+    expect((await license.status(TENANT)).entitled).toBe(true);
+
+    answer = () =>
+      new Response("<html>Blocked by policy</html>", {
+        status: 403,
+        headers: { "content-type": "text/html" },
+      });
+    await license.refreshAll();
+    expect(await service().status(TENANT)).toMatchObject({ entitled: true });
+
+    answer = () =>
+      new Response("<html>Sign in to the guest network</html>", {
+        headers: { "content-type": "text/html" },
+      });
+    await license.refreshAll();
+    expect((await license.status(TENANT)).connectionIssue).toMatchObject({
+      cause: "blocked",
+      code: "HTTP 200",
+    });
+
+    answer = () =>
+      new Response("<html>Blocked by policy</html>", {
+        status: 403,
+        headers: { "content-type": "text/html" },
+      });
+    await license.refreshAll();
+    expect((await license.status(TENANT)).connectionIssue).toMatchObject({
+      cause: "blocked",
+      code: "HTTP 403",
     });
   });
 

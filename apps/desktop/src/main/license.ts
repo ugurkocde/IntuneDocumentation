@@ -1,10 +1,17 @@
-import { app, safeStorage } from "electron";
+import { app, net, safeStorage } from "electron";
 import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { LICENSE_API_BASE, LICENSE_PUBLIC_KEY } from "./config";
-import { log } from "./logger";
-import type { LicenseStatus } from "../shared/ipc-types";
+import { errorText, log } from "./logger";
+import type {
+  LicenseConnectionIssue,
+  LicenseStatus,
+} from "../shared/ipc-types";
+import {
+  licenseIssueCause,
+  licenseIssueMessage,
+} from "../shared/license-issues";
 
 export type { LicenseStatus };
 
@@ -67,6 +74,11 @@ class LicenseDenied extends Error {
     super(message);
   }
 }
+
+const PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
+  win32: "Windows",
+  darwin: "macOS",
+};
 
 const LICENSE_REQUIRED =
   "A license is required to collect and export. Add your license key under License and account.";
@@ -146,7 +158,7 @@ export class LicenseService {
   private state: StoredLicense | null = null;
   private installId = "";
   private message: string | null = null;
-  private offline = false;
+  private issue: LicenseConnectionIssue | null = null;
   private loaded: Promise<void> | null = null;
   private savedSeen = 0;
 
@@ -282,26 +294,59 @@ export class LicenseService {
     action: "activate" | "refresh" | "deactivate" | "tenant",
     body: object,
   ): Promise<Record<string, unknown>> {
+    const endpoint = `${LICENSE_API_BASE}/api/desktop-license/${action}`;
+    // Records why the service could not answer, for the Details view.
+    const unreachable = (
+      code: string,
+      cause = licenseIssueCause(code),
+    ): LicenseConnectionIssue => {
+      this.issue = {
+        cause,
+        code: code.slice(0, 80),
+        endpoint,
+        at: new Date().toISOString(),
+        appVersion: app.getVersion(),
+        platform: `${PLATFORMS[process.platform] ?? process.platform} ${process.arch}`,
+      };
+      log("warn", "license service unreachable", { action, code, cause });
+      return this.issue;
+    };
     let response: Response;
     try {
-      response = await fetch(
-        `${LICENSE_API_BASE}/api/desktop-license/${action}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(20_000),
-        },
-      );
-    } catch {
-      this.offline = true;
-      log("warn", "license service unreachable", { action });
-      throw new Error("The licensing service could not be reached.");
+      // Electron's net stack, unlike Node's fetch, honors the system proxy
+      // and the OS certificate store, so the call works behind corporate
+      // proxies and TLS inspection like the app's sign-in and Graph traffic.
+      response = await net.fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch (error) {
+      const code =
+        error instanceof Error && error.name === "TimeoutError"
+          ? "Timeout"
+          : errorText(error);
+      throw new Error(licenseIssueMessage(unreachable(code)));
     }
-    // Like a network failure, any refusal other than 403 and 401 means the
-    // service could not answer the request.
-    this.offline =
-      !response.ok && response.status !== 403 && response.status !== 401;
+    // The service always answers in JSON. Anything else comes from a proxy,
+    // firewall or captive portal; a 401 or 403 page there is a block, and
+    // must not count as a refusal that drops the cached activation.
+    const json = (response.headers.get("content-type") ?? "").includes(
+      "application/json",
+    );
+    if (!json) {
+      const blocked =
+        response.ok || response.status === 401 || response.status === 403;
+      throw new Error(
+        licenseIssueMessage(
+          unreachable(
+            `HTTP ${response.status}`,
+            blocked ? "blocked" : undefined,
+          ),
+        ),
+      );
+    }
     const data = (await response.json().catch(() => ({}))) as Record<
       string,
       unknown
@@ -313,6 +358,20 @@ export class LicenseService {
       status: response.status,
       reason: reasonCode,
     });
+    if (reasonCode === "tenant_quantity_unknown") {
+      this.issue = null;
+      throw new Error(
+        "The tenant quantity of this subscription could not be read. Please try again later or contact support.",
+      );
+    }
+    // Like a network failure, any refusal other than 403 and 401 means the
+    // service could not answer the request.
+    if (!response.ok && response.status !== 403 && response.status !== 401) {
+      throw new Error(
+        licenseIssueMessage(unreachable(`HTTP ${response.status}`)),
+      );
+    }
+    this.issue = null;
     if (response.status === 403) {
       const reason = reasonCode ?? "";
       throw new LicenseDenied(
@@ -324,13 +383,6 @@ export class LicenseService {
     if (response.status === 401) {
       throw new Error(
         "Your Microsoft sign-in could not be verified by the licensing service. Sign in again and retry.",
-      );
-    }
-    if (!response.ok) {
-      throw new Error(
-        reasonCode === "tenant_quantity_unknown"
-          ? "The tenant quantity of this subscription could not be read. Please try again later or contact support."
-          : "The licensing service is unavailable. Please try again later.",
       );
     }
     return data;
@@ -686,7 +738,8 @@ export class LicenseService {
       tenants: payload?.tenants ?? null,
       expiresAt: payload ? new Date(payload.exp * 1000).toISOString() : null,
       message: this.message,
-      offline: this.offline,
+      offline: this.issue !== null,
+      connectionIssue: this.issue,
       cachedTenantId,
     };
   }

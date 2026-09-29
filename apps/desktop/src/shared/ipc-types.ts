@@ -180,6 +180,27 @@ export interface ComplianceReportProgress {
   stage: "groups" | "generating" | "saving";
 }
 
+export type LicenseIssueCause =
+  | "certificate"
+  | "proxy"
+  | "proxyAuth"
+  | "blocked"
+  | "dns"
+  | "offline"
+  | "timeout"
+  | "service"
+  | "unknown";
+
+export interface LicenseConnectionIssue {
+  cause: LicenseIssueCause;
+  // A Chromium net error (net::ERR_...), "Timeout", or "HTTP <status>".
+  code: string;
+  endpoint: string;
+  at: string;
+  appVersion: string;
+  platform: string;
+}
+
 export interface LicenseStatus {
   hasKey: boolean;
   keyHint: string | null;
@@ -202,6 +223,8 @@ export interface LicenseStatus {
   message: string | null;
   // The last call to the licensing service failed to reach it.
   offline: boolean;
+  // Why that call failed; null once the service answers again.
+  connectionIssue: LicenseConnectionIssue | null;
   // A tenant with a still valid cached activation, reported while no tenant
   // is signed in.
   cachedTenantId: string | null;

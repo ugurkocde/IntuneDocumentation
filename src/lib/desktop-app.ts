@@ -5,7 +5,7 @@ import { env } from "~/env";
 // stay in one place. The legal pages state the same limits in fixed text.
 
 export const DESKTOP_APP_NAME = "Intune Documentation Desktop";
-export const DESKTOP_APP_VERSION = "0.1.3";
+export const DESKTOP_APP_VERSION = "0.1.4";
 export const DESKTOP_CURRENCY = "EUR";
 // Refund window for the first payment of a new subscription. The terms page
 // states the same guarantee in fixed text.

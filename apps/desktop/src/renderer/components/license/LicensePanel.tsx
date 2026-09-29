@@ -10,6 +10,8 @@ import { Button } from "../ui/Button";
 import { Card, CardHeader } from "../ui/Card";
 import { Checkbox } from "../ui/Checkbox";
 import { Field } from "../ui/Field";
+import { licenseIssueMessage } from "../../../shared/license-issues";
+import { ConnectionIssueAlert } from "./ConnectionIssueAlert";
 
 function Detail({
   label,
@@ -55,15 +57,26 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
   // Licensed through the tenant's organization license, without a key here.
   const organization = view.kind === "active" && license?.source === "tenant";
   const keyHolder = view.kind === "active" && license?.source === "key";
+  // The last license call could not reach the service. Its alert replaces the
+  // plain error that call threw. With a valid cached license, a failed
+  // background refresh stays quiet unless an action here just failed on it.
+  const issue = license?.connectionIssue ?? null;
+  const issueError = issue !== null && action.error === licenseIssueMessage(issue);
+  const showIssue = issue !== null && (!license?.entitled || issueError);
+  const error = issueError ? null : action.error;
 
   const activate = () =>
     void action.run(
       "activate",
       async () => {
-        const result = await ipc.licenseSetKey(key.trim());
-        setKey("");
-        await actions.refreshLicense();
-        return result;
+        try {
+          const result = await ipc.licenseSetKey(key.trim());
+          setKey("");
+          return result;
+        } finally {
+          // Also after a failure, so the connection issue shows with the error.
+          await actions.refreshLicense();
+        }
       },
       (result) =>
         result.entitled
@@ -74,9 +87,11 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
     void action.run(
       "retry",
       async () => {
-        const result = await ipc.licenseRetry();
-        await actions.refreshLicense();
-        return result;
+        try {
+          return await ipc.licenseRetry();
+        } finally {
+          await actions.refreshLicense();
+        }
       },
       (result) => (result.entitled ? "License activated for this tenant." : null),
     );
@@ -241,8 +256,9 @@ export function LicensePanel({ mode = "full" }: { mode?: "full" | "activation" }
         </Button>
       </div>
 
-      <div aria-live="polite" className="empty:hidden mt-4">
-        {action.error && <Alert tone="danger">{action.error}</Alert>}
+      <div aria-live="polite" className="empty:hidden mt-4 space-y-3">
+        {showIssue && issue && <ConnectionIssueAlert issue={issue} tone={license?.entitled ? "warning" : "danger"} />}
+        {error && <Alert tone="danger">{error}</Alert>}
         {action.message && <Alert tone="success">{action.message}</Alert>}
       </div>
 

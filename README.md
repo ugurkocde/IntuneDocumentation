@@ -27,6 +27,8 @@ The paid desktop app for macOS and Windows collects your Intune configuration on
 
 The desktop app needs its own app registration with the **Mobile and desktop applications** platform and the redirect URI `http://localhost`. This is different from the website's **Single-page application** registration described below; a SPA registration fails desktop sign-in with AADSTS50011. It also needs `Policy.Read.All` in addition to the permissions listed below.
 
+To select Windows configurations without including iOS or Android policies, follow the [Windows configuration selection guide](https://intunedocumentation.com/desktop/getting-started#windows-only), which includes a screenshot and explains how search and selected-item exports work.
+
 ## Self-host with Docker
 
 1. Copy [`compose.yaml`](compose.yaml) into a directory on your Docker host.

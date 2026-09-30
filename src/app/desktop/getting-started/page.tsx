@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowRight, Download, Info } from "lucide-react";
@@ -47,6 +48,7 @@ const contents = [
   { id: "sign-in", label: "Sign in" },
   { id: "license", label: "Enter your license key" },
   { id: "export", label: "Collect and export" },
+  { id: "windows-only", label: "Select Windows configurations" },
   { id: "troubleshooting", label: "Troubleshooting" },
 ];
 
@@ -543,6 +545,93 @@ export default async function DesktopGettingStartedPage({
                 documentation stays current.
               </p>
             </Step>
+
+            <section
+              id="windows-only"
+              className="border-petrol-950/8 shadow-card scroll-mt-24 rounded-2xl border bg-white p-6 sm:p-8"
+              aria-labelledby="windows-only-heading"
+            >
+              <h2
+                id="windows-only-heading"
+                className="text-petrol-950 text-xl font-semibold tracking-[-0.02em]"
+              >
+                Select Windows configurations for your report
+              </h2>
+              <div className="text-petrol-700 mt-4 space-y-4 text-[15px] leading-7">
+                <p>
+                  To document Windows settings without including iOS or Android
+                  policies, search within a configuration family and export the
+                  selected items. The desktop app selects policies and profiles
+                  for documentation, not individual devices from an inventory.
+                </p>
+                <ol className="list-decimal space-y-3 pl-5">
+                  <li>
+                    After collection finishes, open a family such as{" "}
+                    <Ui>Settings Catalog</Ui>, <Ui>Device Configs</Ui>, or{" "}
+                    <Ui>Compliance</Ui> in the sidebar. If you already selected
+                    items, use <Ui>Clear</Ui> in the selection bar to start
+                    fresh.
+                  </li>
+                  <li>
+                    Enter <Ui>Windows</Ui> in the search field at the top right.
+                    Search matches names, descriptions, policy types, and
+                    platform metadata. In the example below, three of five
+                    policies match, including policies whose names do not
+                    contain Windows.
+                  </li>
+                  <li>
+                    Review the results and their platform badges or policy
+                    types. Choose <Ui>Select all matches</Ui> in each section
+                    you want to include, or select individual checkboxes.
+                    Deselect any result that does not belong in your report.
+                  </li>
+                  <li>
+                    Repeat in other families as needed. The search resets when
+                    you change families, so enter <Ui>Windows</Ui> again.
+                    Selections remain selected across families and when hidden
+                    by search. Clear the search to check for unwanted selected
+                    items before exporting.
+                  </li>
+                  <li>
+                    Select <Ui>Export PDF</Ui> or <Ui>Export Word</Ui> in the
+                    selection bar. Alternatively, open{" "}
+                    <Ui>Export documentation</Ui>, choose{" "}
+                    <Ui>Only selected items</Ui>, and start the export.
+                  </li>
+                </ol>
+                <figure className="space-y-3">
+                  <a
+                    href="/docs/desktop-windows-selection.png"
+                    className="block rounded-xl focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    aria-label="Open the full-size screenshot of Windows configuration selection"
+                  >
+                    <Image
+                      src="/docs/desktop-windows-selection.png"
+                      alt="Desktop Settings Catalog with Windows in the search field, 3 of 5 policies matching, Select all matches checked, and the selection bar offering Export PDF and Export Word for 3 selected configurations."
+                      width={1280}
+                      height={800}
+                      sizes="(max-width: 1023px) 100vw, 800px"
+                      className="border-petrol-950/8 h-auto w-full rounded-xl border"
+                    />
+                  </a>
+                  <figcaption className="text-petrol-600 text-sm leading-6">
+                    Desktop app 0.1.4 with sample configuration data. The three
+                    Windows policies are selected; the iOS and Android policies
+                    are hidden and unselected. Select the screenshot to view it
+                    at full size.
+                  </figcaption>
+                </figure>
+                <Note>
+                  Search is a text filter, not a strict operating-system filter.
+                  A mobile policy mentioning Windows can match, while an item
+                  without Windows in its searchable fields can be missed. Review
+                  the results and add missing Windows items manually.{" "}
+                  <Ui>Export section</Ui> exports the entire section, including
+                  items hidden by search. Use the selection bar or{" "}
+                  <Ui>Only selected items</Ui> to export your chosen policies.
+                </Note>
+              </div>
+            </section>
 
             <section
               id="troubleshooting"

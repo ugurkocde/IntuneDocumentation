@@ -112,7 +112,16 @@ export function rankNextActions(
   const candidates: Omit<NextAction, "rank">[] = [];
   for (const id of mappedCapabilityIds(fa)) {
     const result = resultById.get(id);
-    const tier = result && TIER_BY_STATUS[result.status];
+    // A non-enforcing value only switches a protection off where the policy
+    // is assigned; in an unassigned policy the protection is simply missing.
+    const tier =
+      result?.status === "disabledByPolicy" &&
+      !result.evidence.some(
+        (item) =>
+          item.verdict === "disabled" && item.assignment.state === "assigned",
+      )
+        ? "missing"
+        : result && TIER_BY_STATUS[result.status];
     if (!result || !tier) continue;
     const controlIds = fa.controls
       .filter(

@@ -9,7 +9,8 @@ import type { ComplianceCapability } from "./types";
 
 // Every signal asserts a concrete Intune setting with the value that actually
 // enforces the capability. A setting that is present but set to a
-// non-enforcing value is recorded as counter-evidence via disabledWhen.
+// non-enforcing value is recorded as counter-evidence via disabledWhen. A
+// Graph template boolean left at "Not configured" reads false and is ignored.
 // Settings not listed here are never counted, in either direction.
 
 const CORE_CAPABILITIES: readonly ComplianceCapability[] = [

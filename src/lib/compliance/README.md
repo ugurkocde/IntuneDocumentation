@@ -143,6 +143,18 @@ Everything it produces is identifiers, statuses and counts.
   customer's file, on ISO/IEC 27001 and NIS2 controls. The desktop app keeps
   the file in memory for the session.
 
+## Template defaults are not configured values (ruleset 2026.10.2)
+
+Template resources such as compliance policies, device restriction profiles
+and endpoint protection profiles return every property, and a boolean left at
+"Not configured" reads `false`. A Graph property signal whose enforcing value
+is `true` therefore ignores `false`: it is neither a technical check result
+nor counter-evidence. Verified on a live tenant, where a compliance policy that
+only requires the firewall returned `bitLockerEnabled: false`, and a device
+restriction profile that only blocks Microsoft accounts returned
+`defenderRequireBehaviorMonitoring: false`. Administrative template and OMA-URI
+values stay explicit, so `false` there is still counter-evidence.
+
 ## Evidence semantics and scope (ruleset 2026.09.2)
 
 `CapabilityEvidence.kind` distinguishes a configuration setting, a compliance

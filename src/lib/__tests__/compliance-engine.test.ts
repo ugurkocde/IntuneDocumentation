@@ -549,7 +549,7 @@ describe("framework assessment", () => {
     expect(
       bsi.controls.find((c) => c.control.id === "SYS.2.2.3.A14")?.status,
     ).toBe("evidenceFound");
-    // microsoftAccountBlocked: false is counter-evidence, not coverage.
+    // microsoftAccountBlocked: false is the unconfigured default, not coverage.
     expect(
       bsi.controls.find((c) => c.control.id === "SYS.2.2.3.A6")?.status,
     ).toBe("noEvidence");

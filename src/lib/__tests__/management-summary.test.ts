@@ -16,7 +16,34 @@ import type {
   FrameworkAssessment,
 } from "../compliance/types";
 
-function capability(id: string, status: CapabilityStatus): CapabilityResult {
+function disabledEvidence(
+  state: "assigned" | "notAssigned",
+): CapabilityResult["evidence"][number] {
+  return {
+    capabilityId: "deviation",
+    policyId: `policy-${state}`,
+    policyName: `Policy ${state}`,
+    policyType: "Settings Catalog",
+    source: "settingsCatalog",
+    settingId: "synthetic_deviation",
+    observedValue: "off",
+    verdict: "disabled",
+    kind: "configuration",
+    assignment: {
+      state,
+      targets: [],
+      exclusions: [],
+      filters: [],
+      coverage: "unverified",
+    },
+  };
+}
+
+function capability(
+  id: string,
+  status: CapabilityStatus,
+  evidence: CapabilityResult["evidence"] = [],
+): CapabilityResult {
   return {
     capability: {
       id,
@@ -32,7 +59,7 @@ function capability(id: string, status: CapabilityStatus): CapabilityResult {
       ],
     },
     status,
-    evidence: [],
+    evidence,
     limitations: [],
     checks: [],
   };
@@ -147,10 +174,17 @@ describe("computeMetrics", () => {
 
   it("computes coverage in integers so exact percentages are not floored down", () => {
     const controls = Array.from({ length: 50 }, (_, index) =>
-      control(String(index + 1), index < 29 ? "partialEvidence" : "noEvidence", ["a"]),
+      control(
+        String(index + 1),
+        index < 29 ? "partialEvidence" : "noEvidence",
+        ["a"],
+      ),
     );
     // 29 / 50 * 100 is 57.99999999999999 in floating point.
-    expect(computeMetrics(framework(controls), [capability("a", "enforced")]).coveragePct).toBe(58);
+    expect(
+      computeMetrics(framework(controls), [capability("a", "enforced")])
+        .coveragePct,
+    ).toBe(58);
   });
 
   it("returns null coverage when nothing is assessable", () => {
@@ -226,7 +260,7 @@ describe("rankNextActions", () => {
     capability("missing-wide", "noEvidence"),
     capability("unassigned", "configuredNotAssigned"),
     capability("partial", "partialConfiguration"),
-    capability("deviation", "disabledByPolicy"),
+    capability("deviation", "disabledByPolicy", [disabledEvidence("assigned")]),
     capability("conflict", "conflictingEvidence"),
     capability("enforced", "enforced"),
     capability("requirement", "requirementAssigned"),
@@ -256,6 +290,20 @@ describe("rankNextActions", () => {
     expect(
       actions.find((a) => a.capabilityId === "missing-wide")?.controlIds,
     ).toEqual(["1", "2", "3"]);
+  });
+
+  it("treats a non-enforcing value in an unassigned policy as missing, not switched off", () => {
+    const unassigned = capabilities.map((result) =>
+      result.capability.id === "deviation"
+        ? capability("deviation", "disabledByPolicy", [
+            disabledEvidence("notAssigned"),
+          ])
+        : result,
+    );
+    const action = rankNextActions(fa, unassigned, 10).find(
+      (item) => item.capabilityId === "deviation",
+    );
+    expect(action?.tier).toBe("missing");
   });
 
   it("excludes covered, not applicable, data gap and unmapped capabilities", () => {

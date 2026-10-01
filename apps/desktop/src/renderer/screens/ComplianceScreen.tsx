@@ -45,11 +45,14 @@ function assessBlocker(state: AppState): string | null {
 function SummaryCard({
   label,
   count,
+  assigned,
   total,
   tone,
 }: {
   label: string;
   count: number;
+  // Omitted for missing results, which have no policy.
+  assigned?: number;
   total: number;
   tone: "green" | "amber" | "slate";
 }) {
@@ -68,6 +71,11 @@ function SummaryCard({
       <p className="text-petrol-600 mt-1 text-[11px] tabular-nums">
         of {total.toLocaleString()} technical check results in scope
       </p>
+      {assigned !== undefined && (
+        <p className="text-petrol-800 mt-0.5 text-[11px] font-medium tabular-nums">
+          {assigned.toLocaleString()} in assigned policies
+        </p>
+      )}
     </div>
   );
 }
@@ -377,12 +385,18 @@ export function ComplianceScreen() {
             <SummaryCard
               label="Matches expected value"
               count={checks.filter((check) => check.result === "matches").length}
+              assigned={
+                checks.filter((check) => check.result === "matches" && check.assignment?.state === "assigned").length
+              }
               total={checks.length}
               tone="green"
             />
             <SummaryCard
               label="Different value"
               count={checks.filter((check) => check.result === "different").length}
+              assigned={
+                checks.filter((check) => check.result === "different" && check.assignment?.state === "assigned").length
+              }
               total={checks.length}
               tone="amber"
             />
@@ -397,8 +411,8 @@ export function ComplianceScreen() {
           <p className="text-xs leading-5 text-slate-600">
             {checks.filter((check) => check.assessmentStatus === "checked").length} checked;{" "}
             {checks.filter((check) => check.assessmentStatus === "unableToCheck").length} unable to check. Only Intune
-            and Conditional Access policy checks are shown. Counts describe setting comparisons, not passed framework
-            requirements. Assignment is shown separately.
+            and Conditional Access policy checks are shown. Each result compares one setting in one policy, assigned or
+            not, so a setting in several policies counts several times. Evidence coverage counts assigned policies only.
           </p>
           {selected.framework.totalRequirements !== undefined && selected.coverageLabel && (
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">

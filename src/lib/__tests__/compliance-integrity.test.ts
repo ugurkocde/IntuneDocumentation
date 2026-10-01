@@ -87,19 +87,46 @@ describe("evidence integrity regressions", () => {
     ).toBe(false);
   });
 
-  it("surfaces contradictory behavior-monitoring settings across assigned policies", () => {
+  it("does not treat a template default of false as switched off", () => {
+    // Device restriction profiles return every boolean; an untouched Defender
+    // section reads false (observed on a live profile that only blocks
+    // Microsoft accounts).
     const enabled = policy("windows10GeneralConfiguration", {
       defenderRequireBehaviorMonitoring: true,
     });
-    const disabled = {
+    const untouched = {
       ...policy("windows10GeneralConfiguration", {
         defenderRequireBehaviorMonitoring: false,
+        microsoftAccountBlocked: true,
       }),
-      id: "disabled",
+      id: "untouched",
     };
     expect(
-      capability(data(enabled, disabled), "windows-behavior-monitoring").status,
-    ).toBe("conflictingEvidence");
+      capability(data(enabled, untouched), "windows-behavior-monitoring")
+        .status,
+    ).toBe("enforced");
+    const alone = capability(data(untouched), "windows-behavior-monitoring");
+    expect(alone.status).toBe("noEvidence");
+    expect(alone.checks.some((check) => check.result === "different")).toBe(
+      false,
+    );
+  });
+  it("does not report unconfigured compliance requirements as different values", () => {
+    // A compliance policy that only requires the firewall still returns
+    // bitLockerEnabled and storageRequireEncryption as false.
+    const firewallOnly = policy("windows10CompliancePolicy", {
+      activeFirewallRequired: true,
+      bitLockerEnabled: false,
+      storageRequireEncryption: false,
+    });
+    const encryption = capability(
+      data(firewallOnly),
+      "windows-disk-encryption",
+    );
+    expect(encryption.evidence).toHaveLength(0);
+    expect(
+      encryption.checks.filter((check) => check.policyId === firewallOnly.id),
+    ).toHaveLength(0);
   });
   it.each([
     [{ rtpEnabled: true }, "requirementAssigned"],

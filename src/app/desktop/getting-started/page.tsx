@@ -540,13 +540,14 @@ export default async function DesktopGettingStartedPage({
               </p>
               <p>
                 For audit evidence, open <Ui>Compliance Evidence</Ui> in the
-                sidebar, pick a framework, and download its evidence report.
-                For management, use <Ui>Export management report</Ui> on the
-                same screen: a one-page PDF with evidence coverage, gaps, and
-                the next actions. Save a baseline each month and load last
-                month&apos;s file to show the change. Collect again whenever
-                your configuration changes, so your documentation stays
-                current.
+                sidebar, pick a framework, and download its evidence report. For
+                management, use <Ui>Export management report</Ui> on the same
+                screen. See{" "}
+                <a href="#management-report" className={inlineLink}>
+                  Management report and monthly progress
+                </a>
+                . Collect again whenever your configuration changes, so your
+                documentation stays current.
               </p>
             </Step>
 
@@ -633,6 +634,72 @@ export default async function DesktopGettingStartedPage({
                   <Ui>Export section</Ui> exports the entire section, including
                   items hidden by search. Use the selection bar or{" "}
                   <Ui>Only selected items</Ui> to export your chosen policies.
+                </Note>
+              </div>
+            </section>
+
+            <section
+              id="management-report"
+              className="border-petrol-950/8 shadow-card scroll-mt-24 rounded-2xl border bg-white p-6 sm:p-8"
+              aria-labelledby="management-report-heading"
+            >
+              <h2
+                id="management-report-heading"
+                className="text-petrol-950 text-xl font-semibold tracking-[-0.02em]"
+              >
+                Management report and monthly progress
+              </h2>
+              <div className="text-petrol-700 mt-4 space-y-4 text-[15px] leading-7">
+                <p>
+                  The management report is a one-page PDF for readers outside
+                  IT, in English or German. It shows evidence coverage, the
+                  controls without evidence, unassigned security configurations,
+                  the change since your last baseline, and the five next actions
+                  with links to the Intune or Entra admin center. Each metric
+                  links to a detail page in the same PDF.
+                </p>
+                <ol className="list-decimal space-y-3 pl-5">
+                  <li>
+                    Open <Ui>Compliance Evidence</Ui> and choose a framework,
+                    for example <Ui>NIS2 Directive</Ui> or{" "}
+                    <Ui>ISO/IEC 27001</Ui>.
+                  </li>
+                  <li>
+                    Choose <Ui>EN</Ui> or <Ui>DE</Ui> and select{" "}
+                    <Ui>Export management report</Ui>.
+                  </li>
+                  <li>
+                    Select <Ui>Save baseline</Ui> and keep the file with your
+                    report. Next month, collect again, select{" "}
+                    <Ui>Load baseline</Ui> and choose last month&apos;s file.
+                    The change since baseline then shows coverage points, newly
+                    evidenced controls, and regressions.
+                  </li>
+                </ol>
+                <p>
+                  A baseline contains control identifiers, statuses, and counts
+                  only, never policy names or settings. It only compares with
+                  the same tenant, framework, and scope; a file from another
+                  tenant or with a different platform selection is rejected.
+                </p>
+                <h3 className="text-petrol-950 pt-2 text-base font-semibold">
+                  CIS Controls through your own crosswalk
+                </h3>
+                <p>
+                  To show CIS Controls safeguards next to ISO/IEC 27001 and NIS2
+                  controls, select <Ui>Download template</Ui>, fill in your
+                  organization&apos;s mapping from your licensed CIS copy, and
+                  select <Ui>Import crosswalk</Ui>. The template has the columns{" "}
+                  <code>iso27001_control</code>, <code>nis2_measure</code>,{" "}
+                  <code>cis_safeguard</code>, and <code>notes</code>; comma and
+                  semicolon separated files both work, and NIS2 measures can be
+                  written as 21.2.j, j, or a national code such as 10A.
+                </p>
+                <Note>
+                  The app ships no CIS Controls content. Your crosswalk stays in
+                  memory for the current session and is never saved by the app,
+                  so import it again after restarting. Evidence coverage is a
+                  coverage figure, not a compliance score or audit result.
                 </Note>
               </div>
             </section>

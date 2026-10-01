@@ -305,11 +305,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Full history and tags so the notes can list changes since the
+      # previous desktop release.
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Download installers
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           merge-multiple: true
+
+      # apps/desktop/release-notes/<version>.md when present, otherwise the
+      # commits since the previous desktop tag.
+      - name: Write release notes
+        run: node apps/desktop/scripts/release-notes.mjs "$GITHUB_REF_NAME" > release-notes.md
 
       - name: Publish release
         env:
@@ -321,5 +334,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "Intune Documentation desktop ${GITHUB_REF_NAME#desktop-v}" \
-            --notes "Desktop app ${GITHUB_REF_NAME#desktop-v}. Existing installations update automatically." \
+            --notes-file release-notes.md \
             --latest=false

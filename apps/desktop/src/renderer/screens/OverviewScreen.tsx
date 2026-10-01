@@ -416,9 +416,17 @@ export function OverviewScreen() {
             loading={collection.running}
             onShowFamilies={() => revealSection("family-breakdown")}
             onShowWarnings={() => {
-              // Open the first family with a load error, filtered to errors;
-              // errors without a family stay on the Overview list.
-              const familyKey = summary.fetchErrors.find((error) => error.familyKey)?.familyKey;
+              // Open the first family whose sections can show the load error,
+              // filtered to errors; anything else stays on the Overview list.
+              const familyKey = summary.fetchErrors
+                .map((error) => error.familyKey)
+                .find(
+                  (key) =>
+                    key !== undefined &&
+                    summary.sectionCounts.some(
+                      (section) => section.familyKey === key && (section.count > 0 || Boolean(section.error)),
+                    ),
+                );
               if (familyKey) dispatch({ type: "navigate", screen: "section", familyKey, filter: "errors" });
               else revealSection("collection-warnings");
             }}

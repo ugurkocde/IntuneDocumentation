@@ -49,7 +49,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.1";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.2";
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -371,6 +371,16 @@ function evaluateConfiguration(
           settingId = signal.propertyPath;
           const value = resolvePropertyPath(config, settingId);
           if (value === undefined || value === null) continue;
+          // Template resources such as compliance policies and device
+          // restrictions return every boolean; false is the "Not configured"
+          // default, not a configured value, so it is neither a check result
+          // nor counter-evidence.
+          if (
+            value === false &&
+            signal.enforcedWhen.kind === "equals" &&
+            signal.enforcedWhen.value === true
+          )
+            continue;
           values = [value];
         } else {
           settingId = signal.presentationId

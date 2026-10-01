@@ -8,10 +8,8 @@ const bool = (type: string, propertyPath: string): GraphPropertySignal => ({
   odataTypes: [type],
   propertyPath,
   enforcedWhen: { kind: "equals", value: true },
-  // A compliance requirement set to false says nothing about device state.
-  ...(type === compliance
-    ? {}
-    : { disabledWhen: { kind: "equals" as const, value: false } }),
+  // Graph returns false for every boolean these templates leave at "Not
+  // configured", so false is never counter-evidence (see the engine).
 });
 const endpointDocs =
   "https://learn.microsoft.com/en-us/graph/api/resources/intune-deviceconfig-windows10endpointprotectionconfiguration?view=graph-rest-beta";

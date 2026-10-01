@@ -34,6 +34,13 @@ function git(...args) {
   }).trim();
 }
 
+try {
+  git("rev-parse", "--verify", "--quiet", `${tag}^{commit}`);
+} catch {
+  console.error(`Unknown tag ${tag}.`);
+  process.exit(1);
+}
+
 function previousTag() {
   try {
     return git(

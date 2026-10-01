@@ -8,6 +8,7 @@ import {
   checkSummary,
   displayCheckValue,
 } from "../../../../../../src/lib/compliance/check-results";
+import type { SafeguardCount } from "../../../../../../src/lib/compliance/management/types";
 import { CAPABILITY_STATUS_LABELS } from "../../../../../../src/lib/compliance/presentation";
 import type {
   CapabilityStatus,
@@ -241,6 +242,24 @@ function SettingChecks({ capability }: { capability: ComplianceCapabilityView })
   );
 }
 
+// Safeguards in place out of those mapped to the control, as text and a slim bar.
+function SafeguardProgress({ count }: { count: SafeguardCount }) {
+  const percent = Math.round((count.inPlace * 100) / count.total);
+  return (
+    <span className="mt-2 flex items-center gap-2">
+      <span
+        className="bg-mint-100 h-1.5 w-24 shrink-0 overflow-hidden rounded-full"
+        aria-hidden="true"
+      >
+        <span className="block h-full rounded-full bg-teal-600" style={{ width: `${percent}%` }} />
+      </span>
+      <span className="text-petrol-600 text-[11px] tabular-nums">
+        {count.inPlace} of {count.total} {count.total === 1 ? "safeguard" : "safeguards"} in place
+      </span>
+    </span>
+  );
+}
+
 const CIS_VISIBLE = 8;
 
 // National law references and the customer's own CIS crosswalk ids, shown as
@@ -291,6 +310,7 @@ function ReferenceChips({ control, cisIds }: { control: ControlAssessment; cisId
 export function ControlRow({
   control,
   cisIds = [],
+  safeguards,
   capabilitiesById,
   expanded,
   onToggle,
@@ -298,6 +318,8 @@ export function ControlRow({
   control: ControlAssessment;
   // Customer-supplied CIS safeguard ids from the imported crosswalk.
   cisIds?: readonly string[];
+  // Safeguards in place and mapped, from the management summary.
+  safeguards?: SafeguardCount;
   capabilitiesById: Map<string, ComplianceCapabilityView>;
   expanded: boolean;
   onToggle: () => void;
@@ -310,6 +332,10 @@ export function ControlRow({
       ? "Outside selected scope"
       : checkSummary(control.capabilityIds.flatMap((id) => capabilitiesById.get(id)?.checks ?? []));
   const pendingReasons = [...new Set(pendingCapabilities.flatMap((result) => result?.limitations ?? []))];
+  const safeguardLabel =
+    safeguards && safeguards.total > 0
+      ? `, ${safeguards.inPlace} of ${safeguards.total} ${safeguards.total === 1 ? "safeguard" : "safeguards"} in place`
+      : "";
   const panelId = `compliance-control-${control.control.id.replace(/[^a-z0-9]/gi, "-")}`;
 
   return (
@@ -321,7 +347,7 @@ export function ControlRow({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={panelId}
-          aria-label={`${control.control.id} ${control.control.title}: ${statusLabel}`}
+          aria-label={`${control.control.id} ${control.control.title}: ${statusLabel}${safeguardLabel}`}
           className="flex min-h-16 w-full cursor-pointer items-start gap-3 px-4 py-4 text-left focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none focus-visible:ring-inset @xl:items-center @xl:px-5"
         >
           <ChevronDown
@@ -338,6 +364,7 @@ export function ControlRow({
               </p>
               <ControlStatusChip status={control.status} label={statusLabel} />
             </div>
+            {safeguards && safeguards.total > 0 && <SafeguardProgress count={safeguards} />}
             {control.status === "notAssessed" && (
               <span className="mt-2 block text-xs leading-5 text-amber-900">
                 {control.capabilityIds.length === 0

@@ -412,7 +412,7 @@ export function ComplianceScreen() {
             {checks.filter((check) => check.assessmentStatus === "checked").length} checked;{" "}
             {checks.filter((check) => check.assessmentStatus === "unableToCheck").length} unable to check. Only Intune
             and Conditional Access policy checks are shown. Each result compares one setting in one policy, assigned or
-            not, so a setting in several policies counts several times. Evidence coverage counts assigned policies only.
+            not, so a setting in several policies counts several times. Safeguards in place count assigned policies only.
           </p>
           {selected.framework.totalRequirements !== undefined && selected.coverageLabel && (
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
@@ -503,6 +503,7 @@ export function ComplianceScreen() {
                   key={control.control.id}
                   control={control}
                   cisIds={selected.crosswalkCis[control.control.id]}
+                  safeguards={selected.management.safeguards[control.control.id]}
                   capabilitiesById={capabilitiesById}
                   expanded={expanded.has(expansionKey)}
                   onToggle={() =>

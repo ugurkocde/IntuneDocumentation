@@ -1,4 +1,4 @@
-import { compareControlIds } from "../engine";
+import { compareControlIds, hasAssignedEvidence } from "../engine";
 import type {
   AssessmentScope,
   CapabilityResult,
@@ -14,6 +14,8 @@ import type {
   NextAction,
   NextActionTier,
   OutsideScopeMeasure,
+  SafeguardCount,
+  SafeguardState,
 } from "./types";
 
 // Management view of one framework assessment: evidence coverage counts and a
@@ -47,6 +49,28 @@ function mappedCapabilityIds(fa: FrameworkAssessment): Set<string> {
   return new Set(fa.controls.flatMap((control) => control.capabilityIds));
 }
 
+/** Mapped capability ids whose result is configured and assigned. */
+function inPlaceCapabilityIds(
+  capabilities: readonly CapabilityResult[],
+): Set<string> {
+  return new Set(
+    capabilities
+      .filter((result) => hasAssignedEvidence(result.status))
+      .map((result) => result.capability.id),
+  );
+}
+
+function safeguardCount(
+  capabilityIds: Iterable<string>,
+  inPlace: ReadonlySet<string>,
+): SafeguardCount {
+  const ids = new Set(capabilityIds);
+  return {
+    inPlace: [...ids].filter((id) => inPlace.has(id)).length,
+    total: ids.size,
+  };
+}
+
 function countStatus(fa: FrameworkAssessment, status: ControlStatus): number {
   return fa.controls.filter((control) => control.status === status).length;
 }
@@ -74,6 +98,8 @@ export function computeMetrics(
         .map((result) => result.capability.id),
     ).size;
 
+  const safeguards = safeguardCount(mapped, inPlaceCapabilityIds(capabilities));
+
   return {
     assessable,
     withEvidence,
@@ -88,7 +114,77 @@ export function computeMetrics(
         ? null
         : Math.max(0, totalRequirements - fa.summary.totalControls),
     dataGaps: distinctWith(DATA_GAP_STATUSES),
+    safeguardsTotal: safeguards.total,
+    safeguardsInPlace: safeguards.inPlace,
+    safeguardPct: safeguards.total
+      ? Math.floor((safeguards.inPlace * 100) / safeguards.total)
+      : null,
   };
+}
+
+/**
+ * Measures with at least one safeguard in place, over measures with at least
+ * one mapped safeguard. Derived from the safeguard counts so every measure
+ * figure agrees; metrics.withEvidence stays for older baselines.
+ */
+export function measuresWithSafeguards(
+  summary: Pick<ManagementSummary, "safeguards">,
+): { withSafeguard: number; total: number } {
+  const mapped = Object.values(summary.safeguards).filter(
+    (count) => count.total > 0,
+  );
+  return {
+    withSafeguard: mapped.filter((count) => count.inPlace > 0).length,
+    total: mapped.length,
+  };
+}
+
+/** A non-enforcing value switches a protection off only where it is assigned. */
+function switchesOffAssigned(result: CapabilityResult): boolean {
+  return result.evidence.some(
+    (item) =>
+      item.verdict === "disabled" && item.assignment.state === "assigned",
+  );
+}
+
+/** Plain-language state of one safeguard for the management report. */
+export function safeguardState(result: CapabilityResult): SafeguardState {
+  switch (result.status) {
+    case "enforced":
+    case "requirementAssigned":
+      return "inPlace";
+    case "partialConfiguration":
+      return "partial";
+    case "configuredNotAssigned":
+      return "notAssigned";
+    case "disabledByPolicy":
+      return switchesOffAssigned(result) ? "switchedOff" : "notConfigured";
+    case "conflictingEvidence":
+      return "conflicting";
+    case "assignmentUnknown":
+    case "collectionIncomplete":
+      return "dataMissing";
+    default:
+      return "notConfigured";
+  }
+}
+
+/** Distinct policies behind a safeguard, assigned ones first, then by name. */
+export function safeguardPolicies(
+  result: CapabilityResult,
+): { name: string; assigned: boolean }[] {
+  const byId = new Map<string, { name: string; assigned: boolean }>();
+  for (const item of result.evidence) {
+    const assigned = item.assignment.state === "assigned";
+    const known = byId.get(item.policyId);
+    if (known) known.assigned ||= assigned;
+    else byId.set(item.policyId, { name: item.policyName, assigned });
+  }
+  return [...byId.values()].sort(
+    (a, b) =>
+      Number(b.assigned) - Number(a.assigned) ||
+      (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+  );
 }
 
 export function rankNextActions(
@@ -115,11 +211,7 @@ export function rankNextActions(
     // A non-enforcing value only switches a protection off where the policy
     // is assigned; in an unassigned policy the protection is simply missing.
     const tier =
-      result?.status === "disabledByPolicy" &&
-      !result.evidence.some(
-        (item) =>
-          item.verdict === "disabled" && item.assignment.state === "assigned",
-      )
+      result?.status === "disabledByPolicy" && !switchesOffAssigned(result)
         ? "missing"
         : result && TIER_BY_STATUS[result.status];
     if (!result || !tier) continue;
@@ -195,6 +287,7 @@ export function buildManagementSummary(
   );
   if (!fa)
     throw new Error(`Framework ${frameworkId} is not in this assessment.`);
+  const inPlace = inPlaceCapabilityIds(assessment.capabilities);
   return {
     frameworkId,
     frameworkName: fa.framework.name,
@@ -206,6 +299,12 @@ export function buildManagementSummary(
     nextActions: rankNextActions(fa, assessment.capabilities, options.limit),
     controls: Object.fromEntries(
       fa.controls.map((control) => [control.control.id, control.status]),
+    ),
+    safeguards: Object.fromEntries(
+      fa.controls.map((control) => [
+        control.control.id,
+        safeguardCount(control.capabilityIds, inPlace),
+      ]),
     ),
     outsideScope: [...(options.outsideScope ?? [])],
   };

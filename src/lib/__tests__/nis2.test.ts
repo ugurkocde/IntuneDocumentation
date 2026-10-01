@@ -146,4 +146,10 @@ describe("nis2MeasureFromCode", () => {
       expect(nis2MeasureFromCode(code)).toBeNull();
     },
   );
+  it("gives every measure a German title for German reports", () => {
+    for (const control of Object.values(NIS2.controls)) {
+      expect(control.titleDe, control.id).toMatch(/\S/);
+      expect(control.titleDe).not.toBe(control.title);
+    }
+  });
 });

@@ -180,7 +180,7 @@ const features = [
     icon: ChartColumn,
     title: "One-page management report",
     detail:
-      "Evidence coverage, gaps, and the next five actions in plain language, in English or German. Save a baseline and show the change month over month.",
+      "One page for management with safeguards in place and the next five steps, followed by explanations for your IT team. English or German, with month-over-month change from a saved baseline.",
   },
   {
     icon: Building2,

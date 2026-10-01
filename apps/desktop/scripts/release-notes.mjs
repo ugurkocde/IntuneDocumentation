@@ -15,7 +15,8 @@ import { fileURLToPath } from "node:url";
 const TAG_PREFIX = "desktop-v";
 // Same paths that trigger the installer build in desktop-build.yml.
 const BUILD_PATHS = ["apps/desktop", "src/lib", "src/types", "public/logo.png"];
-const FOOTER = "Existing installations update automatically.";
+const FOOTER =
+  "Installed apps show this update under Settings, Updates: select Download update, then Restart to update. With Install updates automatically turned on, it installs when you restart the app.";
 
 const tag = process.argv[2];
 if (!tag || !tag.startsWith(TAG_PREFIX)) {

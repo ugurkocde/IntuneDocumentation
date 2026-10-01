@@ -27,6 +27,23 @@ import { DisclosureSummary } from "../components/ui/DisclosureSummary";
 import { ipc } from "../lib/ipc";
 import { busyBlocker, collectBlocker, exportBlocker, licenseView } from "../state/selectors";
 
+// Scrolls an Overview section into view and moves focus to it so keyboard
+// and screen reader users land where the KPI card pointed.
+// Drill-down targets show a ring on keyboard focus and, briefly, after a
+// reveal: focus moved by a mouse click does not match :focus-visible.
+const REVEAL_TARGET =
+  "scroll-mt-6 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 data-[revealed]:ring-2 data-[revealed]:ring-teal-600 data-[revealed]:ring-offset-2";
+
+function revealSection(id: string): void {
+  const target = document.getElementById(id);
+  if (!target) return;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  target.focus({ preventScroll: true });
+  target.dataset.revealed = "";
+  window.setTimeout(() => delete target.dataset.revealed, 1200);
+}
+
 function ReadinessStep({
   index,
   done,
@@ -194,10 +211,10 @@ function FamilyBreakdown() {
   );
   const max = Math.max(1, ...rows.map((family) => counts[family.key] ?? 0));
   return (
-    <Card>
+    <Card id="family-breakdown" tabIndex={-1} aria-labelledby="family-breakdown-title" className={REVEAL_TARGET}>
       <div className="flex items-center gap-2">
         <ListChecks className="h-[18px] w-[18px] text-teal-700" aria-hidden="true" />
-        <h2 className="text-petrol-950 text-sm font-semibold">By configuration family</h2>
+        <h2 id="family-breakdown-title" className="text-petrol-950 text-sm font-semibold">By configuration family</h2>
       </div>
       <p className="text-petrol-600 mt-1.5 text-xs">Select a family to browse its items.</p>
       <div className="mt-4 grid gap-x-6 gap-y-1 @3xl:grid-cols-2">
@@ -297,9 +314,13 @@ function Warnings() {
   const { permissionErrors, fetchErrors } = summary;
   if (permissionErrors.length === 0 && fetchErrors.length === 0) return null;
   return (
-    <div id="collection-warnings" className="space-y-3 scroll-mt-6">
+    <div id="collection-warnings" tabIndex={-1} className={`space-y-3 ${REVEAL_TARGET}`}>
       {permissionErrors.length > 0 && (
-        <aside className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-4">
+        <aside
+          id="permission-gaps"
+          tabIndex={-1}
+          className={`border border-amber-200/80 bg-amber-50/70 p-4 ${REVEAL_TARGET}`}
+        >
           <div className="flex items-start gap-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-amber-700">
               <Shield className="h-4 w-4" aria-hidden="true" />
@@ -366,7 +387,7 @@ function Warnings() {
 }
 
 export function OverviewScreen() {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const { collection } = state;
   const summary = collection.summary;
   const counts = familyCounts(summary?.sectionCounts);
@@ -393,6 +414,15 @@ export function OverviewScreen() {
             warnings={summary.fetchErrors.length}
             permissionGaps={summary.permissionErrors.length}
             loading={collection.running}
+            onShowFamilies={() => revealSection("family-breakdown")}
+            onShowWarnings={() => {
+              // Open the first family with a load error, filtered to errors;
+              // errors without a family stay on the Overview list.
+              const familyKey = summary.fetchErrors.find((error) => error.familyKey)?.familyKey;
+              if (familyKey) dispatch({ type: "navigate", screen: "section", familyKey, filter: "errors" });
+              else revealSection("collection-warnings");
+            }}
+            onShowPermissionGaps={() => revealSection("permission-gaps")}
           />
           <Warnings />
           <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.8fr)]">

@@ -20,6 +20,11 @@ export {
 export { CYBER_ESSENTIALS } from "./frameworks/cyber-essentials";
 export { NIST_800_171 } from "./frameworks/nist-800-171";
 export { NIST_800_171_R3 } from "./frameworks/nist-800-171-r3";
+export {
+  NIS2,
+  NIS2_OUTSIDE_INTUNE_SCOPE,
+  nis2MeasureFromCode,
+} from "./frameworks/nis2";
 export type {
   AssessmentScope,
   CollectionCoverage,

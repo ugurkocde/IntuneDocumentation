@@ -23,6 +23,13 @@ export const FRAMEWORK_OPTIONS: ReadonlyArray<{
       "Selected Annex A technology controls mapped to managed-device configuration evidence.",
   },
   {
+    id: "nis2-2022-2555",
+    label: "NIS2 Directive",
+    shortLabel: "NIS2",
+    description:
+      "EU Directive 2022/2555 Article 21(2) measures with Danish and German law references. Organisational measures need separate assessment.",
+  },
+  {
     id: "soc2-tsc",
     label: "SOC 2",
     shortLabel: "SOC 2",

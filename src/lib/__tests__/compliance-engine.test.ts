@@ -14,6 +14,7 @@ import {
   DEF_STAN_05_138,
   NIST_800_171,
   NIST_800_171_R3,
+  NIS2,
 } from "../compliance";
 import { defenderForEndpointPolicyFixture } from "./fixtures/intune-beta";
 
@@ -577,6 +578,7 @@ describe("framework assessment", () => {
       "nist-800-171-r2",
       "nist-800-171-r3",
       "essential-eight",
+      "nis2-2022-2555",
     ]);
     for (const framework of assessment.frameworks) {
       expect(
@@ -746,6 +748,7 @@ describe("framework assessment", () => {
       CYBER_ESSENTIALS,
       NIST_800_171,
       NIST_800_171_R3,
+      NIS2,
     ]) {
       for (const [capabilityId, controlIds] of Object.entries(
         framework.mappings,

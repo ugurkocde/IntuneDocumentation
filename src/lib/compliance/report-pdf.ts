@@ -33,7 +33,8 @@ export type ComplianceFrameworkId =
   | "cyber-essentials-v3"
   | "nist-800-171-r2"
   | "nist-800-171-r3"
-  | "essential-eight";
+  | "essential-eight"
+  | "nis2-2022-2555";
 
 type Locale = "en" | "de";
 type RgbColor = [number, number, number];
@@ -223,6 +224,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "essential-eight": "Essential-Eight",
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
+      "nis2-2022-2555": "NIS2",
     },
   },
   de: {
@@ -365,6 +367,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "essential-eight": "Essential-Eight",
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
+      "nis2-2022-2555": "NIS2",
     },
   },
 };
@@ -590,6 +593,7 @@ const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "essential-eight": "E8",
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
+  "nis2-2022-2555": "NIS2",
 };
 
 function frameworkReportCode(frameworkId: ComplianceFrameworkId): string {
@@ -708,7 +712,9 @@ function controlFamily(
         : frameworkId === "def-stan-05-138-i4"
           ? (DEF_STAN_FAMILIES[control.control.id.slice(0, 2)] ??
             control.control.id.slice(0, 2))
-          : control.control.id.split(".")[0];
+          : frameworkId === "nis2-2022-2555"
+            ? "Art. 21(2)"
+            : control.control.id.split(".")[0];
 }
 
 /**

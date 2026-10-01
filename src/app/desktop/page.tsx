@@ -7,6 +7,7 @@ import {
   ArrowRight,
   BadgeCheck,
   Building2,
+  ChartColumn,
   ChevronDown,
   Download,
   FileText,
@@ -49,7 +50,7 @@ import reportSummary from "../../../public/landing/report-summary.png";
 
 const SITE_URL = "https://intunedocumentation.com";
 const title = "Intune Documentation Desktop App";
-const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 10 frameworks, and multi-tenant support for MSPs. ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`;
+const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 11 frameworks including NIS2, a one-page management report, and multi-tenant support for MSPs. ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`;
 
 export const metadata: Metadata = {
   title,
@@ -170,10 +171,16 @@ const features = [
   },
   {
     icon: ShieldCheck,
-    title: "Compliance evidence for 10 frameworks",
+    title: "Compliance evidence for 11 frameworks",
     detail:
-      "Map your configuration to ISO/IEC 27001, SOC 2, NIST, BSI IT-Grundschutz, Cyber Essentials, Essential Eight, and more.",
+      "Map your configuration to NIS2, ISO/IEC 27001, SOC 2, NIST, BSI IT-Grundschutz, Cyber Essentials, Essential Eight, and more.",
     href: "/compliance",
+  },
+  {
+    icon: ChartColumn,
+    title: "One-page management report",
+    detail:
+      "Evidence coverage, gaps, and the next five actions in plain language, in English or German. Save a baseline and show the change month over month.",
   },
   {
     icon: Building2,

@@ -8,7 +8,8 @@ export type FrameworkId =
   | "cyber-essentials-v3"
   | "nist-800-171-r2"
   | "nist-800-171-r3"
-  | "essential-eight";
+  | "essential-eight"
+  | "nis2-2022-2555";
 
 // Text-forward wordmarks only: official logos, insignia, and association marks
 // must not be reproduced. The standards are named in our own typography for
@@ -46,6 +47,7 @@ const WORDMARK_DETAILS: Record<
     line1: "NIST",
     line2: "171 Rev. 3",
   },
+  "nis2-2022-2555": { fill: "#334155", line1: "NIS2", line2: "2022/2555" },
 };
 
 const FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif";

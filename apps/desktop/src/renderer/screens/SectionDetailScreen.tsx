@@ -1,4 +1,4 @@
-import { AlertCircle, Clock, FileText, Search, SearchX, Users, X } from "lucide-react";
+import { AlertCircle, Clock, FileText, ListFilter, Search, SearchX, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { scopeKey } from "../../shared/export-scope";
 import type { SectionCount, SectionItemSummary } from "../../shared/ipc-types";
@@ -8,6 +8,7 @@ import { SelectionBar } from "../components/export/SelectionBar";
 import { Header } from "../components/layout/Header";
 import { Alert } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
 import { Checkbox } from "../components/ui/Checkbox";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Spinner } from "../components/ui/Spinner";
@@ -103,7 +104,8 @@ function ItemRow({
   );
 }
 
-function matches(item: SectionItemSummary, query: string): boolean {
+function matches(item: SectionItemSummary, query: string, errorsOnly = false): boolean {
+  if (errorsOnly && !item.hasFetchError) return false;
   if (!query) return true;
   const haystack = [item.displayName, item.description, friendlyType(item.odataType), item.platforms]
     .filter(Boolean)
@@ -112,7 +114,15 @@ function matches(item: SectionItemSummary, query: string): boolean {
   return haystack.includes(query);
 }
 
-function SectionCard({ section, query }: { section: SectionCount; query: string }) {
+function SectionCard({
+  section,
+  query,
+  errorsOnly,
+}: {
+  section: SectionCount;
+  query: string;
+  errorsOnly: boolean;
+}) {
   const { state, dispatch, actions } = useApp();
   const startExport = useStartExport();
   const blocker = quickExportBlocker(state);
@@ -133,10 +143,11 @@ function SectionCard({ section, query }: { section: SectionCount; query: string 
   }, [loaded, section.key, section.count, actions]);
 
   const items = useMemo(
-    () => (loaded ? loaded.items.filter((item) => matches(item, query)) : []),
-    [loaded, query],
+    () => (loaded ? loaded.items.filter((item) => matches(item, query, errorsOnly)) : []),
+    [loaded, query, errorsOnly],
   );
-  if (query && loaded && items.length === 0) return null;
+  const filtered = Boolean(query) || errorsOnly;
+  if (loaded && items.length === 0 && (query || (errorsOnly && !section.error))) return null;
 
   const isSelected = (item: SectionItemSummary) =>
     Boolean(state.selection[scopeKey({ sectionKey: section.key, itemId: item.id })]);
@@ -163,7 +174,7 @@ function SectionCard({ section, query }: { section: SectionCount; query: string 
         </span>
         <h2 className="text-petrol-950 min-w-0 flex-1 truncate text-[15px] font-semibold">{section.label}</h2>
         <span className="bg-mint-100 text-petrol-700 rounded-full px-2.5 py-1 text-[10px] font-bold tabular-nums">
-          {query && loaded ? `${items.length} of ${section.count}` : section.count.toLocaleString()}
+          {filtered && loaded ? `${items.length} of ${section.count}` : section.count.toLocaleString()}
         </span>
         {section.count > 0 && (
           <ExportMenu
@@ -226,8 +237,9 @@ function SectionCard({ section, query }: { section: SectionCount; query: string 
 }
 
 export function SectionDetailScreen() {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const familyKey = state.activeFamilyKey;
+  const errorsOnly = state.activeSectionFilter === "errors";
   const family = familyMeta(familyKey);
   const [search, setSearch] = useState("");
   useEffect(() => setSearch(""), [familyKey]);
@@ -238,8 +250,15 @@ export function SectionDetailScreen() {
 
   const loadedMatches = sections.reduce((sum, section) => {
     const loaded = state.sections[section.key];
-    return sum + (loaded ? loaded.items.filter((item) => matches(item, query)).length : 0);
+    return sum + (loaded ? loaded.items.filter((item) => matches(item, query, errorsOnly)).length : 0);
   }, 0);
+  const sectionErrors = sections.some((section) => section.error);
+  // The Overview opens the first family with load errors; name the rest.
+  const otherWarningFamilies = new Set(
+    (summary?.fetchErrors ?? []).flatMap((error) =>
+      error.familyKey && error.familyKey !== familyKey ? [error.familyKey] : [],
+    ),
+  ).size;
   const allLoaded = sections.every((section) => section.count === 0 || state.sections[section.key]);
 
   return (
@@ -285,6 +304,22 @@ export function SectionDetailScreen() {
       <p className="sr-only" aria-live="polite">
         {query && allLoaded ? `${loadedMatches} matching items` : ""}
       </p>
+      {errorsOnly && summary && total > 0 && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/70 px-4 py-3"
+        >
+          <ListFilter className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+          <p className="min-w-0 flex-1 text-xs leading-5 text-amber-900">
+            Showing only items and sections that could not be fully loaded from Microsoft Graph.
+            {otherWarningFamilies > 0 &&
+              ` ${otherWarningFamilies} more ${otherWarningFamilies === 1 ? "family has" : "families have"} warnings; see the Overview.`}
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => dispatch({ type: "sectionFilter", filter: null })}>
+            Show all items
+          </Button>
+        </div>
+      )}
       {!summary ? (
         <EmptyState
           icon={family?.icon ?? FileText}
@@ -306,11 +341,19 @@ export function SectionDetailScreen() {
         <>
           <div className="space-y-4">
             {sections
-              .filter((section) => !query || section.count > 0)
+              .filter((section) => (!query || section.count > 0) && (!errorsOnly || section.count > 0 || section.error))
               .map((section) => (
-                <SectionCard key={section.key} section={section} query={query} />
+                <SectionCard key={section.key} section={section} query={query} errorsOnly={errorsOnly} />
               ))}
           </div>
+          {errorsOnly && !query && allLoaded && loadedMatches === 0 && !sectionErrors && (
+            <EmptyState
+              compact
+              icon={SearchX}
+              title="No load errors in this family"
+              description="Every item in this family loaded completely. The remaining warnings are listed on the Overview."
+            />
+          )}
           {query && allLoaded && loadedMatches === 0 && (
             <EmptyState
               compact

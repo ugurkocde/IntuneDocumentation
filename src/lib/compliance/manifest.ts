@@ -22,7 +22,7 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(normalize(value));
 }
 
-async function sha256(value: unknown): Promise<string> {
+export async function sha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalJson(value));
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)]

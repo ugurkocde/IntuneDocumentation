@@ -6,6 +6,12 @@ import type { AssessmentScope } from "../../../../../src/lib/compliance/types";
 import type { ComplianceFrameworkId, ComplianceView } from "../../shared/ipc-types";
 import { ControlRow, CONTROL_STATUS_ORDER } from "../components/compliance/ControlRow";
 import { FrameworkMenu } from "../components/compliance/FrameworkMenu";
+import {
+  CONTROL_FILTER_LABELS,
+  controlFilterIds,
+  ManagementPanel,
+  type ControlFilter,
+} from "../components/compliance/ManagementPanel";
 import { ReportPanel } from "../components/compliance/ReportPanel";
 import { ScopePanel } from "../components/compliance/ScopePanel";
 import { Header } from "../components/layout/Header";
@@ -120,6 +126,7 @@ export function ComplianceScreen() {
   const [reloadToken, setReloadToken] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [recordPath, setRecordPath] = useState<string | null>(null);
+  const [requestedFilter, setFilter] = useState<ControlFilter>("all");
   const record = useAsyncAction();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const focusTrigger = useRef(false);
@@ -146,6 +153,8 @@ export function ComplianceScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frameworkId, key, collectedAt, blocker, reloadToken]);
 
+  useEffect(() => setFilter("all"), [frameworkId]);
+
   useEffect(() => {
     if (frameworkId && focusTrigger.current && view?.selected) {
       focusTrigger.current = false;
@@ -168,6 +177,20 @@ export function ComplianceScreen() {
           compareControlIds(left.control.id, right.control.id),
       ),
     [selected],
+  );
+  // A filter whose data went away (baseline cleared, collected again) falls
+  // back to every control instead of leaving an empty list behind a disabled tile.
+  const filterIds = useMemo(
+    () => (selected ? controlFilterIds(selected, requestedFilter) : null),
+    [selected, requestedFilter],
+  );
+  const filter: ControlFilter = filterIds && filterIds.size === 0 ? "all" : requestedFilter;
+  const visibleControls = useMemo(
+    () =>
+      filterIds && filterIds.size > 0
+        ? sortedControls.filter((control) => filterIds.has(control.control.id))
+        : sortedControls,
+    [filterIds, sortedControls],
   );
   const checks = useMemo(
     () =>
@@ -202,7 +225,7 @@ export function ComplianceScreen() {
       <div className="space-y-5">
         <Header
           title="Compliance Evidence"
-          description="Review the technical evidence found in your Intune policies and assignments for ten supported frameworks."
+          description="Review the technical evidence found in your Intune policies and assignments for eleven supported frameworks."
         />
         <EmptyState
           icon={ShieldCheck}
@@ -321,6 +344,15 @@ export function ComplianceScreen() {
             </div>
           </section>
 
+          <ManagementPanel
+            selected={selected}
+            request={{ frameworkId, scope }}
+            blocker={reportBlocker}
+            filter={filter}
+            onFilterChange={setFilter}
+            onRefresh={() => setReloadToken((value) => value + 1)}
+          />
+
           <ScopePanel
             view={view}
             scope={scope}
@@ -413,15 +445,15 @@ export function ComplianceScreen() {
               <h2 id="compliance-controls-title" className="text-petrol-950 text-base font-semibold tracking-[-0.01em]">
                 Mapped controls
                 <span className="bg-mint-100 text-petrol-700 ml-2 rounded-full px-2 py-0.5 align-middle text-[11px] font-bold tabular-nums">
-                  {sortedControls.length}
+                  {filter === "all" ? sortedControls.length : `${visibleControls.length} of ${sortedControls.length}`}
                 </span>
               </h2>
-              {sortedControls.length > 1 && (
+              {visibleControls.length > 1 && (
                 <button
                   type="button"
                   onClick={() =>
                     setExpanded((current) => {
-                      const keys = sortedControls.map((control) => `${frameworkId}:${control.control.id}`);
+                      const keys = visibleControls.map((control) => `${frameworkId}:${control.control.id}`);
                       const allOpen = keys.every((item) => current.has(item));
                       const next = new Set(current);
                       keys.forEach((item) => (allOpen ? next.delete(item) : next.add(item)));
@@ -430,18 +462,33 @@ export function ComplianceScreen() {
                   }
                   className="text-petrol-700 hover:bg-mint-50 hover:text-petrol-950 min-h-9 cursor-pointer rounded-xl px-3 text-xs font-semibold transition-colors"
                 >
-                  {sortedControls.every((control) => expanded.has(`${frameworkId}:${control.control.id}`))
+                  {visibleControls.every((control) => expanded.has(`${frameworkId}:${control.control.id}`))
                     ? "Collapse all"
                     : "Expand all"}
                 </button>
               )}
             </div>
-            {sortedControls.map((control) => {
+            {filter !== "all" && (
+              <p className="text-petrol-600 flex flex-wrap items-center gap-2 text-xs">
+                {visibleControls.length === 0
+                  ? `No mapped control matches the filter: ${CONTROL_FILTER_LABELS[filter].toLowerCase()}.`
+                  : `Filtered: ${CONTROL_FILTER_LABELS[filter].toLowerCase()}.`}
+                <button
+                  type="button"
+                  onClick={() => setFilter("all")}
+                  className="cursor-pointer rounded font-semibold text-teal-700 underline underline-offset-2 hover:text-teal-600 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+                >
+                  Show all
+                </button>
+              </p>
+            )}
+            {visibleControls.map((control) => {
               const expansionKey = `${frameworkId}:${control.control.id}`;
               return (
                 <ControlRow
                   key={control.control.id}
                   control={control}
+                  cisIds={selected.crosswalkCis[control.control.id]}
                   capabilitiesById={capabilitiesById}
                   expanded={expanded.has(expansionKey)}
                   onToggle={() =>

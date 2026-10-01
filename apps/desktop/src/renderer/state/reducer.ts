@@ -74,6 +74,7 @@ export function createInitialState(): AppState {
     wizardActive: false,
     screen: "overview",
     activeFamilyKey: null,
+    activeSectionFilter: null,
     sidebarOpen: initialSidebar(),
     collection: {
       running: false,
@@ -127,7 +128,11 @@ export function reducer(state: AppState, action: Action): AppState {
           action.screen === "section"
             ? (action.familyKey ?? state.activeFamilyKey)
             : null,
+        activeSectionFilter:
+          action.screen === "section" ? (action.filter ?? null) : null,
       };
+    case "sectionFilter":
+      return { ...state, activeSectionFilter: action.filter };
     case "sidebar":
       return { ...state, sidebarOpen: action.open };
     case "settings":

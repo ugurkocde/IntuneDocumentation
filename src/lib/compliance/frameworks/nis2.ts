@@ -12,6 +12,7 @@ function measure(
   letter: string,
   title: string,
   summary: string,
+  titleDe: string,
 ): FrameworkControl {
   const n = MEASURE_LETTERS.indexOf(letter) + 1;
   return {
@@ -19,6 +20,7 @@ function measure(
     evidenceStrength: "supporting",
     granularity: "requirement",
     title,
+    titleDe,
     summary,
     aliases: [
       { scheme: "DK", id: `NIS2-loven § 6, stk. 1, nr. ${n}` },
@@ -32,51 +34,61 @@ const CONTROLS: FrameworkControl[] = [
     "a",
     "Risk analysis and information system security policies",
     "Policies on risk analysis and information system security are defined.",
+    "Konzepte für Risikoanalyse und Sicherheit der Informationssysteme",
   ),
   measure(
     "b",
     "Incident handling",
     "Security incidents are handled; device logging supports their detection and investigation.",
+    "Bewältigung von Sicherheitsvorfällen",
   ),
   measure(
     "c",
     "Business continuity and crisis management",
     "Business continuity is maintained, including backup management, disaster recovery and crisis management.",
+    "Aufrechterhaltung des Betriebs und Krisenmanagement",
   ),
   measure(
     "d",
     "Supply chain security",
     "Security in relationships with direct suppliers and service providers is managed.",
+    "Sicherheit der Lieferkette",
   ),
   measure(
     "e",
     "Security in acquisition, development and maintenance",
     "Network and information systems are maintained securely, including vulnerability handling and disclosure through timely updates and minimum versions.",
+    "Sicherheit bei Erwerb, Entwicklung und Wartung",
   ),
   measure(
     "f",
     "Assessing the effectiveness of measures",
     "Policies and procedures assess the effectiveness of cybersecurity risk-management measures.",
+    "Bewertung der Wirksamkeit der Maßnahmen",
   ),
   measure(
     "g",
     "Basic cyber hygiene and training",
     "Basic cyber hygiene practices such as malware protection, host firewalls and system hardening are applied, alongside security training.",
+    "Grundlegende Cyberhygiene und Schulungen",
   ),
   measure(
     "h",
     "Cryptography and encryption",
     "Policies and procedures govern the use of cryptography and, where appropriate, encryption of stored data.",
+    "Kryptografie und Verschlüsselung",
   ),
   measure(
     "i",
     "Human resources security, access control and asset management",
     "Access to managed devices and organisational data is controlled and managed assets are protected.",
+    "Personalsicherheit, Zugriffskontrolle und Verwaltung von Anlagen",
   ),
   measure(
     "j",
     "Multi-factor authentication and secured communications",
     "Multi-factor or continuous authentication is used, together with secured communications where appropriate.",
+    "Multi-Faktor-Authentifizierung und gesicherte Kommunikation",
   ),
 ];
 

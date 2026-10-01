@@ -8,6 +8,7 @@ import {
   parseBaseline,
   serializeBaseline,
 } from "../compliance/management/baseline";
+import { sha256 } from "../compliance/manifest";
 import type {
   BaselineFile,
   ManagementSummary,
@@ -34,6 +35,9 @@ function summary(
       unassignedConfigs: 3,
       outsideIntuneScope: 2,
       dataGaps: 0,
+      safeguardsTotal: 9,
+      safeguardsInPlace: 3,
+      safeguardPct: 33,
     },
     nextActions: [
       {
@@ -52,6 +56,13 @@ function summary(
       "1.10": "partialEvidence",
       "2.1": "conflictingEvidence",
       "3.1": "notAssessed",
+    },
+    safeguards: {
+      "1.1": { inPlace: 2, total: 2 },
+      "1.2": { inPlace: 0, total: 3 },
+      "1.10": { inPlace: 1, total: 4 },
+      "2.1": { inPlace: 0, total: 1 },
+      "3.1": { inPlace: 0, total: 2 },
     },
     outsideScope: [{ id: "x", title: { en: "Outside", de: "Ausserhalb" } }],
     ...overrides,
@@ -98,6 +109,7 @@ describe("baseline file", () => {
         "generatedAt",
         "metrics",
         "rulesetVersion",
+        "safeguards",
         "schema",
         "scopeKey",
         "tenant",
@@ -108,6 +120,33 @@ describe("baseline file", () => {
     expect(text).not.toContain("secret-policy-capability");
     expect(text).not.toContain("intune.microsoft.com");
     expect(text).not.toContain("Synthetic Framework");
+  });
+
+  it("carries the safeguard counts and metrics", async () => {
+    const created = await createBaseline(summary(), { id: TENANT });
+    expect(created.safeguards).toEqual(summary().safeguards);
+    expect(created.metrics).toMatchObject({
+      safeguardsTotal: 9,
+      safeguardsInPlace: 3,
+      safeguardPct: 33,
+    });
+  });
+
+  it("rejects edits to safeguard counts with a checksum error", async () => {
+    const text = await baselineText();
+    for (const edited of [
+      text.replace(
+        '"1.2": {\n      "inPlace": 0',
+        '"1.2": {\n      "inPlace": 3',
+      ),
+      text.replace('"safeguardPct": 33', '"safeguardPct": 90'),
+    ]) {
+      expect(edited).not.toBe(text);
+      expect(await parseBaseline(edited)).toEqual({
+        ok: false,
+        reason: "checksum",
+      });
+    }
   });
 
   it("names the file after framework and local date", () => {
@@ -175,6 +214,17 @@ describe("baseline file", () => {
       variant((value) => (value.checksum.value = "abc")),
       variant((value) => delete value.checksum),
       variant((value) => (value.policies = ["Secret Policy Name"])),
+      variant((value) => (value.metrics.safeguardsTotal = "9")),
+      variant((value) => (value.metrics.safeguardsInPlace = null)),
+      variant((value) => (value.metrics.safeguardPct = "33")),
+      variant((value) => (value.safeguards = [])),
+      variant((value) => (value.safeguards = null)),
+      variant((value) => (value.safeguards["1.1"] = 2)),
+      variant((value) => (value.safeguards["1.1"].inPlace = -1)),
+      variant((value) => (value.safeguards["1.1"].total = 1.5)),
+      variant((value) => (value.safeguards["1.1"].total = "2")),
+      variant((value) => delete value.safeguards["1.1"].total),
+      variant((value) => (value.safeguards["1.1"].name = "Secret")),
       " ".repeat(BASELINE_MAX_BYTES + 1),
       `${await baselineText()}${" ".repeat(BASELINE_MAX_BYTES)}`,
     ];
@@ -191,6 +241,60 @@ describe("baseline file", () => {
 
   it("accepts a leading byte order mark", async () => {
     expect((await parseBaseline(`﻿${await baselineText()}`)).ok).toBe(true);
+  });
+});
+
+/** A file in the 0.2.x shape: no safeguard metrics and no safeguards map. */
+async function legacyBaselineText(): Promise<string> {
+  const metrics: Record<string, unknown> = { ...summary().metrics };
+  delete metrics.safeguardsTotal;
+  delete metrics.safeguardsInPlace;
+  delete metrics.safeguardPct;
+  const body = {
+    schema: "intunedoc.baseline/1",
+    frameworkId: "synthetic-fw",
+    frameworkVersion: "1.0",
+    rulesetVersion: "2026.09.8",
+    scopeKey: "windows",
+    generatedAt: "2026-09-01T08:00:00.000Z",
+    tenant: { id: TENANT, label: "Lab" },
+    controls: { ...summary().controls },
+    metrics,
+  };
+  return `${JSON.stringify(
+    {
+      ...body,
+      checksum: { algorithm: "sha-256", value: await sha256(body) },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+describe("0.2.x baselines without safeguard fields", () => {
+  it("parse, verify and compare with no safeguard movement", async () => {
+    const parsed = await parseBaseline(await legacyBaselineText());
+    if (!parsed.ok) throw new Error(parsed.reason);
+    expect(parsed.file.safeguards).toBeUndefined();
+    expect(parsed.file.metrics.safeguardPct).toBeUndefined();
+    const result = compareBaseline(
+      summary({ generatedAt: "2026-10-01T08:00:00.000Z" }),
+      TENANT,
+      parsed.file,
+    );
+    expect(result.ok && result.delta.safeguardDeltaPoints).toBeNull();
+    expect(result.ok && result.delta.safeguardChanges).toEqual([]);
+    expect(result.ok && result.delta.coverageDeltaPoints).toBe(0);
+  });
+
+  it("still detects edits by checksum", async () => {
+    const text = await legacyBaselineText();
+    const edited = text.replace('"coveragePct": 50', '"coveragePct": 90');
+    expect(edited).not.toBe(text);
+    expect(await parseBaseline(edited)).toEqual({
+      ok: false,
+      reason: "checksum",
+    });
   });
 });
 
@@ -271,6 +375,8 @@ describe("compareBaseline", () => {
         regressions: ["1.10", "6.1"],
         added: ["7.2", "7.10"],
         removed: ["4.1"],
+        safeguardDeltaPoints: 0,
+        safeguardChanges: [],
         rulesetChanged: false,
         baselineDate: "2026-09-01T08:00:00.000Z",
       },
@@ -288,6 +394,41 @@ describe("compareBaseline", () => {
     );
     expect(result.ok && result.delta.rulesetChanged).toBe(true);
     expect(result.ok && result.delta.coverageDeltaPoints).toBeNull();
+  });
+
+  it("reports safeguard points and per-control changes in control order", async () => {
+    const baseline = await file();
+    const current = summary({
+      ...later,
+      metrics: {
+        ...summary().metrics,
+        safeguardsInPlace: 5,
+        safeguardsTotal: 10,
+        safeguardPct: 50,
+      },
+      safeguards: {
+        "1.1": { inPlace: 1, total: 2 },
+        "1.2": { inPlace: 2, total: 4 },
+        "1.10": { inPlace: 1, total: 4 },
+        "2.1": { inPlace: 1, total: 1 },
+        "9.1": { inPlace: 3, total: 3 },
+      },
+    });
+    const result = compareBaseline(current, TENANT, baseline);
+    expect(result.ok && result.delta.safeguardDeltaPoints).toBe(17);
+    expect(result.ok && result.delta.safeguardChanges).toEqual([
+      { controlId: "1.1", from: 2, to: 1, total: 2 },
+      { controlId: "1.2", from: 0, to: 2, total: 4 },
+      { controlId: "2.1", from: 0, to: 1, total: 1 },
+    ]);
+  });
+
+  it("reports null safeguard points when either percentage is unknown", async () => {
+    const baseline = await file({
+      metrics: { ...summary().metrics, safeguardPct: null },
+    });
+    const result = compareBaseline(summary(later), TENANT, baseline);
+    expect(result.ok && result.delta.safeguardDeltaPoints).toBeNull();
   });
 
   it("accepts a baseline from the same moment", async () => {

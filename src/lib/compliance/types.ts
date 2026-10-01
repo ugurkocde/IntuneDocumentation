@@ -156,6 +156,8 @@ export interface TechnicalCheck {
 export interface FrameworkControl {
   id: string;
   title: string;
+  /** German title for German reports, where the framework has an official German text. */
+  titleDe?: string;
   summary: string;
   /** Requirement tier where the framework defines one (e.g. BSI Basis/Standard). */
   tier?: string;

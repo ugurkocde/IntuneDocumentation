@@ -10,6 +10,11 @@ import {
   parseBaseline,
   serializeBaseline,
 } from "../../../../src/lib/compliance/management/baseline";
+import type { ManagementReportInput } from "../../../../src/lib/compliance/management/management-report-pdf";
+import {
+  safeguardPolicies,
+  safeguardState,
+} from "../../../../src/lib/compliance/management/management-summary";
 import {
   CROSSWALK_MAX_BYTES,
   CrosswalkFormatError,
@@ -22,6 +27,7 @@ import type {
   Crosswalk,
   ManagementSummary,
 } from "../../../../src/lib/compliance/management/types";
+import type { ComplianceAssessment } from "../../../../src/lib/compliance/types";
 import type {
   BaselineLoadResult,
   ComplianceFrameworkId,
@@ -276,6 +282,60 @@ export async function baselineExport(
   };
 }
 
+// The report input for one framework. Safeguards come from the full
+// assessment, because the renderer view drops the evidence behind them.
+export function managementReportInput(
+  assessment: ComplianceAssessment,
+  summary: ManagementSummary,
+  frameworkId: ComplianceFrameworkId,
+  context: ManagementContext,
+  locale: ManagementLocale,
+): ManagementReportInput {
+  const selected = assessment.frameworks.find(
+    (framework) => framework.framework.id === frameworkId,
+  );
+  if (!selected) throw new Error("Unknown compliance framework.");
+  const results = new Map(
+    assessment.capabilities.map((result) => [result.capability.id, result]),
+  );
+  const cis = crosswalkCisFor(
+    context,
+    frameworkId,
+    selected.controls.map((control) => control.control.id),
+  );
+  const delta = baselineDelta(summary, context);
+  const tenantLabel = tenantLabelOf(context.tenantId);
+  return {
+    summary,
+    controls: selected.controls.map(({ control, status, capabilityIds }) => ({
+      id: control.id,
+      title: locale === "de" && control.titleDe ? control.titleDe : control.title,
+      status,
+      ...(control.aliases ? { aliases: control.aliases } : {}),
+      ...(cis[control.id] ? { cis: cis[control.id] } : {}),
+      safeguards: [...new Set(capabilityIds)].flatMap((id) => {
+        const result = results.get(id);
+        return result
+          ? [
+              {
+                capabilityId: id,
+                name: result.capability.name,
+                state: safeguardState(result),
+                policies: safeguardPolicies(result),
+              },
+            ]
+          : [];
+      }),
+    })),
+    unassigned: unassignedConfigs(assessment, frameworkId),
+    ...(delta ? { delta } : {}),
+    crosswalkLoaded: context.crosswalk !== null,
+    disclaimer: assessment.disclaimer,
+    ...(tenantLabel ? { tenantLabel } : {}),
+    locale,
+  };
+}
+
 export async function managementReport(
   owner: string,
   token: TokenProvider,
@@ -284,44 +344,24 @@ export async function managementReport(
   tenantId: string | null,
 ): Promise<{ fileName: string; bytes: Uint8Array }> {
   const { assessment, summary } = await currentSummary(owner, token, request);
-  const selected = assessment.frameworks.find(
-    (framework) => framework.framework.id === request.frameworkId,
-  );
-  if (!selected) throw new Error("Unknown compliance framework.");
-  const context = managementContext(owner, tenantId);
-  const cis = crosswalkCisFor(
-    context,
+  const input = managementReportInput(
+    assessment,
+    summary,
     request.frameworkId,
-    selected.controls.map((control) => control.control.id),
+    managementContext(owner, tenantId),
+    locale,
   );
-  const delta = baselineDelta(summary, context);
-  const tenantLabel = tenantLabelOf(tenantId);
   const { generateManagementReportPDF, managementReportFileName } =
     await import(
       "../../../../src/lib/compliance/management/management-report-pdf"
     );
-  const bytes = await generateManagementReportPDF({
-    summary,
-    controls: selected.controls.map(({ control, status }) => ({
-      id: control.id,
-      title: control.title,
-      status,
-      ...(control.aliases ? { aliases: control.aliases } : {}),
-      ...(cis[control.id] ? { cis: cis[control.id] } : {}),
-    })),
-    unassigned: unassignedConfigs(assessment, request.frameworkId),
-    ...(delta ? { delta } : {}),
-    crosswalkLoaded: context.crosswalk !== null,
-    disclaimer: assessment.disclaimer,
-    ...(tenantLabel ? { tenantLabel } : {}),
-    locale,
-  });
+  const bytes = await generateManagementReportPDF(input);
   return {
     fileName: managementReportFileName(
       request.frameworkId,
       locale,
       new Date(),
-      tenantLabel,
+      input.tenantLabel,
     ),
     bytes,
   };

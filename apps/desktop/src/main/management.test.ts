@@ -26,6 +26,7 @@ import {
   importCrosswalk,
   loadBaseline,
   managementContext,
+  managementReportInput,
   parseManagementLocale,
   portalLink,
 } from "./management";
@@ -34,7 +35,7 @@ const TENANT = "11111111-2222-3333-4444-555555555555";
 const OTHER_TENANT = "99999999-8888-7777-6666-555555555555";
 const noToken = async () => "unused";
 
-function exportData(): DetailedExportData {
+function exportData(assigned = false): DetailedExportData {
   return {
     settingsCatalog: [
       {
@@ -57,7 +58,15 @@ function exportData(): DetailedExportData {
             },
           },
         ],
-        assignments: [],
+        assignments: assigned
+          ? [
+              {
+                target: {
+                  "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
+                },
+              },
+            ]
+          : [],
       },
     ],
     deviceConfigurations: [],
@@ -360,6 +369,98 @@ describe("view", () => {
       crosswalk: null,
     }).selected!;
     expect(otherFramework.baseline).toBeNull();
+  });
+});
+
+describe("report input", () => {
+  const context = {
+    tenantId: TENANT,
+    baselines: new Map(),
+    crosswalk: null,
+  };
+
+  function diskEncryption(input: ReturnType<typeof managementReportInput>) {
+    const control = input.controls.find((item) =>
+      item.safeguards.some(
+        (safeguard) => safeguard.capabilityId === "windows-disk-encryption",
+      ),
+    )!;
+    return {
+      control,
+      safeguard: control.safeguards.find(
+        (item) => item.capabilityId === "windows-disk-encryption",
+      )!,
+    };
+  }
+
+  it("lists every mapped safeguard with its state and policies", () => {
+    const summary = managementSummaryFor(assessment, "iso-27001-2022");
+    const input = managementReportInput(
+      assessment,
+      summary,
+      "iso-27001-2022",
+      context,
+      "de",
+    );
+    const iso = assessment.frameworks.find(
+      (framework) => framework.framework.id === "iso-27001-2022",
+    )!;
+    expect(input.controls).toHaveLength(iso.controls.length);
+    for (const control of input.controls) {
+      const mapped = iso.controls.find((item) => item.control.id === control.id)!;
+      expect(control.safeguards.map((item) => item.capabilityId)).toEqual([
+        ...new Set(mapped.capabilityIds),
+      ]);
+    }
+    const { control, safeguard } = diskEncryption(input);
+    expect(safeguard).toMatchObject({
+      state: "notAssigned",
+      policies: [{ name: "BitLocker baseline", assigned: false }],
+    });
+    expect(safeguard.name.length).toBeGreaterThan(0);
+    const others = control.safeguards.filter((item) => item !== safeguard);
+    expect(others.every((item) => item.state === "notConfigured")).toBe(true);
+    expect(others.every((item) => item.policies.length === 0)).toBe(true);
+    expect(input).toMatchObject({
+      locale: "de",
+      tenantLabel: "11111111...",
+      crosswalkLoaded: false,
+    });
+    expect(input.delta).toBeUndefined();
+  });
+
+  it("marks an assigned policy as in place", () => {
+    const assignedAssessment = assessCompliance(exportData(true));
+    const summary = managementSummaryFor(assignedAssessment, "nis2-2022-2555");
+    const input = managementReportInput(
+      assignedAssessment,
+      summary,
+      "nis2-2022-2555",
+      context,
+      "en",
+    );
+    const { control, safeguard } = diskEncryption(input);
+    expect(safeguard).toMatchObject({
+      state: "inPlace",
+      policies: [{ name: "BitLocker baseline", assigned: true }],
+    });
+    expect(summary.safeguards[control.id]?.inPlace).toBe(1);
+    expect(input.unassigned).toEqual([]);
+    expect(control.title).toBe("Cryptography and encryption");
+  });
+
+  it("uses German measure titles in a German report", () => {
+    const summary = managementSummaryFor(assessment, "nis2-2022-2555");
+    const input = managementReportInput(
+      assessment,
+      summary,
+      "nis2-2022-2555",
+      context,
+      "de",
+    );
+    expect(input.controls.find((item) => item.id === "21.2.h")?.title).toBe(
+      "Kryptografie und Verschlüsselung",
+    );
   });
 });
 

@@ -1,20 +1,32 @@
 import jsPDF from "jspdf";
-import { CONTROL_STATUS_COLORS } from "../presentation";
-import type { ControlStatus } from "../types";
+import type { CompliancePlatform, ControlStatus } from "../types";
 import {
   MANAGEMENT_REPORT_STRINGS,
   type ManagementReportStrings,
 } from "./management-report-strings";
+import { measuresWithSafeguards } from "./management-summary";
 import type {
   BaselineDelta,
   ManagementLocale,
   ManagementSummary,
   NextAction,
+  SafeguardCount,
+  SafeguardState,
 } from "./types";
 
-// One-page management summary with linked detail pages. Page 1 must fit one
-// A4 page; detail pages paginate. Internal links jump between page 1 and the
-// detail pages; external links only open the Intune or Entra admin centers.
+// Security summary for two readers. Page 1 is for management: plain words,
+// numbers and bars, no control ids, and it must fit one A4 page. The pages
+// after it are for the IT reviewer: how the numbers are counted, every
+// safeguard per measure with the policies behind it, and the detail lists.
+// Internal links jump between page 1 and the IT pages; external links only
+// open the Intune or Entra admin centers.
+
+export interface ManagementReportSafeguard {
+  capabilityId: string;
+  name: string;
+  state: SafeguardState;
+  policies: readonly { name: string; assigned: boolean }[];
+}
 
 export interface ManagementReportControl {
   id: string;
@@ -22,6 +34,7 @@ export interface ManagementReportControl {
   status: ControlStatus;
   aliases?: readonly { scheme: string; id: string }[];
   cis?: readonly string[];
+  safeguards: readonly ManagementReportSafeguard[];
 }
 
 export interface ManagementReportInput {
@@ -43,12 +56,14 @@ export interface ManagementReportInput {
 
 type RgbColor = [number, number, number];
 type FontStyle = "normal" | "bold" | "italic";
-type DetailPage =
-  | "controls"
-  | "withoutEvidence"
+/** Link target: a fixed IT page or `measure:<control id>`. */
+type Target =
+  | "guide"
+  | "overview"
   | "unassigned"
   | "change"
-  | "outsideScope";
+  | "outsideScope"
+  | `measure:${string}`;
 
 // Same defaults as the technical evidence report.
 const PRIMARY: RgbColor = [0, 51, 102];
@@ -58,13 +73,48 @@ const TEXT: RgbColor = [30, 30, 30];
 const MUTED: RgbColor = [105, 105, 105];
 const WARNING: RgbColor = [171, 95, 0];
 const BORDER: RgbColor = [215, 220, 226];
+const TRACK: RgbColor = [228, 232, 237];
+const HERO_FILL: RgbColor = [240, 245, 250];
+const BAND_FILL: RgbColor = [232, 239, 247];
+const ZEBRA: RgbColor = [248, 249, 250];
+const WHITE: RgbColor = [255, 255, 255];
+
+// Bar colors by share of safeguards in place; the same tones as the status
+// colors in presentation.ts, with a softer red for "none yet".
+const SHARE_NONE: RgbColor = [190, 75, 60];
+const SHARE_PARTIAL: RgbColor = [196, 113, 31];
+const SHARE_FULL: RgbColor = [31, 133, 83];
+
+const STATE_COLORS: Record<SafeguardState, RgbColor> = {
+  inPlace: [31, 133, 83],
+  switchedOff: [185, 28, 28],
+  conflicting: [185, 28, 28],
+  partial: [196, 113, 31],
+  notAssigned: [171, 95, 0],
+  notConfigured: [100, 116, 139],
+  dataMissing: [196, 113, 31],
+};
+
+/** Safeguard table order: in place, then what needs attention most. */
+const STATE_ORDER: readonly SafeguardState[] = [
+  "inPlace",
+  "switchedOff",
+  "conflicting",
+  "partial",
+  "notAssigned",
+  "notConfigured",
+  "dataMissing",
+];
 
 const ALLOWED_LINK_HOSTS = new Set([
   "intune.microsoft.com",
   "entra.microsoft.com",
 ]);
 const MAX_ACTIONS = 5;
+const MAX_PAGE1_MEASURES = 8;
 const MAX_LISTED_IDS = 8;
+/** Policies named per safeguard row; assigned ones come first. */
+const POLICIES_PER_SAFEGUARD = 8;
 
 /** Only https links to the Intune or Entra admin center become clickable. */
 export function isAllowedPortalUrl(url: string): boolean {
@@ -126,13 +176,68 @@ function idList(
   return `${ids.slice(0, limit).join(", ")} ${strings.moreItems(ids.length - limit)}`;
 }
 
+/** Platforms from the scope key; the key is the JSON written by scopeKeyOf. */
+function scopeLabel(
+  scopeKey: string,
+  strings: ManagementReportStrings,
+): string {
+  try {
+    const parsed: unknown = JSON.parse(scopeKey);
+    const platforms = Array.isArray(parsed) ? parsed[0] : undefined;
+    if (platforms === null) return strings.allPlatforms;
+    if (Array.isArray(platforms))
+      return platforms
+        .map((platform) =>
+          typeof platform === "string" && platform in strings.platforms
+            ? strings.platforms[platform as CompliancePlatform]
+            : String(platform),
+        )
+        .join(", ");
+  } catch {
+    // Fall through to the raw key.
+  }
+  return scopeKey;
+}
+
+function shareOf(count: SafeguardCount): number {
+  return count.total > 0 ? count.inPlace / count.total : 0;
+}
+
+function shareColor(count: SafeguardCount): RgbColor {
+  if (count.total > 0 && count.inPlace >= count.total) return SHARE_FULL;
+  return count.inPlace > 0 ? SHARE_PARTIAL : SHARE_NONE;
+}
+
 export async function generateManagementReportPDF(
   input: ManagementReportInput,
 ): Promise<Uint8Array> {
   const strings = MANAGEMENT_REPORT_STRINGS[input.locale];
-  const { summary } = input;
+  const { summary, delta } = input;
   const metrics = summary.metrics;
   const disclaimer = strings.disclaimer ?? input.disclaimer;
+
+  // Measures shown on page 1 and in the IT sections: every assessed control
+  // except those outside the selected platform scope, in framework order.
+  const measures = input.controls.filter(
+    (control) => control.status !== "notApplicable",
+  );
+  const countFor = (control: ManagementReportControl): SafeguardCount =>
+    summary.safeguards[control.id] ?? {
+      inPlace: control.safeguards.filter((item) => item.state === "inPlace")
+        .length,
+      total: control.safeguards.length,
+    };
+  // Measure figures come from the same per-measure counts as the bars, so
+  // "no safeguards" plus "at least one" always adds up to the measures shown.
+  const measureCoverage = measuresWithSafeguards({
+    safeguards: Object.fromEntries(
+      measures.map((control) => [control.id, countFor(control)]),
+    ),
+  });
+  const noSafeguards = measureCoverage.total - measureCoverage.withSafeguard;
+  const titleById = new Map(
+    input.controls.map((control) => [control.id, control.title]),
+  );
 
   const doc = new jsPDF({
     orientation: "portrait",
@@ -151,6 +256,7 @@ export async function generateManagementReportPDF(
   const pageHeight = doc.internal.pageSize.height;
   const margin = 15;
   const contentWidth = pageWidth - margin * 2;
+  const right = margin + contentWidth;
   const contentBottom = pageHeight - 22;
   let y = 18;
 
@@ -165,7 +271,7 @@ export async function generateManagementReportPDF(
     return doc.splitTextToSize(text, width) as string[];
   };
 
-  /** Wraps and cuts to maxLines, ending the last kept line with "...". */
+  /** Cuts wrapped lines to maxLines, ending the last kept line with "...". */
   const clampLines = (
     lines: string[],
     maxLines: number,
@@ -204,251 +310,365 @@ export async function generateManagementReportPDF(
     return size;
   };
 
+  const bar = (
+    x: number,
+    top: number,
+    width: number,
+    height: number,
+    share: number,
+    color: RgbColor,
+  ) => {
+    doc.setFillColor(...TRACK);
+    doc.rect(x, top, width, height, "F");
+    const filled = width * Math.min(1, Math.max(0, share));
+    if (filled > 0) {
+      doc.setFillColor(...color);
+      doc.rect(x, top, Math.max(filled, 0.8), height, "F");
+    }
+  };
+
   const pageNumber = () => doc.internal.getCurrentPageInfo().pageNumber;
 
-  // Page 1 is drawn first, but its tiles link to detail pages that do not
-  // exist yet. Link rectangles are collected and added at the end.
+  // Link sources are often drawn before their target page exists, so link
+  // rectangles are collected and added once every page is laid out.
   const pendingLinks: {
+    page: number;
     rect: [number, number, number, number];
-    target: DetailPage;
+    target: Target;
   }[] = [];
-  const detailPages = new Map<DetailPage, number>();
+  const targetPages = new Map<Target, number>();
+  const linkTo = (target: Target, rect: [number, number, number, number]) =>
+    pendingLinks.push({ page: pageNumber(), rect, target });
 
-  // ---- Page 1 ----------------------------------------------------------
+  // ---- Page 1: management ----------------------------------------------
 
   const titleLines = clampLines(
-    wrap(strings.title(summary.frameworkName), contentWidth, 17, "bold"),
+    wrap(strings.title(summary.frameworkName), contentWidth, 18, "bold"),
     2,
     contentWidth,
   );
-  setText(17, "bold", PRIMARY);
-  titleLines.forEach((line, index) => doc.text(line, margin, y + index * 7));
-  y += (titleLines.length - 1) * 7 + 6;
+  setText(18, "bold", PRIMARY);
+  titleLines.forEach((line, index) => doc.text(line, margin, y + index * 7.5));
+  y += (titleLines.length - 1) * 7.5 + 6;
 
   const meta = [
     input.tenantLabel ? `${strings.tenant}: ${input.tenantLabel}` : null,
     `${strings.date}: ${formatDate(summary.generatedAt, strings)}`,
-    `${strings.frameworkVersion}: ${summary.frameworkVersion}`,
   ].filter((part): part is string => part !== null);
   const metaLines = clampLines(
-    wrap(meta.join("  |  "), contentWidth, 8.5),
+    wrap(meta.join("  |  "), contentWidth, 9),
     2,
     contentWidth,
   );
-  setText(8.5, "normal", MUTED);
-  metaLines.forEach((line, index) => doc.text(line, margin, y + index * 4));
-  y += (metaLines.length - 1) * 4 + 3;
+  setText(9, "normal", MUTED);
+  metaLines.forEach((line, index) => doc.text(line, margin, y + index * 4.2));
+  y += (metaLines.length - 1) * 4.2 + 3;
   doc.setDrawColor(...ACCENT);
   doc.setLineWidth(0.5);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 5;
+  doc.line(margin, y, right, y);
+  y += 6;
 
-  // Headline
-  const coverageAvailable = metrics.coveragePct !== null;
-  const headline = coverageAvailable
-    ? strings.coverageHeadline(strings.percent(metrics.coveragePct ?? 0))
-    : strings.coverageNotAvailable;
-  const headlineSentence = coverageAvailable
-    ? strings.coverageSentence(metrics.withEvidence, metrics.assessable)
-    : strings.coverageNotAvailableReason;
-  const sentenceLines = wrap(headlineSentence, contentWidth - 12, 9.5);
-  const headlineHeight = 18 + sentenceLines.length * 4.6;
-  doc.setFillColor(240, 245, 250);
-  doc.rect(margin, y, contentWidth, headlineHeight, "F");
-  doc.setFillColor(...PRIMARY);
-  doc.rect(margin, y, 1.5, headlineHeight, "F");
-  setText(coverageAvailable ? 22 : 18, "bold", PRIMARY);
-  doc.text(headline, margin + 6, y + 11);
-  setText(9.5, "normal", TEXT);
-  sentenceLines.forEach((line, index) =>
-    doc.text(line, margin + 6, y + 18 + index * 4.6),
-  );
-  y += headlineHeight + 5;
-
-  // Metric tiles, two by two
-  const tileGap = 4;
-  const tileWidth = (contentWidth - tileGap) / 2;
-  const tileHeight = 27;
-  const delta = input.delta;
-  const tiles: {
-    label: string;
-    value: string;
-    detail: string;
-    target: DetailPage;
-  }[] = [
-    {
-      label: strings.tileCoverage,
-      value: coverageAvailable
-        ? strings.percent(metrics.coveragePct ?? 0)
-        : strings.notAvailable,
-      detail: strings.tileCoverageDetail(
-        metrics.withEvidence,
-        metrics.assessable,
-      ),
-      target: "controls",
-    },
-    {
-      label: strings.tileWithoutEvidence,
-      value: String(metrics.withoutEvidence),
-      detail: strings.tileWithoutEvidenceDetail(
-        metrics.assessable,
-        metrics.conflicting,
-      ),
-      target: "withoutEvidence",
-    },
-    {
-      label: strings.tileUnassigned,
-      value: String(metrics.unassignedConfigs),
-      detail: strings.tileUnassignedDetail,
-      target: "unassigned",
-    },
-    delta
-      ? {
-          label: strings.tileChange,
-          value:
-            delta.coverageDeltaPoints === null
-              ? strings.deltaNotAvailable
-              : strings.deltaPoints(delta.coverageDeltaPoints),
-          detail: strings.deltaDetail(
-            delta.newlyEvidenced.length,
-            delta.regressions.length,
-          ),
-          target: "change",
-        }
-      : {
-          label: strings.tileChange,
-          value: strings.noBaseline,
-          detail: strings.noBaselineHint,
-          target: "change",
-        },
-  ];
-  tiles.forEach((tile, index) => {
-    const x = margin + (index % 2) * (tileWidth + tileGap);
-    const top = y + Math.floor(index / 2) * (tileHeight + tileGap);
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...BORDER);
-    doc.setLineWidth(0.3);
-    doc.rect(x, top, tileWidth, tileHeight, "FD");
+  // Hero: the safeguard figure with a bar and one plain sentence.
+  {
+    const available = metrics.safeguardPct !== null;
+    const big = available
+      ? strings.percent(metrics.safeguardPct ?? 0)
+      : strings.heroNotAvailable;
+    const bigSize = available ? 34 : 18;
+    setText(bigSize, "bold", PRIMARY);
+    const bigWidth = Math.max(doc.getTextWidth(big), 30);
+    const columnX = margin + 8 + bigWidth + 9;
+    const columnWidth = right - 7 - columnX;
+    const sentence = available
+      ? strings.heroSentence(metrics.safeguardsInPlace, metrics.safeguardsTotal)
+      : strings.heroNotAvailableSentence;
+    const sentenceLines = clampLines(
+      wrap(sentence, columnWidth, 9.5),
+      3,
+      columnWidth,
+    );
+    const height = Math.max(32, 23 + sentenceLines.length * 4.4);
+    doc.setFillColor(...HERO_FILL);
+    doc.rect(margin, y, contentWidth, height, "F");
     doc.setFillColor(...PRIMARY);
-    doc.rect(x, top, 1.5, tileHeight, "F");
+    doc.rect(margin, y, 1.5, height, "F");
 
-    setText(7.5, "normal", SECONDARY);
-    const detailsWidth = doc.getTextWidth(strings.details);
-    doc.text(strings.details, x + tileWidth - 4, top + 6, { align: "right" });
-    const labelWidth = tileWidth - 12 - detailsWidth;
-    const labelSize = fitFontSize(tile.label, 8.5, 7, labelWidth);
-    const label = clampLines(
-      wrap(tile.label, labelWidth, labelSize, "bold"),
-      1,
-      labelWidth,
+    setText(bigSize, "bold", PRIMARY);
+    doc.text(big, margin + 8, y + height / 2 + bigSize * 0.13);
+    setText(11, "bold", TEXT);
+    doc.text(strings.heroLabel, columnX, y + 9);
+    bar(
+      columnX,
+      y + 12.5,
+      columnWidth,
+      4,
+      available ? (metrics.safeguardPct ?? 0) / 100 : 0,
+      PRIMARY,
     );
-    setText(labelSize, "bold", TEXT);
-    doc.text(label[0] ?? "", x + 5, top + 6);
+    setText(9.5, "normal", TEXT);
+    sentenceLines.forEach((line, index) =>
+      doc.text(line, columnX, y + 23 + index * 4.4),
+    );
+    y += height + 5;
+  }
 
-    const valueSize = fitFontSize(tile.value, 16, 10, tileWidth - 10);
-    setText(valueSize, "bold", PRIMARY);
-    doc.text(tile.value, x + 5, top + 14.5);
+  // Four tiles in one row, each linking to its IT page.
+  {
+    const gap = 3;
+    const width = (contentWidth - gap * 3) / 4;
+    const height = 30;
+    const change = (() => {
+      if (!delta)
+        return { value: strings.noBaseline, detail: strings.noBaselineHint };
+      if (delta.safeguardDeltaPoints === null)
+        return {
+          value: strings.deltaNotAvailable,
+          detail: strings.oldBaselineDetail,
+        };
+      return {
+        value: strings.deltaPoints(delta.safeguardDeltaPoints),
+        detail: strings.deltaDetail(formatDate(delta.baselineDate, strings)),
+      };
+    })();
+    const tiles: {
+      label: string;
+      value: string;
+      detail: string;
+      target: Target;
+    }[] = [
+      {
+        label: strings.tileInPlace,
+        value: strings.ofCount(
+          metrics.safeguardsInPlace,
+          metrics.safeguardsTotal,
+        ),
+        detail: strings.tileInPlaceDetail,
+        target: "guide",
+      },
+      {
+        label: strings.tileNoSafeguards,
+        value: String(noSafeguards),
+        detail: strings.tileNoSafeguardsDetail(measureCoverage.total),
+        target: "overview",
+      },
+      {
+        label: strings.tileNotSwitchedOn,
+        value: String(metrics.unassignedConfigs),
+        detail: strings.tileNotSwitchedOnDetail,
+        target: "unassigned",
+      },
+      { label: strings.tileChange, ...change, target: "change" },
+    ];
+    tiles.forEach((tile, index) => {
+      const x = margin + index * (width + gap);
+      const inner = width - 8;
+      doc.setFillColor(...WHITE);
+      doc.setDrawColor(...BORDER);
+      doc.setLineWidth(0.3);
+      doc.rect(x, y, width, height, "FD");
+      doc.setFillColor(...PRIMARY);
+      doc.rect(x, y, width, 1, "F");
 
-    const detailLines = clampLines(
-      wrap(tile.detail, tileWidth - 10, 7.8),
-      2,
-      tileWidth - 10,
-    );
-    setText(7.8, "normal", MUTED);
-    detailLines.forEach((line, lineIndex) =>
-      doc.text(line, x + 5, top + 20 + lineIndex * 3.4),
-    );
-    pendingLinks.push({
-      rect: [x, top, tileWidth, tileHeight],
-      target: tile.target,
+      const label = clampLines(wrap(tile.label, inner, 7.8, "bold"), 2, inner);
+      setText(7.8, "bold", TEXT);
+      label.forEach((line, lineIndex) =>
+        doc.text(line, x + 4, y + 6 + lineIndex * 3.3),
+      );
+
+      const valueSize = fitFontSize(tile.value, 16, 10, inner);
+      doc.setFontSize(valueSize);
+      if (doc.getTextWidth(tile.value) <= inner) {
+        setText(valueSize, "bold", PRIMARY);
+        doc.text(tile.value, x + 4, y + 18);
+      } else {
+        // Long words such as "No earlier report loaded" wrap to two lines.
+        const lines = clampLines(wrap(tile.value, inner, 9, "bold"), 2, inner);
+        setText(9, "bold", PRIMARY);
+        lines.forEach((line, lineIndex) =>
+          doc.text(line, x + 4, y + 15.3 + lineIndex * 3.6),
+        );
+      }
+
+      const detail = clampLines(wrap(tile.detail, inner, 7), 1, inner);
+      setText(7, "normal", MUTED);
+      doc.text(detail[0] ?? "", x + 4, y + 22.8);
+      setText(6.8, "normal", SECONDARY);
+      doc.text(strings.details, x + width - 4, y + 27, { align: "right" });
+      linkTo(tile.target, [x, y, width, height]);
     });
-  });
-  y += tileHeight * 2 + tileGap + 6;
+    y += height + 8;
+  }
 
-  const hasOutsideScopePage = summary.outsideScope.length > 0;
-  if (metrics.outsideIntuneScope !== null && metrics.outsideIntuneScope > 0) {
-    const text = strings.outsideScopeLine(metrics.outsideIntuneScope);
-    const lines = wrap(text, contentWidth - 22, 9);
-    setText(9, "normal", TEXT);
-    lines.forEach((line, index) => doc.text(line, margin, y + index * 4.2));
-    if (hasOutsideScopePage) {
-      setText(7.5, "normal", SECONDARY);
-      doc.text(strings.details, pageWidth - margin, y, { align: "right" });
-      pendingLinks.push({
-        rect: [margin, y - 3.5, contentWidth, lines.length * 4.2 + 1],
-        target: "outsideScope",
-      });
+  const sectionHeading = (text: string, caption?: string) => {
+    setText(12, "bold", PRIMARY);
+    doc.text(text, margin, y);
+    if (caption) {
+      setText(7.8, "normal", MUTED);
+      doc.text(caption, right, y, { align: "right" });
     }
-    y += lines.length * 4.2 + 1.5;
+    doc.setDrawColor(...ACCENT);
+    doc.setLineWidth(0.4);
+    doc.line(margin, y + 2, right, y + 2);
+    y += 7.5;
+  };
+
+  // Measures: one row per measure with a bar; the weakest eight when there
+  // are more, still in framework order so they match the IT pages.
+  {
+    sectionHeading(strings.measuresHeading, strings.measuresCaption);
+    const shown =
+      measures.length <= MAX_PAGE1_MEASURES
+        ? measures
+        : (() => {
+            const weakest = new Set(
+              measures
+                .map((control, index) => ({ control, index }))
+                .sort(
+                  (left, rightItem) =>
+                    shareOf(countFor(left.control)) -
+                      shareOf(countFor(rightItem.control)) ||
+                    left.index - rightItem.index,
+                )
+                .slice(0, MAX_PAGE1_MEASURES)
+                .map((item) => item.control),
+            );
+            return measures.filter((control) => weakest.has(control));
+          })();
+    const rowHeight = 6.6;
+    const countWidth = 22;
+    const barWidth = 46;
+    const barX = right - 4 - countWidth - barWidth;
+    const titleWidth = barX - margin - 6;
+    shown.forEach((control, index) => {
+      const count = countFor(control);
+      const top = y - 4.4;
+      if (index % 2 === 0) {
+        doc.setFillColor(...ZEBRA);
+        doc.rect(margin, top, contentWidth, rowHeight, "F");
+      }
+      const title = clampLines(
+        wrap(control.title, titleWidth, 9),
+        1,
+        titleWidth,
+      );
+      setText(9, "normal", TEXT);
+      doc.text(title[0] ?? "", margin + 2, y);
+      bar(barX, y - 2.6, barWidth, 2.8, shareOf(count), shareColor(count));
+      setText(8.8, "bold", shareColor(count));
+      doc.text(strings.ofCount(count.inPlace, count.total), right - 5, y, {
+        align: "right",
+      });
+      setText(7.5, "normal", SECONDARY);
+      doc.text(">", right - 1, y, { align: "right" });
+      linkTo(`measure:${control.id}`, [margin, top, contentWidth, rowHeight]);
+      y += rowHeight;
+    });
+    if (measures.length === 0) {
+      setText(9, "italic", MUTED);
+      doc.text(strings.heroNotAvailableSentence, margin, y);
+      y += 5;
+    }
+    y += 1.5;
+    if (shown.length < measures.length) {
+      const text = strings.moreMeasures(measures.length - shown.length);
+      setText(8.5, "normal", SECONDARY);
+      doc.text(`${text} >`, margin + 2, y);
+      linkTo("overview", [margin, y - 3.5, doc.getTextWidth(text) + 6, 5]);
+      y += 5;
+    }
+    if (metrics.outsideIntuneScope !== null && metrics.outsideIntuneScope > 0) {
+      const lines = wrap(
+        strings.outsideScopeLine(metrics.outsideIntuneScope),
+        contentWidth - 24,
+        9,
+      );
+      setText(9, "normal", TEXT);
+      lines.forEach((line, index) =>
+        doc.text(line, margin + 2, y + index * 4.2),
+      );
+      if (summary.outsideScope.length > 0) {
+        setText(7.5, "normal", SECONDARY);
+        doc.text(strings.details, right - 1, y, { align: "right" });
+        linkTo("outsideScope", [
+          margin,
+          y - 3.5,
+          contentWidth,
+          lines.length * 4.2 + 1,
+        ]);
+      }
+      y += lines.length * 4.2 + 1;
+    }
+    if (metrics.dataGaps > 0) {
+      const lines = wrap(
+        strings.dataGapsNote(metrics.dataGaps),
+        contentWidth - 2,
+        8,
+        "italic",
+      );
+      setText(8, "italic", WARNING);
+      lines.forEach((line, index) =>
+        doc.text(line, margin + 2, y + index * 3.8),
+      );
+      y += lines.length * 3.8 + 1;
+    }
   }
-  if (metrics.dataGaps > 0) {
-    const lines = wrap(
-      strings.dataGapsNote(metrics.dataGaps),
-      contentWidth,
-      8,
-      "italic",
-    );
-    setText(8, "italic", WARNING);
-    lines.forEach((line, index) => doc.text(line, margin, y + index * 3.8));
-    y += lines.length * 3.8 + 1.5;
-  }
 
-  // Disclaimer anchored at the bottom of page 1; actions fill the space above.
-  const disclaimerLines = wrap(disclaimer, contentWidth - 8, 7.5);
-  const disclaimerHeight = 9 + disclaimerLines.length * 3.4;
-  const disclaimerTop = contentBottom - disclaimerHeight;
+  // Note and disclaimer anchored at the bottom; next steps fill the space above.
+  const noteLines = wrap(strings.page1Note, contentWidth - 8, 7.8, "bold");
+  const disclaimerLines = wrap(disclaimer, contentWidth - 8, 7.2);
+  const boxHeight =
+    9 + noteLines.length * 3.5 + 1 + disclaimerLines.length * 3.2 + 1;
+  const boxTop = contentBottom - boxHeight;
 
-  y += 4;
-  setText(12, "bold", PRIMARY);
-  doc.text(strings.nextActionsHeading, margin, y);
-  doc.setDrawColor(...ACCENT);
-  doc.setLineWidth(0.4);
-  doc.line(margin, y + 2, pageWidth - margin, y + 2);
-  y += 8;
-
+  y += 5;
+  sectionHeading(strings.nextStepsHeading);
   const actions = [...summary.nextActions]
-    .sort((left, right) => left.rank - right.rank)
+    .sort((left, rightItem) => left.rank - rightItem.rank)
     .slice(0, MAX_ACTIONS);
   if (actions.length === 0) {
     setText(9, "italic", MUTED);
-    doc.text(strings.noNextActions, margin, y);
+    doc.text(strings.noNextSteps, margin, y);
   }
-  const linkColumn = 34;
-  // Stop at the first action that does not fit, so numbering never skips.
+  const linkColumn = 30;
+  const actionWidth = contentWidth - 7 - linkColumn;
+  // Stop at the first step that does not fit, so numbering never skips.
   for (const [index, action] of actions.entries()) {
-    const textWidth = contentWidth - 6 - linkColumn;
     const sentence = clampLines(
       wrap(
         strings.actionSentence[action.tier](action.name),
-        textWidth,
+        actionWidth,
         9.5,
         "bold",
       ),
       2,
-      textWidth,
+      actionWidth,
     );
-    const context = clampLines(
-      wrap(
-        `${strings.areaLabel}: ${strings.portalAreas[action.area]}  |  ${strings.controlsLabel}: ${idList(action.controlIds, strings, MAX_LISTED_IDS)}`,
-        textWidth,
-        7.8,
-      ),
-      2,
-      textWidth,
-    );
-    const height = sentence.length * 4.3 + context.length * 3.5 + 3;
-    if (y + height > disclaimerTop - 2) break;
+    const helped = action.controlIds
+      .map((id) => titleById.get(id))
+      .filter((title): title is string => title !== undefined);
+    const context = helped.length
+      ? clampLines(
+          wrap(strings.helpsWith(helped.join("; ")), actionWidth, 7.8),
+          1,
+          actionWidth,
+        )
+      : [];
+    const height = sentence.length * 4.3 + context.length * 3.6 + 2.8;
+    if (y + height > boxTop - 2) break;
 
     setText(9.5, "bold", PRIMARY);
     doc.text(`${index + 1}.`, margin, y);
     setText(9.5, "bold", TEXT);
     sentence.forEach((line, lineIndex) =>
-      doc.text(line, margin + 6, y + lineIndex * 4.3),
+      doc.text(line, margin + 7, y + lineIndex * 4.3),
     );
     setText(7.8, "normal", MUTED);
-    const contextTop = y + sentence.length * 4.3 - 0.3;
     context.forEach((line, lineIndex) =>
-      doc.text(line, margin + 6, contextTop + lineIndex * 3.5),
+      doc.text(
+        line,
+        margin + 7,
+        y + sentence.length * 4.3 - 0.4 + lineIndex * 3.6,
+      ),
     );
     drawActionLink(action, y);
     y += height;
@@ -460,56 +680,68 @@ export async function generateManagementReportPDF(
       new URL(action.url).hostname === "entra.microsoft.com"
         ? strings.openInEntra
         : strings.openInIntune;
-    setText(8, "bold", SECONDARY);
+    setText(7.5, "normal", SECONDARY);
     const width = doc.getTextWidth(label);
-    const right = pageWidth - margin;
     doc.text(label, right, top, { align: "right" });
     doc.link(right - width - 1, top - 3.5, width + 2, 5, { url: action.url });
   }
 
   doc.setFillColor(255, 248, 230);
-  doc.rect(margin, disclaimerTop, contentWidth, disclaimerHeight, "F");
+  doc.rect(margin, boxTop, contentWidth, boxHeight, "F");
   setText(8, "bold", TEXT);
-  doc.text(strings.disclaimerHeading, margin + 4, disclaimerTop + 5);
-  setText(7.5, "normal", TEXT);
-  disclaimerLines.forEach((line, index) =>
-    doc.text(line, margin + 4, disclaimerTop + 9.5 + index * 3.4),
-  );
+  doc.text(strings.disclaimerHeading, margin + 4, boxTop + 5);
+  let boxY = boxTop + 9;
+  setText(7.8, "bold", TEXT);
+  for (const line of noteLines) {
+    doc.text(line, margin + 4, boxY);
+    boxY += 3.5;
+  }
+  boxY += 1;
+  setText(7.2, "normal", TEXT);
+  for (const line of disclaimerLines) {
+    doc.text(line, margin + 4, boxY);
+    boxY += 3.2;
+  }
 
-  // ---- Detail pages ----------------------------------------------------
+  // ---- IT reviewer pages -------------------------------------------------
 
   let currentHeading = "";
 
-  const drawPageHeading = (heading: string) => {
-    y = 20;
-    setText(8, "normal", SECONDARY);
+  const drawItHeader = (heading: string) => {
+    doc.setFillColor(...BAND_FILL);
+    doc.rect(margin, 9, contentWidth, 7, "F");
+    setText(7.5, "bold", PRIMARY);
+    doc.text(strings.itBand.toUpperCase(), margin + 3, 13.6);
+    setText(7.5, "normal", SECONDARY);
     const width = doc.getTextWidth(strings.backToSummary);
-    doc.text(strings.backToSummary, pageWidth - margin, y - 6, {
-      align: "right",
-    });
-    doc.link(pageWidth - margin - width - 1, y - 9.5, width + 2, 5, {
-      pageNumber: 1,
-    });
+    doc.text(strings.backToSummary, right - 3, 13.6, { align: "right" });
+    doc.link(right - 4 - width, 9, width + 2, 7, { pageNumber: 1 });
+
+    y = 25;
     const lines = wrap(heading, contentWidth, 15, "bold");
     setText(15, "bold", PRIMARY);
-    lines.forEach((line, index) => doc.text(line, margin, y + 2 + index * 6.5));
-    y += 2 + (lines.length - 1) * 6.5 + 3;
+    lines.forEach((line, index) => doc.text(line, margin, y + index * 6.5));
+    y += (lines.length - 1) * 6.5 + 3;
     doc.setDrawColor(...ACCENT);
     doc.setLineWidth(0.5);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 7;
+    doc.line(margin, y, right, y);
+    y += 6;
   };
 
-  const startDetailPage = (target: DetailPage, heading: string) => {
+  const startItPage = (target: Target, heading: string) => {
     doc.addPage();
-    detailPages.set(target, pageNumber());
+    targetPages.set(target, pageNumber());
     currentHeading = heading;
-    drawPageHeading(heading);
+    drawItHeader(heading);
   };
 
   const continuePage = () => {
     doc.addPage();
-    drawPageHeading(strings.continued(currentHeading));
+    drawItHeader(strings.continued(currentHeading));
+  };
+
+  const ensureSpace = (space: number) => {
+    if (y + space > contentBottom) continuePage();
   };
 
   const paragraph = (
@@ -534,108 +766,236 @@ export async function generateManagementReportPDF(
     y += options.after ?? 2;
   };
 
-  interface Cell {
+  const bullet = (text: string) => {
+    const lines = wrap(text, contentWidth - 5, 9);
+    ensureSpace(Math.min(lines.length, 2) * 4.05);
+    doc.setFillColor(...PRIMARY);
+    doc.circle(margin + 1.2, y - 1.1, 0.6, "F");
+    for (const line of lines) {
+      if (y + 4.05 > contentBottom) continuePage();
+      setText(9, "normal", TEXT);
+      doc.text(line, margin + 5, y);
+      y += 4.05;
+    }
+    y += 0.8;
+  };
+
+  const subheading = (text: string) => {
+    const lines = wrap(text, contentWidth, 10.5, "bold");
+    ensureSpace(lines.length * 4.8 + 10);
+    setText(10.5, "bold", PRIMARY);
+    for (const line of lines) {
+      doc.text(line, margin, y);
+      y += 4.8;
+    }
+    y += 0.8;
+  };
+
+  interface Segment {
     text: string;
-    notes?: string[];
+    size?: number;
+    style?: FontStyle;
     color?: RgbColor;
   }
+  interface Row {
+    cells: Segment[][];
+    target?: Target;
+  }
+
+  const TABLE_PADDING = 1.6;
+  const TABLE_HEADER = 7;
+
+  const lineHeightOf = (line: { size: number }) => line.size * 0.42 + 0.3;
+
+  /** Wrapped cell lines; cells are cut to maxHeight with an ellipsis. */
+  const layoutRow = (
+    row: Row,
+    widths: readonly number[],
+    maxHeight = Infinity,
+  ) => {
+    const room = maxHeight - TABLE_PADDING * 2;
+    const cells = row.cells.map((cell, index) => {
+      const width = (widths[index] ?? 0) - TABLE_PADDING * 2;
+      const lines = cell.flatMap((segment) => {
+        const size = segment.size ?? 8;
+        return wrap(segment.text, width, size, segment.style).map((line) => ({
+          ...segment,
+          text: line,
+          size,
+        }));
+      });
+      let used = 0;
+      const kept = lines.filter((line) => (used += lineHeightOf(line)) <= room);
+      const last = kept[kept.length - 1];
+      if (last && kept.length < lines.length) {
+        setText(last.size, last.style ?? "normal", TEXT);
+        kept[kept.length - 1] = {
+          ...last,
+          text: clampLines([last.text, ""], 1, width)[0] ?? last.text,
+        };
+      }
+      return kept;
+    });
+    const height =
+      Math.max(
+        ...cells.map((lines) =>
+          lines.reduce((sum, line) => sum + lineHeightOf(line), 0),
+        ),
+      ) +
+      TABLE_PADDING * 2;
+    return { cells, height };
+  };
+
+  /** Space for the header and the first row, which always stay together. */
+  const tableStartHeight = (widths: readonly number[], rows: readonly Row[]) =>
+    TABLE_HEADER + (rows[0] ? layoutRow(rows[0], widths).height : 0);
 
   const table = (
     headers: readonly string[],
     widths: readonly number[],
-    rows: Cell[][],
+    rows: readonly Row[],
   ) => {
-    const fontSize = 8;
-    const lineHeight = 3.6;
-    const padding = 2;
     const drawHeader = () => {
       doc.setFillColor(...PRIMARY);
-      doc.rect(margin, y, contentWidth, 7, "F");
-      setText(7.5, "bold", [255, 255, 255]);
+      doc.rect(margin, y, contentWidth, TABLE_HEADER, "F");
+      setText(7.5, "bold", WHITE);
       let x = margin;
       headers.forEach((header, index) => {
-        doc.text(header, x + padding, y + 4.7);
+        doc.text(header, x + TABLE_PADDING, y + 4.7);
         x += widths[index] ?? 0;
       });
-      y += 7;
+      y += TABLE_HEADER;
     };
-    const layout = (cell: Cell, width: number) => ({
-      main: wrap(cell.text, width - padding * 2, fontSize, "normal"),
-      notes: (cell.notes ?? []).flatMap((note) =>
-        wrap(note, width - padding * 2, 7, "normal"),
-      ),
-    });
 
+    ensureSpace(tableStartHeight(widths, rows));
     drawHeader();
     rows.forEach((row, rowIndex) => {
-      const cells = row.map((cell, index) => layout(cell, widths[index] ?? 0));
-      const height =
-        Math.max(
-          ...cells.map(
-            (cell) => cell.main.length * lineHeight + cell.notes.length * 3.2,
-          ),
-        ) +
-        padding * 2;
+      let { cells, height } = layoutRow(row, widths);
       if (y + height > contentBottom) {
         continuePage();
         drawHeader();
       }
-      doc.setFillColor(
-        ...((rowIndex % 2 === 0
-          ? [248, 249, 250]
-          : [255, 255, 255]) as RgbColor),
-      );
+      // A row taller than a whole page is cut so it never reaches the footer.
+      if (y + height > contentBottom)
+        ({ cells, height } = layoutRow(row, widths, contentBottom - y));
+      doc.setFillColor(...(rowIndex % 2 === 0 ? ZEBRA : WHITE));
       doc.rect(margin, y, contentWidth, height, "F");
       let x = margin;
-      cells.forEach((cell, index) => {
-        let lineY = y + padding + 2.8;
-        setText(
-          fontSize,
-          index === 0 ? "bold" : "normal",
-          row[index]?.color ?? TEXT,
-        );
-        for (const line of cell.main) {
-          doc.text(line, x + padding, lineY);
-          lineY += lineHeight;
-        }
-        setText(7, "normal", MUTED);
-        for (const line of cell.notes) {
-          doc.text(line, x + padding, lineY);
-          lineY += 3.2;
+      cells.forEach((lines, index) => {
+        let lineY = y + TABLE_PADDING;
+        for (const line of lines) {
+          lineY += lineHeightOf(line);
+          setText(line.size, line.style ?? "normal", line.color ?? TEXT);
+          doc.text(line.text, x + TABLE_PADDING, lineY - 0.6);
         }
         x += widths[index] ?? 0;
       });
+      if (row.target) linkTo(row.target, [margin, y, contentWidth, height]);
       y += height;
     });
     y += 4;
   };
 
-  const controlRow = (control: ManagementReportControl): Cell[] => {
-    const notes: string[] = [];
-    if (control.aliases && control.aliases.length > 0) {
-      notes.push(
-        control.aliases
-          .map((alias) => `${alias.scheme}: ${alias.id}`)
-          .join("; "),
-      );
-    }
-    if (control.cis && control.cis.length > 0) {
-      notes.push(`${strings.cisLabel}: ${control.cis.join(", ")}`);
-    }
-    return [
-      { text: control.id },
-      { text: control.title, notes },
-      {
-        text: strings.controlStatuses[control.status],
-        color: CONTROL_STATUS_COLORS[control.status],
-      },
-    ];
-  };
-  const controlWidths = [30, contentWidth - 30 - 48, 48] as const;
+  const countSegment = (count: SafeguardCount): Segment => ({
+    text: strings.ofCount(count.inPlace, count.total),
+    style: "bold",
+    color: shareColor(count),
+  });
 
-  // D1: all controls
-  startDetailPage("controls", strings.controlsHeading);
-  paragraph(strings.controlsIntro, { after: 2 });
+  // How to read this report
+  startItPage("guide", strings.guideHeading);
+  for (const section of strings.guideSections) {
+    subheading(section.heading);
+    for (const text of section.paragraphs) paragraph(text, { after: 1 });
+    for (const text of section.bullets ?? []) bullet(text);
+    y += 1.2;
+  }
+
+  subheading(strings.figuresHeading);
+  {
+    const figure = (
+      text: { label: string; note: string },
+      value: string,
+    ): Row => ({
+      cells: [
+        [
+          { text: text.label, style: "bold" },
+          { text: text.note, size: 7.2, color: MUTED },
+        ],
+        [{ text: value }],
+      ],
+    });
+    const pct = (value: number | null) =>
+      value === null ? "" : ` (${strings.percent(value)})`;
+    const rows: Row[] = [
+      figure(
+        strings.figures.inPlace,
+        `${strings.ofCount(metrics.safeguardsInPlace, metrics.safeguardsTotal)}${pct(metrics.safeguardPct)}`,
+      ),
+      figure(
+        strings.figures.coverage,
+        `${strings.measuresOf(measureCoverage.withSafeguard, measureCoverage.total)}${pct(
+          measureCoverage.total
+            ? Math.floor(
+                (measureCoverage.withSafeguard * 100) / measureCoverage.total,
+              )
+            : null,
+        )}`,
+      ),
+      figure(strings.figures.noSafeguards, strings.measuresValue(noSafeguards)),
+      figure(
+        strings.figures.conflicting,
+        strings.measuresValue(metrics.conflicting),
+      ),
+      figure(
+        strings.figures.notSwitchedOn,
+        strings.safeguardsValue(metrics.unassignedConfigs),
+      ),
+    ];
+    if (metrics.outsideIntuneScope !== null)
+      rows.push(
+        figure(
+          strings.figures.outsideScope,
+          strings.measuresValue(metrics.outsideIntuneScope),
+        ),
+      );
+    rows.push(
+      figure(
+        strings.figures.dataGaps,
+        strings.safeguardsValue(metrics.dataGaps),
+      ),
+    );
+    table(strings.figureHeaders, [contentWidth - 38, 38], rows);
+  }
+
+  subheading(strings.aboutRunHeading);
+  paragraph(
+    [
+      `${strings.frameworkVersion}: ${summary.frameworkName} ${summary.frameworkVersion}`,
+      `${strings.rulesetVersion}: ${summary.rulesetVersion}`,
+      `${strings.generated}: ${formatDate(summary.generatedAt, strings)}`,
+      `${strings.scope}: ${scopeLabel(summary.scopeKey, strings)}`,
+    ].join("  |  "),
+    { after: 3 },
+  );
+  {
+    const lines = wrap(disclaimer, contentWidth - 8, 7.5);
+    const height = 9 + lines.length * 3.4;
+    ensureSpace(height + 2);
+    doc.setFillColor(255, 248, 230);
+    doc.rect(margin, y, contentWidth, height, "F");
+    setText(8, "bold", TEXT);
+    doc.text(strings.disclaimerHeading, margin + 4, y + 5);
+    setText(7.5, "normal", TEXT);
+    lines.forEach((line, index) =>
+      doc.text(line, margin + 4, y + 9.4 + index * 3.4),
+    );
+    y += height + 4;
+  }
+
+  // Measures overview
+  startItPage("overview", strings.overviewHeading);
+  paragraph(strings.overviewIntro, { after: 2 });
   if (input.crosswalkLoaded)
     paragraph(strings.crosswalkNote, {
       size: 8,
@@ -643,44 +1003,150 @@ export async function generateManagementReportPDF(
       color: MUTED,
     });
   y += 2;
-  table(strings.controlHeaders, controlWidths, input.controls.map(controlRow));
+  table(
+    strings.overviewHeaders,
+    [28, contentWidth - 28 - 42, 42],
+    measures.map((control) => ({
+      cells: [
+        [{ text: control.id, style: "bold" }],
+        [{ text: control.title }],
+        [countSegment(countFor(control))],
+      ],
+      target: `measure:${control.id}`,
+    })),
+  );
 
-  // D2: controls without evidence, then conflicting ones
-  startDetailPage("withoutEvidence", strings.withoutEvidenceHeading);
-  paragraph(strings.withoutEvidenceIntro, { after: 4 });
-  const withoutEvidence = [
-    ...input.controls.filter((control) => control.status === "noEvidence"),
-    ...input.controls.filter(
-      (control) => control.status === "conflictingEvidence",
-    ),
-  ];
-  if (withoutEvidence.length === 0)
-    paragraph(strings.withoutEvidenceEmpty, { style: "italic", color: MUTED });
-  else
-    table(
-      strings.controlHeaders,
-      controlWidths,
-      withoutEvidence.map(controlRow),
+  // Safeguards per measure; sections share pages and paginate cleanly.
+  const safeguardWidths = [66, 44, contentWidth - 66 - 44] as const;
+  measures.forEach((control, index) => {
+    const heading = `${control.id}  ${control.title}`;
+    const headingLines = wrap(heading, contentWidth, 11.5, "bold");
+    const notes: string[] = [];
+    if (control.aliases && control.aliases.length > 0)
+      notes.push(
+        control.aliases
+          .map((alias) => `${alias.scheme}: ${alias.id}`)
+          .join("; "),
+      );
+    if (control.cis && control.cis.length > 0)
+      notes.push(`${strings.cisLabel}: ${control.cis.join(", ")}`);
+    const noteLines = notes.flatMap((note) => wrap(note, contentWidth, 7.5));
+    const rows: Row[] = [...control.safeguards]
+      .sort(
+        (left, rightItem) =>
+          STATE_ORDER.indexOf(left.state) -
+          STATE_ORDER.indexOf(rightItem.state),
+      )
+      .map((safeguard) => ({
+        cells: [
+          [{ text: safeguard.name, style: "bold" }],
+          [
+            {
+              text: strings.safeguardStates[safeguard.state],
+              color: STATE_COLORS[safeguard.state],
+            },
+          ],
+          safeguard.policies.length === 0
+            ? [{ text: strings.noPolicy, style: "italic", color: MUTED }]
+            : [
+                ...safeguard.policies.slice(0, POLICIES_PER_SAFEGUARD).map(
+                  (policy): Segment =>
+                    policy.assigned
+                      ? { text: policy.name }
+                      : {
+                          text: `${policy.name} ${strings.notAssignedSuffix}`,
+                          color: MUTED,
+                        },
+                ),
+                ...(safeguard.policies.length > POLICIES_PER_SAFEGUARD
+                  ? [
+                      {
+                        text: strings.moreItems(
+                          safeguard.policies.length - POLICIES_PER_SAFEGUARD,
+                        ),
+                        style: "italic" as const,
+                        color: MUTED,
+                      },
+                    ]
+                  : []),
+              ],
+        ],
+      }));
+
+    if (index === 0) {
+      startItPage(`measure:${control.id}`, strings.measureDetailHeading);
+      paragraph(strings.measureDetailIntro, { after: 5 });
+    } else {
+      // Heading, notes, count line, table header and first row stay together.
+      const blockHeight =
+        8 +
+        headingLines.length * 5.2 +
+        noteLines.length * 3.4 +
+        7 +
+        (rows.length > 0 ? tableStartHeight(safeguardWidths, rows) : 5);
+      currentHeading = strings.measureDetailHeading;
+      if (y + blockHeight > contentBottom) continuePage();
+      else {
+        doc.setDrawColor(...BORDER);
+        doc.setLineWidth(0.3);
+        doc.line(margin, y - 1, right, y - 1);
+        y += 6;
+      }
+    }
+    targetPages.set(`measure:${control.id}`, pageNumber());
+    currentHeading = heading;
+    setText(11.5, "bold", PRIMARY);
+    headingLines.forEach((line) => {
+      doc.text(line, margin, y);
+      y += 5.2;
+    });
+    setText(7.5, "normal", MUTED);
+    noteLines.forEach((line) => {
+      doc.text(line, margin, y);
+      y += 3.4;
+    });
+
+    const count = countFor(control);
+    y += 2.6;
+    const countText = strings.measureCount(count.inPlace, count.total);
+    setText(9.5, "bold", TEXT);
+    doc.text(countText, margin, y);
+    bar(
+      margin + doc.getTextWidth(countText) + 5,
+      y - 2.6,
+      40,
+      2.8,
+      shareOf(count),
+      shareColor(count),
     );
+    y += 4.4;
 
-  // D3: unassigned security configurations
-  startDetailPage("unassigned", strings.unassignedHeading);
+    if (rows.length === 0)
+      paragraph(strings.noSafeguardsMapped, { style: "italic", color: MUTED });
+    else table(strings.safeguardHeaders, safeguardWidths, rows);
+    y += 2;
+  });
+
+  // Set up but not switched on
+  startItPage("unassigned", strings.unassignedHeading);
   paragraph(strings.unassignedIntro, { after: 4 });
   if (input.unassigned.length === 0)
     paragraph(strings.unassignedEmpty, { style: "italic", color: MUTED });
   else
     table(
       strings.unassignedHeaders,
-      [contentWidth * 0.45, contentWidth * 0.55],
-      input.unassigned.map((item) => [
-        { text: item.name },
-        { text: idList(item.controlIds, strings) },
-      ]),
+      [contentWidth * 0.5, contentWidth * 0.5],
+      input.unassigned.map((item) => ({
+        cells: [
+          [{ text: item.name, style: "bold" }],
+          [{ text: idList(item.controlIds, strings, MAX_LISTED_IDS) }],
+        ],
+      })),
     );
 
-  // D4: change since baseline
+  // Change since the last report
   if (delta) {
-    startDetailPage("change", strings.changeHeading);
+    startItPage("change", strings.changeHeading);
     paragraph(strings.changeIntro(formatDate(delta.baselineDate, strings)), {
       after: 4,
     });
@@ -689,11 +1155,34 @@ export async function generateManagementReportPDF(
       paragraph(value, { indent: 4, after: 3 });
     };
     section(
-      strings.changeCoverage,
-      delta.coverageDeltaPoints === null
-        ? strings.deltaNotAvailable
-        : strings.deltaPoints(delta.coverageDeltaPoints),
+      strings.changeSafeguards,
+      delta.safeguardDeltaPoints === null
+        ? strings.changeSafeguardsMissing
+        : strings.deltaPoints(delta.safeguardDeltaPoints),
     );
+    if (delta.safeguardChanges.length > 0) {
+      paragraph(strings.changePerMeasure, { style: "bold", after: 1.5 });
+      table(
+        strings.changeHeaders,
+        [28, contentWidth - 28 - 46, 46],
+        delta.safeguardChanges.map((item) => ({
+          cells: [
+            [{ text: item.controlId, style: "bold" }],
+            [{ text: titleById.get(item.controlId) ?? "" }],
+            [
+              {
+                text: strings.changeFromTo(item.from, item.to, item.total),
+                style: "bold",
+                color: item.to < item.from ? SHARE_NONE : TEXT,
+              },
+            ],
+          ],
+        })),
+      );
+      y += 3;
+    } else if (delta.safeguardDeltaPoints !== null) {
+      section(strings.changePerMeasure, strings.changeNone);
+    }
     section(
       strings.changeNewlyEvidenced,
       idList(delta.newlyEvidenced, strings),
@@ -704,30 +1193,33 @@ export async function generateManagementReportPDF(
     if (delta.rulesetChanged)
       paragraph(strings.rulesetChanged, { style: "italic", color: WARNING });
   } else {
-    startDetailPage("change", strings.noBaselineHeading);
+    startItPage("change", strings.noBaselineHeading);
     for (const step of strings.noBaselineSteps) paragraph(step, { after: 3 });
   }
 
-  // D5: measures outside Intune scope
-  if (hasOutsideScopePage) {
-    startDetailPage("outsideScope", strings.outsideScopeHeading);
+  // Measures outside Intune scope
+  if (summary.outsideScope.length > 0) {
+    startItPage("outsideScope", strings.outsideScopeHeading);
     paragraph(strings.outsideScopeIntro, { after: 4 });
     table(
       strings.outsideScopeHeaders,
-      [30, contentWidth - 30],
-      summary.outsideScope.map((measure) => [
-        { text: measure.id },
-        { text: measure.title[input.locale] },
-      ]),
+      [28, contentWidth - 28],
+      summary.outsideScope.map((measure) => ({
+        cells: [
+          [{ text: measure.id, style: "bold" }],
+          [{ text: measure.title[input.locale] }],
+        ],
+      })),
     );
   }
 
   // ---- Links and footer ------------------------------------------------
 
-  doc.setPage(1);
-  for (const { rect, target } of pendingLinks) {
-    const page = detailPages.get(target);
-    if (page !== undefined) doc.link(...rect, { pageNumber: page });
+  for (const { page, rect, target } of pendingLinks) {
+    const targetPage = targetPages.get(target);
+    if (targetPage === undefined) continue;
+    doc.setPage(page);
+    doc.link(...rect, { pageNumber: targetPage });
   }
 
   const pageCount = doc.internal.getNumberOfPages();
@@ -735,15 +1227,12 @@ export async function generateManagementReportPDF(
     doc.setPage(page);
     doc.setDrawColor(...PRIMARY);
     doc.setLineWidth(0.25);
-    doc.line(margin, pageHeight - 16, pageWidth - margin, pageHeight - 16);
+    doc.line(margin, pageHeight - 16, right, pageHeight - 16);
     setText(7, "normal", MUTED);
     doc.text(strings.footer, margin, pageHeight - 10);
-    doc.text(
-      strings.pageNumber(page, pageCount),
-      pageWidth - margin,
-      pageHeight - 10,
-      { align: "right" },
-    );
+    doc.text(strings.pageNumber(page, pageCount), right, pageHeight - 10, {
+      align: "right",
+    });
   }
 
   return new Uint8Array(doc.output("arraybuffer"));

@@ -44,7 +44,37 @@ export interface ManagementMetrics {
   outsideIntuneScope: number | null;
   /** Mapped capabilities whose evidence could not be read (re-collect). */
   dataGaps: number;
+  /** Distinct safeguards (capabilities) mapped to the assessed controls. */
+  safeguardsTotal: number;
+  /** Safeguards configured and assigned (enforced or requirementAssigned). */
+  safeguardsInPlace: number;
+  /** floor(safeguardsInPlace * 100 / safeguardsTotal); null when there are none. */
+  safeguardPct: number | null;
 }
+
+/** Safeguard fields are absent in baselines saved before they existed. */
+export type BaselineMetrics = Omit<
+  ManagementMetrics,
+  "safeguardsTotal" | "safeguardsInPlace" | "safeguardPct"
+> &
+  Partial<
+    Pick<ManagementMetrics, "safeguardsTotal" | "safeguardsInPlace" | "safeguardPct">
+  >;
+
+export interface SafeguardCount {
+  inPlace: number;
+  total: number;
+}
+
+/** Plain-language state of one safeguard, derived from its capability status. */
+export type SafeguardState =
+  | "inPlace"
+  | "partial"
+  | "notAssigned"
+  | "switchedOff"
+  | "conflicting"
+  | "notConfigured"
+  | "dataMissing";
 
 export interface NextAction {
   capabilityId: string;
@@ -75,6 +105,8 @@ export interface ManagementSummary {
   nextActions: NextAction[];
   /** Control id -> status for every assessed control. */
   controls: Record<string, ControlStatus>;
+  /** Control id -> safeguards in place and mapped. */
+  safeguards: Record<string, SafeguardCount>;
   outsideScope: OutsideScopeMeasure[];
 }
 
@@ -89,7 +121,9 @@ export interface BaselineFile {
   generatedAt: string;
   tenant: { id: string; label?: string };
   controls: Record<string, ControlStatus>;
-  metrics: ManagementMetrics;
+  metrics: BaselineMetrics;
+  /** Absent in baselines saved before safeguard counts existed. */
+  safeguards?: Record<string, SafeguardCount>;
   /**
    * SHA-256 over the canonical JSON of every other field. Detects accidental
    * edits and corruption only; anyone can recompute it, so it is not proof of
@@ -109,6 +143,15 @@ export interface BaselineDelta {
   added: string[];
   /** Controls in the baseline that are no longer assessed. */
   removed: string[];
+  /** Current safeguard percentage minus the baseline's; null if either is unknown. */
+  safeguardDeltaPoints: number | null;
+  /** Controls whose safeguards in place changed, in control order. */
+  safeguardChanges: {
+    controlId: string;
+    from: number;
+    to: number;
+    total: number;
+  }[];
   /** Rules changed between the two runs, so some movement may come from the mapping. */
   rulesetChanged: boolean;
   baselineDate: string;

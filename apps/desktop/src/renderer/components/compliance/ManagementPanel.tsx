@@ -12,6 +12,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useState } from "react";
+import { measuresWithSafeguards } from "../../../../../../src/lib/compliance/management/management-summary";
 import type {
   ManagementLocale,
   NextAction,
@@ -30,14 +31,21 @@ import { Button } from "../ui/Button";
 import { DisclosureSummary } from "../ui/DisclosureSummary";
 
 // The control list filters the metric tiles toggle on the Compliance screen.
-export type ControlFilter = "all" | "withoutEvidence" | "unassigned" | "changed";
+export type ControlFilter = "all" | "noSafeguards" | "unassigned" | "changed";
 
 export const CONTROL_FILTER_LABELS: Record<ControlFilter, string> = {
   all: "All controls",
-  withoutEvidence: "Controls without evidence",
-  unassigned: "Controls with unassigned security configurations",
-  changed: "Controls changed since the baseline",
+  noSafeguards: "Controls with no safeguards in place",
+  unassigned: "Controls with safeguards set up but not switched on",
+  changed: "Controls changed since the last report",
 };
+
+// Ids of the mapped controls without a single safeguard in place.
+function controlsWithoutSafeguards(selected: ComplianceFrameworkView): string[] {
+  return Object.entries(selected.management.safeguards)
+    .filter(([, count]) => count.total > 0 && count.inPlace === 0)
+    .map(([id]) => id);
+}
 
 // Control ids a filter keeps, or null for every control.
 export function controlFilterIds(
@@ -47,18 +55,19 @@ export function controlFilterIds(
   switch (filter) {
     case "all":
       return null;
-    case "withoutEvidence":
-      return new Set(
-        selected.controls
-          .filter((control) => control.status === "noEvidence" || control.status === "conflictingEvidence")
-          .map((control) => control.control.id),
-      );
+    case "noSafeguards":
+      return new Set(controlsWithoutSafeguards(selected));
     case "unassigned":
       return new Set(selected.unassigned.flatMap((config) => config.controlIds));
     case "changed":
       return new Set(
         selected.delta
-          ? [...selected.delta.newlyEvidenced, ...selected.delta.regressions, ...selected.delta.added]
+          ? [
+              ...selected.delta.safeguardChanges.map((change) => change.controlId),
+              ...selected.delta.newlyEvidenced,
+              ...selected.delta.regressions,
+              ...selected.delta.added,
+            ]
           : [],
       );
   }
@@ -170,7 +179,7 @@ function NextActionItem({
   );
 }
 
-// Management view of the selected framework: evidence coverage, the tiles that
+// Management view of the selected framework: safeguards in place, the tiles that
 // filter the control list, next actions, baseline, crosswalk and the one-page
 // management report.
 export function ManagementPanel({
@@ -205,27 +214,33 @@ export function ManagementPanel({
   const [crosswalkMessage, setCrosswalkMessage] = useState<string | null>(null);
 
   const actionBlocker = blocker ?? (action.busy ? "Available when the current action finishes." : null);
-  const withoutEvidence = metrics.withoutEvidence + metrics.conflicting;
-  const coverage = metrics.coveragePct === null ? "Not available" : `${metrics.coveragePct}%`;
+  const headline = metrics.safeguardPct === null ? "Not available" : `${metrics.safeguardPct}%`;
+  const measureCoverage = measuresWithSafeguards(selected.management);
+  const noSafeguards = controlsWithoutSafeguards(selected).length;
   const unassignedControls = new Set(selected.unassigned.flatMap((config) => config.controlIds)).size;
   const toggle = (next: ControlFilter) => onFilterChange(filter === next ? "all" : next);
+  const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
   let changeValue = "No baseline";
   let changeHint = "No baseline loaded";
   let changeDisabledReason = "Load a baseline to compare.";
+  let changedCount = 0;
   if (delta) {
-    const points = delta.coverageDeltaPoints;
-    changeValue = points === null || points === 0 ? "No change" : `${points > 0 ? "+" : "-"}${Math.abs(points)} pts`;
-    changeHint = `${delta.newlyEvidenced.length} newly evidenced, ${delta.regressions.length} ${
-      delta.regressions.length === 1 ? "regression" : "regressions"
-    }`;
-    changeDisabledReason = "No control changed since the baseline.";
+    changedCount = controlFilterIds(selected, "changed")?.size ?? 0;
+    const points = delta.safeguardDeltaPoints;
+    if (points === null) {
+      changeValue = "No figure";
+      changeHint = "Not in the earlier report. Save a new baseline.";
+    } else {
+      changeValue = points === 0 ? "No change" : `${points > 0 ? "+" : "-"}${Math.abs(points)} pts`;
+      changeHint = `${plural(changedCount, "measure", "measures")} changed`;
+    }
+    changeDisabledReason = "No measure changed since the last report.";
   } else if (baseline) {
     changeValue = "Not comparable";
     changeHint = "Baseline cannot be compared";
     changeDisabledReason = baseline.mismatch ?? changeHint;
   }
-  const changedCount = delta ? delta.newlyEvidenced.length + delta.regressions.length + delta.added.length : 0;
 
   return (
     <section
@@ -239,11 +254,17 @@ export function ManagementPanel({
         <div className="min-w-0 flex-1 basis-72">
           <p className="text-petrol-600 text-[10px] font-bold tracking-[0.14em] uppercase">Management summary</p>
           <h2 id="management-title" className="text-petrol-950 mt-1 text-lg font-semibold tracking-[-0.02em]">
-            Evidence coverage <span className="tabular-nums">{coverage}</span>
+            Safeguards in place <span className="tabular-nums">{headline}</span>
           </h2>
           <p className="text-petrol-600 mt-1 max-w-2xl text-xs leading-5">
-            {metrics.withEvidence} of {metrics.assessable} controls that Intune can evidence have supporting
-            configuration evidence. A coverage figure, not an audit result.
+            {metrics.safeguardsInPlace} of {metrics.safeguardsTotal} technical safeguards are set up and switched on
+            in Intune. A coverage figure, not an audit result.
+          </p>
+          <p className="text-petrol-700 mt-1 text-xs font-medium">
+            Measures with at least one safeguard:{" "}
+            <span className="tabular-nums">
+              {measureCoverage.withSafeguard} of {measureCoverage.total}
+            </span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -326,30 +347,30 @@ export function ManagementPanel({
       <div>
         <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @5xl:grid-cols-4" role="group" aria-label="Filter the mapped controls">
           <MetricTile
-            label="Controls with evidence"
-            value={`${metrics.withEvidence} of ${metrics.assessable}`}
-            hint="Assessable controls with supporting evidence"
+            label="Safeguards in place"
+            value={`${metrics.safeguardsInPlace} of ${metrics.safeguardsTotal}`}
+            hint="Set up and switched on in Intune"
             active={filter === "all"}
             onClick={() => onFilterChange("all")}
           />
           <MetricTile
-            label="Controls without evidence"
-            value={withoutEvidence.toLocaleString()}
-            hint={metrics.conflicting > 0 ? `Including ${metrics.conflicting} with conflicting policies` : "No recognized configuration evidence"}
-            active={filter === "withoutEvidence"}
-            disabledReason={withoutEvidence === 0 ? "Every assessable control has evidence." : null}
-            onClick={() => toggle("withoutEvidence")}
+            label="Measures with no safeguards"
+            value={noSafeguards.toLocaleString()}
+            hint="No safeguard set up and switched on"
+            active={filter === "noSafeguards"}
+            disabledReason={noSafeguards === 0 ? "Every measure has at least one safeguard in place." : null}
+            onClick={() => toggle("noSafeguards")}
           />
           <MetricTile
-            label="Unassigned security configurations"
+            label="Set up but not switched on"
             value={metrics.unassignedConfigs.toLocaleString()}
-            hint={`Configurations on ${unassignedControls} ${unassignedControls === 1 ? "control" : "controls"}`}
+            hint={`Safeguards on ${plural(unassignedControls, "measure", "measures")} not assigned to anyone`}
             active={filter === "unassigned"}
-            disabledReason={selected.unassigned.length === 0 ? "No unassigned security configuration found." : null}
+            disabledReason={selected.unassigned.length === 0 ? "No safeguard is set up without being switched on." : null}
             onClick={() => toggle("unassigned")}
           />
           <MetricTile
-            label="Change since baseline"
+            label="Change since last report"
             value={changeValue}
             hint={changeHint}
             active={filter === "changed"}

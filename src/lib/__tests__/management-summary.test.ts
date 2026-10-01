@@ -4,13 +4,17 @@ import { assessCompliance } from "../compliance";
 import {
   buildManagementSummary,
   computeMetrics,
+  measuresWithSafeguards,
   rankNextActions,
+  safeguardPolicies,
+  safeguardState,
   scopeKeyOf,
 } from "../compliance/management/management-summary";
 import { PORTAL_AREAS } from "../compliance/management/portal-links";
 import type {
   CapabilityResult,
   CapabilityStatus,
+  ComplianceAssessment,
   ControlAssessment,
   ControlStatus,
   FrameworkAssessment,
@@ -244,6 +248,181 @@ describe("computeMetrics", () => {
   });
 });
 
+describe("safeguard metrics", () => {
+  it("counts distinct mapped safeguards, in place only when configured and assigned", () => {
+    const fa = framework([
+      control("1", "evidenceFound", ["a", "b"]),
+      // "a" is mapped to two controls but counts once in the totals.
+      control("2", "partialEvidence", ["a", "c"]),
+      control("3", "notAssessed", ["d", "e"]),
+      control("4", "notApplicable", []),
+    ]);
+    const metrics = computeMetrics(fa, [
+      capability("a", "enforced"),
+      capability("b", "requirementAssigned"),
+      capability("c", "configuredNotAssigned"),
+      // Data gaps count towards the total but are never in place.
+      capability("d", "assignmentUnknown"),
+      capability("e", "collectionIncomplete"),
+      capability("unmapped", "enforced"),
+    ]);
+    expect(metrics.safeguardsTotal).toBe(5);
+    expect(metrics.safeguardsInPlace).toBe(2);
+    expect(metrics.safeguardPct).toBe(40);
+  });
+
+  it("floors the percentage in integers and is null without safeguards", () => {
+    const ids = Array.from({ length: 50 }, (_, index) => `s${index}`);
+    const fa = framework([control("1", "partialEvidence", ids)]);
+    const results = ids.map((id, index) =>
+      capability(id, index < 29 ? "enforced" : "noEvidence"),
+    );
+    // 29 / 50 * 100 is 57.99999999999999 in floating point.
+    expect(computeMetrics(fa, results).safeguardPct).toBe(58);
+    const thirds = framework([
+      control("1", "partialEvidence", ["x", "y", "z"]),
+    ]);
+    expect(
+      computeMetrics(thirds, [
+        capability("x", "enforced"),
+        capability("y", "noEvidence"),
+        capability("z", "noEvidence"),
+      ]).safeguardPct,
+    ).toBe(33);
+    const none = computeMetrics(
+      framework([control("1", "notApplicable", [])]),
+      [capability("a", "enforced")],
+    );
+    expect(none).toMatchObject({
+      safeguardsTotal: 0,
+      safeguardsInPlace: 0,
+      safeguardPct: null,
+    });
+  });
+
+  it("excludes capabilities the engine marked not applicable", () => {
+    const data = emptyExportData();
+    data.settingsCatalog = [unassignedBitLockerPolicy()];
+    const assessment = assessCompliance(data, { platforms: ["windows"] });
+    const summary = buildManagementSummary(assessment, "iso-27001-2022");
+    const notApplicable = new Set(
+      assessment.capabilities
+        .filter((result) => result.status === "notApplicable")
+        .map((result) => result.capability.id),
+    );
+    expect(notApplicable.size).toBeGreaterThan(0);
+    const iso = assessment.frameworks.find(
+      (item) => item.framework.id === "iso-27001-2022",
+    )!;
+    const mapped = new Set(iso.controls.flatMap((item) => item.capabilityIds));
+    expect([...mapped].some((id) => notApplicable.has(id))).toBe(false);
+    expect(summary.metrics.safeguardsTotal).toBe(mapped.size);
+  });
+});
+
+describe("measuresWithSafeguards", () => {
+  it("counts measures with a safeguard in place over measures with a mapped safeguard", () => {
+    const fa = framework([
+      // Partly configured only: evidence for the control, no safeguard in place.
+      control("1", "partialEvidence", ["partial"]),
+      // Conflicting policies on one safeguard, another safeguard in place.
+      control("2", "conflictingEvidence", ["conflict", "on"]),
+      control("3", "noEvidence", ["missing"]),
+      control("4", "notApplicable", []),
+    ]);
+    const assessment = {
+      generatedAt: "2026-10-01T09:00:00.000Z",
+      capabilities: [
+        capability("partial", "partialConfiguration"),
+        capability("conflict", "conflictingEvidence"),
+        capability("on", "enforced"),
+        capability("missing", "noEvidence"),
+      ],
+      frameworks: [fa],
+      scope: {},
+      provenance: { rulesetVersion: "test" },
+    } as unknown as ComplianceAssessment;
+    const summary = buildManagementSummary(assessment, "synthetic");
+
+    const coverage = measuresWithSafeguards(summary);
+    expect(coverage).toEqual({ withSafeguard: 1, total: 3 });
+    const noSafeguards = Object.values(summary.safeguards).filter(
+      (count) => count.total > 0 && count.inPlace === 0,
+    ).length;
+    expect(coverage.withSafeguard + noSafeguards).toBe(coverage.total);
+    // The control-status figure counts the partial control instead.
+    expect(summary.metrics.withEvidence).toBe(1);
+  });
+});
+
+describe("safeguardState", () => {
+  it("maps every capability status to a plain-language state", () => {
+    const expected: Record<CapabilityStatus, string> = {
+      enforced: "inPlace",
+      requirementAssigned: "inPlace",
+      partialConfiguration: "partial",
+      configuredNotAssigned: "notAssigned",
+      disabledByPolicy: "notConfigured",
+      conflictingEvidence: "conflicting",
+      assignmentUnknown: "dataMissing",
+      collectionIncomplete: "dataMissing",
+      noEvidence: "notConfigured",
+      notApplicable: "notConfigured",
+    };
+    for (const [status, state] of Object.entries(expected))
+      expect(safeguardState(capability("x", status as CapabilityStatus))).toBe(
+        state,
+      );
+  });
+
+  it("calls a disabled value switched off only in an assigned policy", () => {
+    expect(
+      safeguardState(
+        capability("x", "disabledByPolicy", [disabledEvidence("assigned")]),
+      ),
+    ).toBe("switchedOff");
+    expect(
+      safeguardState(
+        capability("x", "disabledByPolicy", [disabledEvidence("notAssigned")]),
+      ),
+    ).toBe("notConfigured");
+  });
+});
+
+describe("safeguardPolicies", () => {
+  function evidence(
+    policyId: string,
+    policyName: string,
+    state: "assigned" | "notAssigned" | "unknown",
+  ): CapabilityResult["evidence"][number] {
+    return {
+      ...disabledEvidence("assigned"),
+      policyId,
+      policyName,
+      verdict: "enforced",
+      assignment: { ...disabledEvidence("assigned").assignment, state },
+    };
+  }
+
+  it("lists distinct policies, assigned first, then by name", () => {
+    const result = capability("x", "enforced", [
+      evidence("p3", "Zeta", "assigned"),
+      evidence("p1", "Beta", "notAssigned"),
+      evidence("p2", "Alpha", "unknown"),
+      evidence("p4", "Gamma", "assigned"),
+      // Second setting from an already listed policy.
+      evidence("p1", "Beta", "notAssigned"),
+    ]);
+    expect(safeguardPolicies(result)).toEqual([
+      { name: "Gamma", assigned: true },
+      { name: "Zeta", assigned: true },
+      { name: "Alpha", assigned: false },
+      { name: "Beta", assigned: false },
+    ]);
+    expect(safeguardPolicies(capability("y", "noEvidence"))).toEqual([]);
+  });
+});
+
 describe("rankNextActions", () => {
   const fa = framework([
     control("1", "conflictingEvidence", ["conflict", "missing-wide"]),
@@ -389,6 +568,18 @@ describe("buildManagementSummary", () => {
     expect(summary.metrics.unassignedConfigs).toBe(1);
     expect(summary.metrics.coveragePct).toBe(0);
     expect(summary.outsideScope).toHaveLength(1);
+    expect(Object.keys(summary.safeguards)).toEqual(
+      Object.keys(summary.controls),
+    );
+    for (const item of iso.controls)
+      expect(summary.safeguards[item.control.id]?.total).toBe(
+        new Set(item.capabilityIds).size,
+      );
+    // The unassigned BitLocker policy puts nothing in place.
+    expect(summary.metrics.safeguardsInPlace).toBe(0);
+    expect(
+      Object.values(summary.safeguards).every((count) => count.inPlace === 0),
+    ).toBe(true);
 
     const bitLocker = summary.nextActions.find(
       (action) => action.capabilityId === "windows-disk-encryption",
@@ -402,6 +593,37 @@ describe("buildManagementSummary", () => {
       "windows-disk-encryption",
     );
     expect(summary.nextActions.length).toBeLessThanOrEqual(5);
+  });
+
+  it("counts a shared safeguard in every control that maps it", () => {
+    const assessment = assessCompliance(emptyExportData());
+    const fa = framework([
+      control("1", "evidenceFound", ["a", "b"]),
+      control("2", "partialEvidence", ["a"]),
+      control("3", "noEvidence", ["c"]),
+    ]);
+    const summary = buildManagementSummary(
+      {
+        ...assessment,
+        frameworks: [fa],
+        capabilities: [
+          capability("a", "enforced"),
+          capability("b", "partialConfiguration"),
+          capability("c", "noEvidence"),
+        ],
+      },
+      "synthetic",
+    );
+    expect(summary.safeguards).toEqual({
+      "1": { inPlace: 1, total: 2 },
+      "2": { inPlace: 1, total: 1 },
+      "3": { inPlace: 0, total: 1 },
+    });
+    expect(summary.metrics).toMatchObject({
+      safeguardsTotal: 3,
+      safeguardsInPlace: 1,
+      safeguardPct: 33,
+    });
   });
 
   it("keeps unmapped capabilities out of a framework's counts", () => {

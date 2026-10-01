@@ -5,8 +5,8 @@ import {
   BASELINE_SCHEMA,
   type BaselineDelta,
   type BaselineFile,
+  type BaselineMetrics,
   type BaselineRejection,
-  type ManagementMetrics,
   type ManagementSummary,
 } from "./types";
 
@@ -55,7 +55,7 @@ const CONTROL_STATUSES: ReadonlySet<string> = new Set<ControlStatus>([
   "conflictingEvidence",
 ]);
 
-const METRIC_KEYS: Record<keyof ManagementMetrics, "number" | "nullable"> = {
+const METRIC_KEYS: Record<keyof BaselineMetrics, "number" | "nullable"> = {
   assessable: "number",
   withEvidence: "number",
   coveragePct: "nullable",
@@ -64,7 +64,17 @@ const METRIC_KEYS: Record<keyof ManagementMetrics, "number" | "nullable"> = {
   unassignedConfigs: "number",
   outsideIntuneScope: "nullable",
   dataGaps: "number",
+  safeguardsTotal: "number",
+  safeguardsInPlace: "number",
+  safeguardPct: "nullable",
 };
+
+/** Absent in baselines saved before safeguard counts existed. */
+const OPTIONAL_METRICS: ReadonlySet<string> = new Set<keyof BaselineMetrics>([
+  "safeguardsTotal",
+  "safeguardsInPlace",
+  "safeguardPct",
+]);
 
 const FILE_KEYS = new Set<keyof BaselineFile>([
   "schema",
@@ -76,6 +86,7 @@ const FILE_KEYS = new Set<keyof BaselineFile>([
   "tenant",
   "controls",
   "metrics",
+  "safeguards",
   "checksum",
 ]);
 
@@ -101,6 +112,12 @@ export async function createBaseline(
         : { id: tenant.id, label: tenant.label },
     controls: { ...summary.controls },
     metrics: { ...summary.metrics },
+    safeguards: Object.fromEntries(
+      Object.entries(summary.safeguards).map(([id, count]) => [
+        id,
+        { inPlace: count.inPlace, total: count.total },
+      ]),
+    ),
   };
   return {
     ...body,
@@ -132,6 +149,23 @@ const isString = (value: unknown): value is string => typeof value === "string";
 const isCount = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value);
 
+const isWholeCount = (value: unknown) =>
+  Number.isSafeInteger(value) && (value as number) >= 0;
+
+function isSafeguardMap(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.entries(value).every(
+      ([id, count]) =>
+        id &&
+        isRecord(count) &&
+        Object.keys(count).length === 2 &&
+        isWholeCount(count.inPlace) &&
+        isWholeCount(count.total),
+    )
+  );
+}
+
 function isValidDate(value: unknown): value is string {
   return (
     isString(value) && ISO_DATE.test(value) && !Number.isNaN(Date.parse(value))
@@ -142,7 +176,7 @@ function isBaselineFile(value: unknown): value is BaselineFile {
   if (!isRecord(value)) return false;
   if (Object.keys(value).some((key) => !FILE_KEYS.has(key as never)))
     return false;
-  const { tenant, controls, metrics, checksum } = value;
+  const { tenant, controls, metrics, safeguards, checksum } = value;
   if (value.schema !== BASELINE_SCHEMA) return false;
   if (
     ![
@@ -174,6 +208,7 @@ function isBaselineFile(value: unknown): value is BaselineFile {
   if (!isRecord(metrics)) return false;
   for (const [key, kind] of Object.entries(METRIC_KEYS)) {
     const metric = metrics[key];
+    if (metric === undefined && OPTIONAL_METRICS.has(key)) continue;
     if (!isCount(metric) && !(kind === "nullable" && metric === null))
       return false;
   }
@@ -182,6 +217,7 @@ function isBaselineFile(value: unknown): value is BaselineFile {
     Object.values(metrics).some((metric) => metric !== null && !isCount(metric))
   )
     return false;
+  if (safeguards !== undefined && !isSafeguardMap(safeguards)) return false;
   return (
     isRecord(checksum) &&
     Object.keys(checksum).length === 2 &&
@@ -261,8 +297,26 @@ export function compareBaseline(
   }
   for (const id of Object.keys(before)) if (!has(after, id)) removed.push(id);
 
+  const safeguardChanges: BaselineDelta["safeguardChanges"] = [];
+  const beforeSafeguards = file.safeguards ?? {};
+  for (const [controlId, now] of Object.entries(current.safeguards)) {
+    if (!Object.prototype.hasOwnProperty.call(beforeSafeguards, controlId))
+      continue;
+    const from = beforeSafeguards[controlId]!.inPlace;
+    if (from !== now.inPlace)
+      safeguardChanges.push({
+        controlId,
+        from,
+        to: now.inPlace,
+        total: now.total,
+      });
+  }
+  safeguardChanges.sort((a, b) => compareControlIds(a.controlId, b.controlId));
+
   const currentPct = current.metrics.coveragePct;
   const baselinePct = file.metrics.coveragePct;
+  const currentSafeguardPct = current.metrics.safeguardPct;
+  const baselineSafeguardPct = file.metrics.safeguardPct;
   return {
     ok: true,
     delta: {
@@ -274,6 +328,12 @@ export function compareBaseline(
       regressions: regressions.sort(compareControlIds),
       added: added.sort(compareControlIds),
       removed: removed.sort(compareControlIds),
+      safeguardDeltaPoints:
+        typeof currentSafeguardPct === "number" &&
+        typeof baselineSafeguardPct === "number"
+          ? currentSafeguardPct - baselineSafeguardPct
+          : null,
+      safeguardChanges,
       rulesetChanged: current.rulesetVersion !== file.rulesetVersion,
       baselineDate: file.generatedAt,
     },

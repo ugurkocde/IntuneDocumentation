@@ -658,10 +658,11 @@ export default async function DesktopGettingStartedPage({
                   <li>
                     <Ui>Page 1 is for management.</Ui> It leads with one number,
                     safeguards in place: how many of the technical safeguards
-                    behind the framework are configured in an assigned Intune
-                    policy. A bar per measure shows where protection is missing,
-                    followed by the five recommended next steps. It uses plain
-                    language and no control ids.
+                    behind the framework are configured in an assigned Intune or
+                    Conditional Access policy. A bar per measure shows where
+                    protection is missing (with more than eight measures, the
+                    eight weakest), followed by the five recommended next steps.
+                    It uses plain language and no control ids.
                   </li>
                   <li>
                     <Ui>The following pages are for the IT reviewer.</Ui> They
@@ -714,8 +715,8 @@ export default async function DesktopGettingStartedPage({
                   The app ships no CIS Controls content. Your crosswalk stays in
                   memory for the current session and is never saved by the app,
                   so import it again after restarting. Safeguards in place is a
-                  coverage figure from the Intune configuration, not a
-                  compliance score or audit result.
+                  coverage figure from your Intune and Conditional Access
+                  configuration, not a compliance score or audit result.
                 </Note>
               </div>
             </section>

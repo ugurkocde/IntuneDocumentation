@@ -51,6 +51,19 @@ const api: IntunedocApi = {
   complianceSaveRecord: (request) => invoke("compliance:saveRecord", request),
   complianceOpenSource: (frameworkId) =>
     invoke("compliance:openSource", frameworkId),
+  complianceSaveManagementReport: (request, locale) =>
+    invoke("compliance:saveManagementReport", request, locale),
+  complianceSaveBaseline: (request) =>
+    invoke("compliance:saveBaseline", request),
+  complianceLoadBaseline: (request) =>
+    invoke("compliance:loadBaseline", request),
+  complianceClearBaseline: (frameworkId) =>
+    invoke("compliance:clearBaseline", frameworkId),
+  complianceImportCrosswalk: () => invoke("compliance:importCrosswalk"),
+  complianceClearCrosswalk: () => invoke("compliance:clearCrosswalk"),
+  complianceSaveCrosswalkTemplate: () =>
+    invoke("compliance:saveCrosswalkTemplate"),
+  openPortalLink: (url) => invoke("system:openPortalLink", url),
   saveFile: (defaultName, bytes) => invoke("file:save", defaultName, bytes),
   openLastFile: (path) => invoke("file:openLast", path ?? null),
   showLastFileInFolder: (path) => invoke("file:showLastInFolder", path ?? null),

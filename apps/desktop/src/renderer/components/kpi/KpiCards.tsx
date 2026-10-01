@@ -8,11 +8,16 @@ interface KpiCardProps {
   hint?: string;
   tone?: "teal" | "amber";
   spin?: boolean;
+  // With both set the card is a button that drills down to the details.
+  onClick?: () => void;
+  actionLabel?: string;
 }
 
-function KpiCard({ icon: Icon, label, value, hint, tone = "teal", spin = false }: KpiCardProps) {
-  return (
-    <div className="border-petrol-950/6 shadow-card flex min-h-28 items-center gap-4 rounded-2xl border bg-white px-5 py-4">
+function KpiCard({ icon: Icon, label, value, hint, tone = "teal", spin = false, onClick, actionLabel }: KpiCardProps) {
+  const className =
+    "border-petrol-950/6 shadow-card flex min-h-28 items-center gap-4 rounded-2xl border bg-white px-5 py-4";
+  const content = (
+    <>
       <span
         className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
           tone === "amber" ? "bg-amber-50 text-amber-700" : "bg-teal-50 text-teal-700"
@@ -25,8 +30,26 @@ function KpiCard({ icon: Icon, label, value, hint, tone = "teal", spin = false }
         <p className="text-petrol-950 mt-1 text-2xl font-semibold tracking-[-0.04em] tabular-nums">{value}</p>
         {hint && <p className="text-petrol-600 mt-0.5 truncate text-[11px]">{hint}</p>}
       </div>
-    </div>
+    </>
   );
+  if (onClick && actionLabel) {
+    return (
+      <button
+        type="button"
+        aria-label={actionLabel}
+        title={actionLabel}
+        onClick={onClick}
+        className={`${className} hover:bg-mint-50/40 w-full cursor-pointer text-left transition-[border-color,background-color,box-shadow] hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none`}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className={className}>{content}</div>;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
 export function KpiCards({
@@ -36,6 +59,9 @@ export function KpiCards({
   warnings,
   permissionGaps,
   loading,
+  onShowFamilies,
+  onShowWarnings,
+  onShowPermissionGaps,
 }: {
   configurations: number;
   sections: number;
@@ -43,15 +69,30 @@ export function KpiCards({
   warnings: number;
   permissionGaps: number;
   loading: boolean;
+  onShowFamilies?: () => void;
+  onShowWarnings?: () => void;
+  onShowPermissionGaps?: () => void;
 }) {
+  // Drill downs are off while collecting and for zero values.
+  const drill = (count: number, handler: (() => void) | undefined) =>
+    !loading && count > 0 ? handler : undefined;
   return (
     <section aria-label="Collection summary" className="grid grid-cols-2 gap-3 @3xl:grid-cols-4">
-      <KpiCard icon={Files} label="Configurations" value={configurations.toLocaleString()} hint="Policies and profiles" />
+      <KpiCard
+        icon={Files}
+        label="Configurations"
+        value={configurations.toLocaleString()}
+        hint="Policies and profiles"
+        onClick={drill(configurations, onShowFamilies)}
+        actionLabel={`Show ${plural(configurations, "configuration", "configurations")} by family`}
+      />
       <KpiCard
         icon={Layers3}
         label="Sections with data"
         value={sections.toLocaleString()}
         hint={`Across ${families} ${families === 1 ? "family" : "families"}`}
+        onClick={drill(sections, onShowFamilies)}
+        actionLabel={`Show ${plural(sections, "section", "sections")} with data by family`}
       />
       <KpiCard
         icon={loading ? LoaderCircle : warnings > 0 ? AlertTriangle : CheckCircle2}
@@ -60,6 +101,8 @@ export function KpiCards({
         value={loading ? "Loading" : warnings > 0 ? warnings.toLocaleString() : "None"}
         tone={warnings > 0 ? "amber" : "teal"}
         hint={loading ? "Collection running" : warnings > 0 ? "Partial data below" : "Every resource loaded"}
+        onClick={drill(warnings, onShowWarnings)}
+        actionLabel={`Show ${plural(warnings, "warning", "warnings")}`}
       />
       <KpiCard
         icon={permissionGaps > 0 ? ShieldAlert : ShieldCheck}
@@ -67,6 +110,8 @@ export function KpiCards({
         value={permissionGaps > 0 ? permissionGaps.toLocaleString() : "None"}
         tone={permissionGaps > 0 ? "amber" : "teal"}
         hint={permissionGaps > 0 ? "Ask an administrator" : "No missing access"}
+        onClick={drill(permissionGaps, onShowPermissionGaps)}
+        actionLabel={`Show ${plural(permissionGaps, "permission gap", "permission gaps")}`}
       />
     </section>
   );

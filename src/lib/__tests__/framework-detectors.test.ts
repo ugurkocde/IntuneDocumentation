@@ -61,6 +61,7 @@ const matrix = [
   ["nist-800-171-r2", "3.4.2"],
   ["nist-800-171-r3", "03.04.02"],
   ["essential-eight", "ML1-MAC-01"],
+  ["nis2-2022-2555", "21.2.g"],
 ];
 describe("working detectors across every framework", () => {
   it.each(matrix)(

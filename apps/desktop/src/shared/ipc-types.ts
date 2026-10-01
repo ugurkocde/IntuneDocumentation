@@ -10,6 +10,12 @@ import type {
   ControlAssessment,
   FrameworkAssessment,
 } from "../../../../src/lib/compliance/types";
+import type {
+  BaselineDelta,
+  CrosswalkIssue,
+  ManagementLocale,
+  ManagementSummary,
+} from "../../../../src/lib/compliance/management/types";
 
 export interface AppSettings {
   clientId: string;
@@ -136,7 +142,8 @@ export type ComplianceFrameworkId =
   | "def-stan-05-138-i4"
   | "cyber-essentials-v3"
   | "nist-800-171-r2"
-  | "nist-800-171-r3";
+  | "nist-800-171-r3"
+  | "nis2-2022-2555";
 
 export interface ComplianceRequest {
   frameworkId: ComplianceFrameworkId | null;
@@ -159,11 +166,35 @@ export interface ComplianceCapabilityView
   capability: Pick<ComplianceCapability, "id" | "name" | "caveat">;
 }
 
+// A mapped capability configured on a policy that is not assigned, with the
+// framework controls that list it.
+export interface ManagementUnassignedConfig {
+  capabilityId: string;
+  name: string;
+  controlIds: string[];
+}
+
 export interface ComplianceFrameworkView {
   framework: FrameworkAssessment["framework"];
   coverageLabel?: string;
   controls: ControlAssessment[];
   capabilities: ComplianceCapabilityView[];
+  management: ManagementSummary;
+  // Null without a loaded baseline, or when the loaded one no longer matches
+  // the current tenant, framework or scope.
+  delta: BaselineDelta | null;
+  // The baseline loaded for this framework, if any. mismatch explains why it
+  // cannot be compared with the current run, for example after a scope change.
+  baseline: {
+    generatedAt: string;
+    rulesetChanged: boolean;
+    mismatch: string | null;
+  } | null;
+  // The customer crosswalk held in memory, if any; issues is a count.
+  crosswalk: { rows: number; issues: number; fileName: string } | null;
+  // Control id -> customer-supplied CIS safeguard ids (ISO and NIS2 only).
+  crosswalkCis: Record<string, string[]>;
+  unassigned: ManagementUnassignedConfig[];
 }
 
 export interface ComplianceView {
@@ -175,6 +206,18 @@ export interface ComplianceView {
   frameworks: ComplianceFrameworkSummary[];
   selected: ComplianceFrameworkView | null;
 }
+
+export type { ManagementLocale };
+
+export type BaselineLoadResult =
+  | { ok: true }
+  | { ok: false; message: string }
+  | { canceled: true };
+
+export type CrosswalkImportResult =
+  | { ok: true; rows: number; issues: CrosswalkIssue[] }
+  | { ok: false; message: string }
+  | { canceled: true };
 
 export interface ComplianceReportProgress {
   stage: "groups" | "generating" | "saving";
@@ -283,6 +326,23 @@ export interface IntunedocApi {
   complianceSaveReport(request: ComplianceRequest): Promise<string | null>;
   complianceSaveRecord(request: ComplianceRequest): Promise<string | null>;
   complianceOpenSource(frameworkId: ComplianceFrameworkId): Promise<boolean>;
+  // Management report, baseline and crosswalk. Saves return the saved path,
+  // or null when the save dialog was cancelled. Baseline and crosswalk live in
+  // memory for the signed in account only and are never written by the app.
+  complianceSaveManagementReport(
+    request: ComplianceRequest,
+    locale: ManagementLocale,
+  ): Promise<string | null>;
+  complianceSaveBaseline(request: ComplianceRequest): Promise<string | null>;
+  complianceLoadBaseline(
+    request: ComplianceRequest,
+  ): Promise<BaselineLoadResult>;
+  complianceClearBaseline(frameworkId: ComplianceFrameworkId): Promise<boolean>;
+  complianceImportCrosswalk(): Promise<CrosswalkImportResult>;
+  complianceClearCrosswalk(): Promise<boolean>;
+  complianceSaveCrosswalkTemplate(): Promise<string | null>;
+  // Opens an https Intune or Entra admin center link from a next action.
+  openPortalLink(url: string): Promise<boolean>;
   saveFile(defaultName: string, bytes: Uint8Array): Promise<string | null>;
   // Without a path these act on the most recent save. A path is honored only
   // when this session saved it.

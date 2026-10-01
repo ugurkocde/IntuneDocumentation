@@ -541,8 +541,12 @@ export default async function DesktopGettingStartedPage({
               <p>
                 For audit evidence, open <Ui>Compliance Evidence</Ui> in the
                 sidebar, pick a framework, and download its evidence report.
-                Collect again whenever your configuration changes, so your
-                documentation stays current.
+                For management, use <Ui>Export management report</Ui> on the
+                same screen: a one-page PDF with evidence coverage, gaps, and
+                the next actions. Save a baseline each month and load last
+                month&apos;s file to show the change. Collect again whenever
+                your configuration changes, so your documentation stays
+                current.
               </p>
             </Step>
 

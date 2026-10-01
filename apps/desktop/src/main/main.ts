@@ -18,6 +18,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   AppInfo,
+  ComplianceFrameworkId,
+  ComplianceRequest,
   HelpKey,
   MenuCommand,
   UpdateStatus,
@@ -46,9 +48,23 @@ import {
   complianceView,
   frameworkSourceUrl,
   parseComplianceRequest,
+  parseFrameworkId,
 } from "./compliance";
 import { estimateScopedExport, prepareExport } from "./export";
 import { LicenseService } from "./license";
+import {
+  baselineExport,
+  clearBaseline,
+  clearCrosswalk,
+  clearManagementState,
+  crosswalkTemplate,
+  importCrosswalk,
+  loadBaseline,
+  managementContext,
+  managementReport,
+  parseManagementLocale,
+  portalLink,
+} from "./management";
 import { errorText, log, tailLog } from "./logger";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
 import {
@@ -259,6 +275,7 @@ const SAVE_FORMATS = {
   pdf: "PDF",
   json: "JSON",
   txt: "Text",
+  csv: "CSV",
 } as const;
 type SaveFormat = keyof typeof SAVE_FORMATS;
 const KNOWN_DOCUMENT_EXTENSIONS = new Set<string>([
@@ -353,6 +370,28 @@ async function saveWithDialog(
   return target;
 }
 
+// Shows the open dialog for one file type; null when cancelled.
+async function chooseOpenPath(format: "csv" | "json"): Promise<string | null> {
+  const options = {
+    properties: ["openFile" as const],
+    defaultPath: app.getPath("documents"),
+    filters: [{ name: SAVE_FORMATS[format], extensions: [format] }],
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? null : (result.filePaths[0] ?? null);
+}
+
+function parseFrameworkRequest(
+  input: unknown,
+): ComplianceRequest & { frameworkId: ComplianceFrameworkId } {
+  const request = parseComplianceRequest(input, true);
+  const frameworkId = request.frameworkId;
+  if (!frameworkId) throw new Error("Choose a compliance framework first.");
+  return { ...request, frameworkId };
+}
+
 function savedPath(requested: unknown): string | null {
   if (typeof requested === "string") {
     return savedExportPaths.has(requested) ? requested : null;
@@ -432,6 +471,7 @@ async function clearLocalData(): Promise<void> {
   log("info", "clearing local data");
   cancelCollection();
   clearCollection();
+  clearManagementState();
   const released = await license.deactivate().then(
     () => true,
     (error: unknown) => {
@@ -638,6 +678,7 @@ function registerIpc(): void {
     const saved = await writeSettings({ clientId, tenantId });
     cancelCollection();
     clearCollection();
+    clearManagementState();
     if (auth) {
       await auth.signOut();
     }
@@ -693,6 +734,7 @@ function registerIpc(): void {
     const service = await getAuth();
     cancelCollection();
     clearCollection();
+    clearManagementState();
     await service.signOut();
     log("info", "signed out");
     pushLicense();
@@ -821,7 +863,12 @@ function registerIpc(): void {
     try {
       const owner = await requireOwner();
       await requireLicense();
-      return await complianceView(owner, tokenProvider, request);
+      return await complianceView(
+        owner,
+        tokenProvider,
+        request,
+        managementContext(owner, signedInTenant()),
+      );
     } finally {
       assessingCompliance -= 1;
     }
@@ -877,6 +924,127 @@ function registerIpc(): void {
     await shell.openExternal(frameworkSourceUrl(frameworkId));
     return true;
   });
+
+  // Management report, baseline and crosswalk: a paid feature like the
+  // evidence report. Baseline and crosswalk stay in memory for the owner.
+  handle(
+    "compliance:saveManagementReport",
+    async (_event, input, rawLocale) => {
+      const request = parseFrameworkRequest(input);
+      const locale = parseManagementLocale(rawLocale);
+      writingReports += 1;
+      try {
+        const owner = await requireOwner();
+        await requireLicense();
+        log("info", "management report started", {
+          frameworkId: request.frameworkId,
+          locale,
+        });
+        const report = await managementReport(
+          owner,
+          tokenProvider,
+          request,
+          locale,
+          signedInTenant(),
+        );
+        return await saveWithDialog(report.fileName, report.bytes);
+      } catch (error) {
+        log("warn", "management report failed", { message: errorText(error) });
+        throw error;
+      } finally {
+        writingReports -= 1;
+        pushLicense();
+      }
+    },
+  );
+
+  handle("compliance:saveBaseline", async (_event, input) => {
+    const request = parseFrameworkRequest(input);
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      const baseline = await baselineExport(
+        owner,
+        tokenProvider,
+        request,
+        signedInTenant(),
+      );
+      return await saveWithDialog(baseline.fileName, baseline.bytes);
+    } finally {
+      writingReports -= 1;
+    }
+  });
+
+  handle("compliance:loadBaseline", async (_event, input) => {
+    const request = parseFrameworkRequest(input);
+    assessingCompliance += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      const result = await loadBaseline(
+        owner,
+        tokenProvider,
+        request,
+        signedInTenant(),
+        () => chooseOpenPath("json"),
+      );
+      log("info", "baseline load", {
+        frameworkId: request.frameworkId,
+        outcome:
+          "canceled" in result ? "canceled" : result.ok ? "loaded" : "rejected",
+      });
+      return result;
+    } finally {
+      assessingCompliance -= 1;
+    }
+  });
+
+  handle("compliance:clearBaseline", async (_event, frameworkId) => {
+    const id = parseFrameworkId(frameworkId);
+    const owner = await requireOwner();
+    await requireLicense();
+    clearBaseline(owner, id);
+    return true;
+  });
+
+  handle("compliance:importCrosswalk", async () => {
+    assessingCompliance += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      const result = await importCrosswalk(owner, () => chooseOpenPath("csv"));
+      if ("ok" in result && result.ok) {
+        log("info", "crosswalk imported", {
+          rows: result.rows,
+          issues: result.issues.length,
+        });
+      }
+      return result;
+    } finally {
+      assessingCompliance -= 1;
+    }
+  });
+
+  handle("compliance:clearCrosswalk", async () => {
+    const owner = await requireOwner();
+    await requireLicense();
+    clearCrosswalk(owner);
+    return true;
+  });
+
+  handle("compliance:saveCrosswalkTemplate", async () => {
+    await requireOwner();
+    await requireLicense();
+    const template = crosswalkTemplate();
+    return saveWithDialog(template.fileName, template.bytes);
+  });
+
+  handle("system:openPortalLink", async (_event, url) => {
+    await shell.openExternal(portalLink(url));
+    return true;
+  });
+
 
   handle("license:status", () => license.status(signedInTenant()));
 

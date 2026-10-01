@@ -186,9 +186,9 @@ describe("independent assessment and configuration results", () => {
       "enabledForReportingButNotEnforced",
     );
   });
-  it("gives every listed requirement in all ten frameworks checks or an explicit unavailable reason", () => {
+  it("gives every listed requirement in all eleven frameworks checks or an explicit unavailable reason", () => {
     const assessment = assessCompliance(data());
-    expect(assessment.frameworks).toHaveLength(10);
+    expect(assessment.frameworks).toHaveLength(11);
     const capabilities = new Map(
       assessment.capabilities.map((row) => [row.capability.id, row]),
     );

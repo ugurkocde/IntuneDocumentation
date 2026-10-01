@@ -21,6 +21,9 @@ export type Screen =
   | "license"
   | "settings";
 
+// Narrows a section screen to the items that could not be fully loaded.
+export type SectionFilter = "errors";
+
 export type ToastState = "hidden" | "running" | "success" | "warning" | "error";
 
 export interface CollectionState {
@@ -86,6 +89,8 @@ export interface AppState {
   wizardActive: boolean;
   screen: Screen;
   activeFamilyKey: string | null;
+  // Set only by a navigation that asks for it; any other navigation clears it.
+  activeSectionFilter: SectionFilter | null;
   sidebarOpen: boolean;
   collection: CollectionState;
   sections: Record<string, SectionItemsResult>;
@@ -105,7 +110,13 @@ export type Action =
       update: UpdateStatus;
       wizardActive: boolean;
     }
-  | { type: "navigate"; screen: Screen; familyKey?: string | null }
+  | {
+      type: "navigate";
+      screen: Screen;
+      familyKey?: string | null;
+      filter?: SectionFilter | null;
+    }
+  | { type: "sectionFilter"; filter: SectionFilter | null }
   | { type: "sidebar"; open: boolean }
   | { type: "settings"; settings: AppSettings }
   | { type: "auth"; auth: AuthStatus | null }

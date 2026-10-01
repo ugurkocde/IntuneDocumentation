@@ -164,6 +164,8 @@ export interface FrameworkControl {
   platforms?: readonly CompliancePlatform[];
   riskLevels?: readonly number[];
   granularity?: "requirement" | "buildingBlock" | "theme";
+  /** Equivalent identifiers in national transpositions, e.g. scheme "DE". */
+  aliases?: readonly { scheme: string; id: string }[];
 }
 
 export interface FrameworkDefinition {

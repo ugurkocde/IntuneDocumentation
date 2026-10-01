@@ -1,4 +1,5 @@
 import { ChevronDown } from "lucide-react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { assignmentDetails } from "../../../../../../src/lib/compliance/assignments";
 import {
@@ -240,13 +241,63 @@ function SettingChecks({ capability }: { capability: ComplianceCapabilityView })
   );
 }
 
+const CIS_VISIBLE = 8;
+
+// National law references and the customer's own CIS crosswalk ids, shown as
+// compact chips under the control title.
+function ReferenceChips({ control, cisIds }: { control: ControlAssessment; cisIds: readonly string[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const aliases = control.control.aliases ?? [];
+  if (aliases.length === 0 && cisIds.length === 0) return null;
+  const visibleCis = showAll ? cisIds : cisIds.slice(0, CIS_VISIBLE);
+  const hidden = cisIds.length - visibleCis.length;
+  const chip = "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] leading-4 font-semibold";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3 pl-11 @xl:px-5 @xl:pl-12">
+      {aliases.map((alias) => (
+        <span key={`${alias.scheme}-${alias.id}`} className={`${chip} bg-mint-100 text-petrol-700`}>
+          {alias.scheme} {alias.id}
+        </span>
+      ))}
+      {cisIds.length > 0 && (
+        <>
+          <span className="text-petrol-600 ml-1 text-[10px] font-bold first:ml-0">CIS (your crosswalk)</span>
+          {visibleCis.map((id) => (
+            <span key={id} className={`${chip} bg-teal-50 font-mono text-teal-800`}>
+              {id}
+            </span>
+          ))}
+          {(hidden > 0 || showAll) && cisIds.length > CIS_VISIBLE && (
+            <button
+              type="button"
+              aria-expanded={showAll}
+              aria-label={
+                showAll
+                  ? `Show fewer CIS safeguards for ${control.control.id}`
+                  : `Show ${hidden} more CIS safeguards for ${control.control.id}`
+              }
+              onClick={() => setShowAll((value) => !value)}
+              className="cursor-pointer rounded-full px-2 py-0.5 text-[10px] font-semibold text-teal-700 hover:bg-teal-50 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+            >
+              {showAll ? "Show fewer" : `+${hidden} more`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ControlRow({
   control,
+  cisIds = [],
   capabilitiesById,
   expanded,
   onToggle,
 }: {
   control: ControlAssessment;
+  // Customer-supplied CIS safeguard ids from the imported crosswalk.
+  cisIds?: readonly string[];
   capabilitiesById: Map<string, ComplianceCapabilityView>;
   expanded: boolean;
   onToggle: () => void;
@@ -263,43 +314,47 @@ export function ControlRow({
 
   return (
     <article className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-controls={panelId}
-        aria-label={`${control.control.id} ${control.control.title}: ${statusLabel}`}
-        className="hover:bg-mint-50/60 flex min-h-16 w-full cursor-pointer items-start gap-3 px-4 py-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none focus-visible:ring-inset @xl:items-center @xl:px-5"
-      >
-        <ChevronDown
-          className={`text-petrol-600 mt-0.5 h-4 w-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none @xl:mt-0 ${
-            expanded ? "rotate-180" : ""
-          }`}
-          aria-hidden="true"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-col-reverse items-start gap-2 @xl:flex-row @xl:items-center">
-            <p className="text-petrol-950 min-w-0 flex-1 text-sm font-semibold">
-              <span className="mr-2 font-mono text-xs text-teal-700">{control.control.id}</span>
-              {control.control.title}
-            </p>
-            <ControlStatusChip status={control.status} label={statusLabel} />
+      {/* Hover covers the header and its reference chips so they read as one unit. */}
+      <div className="hover:bg-mint-50/60 transition-colors">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          aria-label={`${control.control.id} ${control.control.title}: ${statusLabel}`}
+          className="flex min-h-16 w-full cursor-pointer items-start gap-3 px-4 py-4 text-left focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none focus-visible:ring-inset @xl:items-center @xl:px-5"
+        >
+          <ChevronDown
+            className={`text-petrol-600 mt-0.5 h-4 w-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none @xl:mt-0 ${
+              expanded ? "rotate-180" : ""
+            }`}
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col-reverse items-start gap-2 @xl:flex-row @xl:items-center">
+              <p className="text-petrol-950 min-w-0 flex-1 text-sm font-semibold">
+                <span className="mr-2 font-mono text-xs text-teal-700">{control.control.id}</span>
+                {control.control.title}
+              </p>
+              <ControlStatusChip status={control.status} label={statusLabel} />
+            </div>
+            {control.status === "notAssessed" && (
+              <span className="mt-2 block text-xs leading-5 text-amber-900">
+                {control.capabilityIds.length === 0
+                  ? control.unassessedAspects.join(" ") ||
+                    "This requirement needs evidence outside the collected settings or a supported platform in scope."
+                  : pendingReasons.join(" ") ||
+                    "Required technical evidence is unavailable. Expand this control to review its checks."}
+              </span>
+            )}
+            {/^ML[123]-/.test(control.control.id) && (
+              <p className="mt-2 text-sm leading-6 text-slate-700">{control.control.summary}</p>
+            )}
+            {control.control.tier && <p className="text-petrol-600 mt-1 text-xs">{control.control.tier}</p>}
           </div>
-          {control.status === "notAssessed" && (
-            <span className="mt-2 block text-xs leading-5 text-amber-900">
-              {control.capabilityIds.length === 0
-                ? control.unassessedAspects.join(" ") ||
-                  "This requirement needs evidence outside the collected settings or a supported platform in scope."
-                : pendingReasons.join(" ") ||
-                  "Required technical evidence is unavailable. Expand this control to review its checks."}
-            </span>
-          )}
-          {/^ML[123]-/.test(control.control.id) && (
-            <p className="mt-2 text-sm leading-6 text-slate-700">{control.control.summary}</p>
-          )}
-          {control.control.tier && <p className="text-petrol-600 mt-1 text-xs">{control.control.tier}</p>}
-        </div>
-      </button>
+        </button>
+        <ReferenceChips control={control} cisIds={cisIds} />
+      </div>
 
       {expanded && (
         <div

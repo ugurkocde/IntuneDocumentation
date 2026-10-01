@@ -2,8 +2,9 @@
 
 Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
 SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0, BSI IT-Grundschutz,
-UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, and ASD Essential Eight
-with target Maturity Levels 1, 2 and 3.
+UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, ASD Essential Eight
+with target Maturity Levels 1, 2 and 3, and NIS2 (Directive (EU) 2022/2555,
+Art. 21(2)).
 
 ## Design rules
 
@@ -43,7 +44,8 @@ with target Maturity Levels 1, 2 and 3.
    identifier with original titles and summaries, never the official wording.
    Cyber Essentials is Crown copyright under the Open Government Licence v3.0;
    the five themes serve as identifiers because the document has none, and the
-   logo is excluded from the licence. Do not add frameworks that require a
+   logo is excluded from the licence. NIS2 is EU legislation, which may be
+   reused; titles are short paraphrases of the Directive. Do not add frameworks that require a
    commercial license (for example CIS Benchmarks or CIS Controls).
 7. **Match the control's technical requirement.** Firewall activation is not
    evidence of default-deny rules, password presence is not evidence of
@@ -79,6 +81,67 @@ explicitly unassessed. A configured 14-day update schedule does not establish
 that an organization's required remediation period is met. Revision 3 is not
 an automatic replacement for Revision 2 in CMMC assessments; see the
 [official CMMC FAQ](https://dodcio.defense.gov/cmmc/FAQs/).
+
+## NIS2 Art. 21(2) (ruleset 2026.10.1)
+
+`nis2-2022-2555` lists the ten cybersecurity risk-management measures of
+[Directive (EU) 2022/2555](https://eur-lex.europa.eu/eli/dir/2022/2555/oj),
+Art. 21(2), as controls `21.2.a` to `21.2.j`. Every mapping is supporting
+evidence: device settings support part of a measure and never establish it.
+
+| Measure | Supporting device-management evidence |
+| --- | --- |
+| (b) incident handling | process creation and PowerShell logging, for detection support |
+| (e) acquisition, development and maintenance | automatic updates, quality update deadline, minimum OS versions |
+| (g) basic cyber hygiene | antimalware, host firewalls, platform and browser hardening, macro restrictions, application control and app sources, ASR Office and Adobe rules, device integrity |
+| (h) cryptography | disk and storage encryption |
+| (i) access control and asset management | device unlock, LAPS, LSA protection, Credential Guard, compliant-device Conditional Access, app data transfer |
+| (j) MFA | Conditional Access MFA, MFA for all apps, phishing-resistant MFA |
+
+Points (a), (c), (d) and (f) are organisational and have no mapping. They are
+exported as `NIS2_OUTSIDE_INTUNE_SCOPE` (English and German titles) so reports
+can name them as outside Intune scope instead of counting them as gaps.
+
+Each control carries `aliases` for national transpositions that keep the
+Directive order: Denmark `NIS2-loven § 6, stk. 1, nr. 1` to `nr. 10`
+([LOV nr 434 af 06/05/2025](https://www.retsinformation.dk/eli/lta/2025/434))
+and Germany `§ 30 Abs. 2 Nr. 1` to `Nr. 10 BSIG`
+([BSIG § 30](https://www.gesetze-im-internet.de/bsig_2025/__30.html)), both
+checked against the official text on 1 October 2026. `nis2MeasureFromCode`
+normalizes references such as `21(2)(j)`, `(j)`, `10B` or `Nr. 10` to `21.2.j`.
+The website picker does not offer NIS2; it is intended for the desktop app.
+
+## Management summary, baseline and crosswalk (desktop)
+
+`management/` turns one framework assessment into the management one-pager.
+Everything it produces is identifiers, statuses and counts.
+
+- **Evidence coverage** is `floor(100 * (evidenceFound + partialEvidence) /
+  assessable)`, where assessable excludes `notApplicable` and `notAssessed`.
+  It is null when nothing is assessable. It is a coverage figure, never a
+  compliance score, and the report carries `COMPLIANCE_DISCLAIMER`.
+- **Unassigned security configurations** counts distinct capabilities mapped
+  to the framework's assessed controls with status `configuredNotAssigned`.
+  `assignmentUnknown` and `collectionIncomplete` count as data gaps instead.
+- **Measures outside Intune scope** is `totalRequirements` minus assessed
+  controls when the framework publishes a total (NIS2: a, c, d and f).
+- **Next actions** (top 5) are deterministic. Candidates are mapped
+  capabilities that are not enforced and not a data gap. They are ordered by:
+  touching a control without evidence first; then tier (conflicting,
+  assigned deviation, partial, unassigned, missing); then the number of
+  affected controls; then capability id. The list is then spread across
+  controls: each pick is the first candidate that reaches a control no earlier
+  pick covers, and controls repeat only when every control is covered. Links
+  open admin center list pages from `portal-links.ts`, never a single policy.
+- **Baseline files** (`intunedoc.baseline/1`) hold control statuses and
+  metrics for one tenant, framework and scope. The SHA-256 checksum over the
+  canonical JSON detects accidental edits only; anyone can recompute it.
+  Comparisons reject another tenant, framework, scope or a future date.
+- **Crosswalk** files are supplied by the customer in the CSV template
+  (`iso27001_control`, `nis2_measure`, `cis_safeguard`, `notes`). The product
+  ships no CIS Controls content; CIS ids are shown only as read from the
+  customer's file, on ISO/IEC 27001 and NIS2 controls. The desktop app keeps
+  the file in memory for the session.
 
 ## Evidence semantics and scope (ruleset 2026.09.2)
 

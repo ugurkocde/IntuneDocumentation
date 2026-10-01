@@ -3,17 +3,32 @@ import type { TokenProvider } from "../../../../src/lib/graph-client";
 import {
   assessCompliance,
   BSI_IT_GRUNDSCHUTZ,
+  compareControlIds,
   createEvidenceManifest,
   CYBER_ESSENTIALS,
   DEF_STAN_05_138,
   essentialEightFramework,
   ISO_27001,
+  NIS2,
+  NIS2_OUTSIDE_INTUNE_SCOPE,
   NIST_800_171,
   NIST_800_171_R3,
   NIST_800_53,
   NIST_CSF,
   SOC_2,
 } from "../../../../src/lib/compliance";
+import {
+  BASELINE_REJECTION_MESSAGES,
+  compareBaseline,
+} from "../../../../src/lib/compliance/management/baseline";
+import { cisByControl } from "../../../../src/lib/compliance/management/crosswalk";
+import { buildManagementSummary } from "../../../../src/lib/compliance/management/management-summary";
+import type {
+  BaselineDelta,
+  BaselineFile,
+  Crosswalk,
+  ManagementSummary,
+} from "../../../../src/lib/compliance/management/types";
 import { frameworkCoverageLabel } from "../../../../src/lib/compliance/presentation";
 import type {
   AssessmentScope,
@@ -26,13 +41,15 @@ import type {
   ComplianceReportProgress,
   ComplianceRequest,
   ComplianceView,
+  ManagementUnassignedConfig,
 } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
 import { getCollectionOwner, getLastCollection } from "./collect";
 
 type Collection = NonNullable<ReturnType<typeof getLastCollection>>;
 
-// Same order as the website's framework picker.
+// Order of view.frameworks. The picker order comes from the renderer's
+// FRAMEWORK_OPTIONS, which places NIS2 after ISO 27001.
 const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "essential-eight": () => essentialEightFramework(1),
   "iso-27001-2022": () => ISO_27001,
@@ -44,6 +61,7 @@ const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "cyber-essentials-v3": () => CYBER_ESSENTIALS,
   "nist-800-171-r2": () => NIST_800_171,
   "nist-800-171-r3": () => NIST_800_171_R3,
+  "nis2-2022-2555": () => NIS2,
 };
 const FRAMEWORK_IDS = Object.keys(FRAMEWORKS) as ComplianceFrameworkId[];
 const PLATFORMS: readonly CompliancePlatform[] = [
@@ -58,6 +76,11 @@ function isFrameworkId(value: unknown): value is ComplianceFrameworkId {
     typeof value === "string" &&
     (FRAMEWORK_IDS as readonly string[]).includes(value)
   );
+}
+
+export function parseFrameworkId(value: unknown): ComplianceFrameworkId {
+  if (!isFrameworkId(value)) throw new Error("Unknown compliance framework.");
+  return value;
 }
 
 // The renderer is trusted but still only gets to pick from known values.
@@ -217,19 +240,121 @@ function assess(
   return assessment;
 }
 
+// Per-owner management state from management.ts. The crosswalk and baselines
+// are applied here, outside the assessment cache.
+export interface ManagementContext {
+  tenantId: string | null;
+  baselines: ReadonlyMap<string, BaselineFile>;
+  crosswalk: { crosswalk: Crosswalk; fileName: string } | null;
+}
+
+export const EMPTY_MANAGEMENT_CONTEXT: ManagementContext = {
+  tenantId: null,
+  baselines: new Map(),
+  crosswalk: null,
+};
+
+export function managementSummaryFor(
+  assessment: ComplianceAssessment,
+  frameworkId: ComplianceFrameworkId,
+): ManagementSummary {
+  return buildManagementSummary(assessment, frameworkId, {
+    outsideScope:
+      frameworkId === NIS2.id ? NIS2_OUTSIDE_INTUNE_SCOPE : undefined,
+  });
+}
+
+// Mapped capabilities configured on a policy without an assignment, with the
+// framework controls that list them.
+export function unassignedConfigs(
+  assessment: ComplianceAssessment,
+  frameworkId: ComplianceFrameworkId,
+): ManagementUnassignedConfig[] {
+  const selected = assessment.frameworks.find(
+    (framework) => framework.framework.id === frameworkId,
+  );
+  if (!selected) return [];
+  const seen = new Set<string>();
+  const result: ManagementUnassignedConfig[] = [];
+  for (const { capability, status } of assessment.capabilities) {
+    if (status !== "configuredNotAssigned" || seen.has(capability.id)) continue;
+    const controlIds = selected.controls
+      .filter((control) => control.capabilityIds.includes(capability.id))
+      .map((control) => control.control.id)
+      .sort(compareControlIds);
+    if (controlIds.length === 0) continue;
+    seen.add(capability.id);
+    result.push({
+      capabilityId: capability.id,
+      name: capability.name,
+      controlIds,
+    });
+  }
+  return result.sort((a, b) =>
+    a.capabilityId < b.capabilityId
+      ? -1
+      : a.capabilityId > b.capabilityId
+        ? 1
+        : 0,
+  );
+}
+
+// The delta against a loaded baseline, or null when there is none or it no
+// longer matches the current tenant, framework or scope.
+export function baselineDelta(
+  summary: ManagementSummary,
+  context: ManagementContext,
+): BaselineDelta | null {
+  const file = context.baselines.get(summary.frameworkId);
+  if (!file || !context.tenantId) return null;
+  const compared = compareBaseline(summary, context.tenantId, file);
+  return compared.ok ? compared.delta : null;
+}
+
+// Why a loaded baseline cannot be compared any more, for example after the
+// scope changed; null when it can.
+export function baselineMismatch(
+  summary: ManagementSummary,
+  context: ManagementContext,
+): string | null {
+  const file = context.baselines.get(summary.frameworkId);
+  if (!file || !context.tenantId) return null;
+  const compared = compareBaseline(summary, context.tenantId, file);
+  return compared.ok ? null : BASELINE_REJECTION_MESSAGES[compared.reason].en;
+}
+
+export function crosswalkCisFor(
+  context: ManagementContext,
+  frameworkId: ComplianceFrameworkId,
+  controlIds: readonly string[],
+): Record<string, string[]> {
+  return context.crosswalk
+    ? cisByControl(context.crosswalk.crosswalk, frameworkId, controlIds)
+    : {};
+}
+
 // The picker needs every framework's summary; the control list only the
 // selected framework and the capabilities its controls reference.
-function toView(
+export function toView(
   assessment: ComplianceAssessment,
   frameworkId: ComplianceFrameworkId | null,
+  context: ManagementContext = EMPTY_MANAGEMENT_CONTEXT,
 ): ComplianceView {
   const byId = new Map(
-    assessment.frameworks.map((framework) => [framework.framework.id, framework]),
+    assessment.frameworks.map((framework) => [
+      framework.framework.id,
+      framework,
+    ]),
   );
   const selected = frameworkId ? byId.get(frameworkId) : undefined;
   const capabilityIds = new Set(
     selected?.controls.flatMap((control) => control.capabilityIds) ?? [],
   );
+  const management =
+    selected && frameworkId
+      ? managementSummaryFor(assessment, frameworkId)
+      : null;
+  const baseline = frameworkId ? context.baselines.get(frameworkId) : undefined;
   return {
     disclaimer: assessment.disclaimer,
     scope: assessment.scope,
@@ -250,34 +375,77 @@ function toView(
         },
       ];
     }),
-    selected: selected
-      ? {
-          framework: selected.framework,
-          coverageLabel: frameworkCoverageLabel(selected),
-          controls: selected.controls,
-          capabilities: assessment.capabilities
-            .filter((result) => capabilityIds.has(result.capability.id))
-            .map(({ capability, ...result }) => ({
-              ...result,
-              capability: {
-                id: capability.id,
-                name: capability.name,
-                caveat: capability.caveat,
-              },
-            })),
-        }
-      : null,
+    selected:
+      selected && frameworkId && management
+        ? {
+            framework: selected.framework,
+            coverageLabel: frameworkCoverageLabel(selected),
+            controls: selected.controls,
+            capabilities: assessment.capabilities
+              .filter((result) => capabilityIds.has(result.capability.id))
+              .map(({ capability, ...result }) => ({
+                ...result,
+                capability: {
+                  id: capability.id,
+                  name: capability.name,
+                  caveat: capability.caveat,
+                },
+              })),
+            management,
+            delta: baselineDelta(management, context),
+            baseline: baseline
+              ? {
+                  generatedAt: baseline.generatedAt,
+                  rulesetChanged:
+                    baseline.rulesetVersion !== management.rulesetVersion,
+                  mismatch: baselineMismatch(management, context),
+                }
+              : null,
+            crosswalk: context.crosswalk
+              ? {
+                  rows: context.crosswalk.crosswalk.rows.length,
+                  issues: context.crosswalk.crosswalk.issues.length,
+                  fileName: context.crosswalk.fileName,
+                }
+              : null,
+            crosswalkCis: crosswalkCisFor(
+              context,
+              frameworkId,
+              selected.controls.map((control) => control.control.id),
+            ),
+            unassigned: unassignedConfigs(assessment, frameworkId),
+          }
+        : null,
   };
+}
+
+// The assessment behind the view, for the management handlers.
+export async function complianceAssessment(
+  owner: string,
+  token: TokenProvider,
+  scope: AssessmentScope,
+): Promise<ComplianceAssessment> {
+  const collection = requireCollection(owner);
+  const groupNames = await groupNamesFor(collection, token);
+  return assess(collection, groupNames, scope);
 }
 
 export async function complianceView(
   owner: string,
   token: TokenProvider,
   request: ComplianceRequest,
+  context: ManagementContext = EMPTY_MANAGEMENT_CONTEXT,
 ): Promise<ComplianceView> {
-  const collection = requireCollection(owner);
-  const groupNames = await groupNamesFor(collection, token);
-  return toView(assess(collection, groupNames, request.scope), request.frameworkId);
+  return toView(
+    await complianceAssessment(owner, token, request.scope),
+    request.frameworkId,
+    context,
+  );
+}
+
+// Reports and baselines name the tenant by a shortened id only.
+export function tenantLabelOf(tenantId: string | null): string | undefined {
+  return tenantId ? `${tenantId.slice(0, 8)}...` : undefined;
 }
 
 function yieldToEventLoop(): Promise<void> {
@@ -299,7 +467,7 @@ export async function complianceReport(
   await yieldToEventLoop();
   const { complianceReportFileName, generateComplianceReportPDF } =
     await import("../../../../src/lib/compliance/report-pdf");
-  const tenantLabel = tenantId ? `${tenantId.slice(0, 8)}...` : undefined;
+  const tenantLabel = tenantLabelOf(tenantId);
   const bytes = await generateComplianceReportPDF(
     assessmentData(collection, groupNames, request.scope),
     {

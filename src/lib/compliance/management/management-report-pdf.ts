@@ -414,7 +414,8 @@ export async function generateManagementReportPDF(
     doc.text(strings.noNextActions, margin, y);
   }
   const linkColumn = 34;
-  actions.forEach((action, index) => {
+  // Stop at the first action that does not fit, so numbering never skips.
+  for (const [index, action] of actions.entries()) {
     const textWidth = contentWidth - 6 - linkColumn;
     const sentence = clampLines(
       wrap(
@@ -436,7 +437,7 @@ export async function generateManagementReportPDF(
       textWidth,
     );
     const height = sentence.length * 4.3 + context.length * 3.5 + 3;
-    if (y + height > disclaimerTop - 2) return;
+    if (y + height > disclaimerTop - 2) break;
 
     setText(9.5, "bold", PRIMARY);
     doc.text(`${index + 1}.`, margin, y);
@@ -451,7 +452,7 @@ export async function generateManagementReportPDF(
     );
     drawActionLink(action, y);
     y += height;
-  });
+  }
 
   function drawActionLink(action: NextAction, top: number) {
     if (!isAllowedPortalUrl(action.url)) return;

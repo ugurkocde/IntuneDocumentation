@@ -304,7 +304,7 @@ export function SectionDetailScreen() {
       <p className="sr-only" aria-live="polite">
         {query && allLoaded ? `${loadedMatches} matching items` : ""}
       </p>
-      {errorsOnly && summary && total > 0 && (
+      {errorsOnly && summary && (
         <div
           role="status"
           className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/70 px-4 py-3"
@@ -331,7 +331,7 @@ export function SectionDetailScreen() {
           }
           action={!state.collection.running && <CollectButton showMeta={false} />}
         />
-      ) : sections.length === 0 || total === 0 ? (
+      ) : sections.length === 0 || (total === 0 && !sections.some((section) => section.error)) ? (
         <EmptyState
           icon={family?.icon ?? FileText}
           title="Nothing configured here"

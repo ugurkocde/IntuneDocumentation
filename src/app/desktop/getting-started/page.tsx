@@ -651,13 +651,26 @@ export default async function DesktopGettingStartedPage({
               </h2>
               <div className="text-petrol-700 mt-4 space-y-4 text-[15px] leading-7">
                 <p>
-                  The management report is a one-page PDF for readers outside
-                  IT, in English or German. It shows evidence coverage, the
-                  controls without evidence, unassigned security configurations,
-                  the change since your last baseline, and the five next actions
-                  with links to the Intune or Entra admin center. Each metric
-                  links to a detail page in the same PDF.
+                  The management report is a security summary in two parts, in
+                  English or German.
                 </p>
+                <ul className="list-disc space-y-3 pl-5">
+                  <li>
+                    <Ui>Page 1 is for management.</Ui> It leads with one number,
+                    safeguards in place: how many of the technical safeguards
+                    behind the framework are configured in an assigned Intune
+                    policy. A bar per measure shows where protection is missing,
+                    followed by the five recommended next steps. It uses plain
+                    language and no control ids.
+                  </li>
+                  <li>
+                    <Ui>The following pages are for the IT reviewer.</Ui> They
+                    explain how each number is calculated and what is not
+                    counted, and list every safeguard per measure with its state
+                    and the policies behind it, including whether each policy is
+                    assigned. Every number on page 1 links to its explanation.
+                  </li>
+                </ul>
                 <ol className="list-decimal space-y-3 pl-5">
                   <li>
                     Open <Ui>Compliance Evidence</Ui> and choose a framework,
@@ -672,8 +685,8 @@ export default async function DesktopGettingStartedPage({
                     Select <Ui>Save baseline</Ui> and keep the file with your
                     report. Next month, collect again, select{" "}
                     <Ui>Load baseline</Ui> and choose last month&apos;s file.
-                    The change since baseline then shows coverage points, newly
-                    evidenced controls, and regressions.
+                    The report then shows the change in safeguards in place,
+                    overall in percentage points and per measure.
                   </li>
                 </ol>
                 <p>
@@ -681,6 +694,8 @@ export default async function DesktopGettingStartedPage({
                   only, never policy names or settings. It only compares with
                   the same tenant, framework, and scope; a file from another
                   tenant or with a different platform selection is rejected.
+                  Baselines saved with version 0.2.2 need 0.2.2 or newer, so
+                  update every installation that loads them.
                 </p>
                 <h3 className="text-petrol-950 pt-2 text-base font-semibold">
                   CIS Controls through your own crosswalk
@@ -698,8 +713,9 @@ export default async function DesktopGettingStartedPage({
                 <Note>
                   The app ships no CIS Controls content. Your crosswalk stays in
                   memory for the current session and is never saved by the app,
-                  so import it again after restarting. Evidence coverage is a
-                  coverage figure, not a compliance score or audit result.
+                  so import it again after restarting. Safeguards in place is a
+                  coverage figure from the Intune configuration, not a
+                  compliance score or audit result.
                 </Note>
               </div>
             </section>

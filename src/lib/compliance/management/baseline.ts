@@ -86,6 +86,8 @@ const FILE_KEYS = new Set<keyof BaselineFile>([
   "tenant",
   "controls",
   "metrics",
+  // Added in desktop 0.3.0. Older apps reject unknown top-level keys, so a
+  // baseline saved with 0.3.0 needs 0.3.0 or newer; older files still load here.
   "safeguards",
   "checksum",
 ]);

@@ -24,6 +24,7 @@ import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { BackToTopButton } from "~/components/back-to-top-button";
 import {
+  DESKTOP_APP_NAME,
   DESKTOP_DOWNLOAD_URL,
   DESKTOP_DOWNLOADS,
   DESKTOP_GETTING_STARTED_PATH,
@@ -329,6 +330,10 @@ const faqSchema = {
     acceptedAnswer: { "@type": "Answer", text: faq.answer },
   })),
 };
+
+const quoteRequestHref = `mailto:${DESKTOP_SUPPORT_EMAIL}?subject=${encodeURIComponent(
+  `${DESKTOP_APP_NAME} invoice or quote request`,
+)}`;
 
 const textLink =
   "font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2 hover:text-petrol-950";
@@ -769,7 +774,7 @@ export default async function DesktopPage() {
             centered
             eyebrow="Pricing"
             title="One plan per organization, one for partners."
-            lead="Both plans include Word and PDF exports, compliance evidence, offline use, and updates. MSP adds more tenants and switching between them. Prices in EUR, taxes calculated at checkout."
+            lead="Both plans include Word and PDF exports, compliance evidence, offline use, and updates. MSP adds more tenants and switching between them. Prices in EUR, including VAT where applicable."
           />
           <ol className="mx-auto mt-10 grid max-w-4xl gap-3 sm:grid-cols-3">
             {steps.map((step, index) => (
@@ -796,6 +801,13 @@ export default async function DesktopPage() {
             <PricingPlans />
           </div>
           <p className="text-petrol-600 mx-auto mt-8 max-w-2xl text-center text-sm leading-6">
+            Need an invoice, purchase order or quote?{" "}
+            <a href={quoteRequestHref} className={textLink}>
+              Email us
+            </a>
+            .
+          </p>
+          <p className="text-petrol-600 mx-auto mt-3 max-w-2xl text-center text-sm leading-6">
             Cancel any time. Cancellation takes effect at the end of the billing
             period, and the app stays licensed until then. Already a customer?{" "}
             <a href={DESKTOP_PORTAL_URL} className={textLink}>

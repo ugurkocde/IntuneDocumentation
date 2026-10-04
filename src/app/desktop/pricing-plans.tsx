@@ -9,6 +9,7 @@ import {
   type BillingInterval,
   type DesktopPlan,
 } from "~/lib/desktop-app";
+import { openDesktopCheckout } from "~/lib/desktop-checkout";
 
 const intervals: { id: BillingInterval; label: string }[] = [
   { id: "monthly", label: "Monthly" },
@@ -62,16 +63,17 @@ function PlanCard({
         {extraTenant}
       </p>
 
-      <a
-        href={plan.checkoutUrl[interval]}
-        className={`mt-6 inline-flex min-h-11 items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none ${
+      <button
+        type="button"
+        onClick={() => openDesktopCheckout(plan.id, interval)}
+        className={`mt-6 inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none ${
           featured
             ? "hover:bg-petrol-800 bg-teal-700"
             : "bg-petrol-950 hover:bg-petrol-800"
         }`}
       >
         Buy {plan.name}
-      </a>
+      </button>
       <p className="text-petrol-600 mt-2 text-center text-xs leading-5">
         {DESKTOP_REFUND_DAYS}-day money-back guarantee. Cancel anytime.
       </p>

@@ -58,7 +58,6 @@ export interface DesktopPlan {
   // Price per tenant above tenantsIncluded, or null when the plan is fixed.
   extraTenantPrice: Record<BillingInterval, number> | null;
   features: string[];
-  checkoutUrl: Record<BillingInterval, string>;
 }
 
 export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
@@ -79,14 +78,6 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
       "Free updates, installed when you choose",
     ],
-    checkoutUrl: {
-      monthly:
-        env.NEXT_PUBLIC_POLAR_CHECKOUT_PRO_MONTHLY ??
-        "https://buy.polar.sh/polar_cl_p9S59fMAgCTA3jZFPZk3HWG0t4jwEppBYAbc11oMQJe",
-      yearly:
-        env.NEXT_PUBLIC_POLAR_CHECKOUT_PRO_YEARLY ??
-        "https://buy.polar.sh/polar_cl_NTrlkfk9H6jsKNumiVZH6mFSDJ5UjEp86Se4v3W8qVe",
-    },
   },
   msp: {
     id: "msp",
@@ -107,14 +98,6 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
       "Free updates, installed when you choose",
     ],
-    checkoutUrl: {
-      monthly:
-        env.NEXT_PUBLIC_POLAR_CHECKOUT_MSP_MONTHLY ??
-        "https://buy.polar.sh/polar_cl_W0ELNRLkIf260KU5XrnjPAbczSCQw5rQBnW2u1DdMBk",
-      yearly:
-        env.NEXT_PUBLIC_POLAR_CHECKOUT_MSP_YEARLY ??
-        "https://buy.polar.sh/polar_cl_AvIwR0OPaKE6f0npXdp5BpkCapNDfKnmTeGtz4An7jj",
-    },
   },
 };
 

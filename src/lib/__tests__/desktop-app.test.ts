@@ -5,7 +5,9 @@ import {
   DESKTOP_OFFLINE_GRACE_DAYS,
   DESKTOP_PLANS,
   formatDesktopPrice,
+  type BillingInterval,
 } from "~/lib/desktop-app";
+import { getDesktopCheckoutUrl } from "~/lib/desktop-checkout";
 import { INSTALLS_PER_TENANT } from "~/lib/desktop-license/service";
 import { DEFAULT_SCOPES } from "../../../apps/desktop/src/shared/scopes";
 import { TOKEN_LIFETIME_SECONDS } from "~/lib/desktop-license/token";
@@ -24,12 +26,19 @@ describe("desktop app constants", () => {
     );
   });
 
-  it("links every plan to a Polar checkout", () => {
-    for (const plan of Object.values(DESKTOP_PLANS)) {
-      for (const url of Object.values(plan.checkoutUrl)) {
-        expect(url).toMatch(/^https:\/\/buy\.polar\.sh\/polar_cl_\w+$/);
-      }
+  it("links every plan and interval to its own Polar checkout", () => {
+    const intervals: BillingInterval[] = ["monthly", "yearly"];
+    const urls = Object.values(DESKTOP_PLANS).flatMap((plan) =>
+      intervals.map((interval) => getDesktopCheckoutUrl(plan.id, interval)),
+    );
+    for (const url of urls) {
+      expect(url).toMatch(/^https:\/\/buy\.polar\.sh\/polar_cl_\w+$/);
     }
+    expect(new Set(urls).size).toBe(urls.length);
+  });
+
+  it("keeps checkout links out of the plan data server pages import", () => {
+    expect(JSON.stringify(DESKTOP_PLANS)).not.toMatch(/polar/);
   });
 
   it("formats whole prices without cents and monthly equivalents with cents", () => {

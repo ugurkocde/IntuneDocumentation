@@ -191,6 +191,14 @@ it("provides populated Word contents links with valid section bookmarks", async 
   expect(anchors.length).toBeGreaterThan(1);
   for (const anchor of anchors) expect(xml).toContain(`w:name="${anchor}"`);
   expect(new Set(anchors).size).toBe(anchors.length);
+  const bookmarkIds = [
+    ...xml.matchAll(/<w:bookmarkStart\b[^>]*w:id="(\d+)"/g),
+  ].map((match) => match[1]);
+  const bookmarkEndIds = [
+    ...xml.matchAll(/<w:bookmarkEnd\b[^>]*w:id="(\d+)"/g),
+  ].map((match) => match[1]);
+  expect(new Set(bookmarkIds).size).toBe(bookmarkIds.length);
+  expect(bookmarkEndIds).toEqual(bookmarkIds);
   expect(xml).not.toContain("Update Field");
   expect(extractZipEntry(result.buffer, "word/settings.xml")).not.toContain(
     "w:updateFields",

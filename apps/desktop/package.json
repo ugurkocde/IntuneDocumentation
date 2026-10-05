@@ -33,6 +33,7 @@
     "esbuild": "^0.28.2",
     "isomorphic-fetch": "^3.0.0",
     "jspdf": "3.0.2",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.542.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

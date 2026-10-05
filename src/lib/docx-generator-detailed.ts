@@ -22,6 +22,8 @@ import {
   TableCell,
   TableLayoutType,
   Bookmark,
+  BookmarkStart,
+  BookmarkEnd,
   InternalHyperlink,
   TableRow,
   TextRun,
@@ -46,6 +48,7 @@ import {
   extractAppConfigurationSettings,
 } from "./configuration-parser";
 import type { BrandingOptions } from "~/types/branding";
+import { normalizeDocx } from "./docx-compatibility";
 import { REDACTED_VALUE } from "./intune-policy-registry";
 import { assessCompliance, compareControlIds } from "./compliance";
 import {
@@ -241,9 +244,22 @@ function extractBase64(dataUrl: string): string {
   return dataUrl;
 }
 
-/** Convert mm to EMU. */
-function mmToEmu(mm: number): number {
-  return Math.round(mm * 36000);
+/** ImageRun expects pixels and converts them to EMUs internally. */
+function mmToPixels(mm: number): number {
+  return (mm * 96) / 25.4;
+}
+
+// docx creates a new ID counter for each Bookmark, so every default ID is 1.
+// Supply matching start/end IDs from the document's section counter instead.
+class SectionBookmark extends Bookmark {
+  readonly start: BookmarkStart;
+  readonly end: BookmarkEnd;
+
+  constructor(anchor: string, numericId: number, text: TextRun) {
+    super({ id: anchor, children: [text] });
+    this.start = new BookmarkStart(anchor, numericId);
+    this.end = new BookmarkEnd(numericId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -371,8 +387,8 @@ export async function generateDetailedDOCX(
             new ImageRun({
               data: logoBase64,
               transformation: {
-                width: mmToEmu(logoW),
-                height: mmToEmu(logoH),
+                width: mmToPixels(logoW),
+                height: mmToPixels(logoH),
               },
             }),
           ],
@@ -631,8 +647,8 @@ export async function generateDetailedDOCX(
           new ImageRun({
             data: logoBase64,
             transformation: {
-              width: mmToEmu(logoW),
-              height: mmToEmu(logoH),
+              width: mmToPixels(logoW),
+              height: mmToPixels(logoH),
             },
           }),
         );
@@ -718,6 +734,7 @@ export async function generateDetailedDOCX(
   const spacers = new WeakSet<Paragraph>();
   const contentsEntries: { title: string; anchor: string }[] = [];
   let contentsChildren: Paragraph[] | undefined;
+  let bookmarkId = 0;
 
   // Helper: wrap children in a content section (with page break, header, footer)
   const pushContentSection = (children: (Paragraph | Table)[]) => {
@@ -745,18 +762,17 @@ export async function generateDetailedDOCX(
       contentsEntries.push({ title: text, anchor });
     return new Paragraph({
       children: [
-        new Bookmark({
-          id: anchor,
-          children: [
-            new TextRun({
-              text,
-              bold: true,
-              color: primaryHex,
-              font: fontName,
-              size: headerSizeHp + 8,
-            }),
-          ],
-        }),
+        new SectionBookmark(
+          anchor,
+          ++bookmarkId,
+          new TextRun({
+            text,
+            bold: true,
+            color: primaryHex,
+            font: fontName,
+            size: headerSizeHp + 8,
+          }),
+        ),
       ],
       heading: HeadingLevel.HEADING_1,
       keepNext: true,
@@ -2389,7 +2405,7 @@ export async function generateDetailedDOCX(
   const buffer = await Packer.toBuffer(doc);
 
   return {
-    buffer: new Uint8Array(buffer),
+    buffer: await normalizeDocx(new Uint8Array(buffer)),
     errors,
     totalPolicies,
     successfulPolicies,

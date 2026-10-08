@@ -153,7 +153,19 @@ describe("compliance report with a multi page table of contents", () => {
     );
     for (const entry of entries) {
       expect(entry.page).toBeGreaterThan(3);
-      expect(pages[(entry.page ?? 0) - 1]).toContain(entry.title);
+      const pageText = pages[(entry.page ?? 0) - 1];
+      // Control headers draw the id in its own tile next to the title, and
+      // long titles wrap, so compare against the page's shown text runs.
+      const control = /^([A-Z]{2}-\d+) (.+)$/.exec(entry.title);
+      if (control) {
+        const shown = [...(pageText ?? "").matchAll(/\((.*?)\) Tj/g)]
+          .map((match) => match[1])
+          .join(" ");
+        expect(pageText).toContain(`(${control[1]}) Tj`);
+        expect(shown).toContain(control[2]);
+      } else {
+        expect(pageText).toContain(entry.title);
+      }
     }
 
     // Links follow the contents order, which lists sections and controls but

@@ -11,6 +11,7 @@
   "type": "module",
   "scripts": {
     "build": "next build",
+    "build:samples": "vite-node --config vitest.config.ts --options.deps.external=/node_modules/ scripts/build-sample-reports.ts",
     "check": "next lint && tsc --noEmit",
     "dev": "next dev --turbo",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache",

@@ -4,6 +4,13 @@ import type jsPDF from "jspdf";
 // millimetres, type in points. Only built-in Helvetica, solid fills, lines,
 // circles and rounded rectangles are used so every viewer renders the same.
 
+// Math.sin and Math.cos may differ in the last bit between CPUs, and jsPDF
+// writes coordinates at full precision. Rounding to 0.0001 mm keeps PDF bytes
+// identical on every platform.
+function fixedPoint(value: number): number {
+  return Math.round(value * 10000) / 10000;
+}
+
 export type RgbColor = [number, number, number];
 export type FontStyle = "normal" | "bold" | "italic";
 export type MarkerKind = "filled" | "half" | "outline" | "triangle";
@@ -184,8 +191,8 @@ export function drawMarker(
     for (let step = 0; step <= 12; step += 1) {
       const angle = Math.PI / 2 + (Math.PI * step) / 12;
       points.push([
-        centerX + radius * Math.cos(angle),
-        centerY - radius * Math.sin(angle),
+        fixedPoint(centerX + radius * Math.cos(angle)),
+        fixedPoint(centerY - radius * Math.sin(angle)),
       ]);
     }
     fillPolygon(doc, points);
@@ -414,8 +421,8 @@ export function drawDonut(
       const angle =
         -Math.PI / 2 + 2 * Math.PI * (start + fraction * (step / steps));
       points.push([
-        centerX + radius * Math.cos(angle),
-        centerY + radius * Math.sin(angle),
+        fixedPoint(centerX + radius * Math.cos(angle)),
+        fixedPoint(centerY + radius * Math.sin(angle)),
       ]);
     }
     const lines: Array<[number, number]> = [];

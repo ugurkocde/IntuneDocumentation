@@ -371,7 +371,7 @@ const DOCUMENT_METADATA_KEYS = new Set([
   "presentationFetchError",
 ]);
 
-function humanizePropertyName(value: string) {
+export function humanizePropertyName(value: string) {
   return value
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_.]/g, " ")

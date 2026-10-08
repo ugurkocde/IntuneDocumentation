@@ -5,8 +5,11 @@ import {
   complianceReportFileName,
   generateComplianceReportPDF,
   GERMAN_CAPABILITY_NAMES,
+  readablePropertyName,
 } from "../compliance/report-pdf";
+import { assessCompliance } from "../compliance";
 import { extractPdfStreamText } from "./helpers/pdf-text";
+import { readPdfOutline, readPdfPageTexts } from "./helpers/pdf-outline";
 
 const allDevicesAssignment = [
   {
@@ -498,4 +501,137 @@ it("paginates oversized evidence-register rows without drawing text below the pa
   expect(positions.every((match) => Number(match[2]) >= 0)).toBe(true);
   expect(text).toContain("Appendix A");
   expect(text).toContain("Large MFA policy");
+});
+
+describe("compliance report render options", () => {
+  const renderDate = new Date("2026-10-08T09:00:00Z");
+
+  it("produces identical bytes for the same input and render date", async () => {
+    const options = {
+      frameworkId: "iso-27001-2022" as const,
+      renderDate,
+      metadata: { tenantLabel: "Contoso Ltd" },
+    };
+    const first = await generateComplianceReportPDF(
+      createExportData(),
+      options,
+    );
+    const second = await generateComplianceReportPDF(
+      createExportData(),
+      options,
+    );
+    expect(Buffer.from(first).equals(Buffer.from(second))).toBe(true);
+    expect(extractPdfStreamText(first)).toContain("2026-10-08");
+  });
+
+  it("renders detail pages only for the excerpt controls without dangling references", async () => {
+    const framework = assessCompliance(createExportData()).frameworks.find(
+      (item) => item.framework.id === "iso-27001-2022",
+    );
+    // Showcase the two most compact controls, as the public samples do.
+    const controlIds = [...(framework?.controls ?? [])]
+      .sort((a, b) => a.capabilityIds.length - b.capabilityIds.length)
+      .slice(0, 2)
+      .map((item) => item.control.id);
+    expect(controlIds).toHaveLength(2);
+
+    const report = await generateComplianceReportPDF(createExportData(), {
+      frameworkId: "iso-27001-2022",
+      renderDate,
+      excerpt: { controlIds },
+    });
+    const text = extractPdfStreamText(report);
+    const { outline } = readPdfOutline(report);
+
+    expect(text).toContain("SAMPLE REPORT, FICTIONAL TENANT");
+    expect(text).toContain("detail pages are included for selected controls");
+    // The overview still lists every control with its real status.
+    for (const control of framework?.controls ?? [])
+      expect(text).toContain(`(${control.control.id}) Tj`);
+    // Only the excerpt controls get detail pages and bookmarks.
+    const detailEntries = outline.flatMap((node) =>
+      node.children.map((child) => child.title),
+    );
+    expect(detailEntries).toEqual(
+      (framework?.controls ?? [])
+        .filter((item) => controlIds.includes(item.control.id))
+        .map((item) => `${item.control.id} ${item.control.title}`),
+    );
+    // No disclaimer or contents page, no data basis section.
+    expect(text).not.toContain("Table of Contents");
+    expect(text).not.toContain("Data Basis and Scope");
+    expect(text).toContain("Methodology");
+
+    const appendixStart = text.lastIndexOf(
+      "(Appendix A: Evidence Register) Tj",
+    );
+    expect(appendixStart).toBeGreaterThan(0);
+    const bodyRefs = new Set(
+      text.slice(0, appendixStart).match(/E-\d{3}/g) ?? [],
+    );
+    const appendixRefs = new Set(
+      text.slice(appendixStart).match(/E-\d{3}/g) ?? [],
+    );
+    for (const ref of bodyRefs) expect(appendixRefs.has(ref)).toBe(true);
+    for (const ref of appendixRefs) expect(bodyRefs.has(ref)).toBe(true);
+
+    const pages = readPdfPageTexts(report).length;
+    expect(pages).toBeGreaterThanOrEqual(5);
+    expect(pages).toBeLessThanOrEqual(8);
+  });
+
+  it("applies branding colours", async () => {
+    const report = await generateComplianceReportPDF(createExportData(), {
+      frameworkId: "iso-27001-2022",
+      branding: {
+        colors: {
+          primary: "#AA0000",
+          secondary: "#00AA00",
+          accent: "#0000AA",
+          text: "#111111",
+        },
+      },
+    });
+    const text = extractPdfStreamText(report);
+    // 170 / 255 = 0.667: the cover band and headings use the brand colour.
+    expect(text).toContain("0.667 0. 0. rg");
+    expect(text).toContain("0. 0.667 0. rg");
+  });
+});
+
+describe("readable Graph property names", () => {
+  it("restores well-known product terms after humanizing", () => {
+    expect(readablePropertyName("bitLockerEnabled")).toBe("BitLocker Enabled");
+    expect(readablePropertyName("osMinimumVersion")).toBe("OS Minimum Version");
+    expect(readablePropertyName("fileVaultEnabled")).toBe("FileVault Enabled");
+    expect(readablePropertyName("passcodeMinimumLength")).toBe(
+      "Passcode Minimum Length",
+    );
+    // Word boundaries only: "Position" keeps its letters.
+    expect(readablePropertyName("pinPosition")).toBe("PIN Position");
+  });
+});
+
+it("never breaks German register types inside a word", async () => {
+  const text = extractPdfStreamText(
+    await generateComplianceReportPDF(createExportData(), {
+      frameworkId: "bsi-it-grundschutz",
+    }),
+  );
+  const register = text.slice(
+    text.lastIndexOf("(Anhang A: Nachweisverzeichnis) Tj"),
+  );
+  expect(register).toContain("(Einstellungskatalog) Tj");
+  expect(register).toContain("(Gerätekonformitätsrichtlinie) Tj");
+});
+
+it("renders fixed render dates in UTC with a UTC creation date", async () => {
+  const report = await generateComplianceReportPDF(createExportData(), {
+    frameworkId: "bsi-it-grundschutz",
+    // 23:30 UTC is already the next day east of UTC.
+    renderDate: new Date("2026-10-08T23:30:00Z"),
+  });
+  const raw = Buffer.from(report).toString("latin1");
+  expect(raw).toContain("/CreationDate (D:20261008233000+00'00')");
+  expect(extractPdfStreamText(report)).toContain("08.10.2026");
 });

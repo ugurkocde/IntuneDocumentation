@@ -3,6 +3,11 @@ import {
   DESKTOP_REFUND_DAYS,
   formatDesktopPrice,
 } from "~/lib/desktop-app";
+import {
+  SAMPLE_REPORTS,
+  sampleReportFor,
+  type SampleReport,
+} from "~/lib/compliance/samples";
 
 export const SAMPLE_REPORT_URL = "/api/pdf/sample";
 export const GITHUB_URL = "https://github.com/ugurkocde/IntuneDocumentation";
@@ -16,17 +21,20 @@ export const DESKTOP_STARTING_PRICE = formatDesktopPrice(
 export const CONSENT_ROLES =
   "a Global Administrator, Privileged Role Administrator, or Cloud Application Administrator";
 
-export const complianceFrameworks = [
-  "ISO/IEC 27001:2022",
-  "SOC 2",
-  "NIST SP 800-53",
-  "NIST SP 800-171",
-  "NIST CSF 2.0",
-  "BSI IT-Grundschutz",
-  "Def Stan 05-138",
-  "Cyber Essentials",
-  "ASD Essential Eight",
-];
+// Every supported framework ships a public sample report, so the sample
+// catalog doubles as the framework list and the two cannot drift apart.
+export const complianceFrameworks = SAMPLE_REPORTS.map(
+  (sample) => sample.label,
+);
+
+export const FEATURED_SAMPLE_REPORT = sampleReportFor("iso-27001-2022");
+
+// Plausible tagged-event class names, counted as a custom goal
+export const trackSampleReport = (frameworkId: string) =>
+  `plausible-event-name=Sample+Report+Open plausible-event-framework=${frameworkId}`;
+
+export const sampleReportLabel = (sample: SampleReport) =>
+  `View the ${sample.label} sample report (PDF${sample.locale === "de" ? ", in German" : ""})`;
 
 export const scopeDescriptions: Record<string, string> = {
   "User.Read":

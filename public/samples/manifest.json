@@ -1,0 +1,106 @@
+{
+  "rulesetVersion": "2026.10.2",
+  "fixtureHash": "94330bb547408687613a9f3fc4c89998892678f20bce16fc00e41b721c4ede5c",
+  "files": [
+    {
+      "frameworkId": "iso-27001-2022",
+      "file": "iso-27001-2022.pdf",
+      "locale": "en",
+      "reportId": "IDOC-ISO-20261008-CTSO",
+      "excerptControlIds": [
+        "8.24",
+        "8.20"
+      ]
+    },
+    {
+      "frameworkId": "nis2-2022-2555",
+      "file": "nis2.pdf",
+      "locale": "en",
+      "reportId": "IDOC-NIS2-20261008-CTSO",
+      "excerptControlIds": [
+        "21.2.h",
+        "21.2.b"
+      ]
+    },
+    {
+      "frameworkId": "soc2-tsc",
+      "file": "soc2.pdf",
+      "locale": "en",
+      "reportId": "IDOC-SOC-20261008-CTSO",
+      "excerptControlIds": [
+        "CC6.7",
+        "CC6.6"
+      ]
+    },
+    {
+      "frameworkId": "nist-800-53-r5",
+      "file": "nist-800-53-r5.pdf",
+      "locale": "en",
+      "reportId": "IDOC-N53-20261008-CTSO",
+      "excerptControlIds": [
+        "SC-28",
+        "SC-7"
+      ]
+    },
+    {
+      "frameworkId": "nist-800-171-r3",
+      "file": "nist-800-171-r3.pdf",
+      "locale": "en",
+      "reportId": "IDOC-N171R3-20261008-CTSO",
+      "excerptControlIds": [
+        "03.13.08",
+        "03.04.08"
+      ]
+    },
+    {
+      "frameworkId": "nist-csf-2",
+      "file": "nist-csf-2.pdf",
+      "locale": "en",
+      "reportId": "IDOC-CSF-20261008-CTSO",
+      "excerptControlIds": [
+        "PR.DS-01",
+        "PR.IR-01"
+      ]
+    },
+    {
+      "frameworkId": "cyber-essentials-v3",
+      "file": "cyber-essentials.pdf",
+      "locale": "en",
+      "reportId": "IDOC-CE-20261008-CTSO",
+      "excerptControlIds": [
+        "Security update management",
+        "Firewalls"
+      ]
+    },
+    {
+      "frameworkId": "essential-eight",
+      "file": "essential-eight-ml1.pdf",
+      "locale": "en",
+      "reportId": "IDOC-E8-20261008-CTSO",
+      "excerptControlIds": [
+        "ML1-MAC-01",
+        "ML1-PO-07"
+      ]
+    },
+    {
+      "frameworkId": "bsi-it-grundschutz",
+      "file": "bsi-it-grundschutz.pdf",
+      "locale": "de",
+      "reportId": "IDOC-BSI-20261008-CTSO",
+      "excerptControlIds": [
+        "SYS.2.2.3.A5",
+        "SYS.2.2.3.A4"
+      ]
+    },
+    {
+      "frameworkId": "def-stan-05-138-i4",
+      "file": "def-stan-05-138.pdf",
+      "locale": "en",
+      "reportId": "IDOC-DEF-20261008-CTSO",
+      "excerptControlIds": [
+        "2317",
+        "2426"
+      ]
+    }
+  ]
+}

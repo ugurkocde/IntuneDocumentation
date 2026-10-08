@@ -5,12 +5,28 @@
 ## Primary pages
 
 - [Product overview](https://intunedocumentation.com/): Features, security model, supported configuration areas, workflow, and frequently asked questions.
+- [Compliance evidence](https://intunedocumentation.com/compliance): Framework mapping for ISO/IEC 27001, NIS2, SOC 2, NIST, BSI IT-Grundschutz, Def Stan 05-138, Cyber Essentials, and ASD Essential Eight.
 - [Privacy policy](https://intunedocumentation.com/privacy-policy): Data access, transient processing, redaction, analytics, retention, and user rights.
 - [Sample report](https://intunedocumentation.com/api/pdf/sample): Example of the generated documentation format.
 - [Source code](https://github.com/ugurkocde/IntuneDocumentation): Application source, setup instructions, and self-hosting documentation.
 - [Self-hosting guide](https://github.com/ugurkocde/IntuneDocumentation#self-host-with-docker): Run the application with your own Microsoft Entra registration.
 - [Product changelog](https://changelog.ugurlabs.com): Public release and improvement history.
 - [About Ugurlabs](https://ugurlabs.com/about): Information about the organization maintaining the service.
+
+## Sample compliance evidence reports
+
+Short PDF excerpts of compliance evidence reports for the fictional tenant Contoso Ltd. Overview: [Sample reports](https://intunedocumentation.com/compliance#samples).
+
+- [ISO/IEC 27001:2022 sample report](https://intunedocumentation.com/samples/iso-27001-2022.pdf): Evidence report excerpt.
+- [NIS2 Directive sample report](https://intunedocumentation.com/samples/nis2.pdf): Evidence report excerpt.
+- [SOC 2 sample report](https://intunedocumentation.com/samples/soc2.pdf): Evidence report excerpt.
+- [NIST SP 800-53 sample report](https://intunedocumentation.com/samples/nist-800-53-r5.pdf): Evidence report excerpt.
+- [NIST SP 800-171 sample report](https://intunedocumentation.com/samples/nist-800-171-r3.pdf): Evidence report excerpt.
+- [NIST CSF 2.0 sample report](https://intunedocumentation.com/samples/nist-csf-2.pdf): Evidence report excerpt.
+- [Cyber Essentials sample report](https://intunedocumentation.com/samples/cyber-essentials.pdf): Evidence report excerpt.
+- [ASD Essential Eight sample report](https://intunedocumentation.com/samples/essential-eight-ml1.pdf): Evidence report excerpt.
+- [BSI IT-Grundschutz sample report](https://intunedocumentation.com/samples/bsi-it-grundschutz.pdf): Evidence report excerpt, in German.
+- [Def Stan 05-138 sample report](https://intunedocumentation.com/samples/def-stan-05-138.pdf): Evidence report excerpt.
 
 ## Important facts
 

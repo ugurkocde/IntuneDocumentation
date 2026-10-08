@@ -75,6 +75,16 @@ export function ReportShowcase() {
             <Download className="h-4 w-4" />
             Download the full sample report (PDF)
           </a>
+          <p className="mt-4 text-sm leading-6 text-white/70">
+            Preparing for an audit?{" "}
+            <a
+              href="#compliance"
+              className="cursor-pointer font-semibold text-teal-500 underline decoration-teal-500/40 underline-offset-2 hover:text-white focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:outline-none"
+            >
+              See sample compliance evidence reports
+            </a>{" "}
+            for ISO 27001, NIS2, SOC 2, and more.
+          </p>
         </div>
 
         <div className="relative mx-auto aspect-[5/5] w-full max-w-[480px]">

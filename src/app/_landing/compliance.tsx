@@ -1,6 +1,11 @@
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check, FileText } from "lucide-react";
 import Link from "next/link";
-import { complianceFrameworks } from "./content";
+import { SAMPLE_REPORTS, sampleReportUrl } from "~/lib/compliance/samples";
+import {
+  FEATURED_SAMPLE_REPORT,
+  sampleReportLabel,
+  trackSampleReport,
+} from "./content";
 import { buttonStyles, Section, SectionHeading } from "./primitives";
 
 const principles = [
@@ -35,23 +40,54 @@ export function Compliance() {
               </li>
             ))}
           </ul>
-          <Link href="/compliance" className={`${buttonStyles.secondary} mt-8`}>
-            How compliance mapping works
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="mt-8 flex flex-wrap gap-3">
+            {FEATURED_SAMPLE_REPORT && (
+              <a
+                href={sampleReportUrl(FEATURED_SAMPLE_REPORT)}
+                target="_blank"
+                rel="noopener"
+                className={`${buttonStyles.primary} ${trackSampleReport(FEATURED_SAMPLE_REPORT.frameworkId)}`}
+              >
+                <FileText className="h-4 w-4" aria-hidden="true" />
+                View a sample ISO 27001 evidence report
+              </a>
+            )}
+            <Link href="/compliance" className={buttonStyles.secondary}>
+              How compliance mapping works
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
         </div>
 
         <div className="border-petrol-950/6 shadow-card rounded-3xl border bg-white p-6 sm:p-8">
           <p className="text-petrol-600 text-[10px] font-semibold tracking-[0.14em] uppercase">
             Supported frameworks
           </p>
+          <p className="text-petrol-600 mt-2 text-sm leading-6">
+            Open any framework to see its sample evidence report for the
+            fictional tenant Contoso Ltd.
+          </p>
           <ul className="mt-5 flex flex-wrap gap-2">
-            {complianceFrameworks.map((name) => (
-              <li
-                key={name}
-                className="border-petrol-950/8 bg-surface text-petrol-800 rounded-full border px-3.5 py-2 text-sm font-medium"
-              >
-                {name}
+            {SAMPLE_REPORTS.map((sample) => (
+              <li key={sample.frameworkId}>
+                <a
+                  href={sampleReportUrl(sample)}
+                  target="_blank"
+                  rel="noopener"
+                  aria-label={sampleReportLabel(sample)}
+                  className={`border-petrol-950/8 bg-surface text-petrol-800 inline-flex min-h-11 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors hover:border-teal-600/30 hover:bg-white hover:text-teal-700 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${trackSampleReport(sample.frameworkId)}`}
+                >
+                  <FileText
+                    className="h-3.5 w-3.5 shrink-0 text-teal-700"
+                    aria-hidden="true"
+                  />
+                  {sample.label}
+                  {sample.locale === "de" && (
+                    <span className="text-petrol-600 text-[10px] font-semibold tracking-[0.1em] uppercase">
+                      DE
+                    </span>
+                  )}
+                </a>
               </li>
             ))}
           </ul>

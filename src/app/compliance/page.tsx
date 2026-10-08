@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { FileText } from "lucide-react";
+import type { ComplianceFrameworkId } from "~/lib/compliance/report-pdf";
+import {
+  SAMPLE_REPORTS,
+  sampleReportFor,
+  sampleReportUrl,
+} from "~/lib/compliance/samples";
+import { sampleReportLabel, trackSampleReport } from "../_landing/content";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { BackToTopButton } from "~/components/back-to-top-button";
@@ -7,64 +15,98 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Audit-ready evidence reports, generated from your tenant documentation.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Sample reports for every framework are free to view.",
     url: "/compliance",
     type: "website",
   },
 };
 
-const frameworks = [
+const sampleDescriptions: Partial<Record<ComplianceFrameworkId, string>> = {
+  "iso-27001-2022": "Annex A technology controls with cited policy evidence.",
+  "nis2-2022-2555": "The Article 21(2) risk management measures.",
+  "soc2-tsc": "Trust Services Criteria mapped to device configuration.",
+  "nist-800-53-r5": "Rev. 5 controls such as SC-28, SI-3 and IA-5.",
+  "nist-800-171-r3": "Rev. 3 requirements for protecting CUI.",
+  "nist-csf-2": "Protect and Detect subcategories.",
+  "cyber-essentials-v3": "The five Cyber Essentials control themes.",
+  "essential-eight": "All eight strategies at Maturity Level 1.",
+  "bsi-it-grundschutz":
+    "Grundschutz-Check for the client Bausteine. This report is in German.",
+  "def-stan-05-138-i4": "Objective B controls for defence suppliers.",
+};
+
+const frameworks: {
+  id: ComplianceFrameworkId;
+  name: string;
+  detail: string;
+}[] = [
   {
+    id: "essential-eight",
     name: "ASD Essential Eight (Maturity Levels 1, 2 and 3)",
     detail:
       "Choose a target maturity level in the dashboard. All eight strategies are included, with 48, 107 and 149 requirement entries for Levels 1, 2 and 3 respectively, based on ASD’s November 2023 model. Supporting Intune evidence is mapped to 3, 8 and 10 requirements respectively. Other requirements remain explicitly unassessed; the tool does not calculate an achieved maturity level.",
   },
   {
+    id: "iso-27001-2022",
     name: "ISO/IEC 27001:2022",
     detail:
       "Selected Annex A technology controls are mapped to managed-device configuration evidence by control number.",
   },
   {
+    id: "nis2-2022-2555",
+    name: "NIS2 Directive (EU) 2022/2555",
+    detail:
+      "The ten cybersecurity risk management measures of Article 21(2), each cross-referenced to the German BSIG and the Danish NIS 2-loven. Technical measures receive supporting Intune evidence; governance measures remain a manual assessment.",
+  },
+  {
+    id: "soc2-tsc",
     name: "SOC 2",
     detail:
       "Selected Trust Services Criteria are mapped to managed-device configuration evidence by criterion ID.",
   },
   {
+    id: "nist-800-53-r5",
     name: "NIST SP 800-53 (Rev. 5)",
     detail:
       "Technical evidence for controls such as SC-28 (protection of information at rest), SI-3 (malicious code protection), and IA-5 (authenticator management).",
   },
   {
+    id: "nist-csf-2",
     name: "NIST Cybersecurity Framework 2.0",
     detail:
       "Evidence for Protect and Detect subcategories, from PR.DS-01 (data-at-rest protection) to DE.CM-09 (endpoint monitoring).",
   },
   {
+    id: "def-stan-05-138-i4",
     name: "UK MOD Def Stan 05-138 (Issue 4)",
     detail:
       "Selected Objective B controls for defence suppliers under DEFCON 658, referenced by control identifier with the Cyber Risk Profile levels at which each applies.",
   },
   {
+    id: "cyber-essentials-v3",
     name: "NCSC Cyber Essentials",
     detail:
       "The five control themes (firewalls, secure configuration, security update management, user access control, malware protection) mapped to managed-device configuration evidence.",
   },
   {
+    id: "nist-800-171-r2",
     name: "NIST SP 800-171 (Rev. 2)",
     detail:
       "Supporting Intune evidence for 12 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
   },
   {
+    id: "nist-800-171-r3",
     name: "NIST SP 800-171 (Rev. 3)",
     detail:
       "Supporting Intune evidence for 11 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
   },
   {
+    id: "bsi-it-grundschutz",
     name: "BSI IT-Grundschutz",
     detail:
       "Requirement-level mapping (A-Anforderungen) for the client Bausteine SYS.2.2.3, SYS.2.4, SYS.3.2.1, and SYS.3.2.2, verified against the Kompendium Edition 2023, with Basis, Standard, and erhöhter Schutzbedarf tiers. Only technically assessable requirements are mapped; organizational requirements remain a manual assessment.",
@@ -144,23 +186,75 @@ export default function CompliancePage() {
             evidence.
           </p>
 
+          <section id="samples" className="mb-12 scroll-mt-24">
+            <h2 className="mb-2 text-xl font-semibold text-slate-900">
+              Sample reports
+            </h2>
+            <p className="mb-5 text-sm leading-relaxed text-slate-600">
+              See what your auditor receives before you connect a tenant. Each
+              sample is a short excerpt of a real evidence report, generated for
+              the fictional tenant Contoso Ltd.
+            </p>
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {SAMPLE_REPORTS.map((sample) => (
+                <li
+                  key={sample.frameworkId}
+                  className="flex flex-col rounded-lg border border-slate-200 p-4"
+                >
+                  <h3 className="font-semibold text-slate-900">
+                    {sample.label}
+                  </h3>
+                  <p className="mt-1 mb-3 text-sm leading-relaxed text-slate-600">
+                    {sampleDescriptions[sample.frameworkId] ??
+                      "Excerpt of the evidence report for Contoso Ltd."}
+                  </p>
+                  <a
+                    href={sampleReportUrl(sample)}
+                    target="_blank"
+                    rel="noopener"
+                    className={`mt-auto inline-flex min-h-11 items-center gap-2 self-start text-sm font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${trackSampleReport(sample.frameworkId)}`}
+                  >
+                    <FileText className="h-4 w-4" aria-hidden="true" />
+                    View sample (PDF)
+                    <span className="sr-only">: {sample.label}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+
           <h2 className="mb-4 text-xl font-semibold text-slate-900">
             Supported frameworks
           </h2>
           <ul className="mb-10 space-y-4">
-            {frameworks.map((framework) => (
-              <li
-                key={framework.name}
-                className="rounded-lg border border-slate-200 p-4"
-              >
-                <h3 className="font-semibold text-slate-900">
-                  {framework.name}
-                </h3>
-                <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                  {framework.detail}
-                </p>
-              </li>
-            ))}
+            {frameworks.map((framework) => {
+              const sample = sampleReportFor(framework.id);
+              return (
+                <li
+                  key={framework.id}
+                  className="rounded-lg border border-slate-200 p-4"
+                >
+                  <h3 className="font-semibold text-slate-900">
+                    {framework.name}
+                  </h3>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                    {framework.detail}
+                  </p>
+                  {sample && (
+                    <a
+                      href={sampleReportUrl(sample)}
+                      target="_blank"
+                      rel="noopener"
+                      aria-label={sampleReportLabel(sample)}
+                      className={`mt-2 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${trackSampleReport(sample.frameworkId)}`}
+                    >
+                      <FileText className="h-4 w-4" aria-hidden="true" />
+                      Sample report
+                    </a>
+                  )}
+                </li>
+              );
+            })}
           </ul>
 
           <h2 className="mb-4 text-xl font-semibold text-slate-900">

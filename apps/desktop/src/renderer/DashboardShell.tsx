@@ -31,12 +31,7 @@ export function DashboardShell() {
         <div className="@container mx-auto max-w-[1400px] px-8 pt-10 pb-12">
           <div key={`${screen}-${activeFamilyKey ?? ""}`} className="animate-fade-in-up">
             {screen === "overview" && <OverviewScreen />}
-            {screen === "searchSettings" && (
-              // Remount per collection so a sign-out or tenant switch drops the old search.
-              <SearchSettingsScreen
-                key={state.collection.summary?.collectedAt ?? "none"}
-              />
-            )}
+            {screen === "searchSettings" && <SearchSettingsScreen />}
             {screen === "section" && <SectionDetailScreen />}
             {screen === "compliance" && <ComplianceScreen />}
             {screen === "export" && <ExportScreen />}

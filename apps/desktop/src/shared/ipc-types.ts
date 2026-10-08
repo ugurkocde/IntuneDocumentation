@@ -180,6 +180,10 @@ export interface SettingSearchHit {
   category: string | null;
 }
 
+// IPC errors reach the renderer as a message only, so the search names the
+// one failure the renderer can act on.
+export const SEARCH_NEEDS_COLLECTION = "Collect tenant data first.";
+
 export interface SettingsSearchFacet {
   value: string;
   count: number;

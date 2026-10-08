@@ -582,4 +582,31 @@ describe("SearchSettingsScreen", () => {
     );
     height.mockRestore();
   });
+
+  it("collapses a reused row when a new collection changes its value", async () => {
+    const height = vi
+      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.textContent?.startsWith("Long value") ? 400 : 0;
+      });
+    let value = "Long value ".repeat(80);
+    mocks.state.current = appState(true);
+    mocks.search.mockImplementation(async (request: SettingsSearchRequest) =>
+      result(request, [hit({ value })]),
+    );
+    renderScreen();
+    await type("bitlocker");
+    await settle();
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Show full value" })),
+    );
+    expect(screen.getByRole("button", { name: "Show less" })).toBeTruthy();
+
+    value = "Enabled";
+    await rerender(appState(true, "2026-10-08T10:00:00Z"));
+    await settle();
+    expect(screen.queryByRole("button", { name: "Show less" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show full value" })).toBeNull();
+    height.mockRestore();
+  });
 });

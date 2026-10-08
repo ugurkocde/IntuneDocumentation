@@ -222,6 +222,12 @@ function HitValue({
   const id = useId();
   const [clamped, setClamped] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // A refresh in place can reuse this row for another value: start collapsed.
+  const [shownValue, setShownValue] = useState(value);
+  if (shownValue !== value) {
+    setShownValue(value);
+    setExpanded(false);
+  }
   useLayoutEffect(() => {
     const node = text.current;
     // An expanded value keeps its toggle.

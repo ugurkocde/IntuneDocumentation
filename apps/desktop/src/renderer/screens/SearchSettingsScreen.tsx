@@ -320,7 +320,8 @@ function PolicyCard({
   const family = familyLabel(first);
   return (
     <article
-      className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white"
+      // Scroll margin keeps a focused control clear of the sticky search bar.
+      className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white [&_button]:scroll-mt-24"
       aria-label={`${first.policyName}, ${family}`}
     >
       <div className="border-petrol-950/6 flex items-start gap-3 border-b px-5 py-3">

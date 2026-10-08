@@ -31,10 +31,12 @@ import { AuthService } from "./auth";
 import {
   clearCollection,
   collectAll,
+  getCollectionOwner,
   getLastCollection,
   getLastSummary,
   getSectionItems,
 } from "./collect";
+import { searchSettingsIndex, settingsIndexFor } from "./search-index";
 import {
   DEFAULT_SCOPES,
   HELP_URLS,
@@ -809,6 +811,39 @@ function registerIpc(): void {
       throw new Error("Unknown section.");
     }
     return getSectionItems(key, auth?.getOwnerKey() ?? null);
+  });
+
+  // Searches the settings of the last collection; only matching rows leave
+  // the main process.
+  handle("collect:searchSettings", (_event, request) => {
+    const owner = auth?.getOwnerKey() ?? null;
+    const collection = getLastCollection();
+    if (!collection || !owner || getCollectionOwner() !== owner) {
+      throw new Error("Collect tenant data first.");
+    }
+    const input =
+      typeof request === "object" && request !== null
+        ? (request as Record<string, unknown>)
+        : {};
+    const list = (value: unknown) =>
+      Array.isArray(value)
+        ? value
+            .filter(
+              (entry): entry is string =>
+                typeof entry === "string" && entry.length <= 100,
+            )
+            .slice(0, 50)
+        : undefined;
+    const query = typeof input.query === "string" ? input.query.slice(0, 200) : "";
+    const index = settingsIndexFor(collection, (section) =>
+      getSectionItems(section.key, owner),
+    );
+    return searchSettingsIndex(index, {
+      query,
+      families: list(input.families),
+      platforms: list(input.platforms),
+      limit: typeof input.limit === "number" ? input.limit : undefined,
+    });
   });
 
   // Configuration exports never include compliance evidence, whatever the

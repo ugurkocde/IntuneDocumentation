@@ -9,6 +9,14 @@ import {
 } from "../../../../src/lib/configuration-sections";
 import { estimatePdfPageCount } from "../../../../src/lib/pdf-page-estimate";
 import type { DetailedExportData } from "../../../../src/lib/configuration-analyzer";
+import {
+  classifyItem,
+  collectionBreakdown,
+  errorFamilyKey,
+  sectionCount,
+  sectionFamilyKey,
+  sectionLabel,
+} from "./classify";
 import type {
   FullCollectionSummary,
   PdfEstimate,
@@ -90,17 +98,12 @@ export async function collectAll(
     const summary: FullCollectionSummary = {
       collectedAt: data.collectedAt,
       totalConfigurations: data.summary.totalConfigurations,
-      sectionCounts: data.sections.map((section) => ({
-        key: section.key,
-        familyKey: section.familyKey,
-        label: section.label,
-        count: section.items.length,
-        ...(section.error ? { error: section.error.message } : {}),
-      })),
+      sectionCounts: data.sections.map(sectionCount),
+      breakdown: collectionBreakdown(data.sections),
       fetchErrors: data.fetchErrors.map((error) => ({
         policyName: error.policyName,
         policyType: error.policyType,
-        familyKey: error.familyKey,
+        familyKey: errorFamilyKey(data.sections, error),
         error: error.error,
         permissionHint: error.permissionHint,
       })),
@@ -132,10 +135,11 @@ function text(value: unknown): string | null {
 }
 
 function summarizeItem(
-  section: { key: string; label: string },
+  section: { key: string; familyKey: string; label: string },
   item: Record<string, unknown>,
   index: number,
 ): SectionItemSummary {
+  const classification = classifyItem(section, item);
   const assignments = Array.isArray(item.assignments)
     ? (item.assignments as Array<{ target?: Record<string, unknown> }>)
     : null;
@@ -166,6 +170,8 @@ function summarizeItem(
       ),
     ),
     hasFetchError: item.hasFetchError === true,
+    familyKey: classification.familyKey,
+    ...(classification.microsoftDefault ? { microsoftDefault: true } : {}),
   };
 }
 
@@ -183,8 +189,8 @@ export function getSectionItems(
   }
   return {
     key: section.key,
-    familyKey: section.familyKey,
-    label: section.label,
+    familyKey: sectionFamilyKey(section),
+    label: sectionLabel(section),
     error: section.error?.message ?? null,
     items: section.items.map((item, index) =>
       summarizeItem(section, item as Record<string, unknown>, index),

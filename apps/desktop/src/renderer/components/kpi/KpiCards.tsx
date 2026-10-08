@@ -1,5 +1,17 @@
-import { AlertTriangle, CheckCircle2, Files, Layers3, LoaderCircle, ShieldAlert, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  BadgeInfo,
+  CheckCircle2,
+  Files,
+  Layers3,
+  LoaderCircle,
+  Package,
+  ShieldAlert,
+  ShieldCheck,
+  UserCog,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { CollectionBreakdown } from "../../../shared/ipc-types";
 
 interface KpiCardProps {
   icon: LucideIcon;
@@ -54,6 +66,7 @@ function plural(count: number, one: string, many: string): string {
 
 export function KpiCards({
   configurations,
+  breakdown,
   sections,
   families,
   warnings,
@@ -62,8 +75,13 @@ export function KpiCards({
   onShowFamilies,
   onShowWarnings,
   onShowPermissionGaps,
+  onShowApps,
+  onShowRbac,
 }: {
+  // Every collected item, as documented in a whole tenant export.
   configurations: number;
+  // Missing on summaries from older builds; the headline then shows every item.
+  breakdown?: CollectionBreakdown;
   sections: number;
   families: number;
   warnings: number;
@@ -72,19 +90,26 @@ export function KpiCards({
   onShowFamilies?: () => void;
   onShowWarnings?: () => void;
   onShowPermissionGaps?: () => void;
+  onShowApps?: () => void;
+  onShowRbac?: () => void;
 }) {
   // Drill downs are off while collecting and for zero values.
   const drill = (count: number, handler: (() => void) | undefined) =>
     !loading && count > 0 ? handler : undefined;
-  return (
+  const headline = breakdown?.policies ?? configurations;
+  const summaryCards = (
     <section aria-label="Collection summary" className="grid grid-cols-2 gap-3 @3xl:grid-cols-4">
       <KpiCard
         icon={Files}
-        label="Configurations"
-        value={configurations.toLocaleString()}
-        hint="Policies and profiles"
-        onClick={drill(configurations, onShowFamilies)}
-        actionLabel={`Show ${plural(configurations, "configuration", "configurations")} by family`}
+        label={breakdown ? "Policies and profiles" : "Configurations"}
+        value={headline.toLocaleString()}
+        hint={breakdown ? `Of ${plural(configurations, "collected item", "collected items")}` : "Policies and profiles"}
+        onClick={drill(headline, onShowFamilies)}
+        actionLabel={
+          breakdown
+            ? `Show ${plural(headline, "policy or profile", "policies and profiles")} by family`
+            : `Show ${plural(configurations, "configuration", "configurations")} by family`
+        }
       />
       <KpiCard
         icon={Layers3}
@@ -114,5 +139,42 @@ export function KpiCards({
         actionLabel={`Show ${plural(permissionGaps, "permission gap", "permission gaps")}`}
       />
     </section>
+  );
+  if (!breakdown) return summaryCards;
+  const unassigned = breakdown.apps - breakdown.appsAssigned;
+  return (
+    <>
+      {summaryCards}
+      <section aria-label="Also collected" className="grid grid-cols-1 gap-3 @3xl:grid-cols-3">
+        <KpiCard
+          icon={Package}
+          label="Apps"
+          value={breakdown.apps.toLocaleString()}
+          hint={`${breakdown.appsAssigned.toLocaleString()} assigned, ${unassigned.toLocaleString()} unassigned`}
+          onClick={drill(breakdown.apps, onShowApps)}
+          actionLabel={`Show ${plural(breakdown.apps, "app", "apps")}, ${breakdown.appsAssigned.toLocaleString()} assigned`}
+        />
+        <KpiCard
+          icon={UserCog}
+          label="Assignment and RBAC"
+          value={breakdown.rbac.toLocaleString()}
+          hint="Roles, scope tags, filters and reusable settings"
+          onClick={drill(breakdown.rbac, onShowRbac)}
+          actionLabel={`Show ${plural(breakdown.rbac, "assignment and RBAC item", "assignment and RBAC items")}`}
+        />
+        <KpiCard
+          icon={BadgeInfo}
+          label="Microsoft defaults"
+          value={breakdown.microsoftDefaults.toLocaleString()}
+          hint={
+            breakdown.microsoftDefaultsInRbac > 0
+              ? `Created by Microsoft, ${breakdown.microsoftDefaultsInRbac.toLocaleString()} of them in RBAC`
+              : "Created by Microsoft, still documented"
+          }
+          onClick={drill(breakdown.microsoftDefaults, onShowFamilies)}
+          actionLabel={`Show which families hold the ${plural(breakdown.microsoftDefaults, "Microsoft default", "Microsoft defaults")}`}
+        />
+      </section>
+    </>
   );
 }

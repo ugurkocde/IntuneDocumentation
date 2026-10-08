@@ -330,7 +330,7 @@ export function ExportPanel() {
             <div role="radiogroup" aria-labelledby="export-scope-label" className="grid gap-3 @2xl:grid-cols-2">
               <FormatOption
                 label="Whole tenant"
-                description={`All ${total.toLocaleString()} configurations from the last collection.`}
+                description={`All ${total.toLocaleString()} collected ${total === 1 ? "item" : "items"}, apps and Microsoft defaults included.`}
                 icon={<Building2 className="h-5 w-5" />}
                 selected={!exportsSelection}
                 onClick={() => patch({ scope: "tenant" })}

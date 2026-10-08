@@ -21,7 +21,12 @@ import { Header } from "../components/layout/Header";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { useAsyncAction } from "../hooks/use-async-action";
-import { FAMILIES, familyCounts } from "../lib/section-catalog";
+import {
+  FAMILIES,
+  familyCounts,
+  familyMicrosoftDefaults,
+  sectionsForFamily,
+} from "../lib/section-catalog";
 import { useApp } from "../state/context";
 import { DisclosureSummary } from "../components/ui/DisclosureSummary";
 import { ipc } from "../lib/ipc";
@@ -206,6 +211,7 @@ function FamilyBreakdown() {
   const summary = state.collection.summary;
   if (!summary) return null;
   const counts = familyCounts(summary.sectionCounts);
+  const defaults = familyMicrosoftDefaults(summary.sectionCounts);
   const rows = FAMILIES.filter((family) => (counts[family.key] ?? 0) > 0).sort(
     (a, b) => (counts[b.key] ?? 0) - (counts[a.key] ?? 0),
   );
@@ -216,10 +222,13 @@ function FamilyBreakdown() {
         <ListChecks className="h-[18px] w-[18px] text-teal-700" aria-hidden="true" />
         <h2 id="family-breakdown-title" className="text-petrol-950 text-sm font-semibold">By configuration family</h2>
       </div>
-      <p className="text-petrol-600 mt-1.5 text-xs">Select a family to browse its items.</p>
+      <p className="text-petrol-600 mt-1.5 text-xs">
+        Select a family to browse its items. Counts include every collected item, Microsoft defaults too.
+      </p>
       <div className="mt-4 grid gap-x-6 gap-y-1 @3xl:grid-cols-2">
         {rows.map((family) => {
           const count = counts[family.key] ?? 0;
+          const microsoftDefaults = defaults[family.key] ?? 0;
           return (
             <button
               type="button"
@@ -231,7 +240,16 @@ function FamilyBreakdown() {
               <span className="min-w-0 flex-1">
                 <span className="mb-1.5 flex items-center justify-between gap-3">
                   <span className="text-petrol-700 truncate text-xs font-medium group-hover:text-teal-700">{family.label}</span>
-                  <span className="text-petrol-600 shrink-0 text-[11px] font-semibold tabular-nums">{count.toLocaleString()}</span>
+                  <span className="text-petrol-600 shrink-0 text-[11px] tabular-nums">
+                    {microsoftDefaults > 0 && (
+                      <span className="mr-2 font-normal" title="Created by Microsoft, still documented and exported">
+                        {microsoftDefaults.toLocaleString()} <span className="sr-only">Microsoft </span>
+                        {microsoftDefaults === 1 ? "default" : "defaults"}
+                        <span className="sr-only">, total</span>
+                      </span>
+                    )}
+                    <span className="font-semibold">{count.toLocaleString()}</span>
+                  </span>
                 </span>
                 <span className="bg-mint-100 block h-1.5 overflow-hidden rounded-full" aria-hidden="true">
                   <span
@@ -409,6 +427,7 @@ export function OverviewScreen() {
         <>
           <KpiCards
             configurations={summary.totalConfigurations}
+            breakdown={summary.breakdown}
             sections={summary.sectionCounts.filter((section) => section.count > 0).length}
             families={Object.values(counts).filter((count) => count > 0).length}
             warnings={summary.fetchErrors.length}
@@ -423,14 +442,28 @@ export function OverviewScreen() {
                 .find(
                   (key) =>
                     key !== undefined &&
-                    summary.sectionCounts.some(
-                      (section) => section.familyKey === key && (section.count > 0 || Boolean(section.error)),
+                    sectionsForFamily(summary.sectionCounts, key).some(
+                      (section) => section.count > 0 || Boolean(section.error),
                     ),
                 );
               if (familyKey) dispatch({ type: "navigate", screen: "section", familyKey, filter: "errors" });
               else revealSection("collection-warnings");
             }}
             onShowPermissionGaps={() => revealSection("permission-gaps")}
+            onShowApps={() =>
+              dispatch({
+                type: "navigate",
+                screen: "section",
+                familyKey: "applications",
+              })
+            }
+            onShowRbac={() =>
+              dispatch({
+                type: "navigate",
+                screen: "section",
+                familyKey: "assignmentAndRbac",
+              })
+            }
           />
           <Warnings />
           <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.8fr)]">

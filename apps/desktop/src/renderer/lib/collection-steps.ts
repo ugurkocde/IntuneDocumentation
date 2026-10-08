@@ -17,7 +17,7 @@ const CANONICAL: Array<{ key: string; label: string }> = [
   { key: "Settings Catalog", label: "Settings Catalog" },
   { key: "Device Configurations", label: "Device configurations" },
   { key: "Administrative Templates", label: "Administrative templates" },
-  { key: "Security Baselines", label: "Security baselines" },
+  { key: "Security Baselines", label: "Endpoint security (legacy templates)" },
   { key: "Compliance Policies", label: "Compliance policies" },
   { key: "App Protection Policies", label: "App protection policies" },
   { key: "Scripts", label: "Scripts" },

@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Settings,
   Shield,
+  ShieldCheck,
+  ShieldHalf,
   UserCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -23,10 +25,12 @@ export interface FamilyMeta {
 // stay visible, long tail coverage sits behind "More coverage".
 export const FAMILIES: FamilyMeta[] = [
   { key: "settingsCatalog", label: "Settings Catalog", icon: Settings, group: "core" },
+  // Settings Catalog policies made from endpoint security or baseline templates.
+  { key: "endpointSecurityPolicies", label: "Endpoint security", icon: ShieldCheck, group: "core" },
+  { key: "securityBaselinePolicies", label: "Security baselines", icon: ShieldHalf, group: "core" },
   { key: "deviceConfigurations", label: "Device Configs", icon: Laptop, group: "core" },
   { key: "administrativeTemplates", label: "Admin Templates", icon: FileText, group: "core" },
   { key: "conditionalAccessPolicies", label: "Conditional Access", icon: Shield, group: "core" },
-  { key: "securityBaselines", label: "Security Baselines", icon: Shield, group: "core" },
   { key: "compliancePolicies", label: "Compliance", icon: CheckSquare, group: "core" },
   { key: "appProtectionPolicies", label: "App Protection", icon: Shield, group: "core" },
   { key: "scripts", label: "Scripts", icon: Code, group: "core" },
@@ -34,6 +38,8 @@ export const FAMILIES: FamilyMeta[] = [
   { key: "windowsUpdatePolicies", label: "Windows Update", icon: RefreshCw, group: "core" },
   { key: "enrollmentConfigurations", label: "Enrollment", icon: UserCheck, group: "core" },
   { key: "windowsUpdateProfiles", label: "Update profiles", icon: RefreshCw, group: "extended" },
+  // Legacy /deviceManagement/intents, mostly endpoint security templates.
+  { key: "securityBaselines", label: "Endpoint security (legacy templates)", icon: Shield, group: "extended" },
   { key: "scriptsAndRemediations", label: "Scripts and remediation", icon: Code, group: "extended" },
   { key: "enrollmentAndProvisioning", label: "Provisioning", icon: UserCheck, group: "extended" },
   { key: "applications", label: "Applications", icon: Package, group: "extended" },
@@ -47,14 +53,64 @@ export function familyMeta(key: string | null): FamilyMeta | undefined {
   return FAMILIES.find((family) => family.key === key);
 }
 
+// A section as shown under one family. A section split across families
+// shows only the items of that family.
+export interface FamilySection extends SectionCount {
+  itemFamilyKey?: string;
+}
+
+function familyParts(section: SectionCount): Array<{ familyKey: string; count: number; microsoftDefaults: number }> {
+  return section.families
+    ? section.families.map((part) => ({ ...part, microsoftDefaults: part.microsoftDefaults ?? 0 }))
+    : [{ familyKey: section.familyKey, count: section.count, microsoftDefaults: section.microsoftDefaults ?? 0 }];
+}
+
 export function familyCounts(
   sections: SectionCount[] | undefined,
 ): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const section of sections ?? []) {
-    counts[section.familyKey] = (counts[section.familyKey] ?? 0) + section.count;
+    for (const part of familyParts(section)) {
+      counts[part.familyKey] = (counts[part.familyKey] ?? 0) + part.count;
+    }
   }
   return counts;
+}
+
+export function familyMicrosoftDefaults(
+  sections: SectionCount[] | undefined,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const section of sections ?? []) {
+    for (const part of familyParts(section)) {
+      if (part.microsoftDefaults) {
+        counts[part.familyKey] = (counts[part.familyKey] ?? 0) + part.microsoftDefaults;
+      }
+    }
+  }
+  return counts;
+}
+
+export function sectionsForFamily(
+  sections: SectionCount[] | undefined,
+  familyKey: string | null,
+): FamilySection[] {
+  return (sections ?? []).flatMap((section): FamilySection[] => {
+    if (!section.families) return section.familyKey === familyKey ? [section] : [];
+    const part = section.families.find((entry) => entry.familyKey === familyKey);
+    if (!part) return [];
+    return [
+      {
+        ...section,
+        familyKey: part.familyKey,
+        count: part.count,
+        microsoftDefaults: part.microsoftDefaults,
+        itemFamilyKey: part.familyKey,
+        // Load errors belong to the whole section and show once, under its own family.
+        error: part.familyKey === section.familyKey ? section.error : undefined,
+      },
+    ];
+  });
 }
 
 const WORD_PATTERN = /[A-Z]{2,}(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+|[A-Z]+/g;

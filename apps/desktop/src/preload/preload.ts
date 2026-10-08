@@ -38,6 +38,7 @@ const api: IntunedocApi = {
   collectCancel: () => invoke("collect:cancel"),
   collectSectionItems: (key) => invoke("collect:sectionItems", key),
   collectLast: () => invoke("collect:last"),
+  collectSearchSettings: (request) => invoke("collect:searchSettings", request),
   prepareExport: (options) => invoke("export:prepare", options),
   estimateExport: (scope) => invoke("export:estimate", scope),
   licenseStatus: () => invoke("license:status"),

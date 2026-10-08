@@ -15,6 +15,7 @@ import type { CollectionStep } from "../lib/collection-steps";
 
 export type Screen =
   | "overview"
+  | "searchSettings"
   | "section"
   | "compliance"
   | "export"
@@ -91,6 +92,10 @@ export interface AppState {
   activeFamilyKey: string | null;
   // Set only by a navigation that asks for it; any other navigation clears it.
   activeSectionFilter: SectionFilter | null;
+  // Initial search text of a section screen, for example the policy picked
+  // in Search settings. Cleared like the filter.
+  activeSectionQuery: string | null;
+  settingsSearch: SettingsSearchState;
   sidebarOpen: boolean;
   collection: CollectionState;
   sections: Record<string, SectionItemsResult>;
@@ -98,6 +103,12 @@ export interface AppState {
   selection: Record<string, SelectedItem>;
   exportState: ExportState;
   compliance: ComplianceState;
+}
+
+export interface SettingsSearchState {
+  query: string;
+  families: string[];
+  platforms: string[];
 }
 
 export type Action =
@@ -115,6 +126,7 @@ export type Action =
       screen: Screen;
       familyKey?: string | null;
       filter?: SectionFilter | null;
+      query?: string | null;
     }
   | { type: "sectionFilter"; filter: SectionFilter | null }
   | { type: "sidebar"; open: boolean }
@@ -130,6 +142,7 @@ export type Action =
   | { type: "collectFailed"; error: string }
   | { type: "toast"; toast: ToastState }
   | { type: "resetCollection" }
+  | { type: "settingsSearch"; search: SettingsSearchState }
   | { type: "sectionLoaded"; result: SectionItemsResult }
   | { type: "export"; patch: Partial<ExportState> }
   | { type: "select"; items: SelectedItem[]; selected: boolean }

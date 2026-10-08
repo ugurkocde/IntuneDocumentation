@@ -6,6 +6,7 @@ import { ComplianceScreen } from "./screens/ComplianceScreen";
 import { ExportScreen } from "./screens/ExportScreen";
 import { LicenseScreen } from "./screens/LicenseScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
+import { SearchSettingsScreen } from "./screens/SearchSettingsScreen";
 import { SectionDetailScreen } from "./screens/SectionDetailScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useApp } from "./state/context";
@@ -30,6 +31,12 @@ export function DashboardShell() {
         <div className="@container mx-auto max-w-[1400px] px-8 pt-10 pb-12">
           <div key={`${screen}-${activeFamilyKey ?? ""}`} className="animate-fade-in-up">
             {screen === "overview" && <OverviewScreen />}
+            {screen === "searchSettings" && (
+              // Remount per collection so a sign-out or tenant switch drops the old search.
+              <SearchSettingsScreen
+                key={state.collection.summary?.collectedAt ?? "none"}
+              />
+            )}
             {screen === "section" && <SectionDetailScreen />}
             {screen === "compliance" && <ComplianceScreen />}
             {screen === "export" && <ExportScreen />}

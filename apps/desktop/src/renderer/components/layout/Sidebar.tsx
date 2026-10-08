@@ -9,6 +9,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  Search,
   Settings,
   ShieldCheck,
   User,
@@ -307,8 +308,16 @@ export function Sidebar() {
               active={screen === "overview"}
               icon={LayoutGrid}
               label="Overview"
-              count={summary?.totalConfigurations}
+              // Matches the Overview headline: policies and profiles only.
+              count={summary ? (summary.breakdown?.policies ?? summary.totalConfigurations) : undefined}
               onClick={() => actions.navigate("overview")}
+            />
+            <NavButton
+              isOpen={isOpen}
+              active={screen === "searchSettings"}
+              icon={Search}
+              label="Search settings"
+              onClick={() => actions.navigate("searchSettings")}
             />
             <NavButton
               isOpen={isOpen}
@@ -419,7 +428,7 @@ export function Sidebar() {
                   {exportRunning
                     ? `Exporting, ${state.exportState.percent}%`
                     : summary
-                      ? `${summary.totalConfigurations.toLocaleString()} configurations ready`
+                      ? `${summary.totalConfigurations.toLocaleString()} ${summary.totalConfigurations === 1 ? "item" : "items"} ready`
                       : "Nothing collected yet"}
                 </p>
               </div>

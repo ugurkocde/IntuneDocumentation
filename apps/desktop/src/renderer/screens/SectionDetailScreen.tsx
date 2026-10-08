@@ -175,7 +175,7 @@ function SectionCard({
         sectionKey: section.key,
         itemId: item.id,
         name: item.displayName,
-        sectionLabel: section.label,
+        sectionLabel: cardLabel,
       })),
     });
   const selectedHere = familyItems.filter(isSelected).length;
@@ -183,18 +183,18 @@ function SectionCard({
   const allVisibleSelected = items.length > 0 && visibleSelected === items.length;
 
   return (
-    <section className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white" aria-label={section.label}>
+    <section className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white" aria-label={cardLabel}>
       <div className="border-petrol-950/6 flex min-h-16 items-center gap-3 border-b px-5 py-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
           <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} aria-hidden="true" />
         </span>
-        <h2 className="text-petrol-950 min-w-0 flex-1 truncate text-[15px] font-semibold">{section.label}</h2>
+        <h2 className="text-petrol-950 min-w-0 flex-1 truncate text-[15px] font-semibold">{cardLabel}</h2>
         <span className="bg-mint-100 text-petrol-700 rounded-full px-2.5 py-1 text-[10px] font-bold tabular-nums">
           {filtered && loaded ? `${items.length} of ${section.count}` : section.count.toLocaleString()}
         </span>
         {section.count > 0 && (
           <ExportMenu
-            targetName={section.label}
+            targetName={cardLabel}
             triggerLabel="Export section"
             disabledReason={blocker ?? (loaded ? null : "Available when the items have loaded.")}
             onExport={(format) =>
@@ -228,7 +228,7 @@ function SectionCard({
               checked={allVisibleSelected}
               mixed={visibleSelected > 0 && !allVisibleSelected}
               onChange={() => select(items, !allVisibleSelected)}
-              label={`${query ? "Select all matches" : "Select all"} in ${section.label}`}
+              label={`${query ? "Select all matches" : "Select all"} in ${cardLabel}`}
             >
               <span className="text-petrol-800 text-xs font-semibold">{query ? "Select all matches" : "Select all"}</span>
             </Checkbox>

@@ -24,6 +24,7 @@ import type {
   MenuCommand,
   UpdateStatus,
 } from "../shared/ipc-types";
+import { SEARCH_NEEDS_COLLECTION } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
 import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
@@ -819,7 +820,7 @@ function registerIpc(): void {
     const owner = auth?.getOwnerKey() ?? null;
     const collection = getLastCollection();
     if (!collection || !owner || getCollectionOwner() !== owner) {
-      throw new Error("Collect tenant data first.");
+      throw new Error(SEARCH_NEEDS_COLLECTION);
     }
     const input =
       typeof request === "object" && request !== null

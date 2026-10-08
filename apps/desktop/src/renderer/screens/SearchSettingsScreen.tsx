@@ -2,21 +2,34 @@ import {
   Check,
   ChevronRight,
   FileText,
+  RotateCw,
   Search,
   SearchX,
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type {
-  SettingSearchHit,
-  SettingsSearchFacet,
-  SettingsSearchResult,
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import {
+  SEARCH_NEEDS_COLLECTION,
+  type SettingSearchHit,
+  type SettingsSearchFacet,
+  type SettingsSearchResult,
 } from "../../shared/ipc-types";
 import { CollectButton } from "../components/collection/CollectButton";
 import { Header } from "../components/layout/Header";
 import { Alert } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { CopyButton } from "../components/ui/CopyButton";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Spinner } from "../components/ui/Spinner";
 import { useDebouncedValue } from "../hooks/use-debounced-value";
@@ -26,6 +39,8 @@ import { useApp } from "../state/context";
 
 export const SEARCH_LIMIT = 200;
 const EXAMPLES = ["BitLocker", "firewall", "device_vendor_msft_policy_config"];
+// Chips shown per filter before "More".
+const CHIP_LIMIT = 8;
 
 // The last search survives a trip to a policy and back.
 
@@ -50,6 +65,20 @@ function assignmentText(hit: SettingSearchHit): string | null {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchCount(count: number): string {
+  return `${count.toLocaleString()} ${count === 1 ? "match" : "matches"}`;
+}
+
+// The query words worth marking; a single character would mark nearly every
+// value.
+export function highlightPattern(query: string): RegExp | null {
+  const words = query
+    .split(/\s+/)
+    .filter((word) => word.length >= 2)
+    .map(escapeRegExp);
+  return words.length ? new RegExp(`(${words.join("|")})`, "gi") : null;
 }
 
 // Marks the query words inside a text.
@@ -99,6 +128,12 @@ function groupByPolicy(hits: SettingSearchHit[]): PolicyGroup[] {
   return [...groups.values()];
 }
 
+interface Chip {
+  value: string;
+  // Null while the counts of the current query are not known.
+  count: number | null;
+}
+
 function FilterChips({
   legend,
   facets,
@@ -107,32 +142,44 @@ function FilterChips({
   onToggle,
 }: {
   legend: string;
-  facets: SettingsSearchFacet[];
+  // Null when there is no result to count, for example while searching.
+  facets: SettingsSearchFacet[] | null;
   selected: string[];
   label: (value: string) => string;
   onToggle: (value: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   // A selected filter stays visible even when the query no longer matches it.
-  const values = [
-    ...facets,
+  // Main sorts the facets by count.
+  const values: Chip[] = [
+    ...(facets ?? []),
     ...selected
-      .filter((value) => !facets.some((facet) => facet.value === value))
-      .map((value) => ({ value, count: 0 })),
+      .filter((value) => !facets?.some((facet) => facet.value === value))
+      .map((value) => ({ value, count: facets ? 0 : null })),
   ];
   if (values.length === 0) return null;
+  const collapsed = values.filter(
+    (chip, index) => index < CHIP_LIMIT || selected.includes(chip.value),
+  );
+  const more = values.length - collapsed.length;
+  const shown = expanded ? values : collapsed;
   return (
     <fieldset className="flex flex-wrap items-center gap-1.5">
       <legend className="text-petrol-600 float-left mr-1.5 text-[10px] font-bold tracking-[0.14em] uppercase">
         {legend}
       </legend>
-      {values.map((facet) => {
-        const active = selected.includes(facet.value);
+      {shown.map((chip) => {
+        const active = selected.includes(chip.value);
+        const text = label(chip.value);
         return (
           <button
-            key={facet.value}
+            key={chip.value}
             type="button"
             aria-pressed={active}
-            onClick={() => onToggle(facet.value)}
+            aria-label={
+              chip.count === null ? text : `${text}, ${matchCount(chip.count)}`
+            }
+            onClick={() => onToggle(chip.value)}
             className={`inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${
               active
                 ? "border-teal-600/40 bg-teal-50 text-teal-800"
@@ -140,14 +187,79 @@ function FilterChips({
             }`}
           >
             {active && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
-            {label(facet.value)}
-            <span className="text-petrol-600 font-medium tabular-nums">
-              {facet.count.toLocaleString()}
-            </span>
+            {text}
+            {chip.count !== null && (
+              <span className="text-petrol-600 font-medium tabular-nums">
+                {chip.count.toLocaleString()}
+              </span>
+            )}
           </button>
         );
       })}
+      {more > 0 && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+          className="min-h-8 cursor-pointer rounded-full px-2.5 text-xs font-semibold text-teal-700 hover:underline focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+        >
+          {expanded ? "Fewer" : `More (${more.toLocaleString()})`}
+        </button>
+      )}
     </fieldset>
+  );
+}
+
+// A long value is clamped to six lines and can be shown in full.
+function HitValue({
+  value,
+  pattern,
+}: {
+  value: string;
+  pattern: RegExp | null;
+}) {
+  const text = useRef<HTMLParagraphElement>(null);
+  const id = useId();
+  const [clamped, setClamped] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  useLayoutEffect(() => {
+    const node = text.current;
+    // An expanded value keeps its toggle.
+    if (!node || expanded) return;
+    const measure = () =>
+      setClamped(node.scrollHeight > node.clientHeight + 1);
+    if (typeof ResizeObserver === "undefined") {
+      measure();
+      return;
+    }
+    // Also measures a row once it scrolls into view and gets a layout.
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [value, expanded]);
+  return (
+    <>
+      <p
+        ref={text}
+        id={id}
+        className={`text-petrol-800 selectable text-[13px] leading-5 break-words whitespace-pre-line ${
+          expanded ? "" : "line-clamp-6"
+        }`}
+      >
+        <Highlight text={value} pattern={pattern} />
+      </p>
+      {clamped && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 cursor-pointer rounded text-xs font-semibold text-teal-700 hover:underline focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+        >
+          {expanded ? "Show less" : "Show full value"}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -176,13 +288,18 @@ function HitRow({
           </p>
         )}
       </div>
-      <div className="min-w-0">
-        <p className="text-petrol-600 text-[10px] font-bold tracking-[0.1em] uppercase md:sr-only">
-          Value
-        </p>
-        <p className="text-petrol-800 selectable line-clamp-6 text-[13px] leading-5 break-words whitespace-pre-line">
-          <Highlight text={hit.value} pattern={pattern} />
-        </p>
+      <div className="flex min-w-0 items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-petrol-600 text-[10px] font-bold tracking-[0.1em] uppercase md:sr-only">
+            Value
+          </p>
+          <HitValue value={hit.value} pattern={pattern} />
+        </div>
+        {hit.value && (
+          <div className="-my-1.5 -mr-2">
+            <CopyButton value={hit.value} label="Copy value" />
+          </div>
+        )}
       </div>
     </li>
   );
@@ -202,7 +319,7 @@ function PolicyCard({
   const assignment = assignmentText(first);
   const family = familyLabel(first);
   return (
-    <section
+    <article
       className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white"
       aria-label={`${first.policyName}, ${family}`}
     >
@@ -220,15 +337,16 @@ function PolicyCard({
               type="button"
               onClick={onOpen}
               title={`Open in ${family}`}
-              className="group text-petrol-950 inline-flex max-w-full cursor-pointer items-center gap-1 rounded-md text-left text-[15px] font-semibold hover:text-teal-700 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+              className="group text-petrol-950 -mx-1.5 inline-flex max-w-[calc(100%+0.75rem)] cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-left text-[15px] font-semibold hover:text-teal-700 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
             >
+              {/* The chevron follows the last word of a wrapped title. */}
               <span className="min-w-0 break-words">
                 <Highlight text={first.policyName} pattern={pattern} />
+                <ChevronRight
+                  className="ml-1 inline-block h-4 w-4 align-[-3px] transition-transform group-hover:translate-x-0.5"
+                  aria-hidden="true"
+                />
               </span>
-              <ChevronRight
-                className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
-                aria-hidden="true"
-              />
               <span className="sr-only">, open in {family}</span>
             </button>
           </h2>
@@ -267,19 +385,19 @@ function PolicyCard({
           />
         ))}
       </ul>
-    </section>
+    </article>
   );
 }
 
 function SearchInput({
   value,
   onChange,
+  input,
 }: {
   value: string;
   onChange: (value: string) => void;
+  input: RefObject<HTMLInputElement | null>;
 }) {
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), []);
   return (
     <div className="relative">
       <Search
@@ -326,12 +444,14 @@ function SearchInput({
 }
 
 function resultText(result: SettingsSearchResult, policies: number): string {
-  const matches = `${result.total.toLocaleString()} ${result.total === 1 ? "match" : "matches"}`;
+  const matches = matchCount(result.total);
   if (result.total > result.hits.length) {
     return `Showing ${result.hits.length.toLocaleString()} of ${matches}`;
   }
   return `${matches} in ${policies.toLocaleString()} ${policies === 1 ? "policy" : "policies"}`;
 }
+
+type SearchError = "noCollection" | "failed";
 
 export function SearchSettingsScreen() {
   const { state, dispatch } = useApp();
@@ -346,12 +466,32 @@ export function SearchSettingsScreen() {
   );
   const [result, setResult] = useState<SettingsSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const debounced = useDebouncedValue(query.trim(), 200);
+  const [error, setError] = useState<SearchError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // Typing waits for a pause; clearing the query, by the user or with the
+  // collection, applies at once.
+  const debounced = useDebouncedValue(query.trim(), query.trim() ? 200 : 0);
   const requestId = useRef(0);
+  const input = useRef<HTMLInputElement>(null);
 
-  // Kept in app state so the search survives navigation but is cleared with
-  // the collection on sign-out or a tenant switch.
+  // Focuses the input when the user opens the screen, not when a collection
+  // appears or finishes while it is open.
+  useEffect(() => input.current?.focus(), []);
+
+  // A sign-out or tenant switch clears the collection, and with it the
+  // search. A new collection keeps it and searches again in place.
+  const hasCollection = Boolean(summary);
+  const [hadCollection, setHadCollection] = useState(hasCollection);
+  if (hadCollection !== hasCollection) {
+    setHadCollection(hasCollection);
+    if (!hasCollection) {
+      setQuery("");
+      setFamilies([]);
+      setPlatforms([]);
+    }
+  }
+
+  // Kept in app state so the search survives navigation.
   useEffect(() => {
     dispatch({
       type: "settingsSearch",
@@ -367,7 +507,9 @@ export function SearchSettingsScreen() {
       setError(null);
       return;
     }
+    // Earlier results stay, dimmed, until the new ones arrive.
     setLoading(true);
+    setError(null);
     ipc
       .collectSearchSettings({
         query: debounced,
@@ -378,29 +520,29 @@ export function SearchSettingsScreen() {
       .then((next) => {
         if (id !== requestId.current) return;
         setResult(next);
-        setError(null);
       })
       .catch((caught: unknown) => {
         if (id !== requestId.current) return;
-        setError(errorMessage(caught));
+        setError(
+          errorMessage(caught) === SEARCH_NEEDS_COLLECTION
+            ? "noCollection"
+            : "failed",
+        );
         setResult(null);
       })
       .finally(() => {
         if (id === requestId.current) setLoading(false);
       });
-  }, [debounced, families, platforms, collectedAt]);
+  }, [debounced, families, platforms, collectedAt, attempt]);
 
   const groups = useMemo(
     () => (result ? groupByPolicy(result.hits) : []),
     [result],
   );
-  const pattern = useMemo(() => {
-    const words = (result?.query ?? "")
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(escapeRegExp);
-    return words.length ? new RegExp(`(${words.join("|")})`, "gi") : null;
-  }, [result]);
+  const pattern = useMemo(
+    () => highlightPattern(result?.query ?? ""),
+    [result],
+  );
 
   const toggle = (
     list: string[],
@@ -412,6 +554,10 @@ export function SearchSettingsScreen() {
         ? list.filter((entry) => entry !== value)
         : [...list, value],
     );
+  const clearFilters = () => {
+    setFamilies([]);
+    setPlatforms([]);
+  };
   const openPolicy = (hit: SettingSearchHit) =>
     dispatch({
       type: "navigate",
@@ -459,15 +605,50 @@ export function SearchSettingsScreen() {
         ))}
       />
     );
+  } else if (error === "noCollection") {
+    body = (
+      <Alert
+        tone="warning"
+        title="The collection is no longer available"
+        action={<CollectButton showMeta={false} />}
+      >
+        Collect your tenant again to search its settings.
+      </Alert>
+    );
   } else if (error) {
-    body = <Alert tone="danger">{error}</Alert>;
+    body = (
+      <Alert
+        tone="danger"
+        action={
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={RotateCw}
+            onClick={() => setAttempt((count) => count + 1)}
+          >
+            Retry
+          </Button>
+        }
+      >
+        Search failed. Try again.
+      </Alert>
+    );
   } else if (!result) {
     body = (
-      <div className="text-petrol-600 flex items-center gap-2 px-1 py-6 text-[13px]">
+      <div
+        className="text-petrol-600 flex items-center gap-2 px-1 py-6 text-[13px]"
+        role="status"
+      >
         <Spinner /> Searching settings
       </div>
     );
   } else if (result.total === 0) {
+    // Family counts ignore the filters, so together they are the matches of
+    // the query alone.
+    const unfiltered = result.families.reduce(
+      (sum, facet) => sum + facet.count,
+      0,
+    );
     body = (
       <EmptyState
         compact
@@ -478,9 +659,18 @@ export function SearchSettingsScreen() {
             : "No settings match your search"
         }
         description={
-          filtered
-            ? "Try removing a filter or searching for fewer words."
-            : `Searched ${result.indexedSettings.toLocaleString()} settings. Try fewer words, part of a technical id or a value.`
+          !filtered
+            ? `Searched ${result.indexedSettings.toLocaleString()} settings. Try fewer words, part of a technical id or a value.`
+            : unfiltered > 0
+              ? `${unfiltered.toLocaleString()} ${unfiltered === 1 ? "setting matches" : "settings match"} without filters.`
+              : "Nothing matches without filters either. Try fewer words, part of a technical id or a value."
+        }
+        action={
+          filtered && (
+            <Button variant="secondary" size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          )
         }
       />
     );
@@ -509,9 +699,18 @@ export function SearchSettingsScreen() {
     );
   }
 
-  const showFilters = Boolean(
-    summary && result && (result.families.length > 0 || filtered),
-  );
+  // Selected filters stay visible in every state; counts need a result.
+  const facets = result && !error ? result : null;
+  const showFilters = filtered || Boolean(facets && facets.families.length > 0);
+  // Never announces the count of the previous query.
+  const liveText =
+    !debounced || error
+      ? ""
+      : pending
+        ? "Searching"
+        : result
+          ? resultText(result, groups.length)
+          : "";
 
   return (
     <div className="space-y-5">
@@ -525,20 +724,26 @@ export function SearchSettingsScreen() {
         }
       />
       {summary && (
-        <div className="space-y-3">
-          <SearchInput value={query} onChange={setQuery} />
-          {showFilters && result && (
+        // Stays at the top of long result lists; the shadow in the page
+        // color covers results that scroll behind it.
+        <div className="sticky top-2 z-20 rounded-xl shadow-[0_0_0_8px_var(--color-mint-50)]">
+          <SearchInput value={query} onChange={setQuery} input={input} />
+        </div>
+      )}
+      {summary && (
+        <div className="-mt-2 space-y-3">
+          {showFilters && (
             <div className="space-y-2">
               <FilterChips
                 legend="Family"
-                facets={result.families}
+                facets={facets?.families ?? null}
                 selected={families}
                 label={(key) => familyMeta(key)?.label ?? key}
                 onToggle={(value) => toggle(families, setFamilies, value)}
               />
               <FilterChips
                 legend="Platform"
-                facets={result.platforms}
+                facets={facets?.platforms ?? null}
                 selected={platforms}
                 label={(value) => value}
                 onToggle={(value) => toggle(platforms, setPlatforms, value)}
@@ -546,22 +751,18 @@ export function SearchSettingsScreen() {
             </div>
           )}
           <div className="flex min-h-5 items-center gap-2 px-1">
+            {/* An empty live region keeps its place without leaving a gap. */}
             <p
-              className="text-petrol-700 text-xs font-semibold tabular-nums"
+              className="text-petrol-700 text-xs font-semibold tabular-nums empty:-mr-2"
               aria-live="polite"
             >
-              {result && debounced && !error
-                ? resultText(result, groups.length)
-                : ""}
+              {liveText}
             </p>
             {pending && result && <Spinner className="h-3.5 w-3.5" />}
             {filtered && (
               <button
                 type="button"
-                onClick={() => {
-                  setFamilies([]);
-                  setPlatforms([]);
-                }}
+                onClick={clearFilters}
                 className="text-xs font-semibold text-teal-700 hover:underline focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
               >
                 Clear filters

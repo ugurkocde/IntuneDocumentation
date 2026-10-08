@@ -1,7 +1,7 @@
 import { AlertCircle, Clock, FileText, ListFilter, Search, SearchX, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { scopeKey } from "../../shared/export-scope";
-import type { SectionCount, SectionItemSummary } from "../../shared/ipc-types";
+import type { SectionItemSummary } from "../../shared/ipc-types";
 import { CollectButton } from "../components/collection/CollectButton";
 import { ExportMenu } from "../components/export/ExportMenu";
 import { SelectionBar } from "../components/export/SelectionBar";
@@ -16,10 +16,12 @@ import { useStartExport } from "../hooks/use-start-export";
 import { itemTarget, sectionTarget } from "../lib/export-targets";
 import { errorMessage } from "../lib/ipc";
 import {
+  type FamilySection,
   familyMeta,
   friendlyPlatforms,
   friendlyTechnologies,
   friendlyType,
+  sectionsForFamily,
 } from "../lib/section-catalog";
 import { useApp } from "../state/context";
 import { quickExportBlocker } from "../state/selectors";
@@ -63,6 +65,9 @@ function ItemRow({
       <div className="min-w-0 flex-1 pt-2">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-petrol-950 selectable min-w-0 text-sm font-semibold break-words">{item.displayName}</p>
+          {item.microsoftDefault && (
+            <Badge title="Created by Microsoft. Documented and exported like every other item.">Microsoft default</Badge>
+          )}
           {item.hasFetchError && (
             <Badge variant="warning" title="Settings could not be loaded from Microsoft Graph">
               <AlertCircle className="h-3 w-3" aria-hidden="true" />
@@ -119,7 +124,7 @@ function SectionCard({
   query,
   errorsOnly,
 }: {
-  section: SectionCount;
+  section: FamilySection;
   query: string;
   errorsOnly: boolean;
 }) {
@@ -142,10 +147,21 @@ function SectionCard({
     };
   }, [loaded, section.key, section.count, actions]);
 
-  const items = useMemo(
-    () => (loaded ? loaded.items.filter((item) => matches(item, query, errorsOnly)) : []),
-    [loaded, query, errorsOnly],
+  // A section split across families lists only this family's items.
+  const familyItems = useMemo(
+    () =>
+      loaded
+        ? section.itemFamilyKey
+          ? loaded.items.filter((item) => item.familyKey === section.itemFamilyKey)
+          : loaded.items
+        : [],
+    [loaded, section.itemFamilyKey],
   );
+  const items = useMemo(
+    () => familyItems.filter((item) => matches(item, query, errorsOnly)),
+    [familyItems, query, errorsOnly],
+  );
+  const cardLabel = section.itemFamilyKey ? (family?.label ?? section.label) : section.label;
   const filtered = Boolean(query) || errorsOnly;
   if (loaded && items.length === 0 && (query || (errorsOnly && !section.error))) return null;
 
@@ -159,29 +175,31 @@ function SectionCard({
         sectionKey: section.key,
         itemId: item.id,
         name: item.displayName,
-        sectionLabel: section.label,
+        sectionLabel: cardLabel,
       })),
     });
-  const selectedHere = loaded ? loaded.items.filter(isSelected).length : 0;
+  const selectedHere = familyItems.filter(isSelected).length;
   const visibleSelected = items.filter(isSelected).length;
   const allVisibleSelected = items.length > 0 && visibleSelected === items.length;
 
   return (
-    <section className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white" aria-label={section.label}>
+    <section className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white" aria-label={cardLabel}>
       <div className="border-petrol-950/6 flex min-h-16 items-center gap-3 border-b px-5 py-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
           <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} aria-hidden="true" />
         </span>
-        <h2 className="text-petrol-950 min-w-0 flex-1 truncate text-[15px] font-semibold">{section.label}</h2>
+        <h2 className="text-petrol-950 min-w-0 flex-1 truncate text-[15px] font-semibold">{cardLabel}</h2>
         <span className="bg-mint-100 text-petrol-700 rounded-full px-2.5 py-1 text-[10px] font-bold tabular-nums">
           {filtered && loaded ? `${items.length} of ${section.count}` : section.count.toLocaleString()}
         </span>
         {section.count > 0 && (
           <ExportMenu
-            targetName={section.label}
+            targetName={cardLabel}
             triggerLabel="Export section"
             disabledReason={blocker ?? (loaded ? null : "Available when the items have loaded.")}
-            onExport={(format) => loaded && startExport(sectionTarget(loaded), format)}
+            onExport={(format) =>
+              loaded && startExport(sectionTarget({ ...loaded, label: cardLabel, items: familyItems }), format)
+            }
           />
         )}
       </div>
@@ -210,7 +228,7 @@ function SectionCard({
               checked={allVisibleSelected}
               mixed={visibleSelected > 0 && !allVisibleSelected}
               onChange={() => select(items, !allVisibleSelected)}
-              label={`${query ? "Select all matches" : "Select all"} in ${section.label}`}
+              label={`${query ? "Select all matches" : "Select all"} in ${cardLabel}`}
             >
               <span className="text-petrol-800 text-xs font-semibold">{query ? "Select all matches" : "Select all"}</span>
             </Checkbox>
@@ -241,16 +259,20 @@ export function SectionDetailScreen() {
   const familyKey = state.activeFamilyKey;
   const errorsOnly = state.activeSectionFilter === "errors";
   const family = familyMeta(familyKey);
-  const [search, setSearch] = useState("");
-  useEffect(() => setSearch(""), [familyKey]);
+  const initialSearch = state.activeSectionQuery ?? "";
+  const [search, setSearch] = useState(initialSearch);
+  useEffect(() => setSearch(initialSearch), [familyKey, initialSearch]);
   const summary = state.collection.summary;
-  const sections = (summary?.sectionCounts ?? []).filter((section) => section.familyKey === familyKey);
+  const sections = sectionsForFamily(summary?.sectionCounts, familyKey);
   const total = sections.reduce((sum, section) => sum + section.count, 0);
   const query = search.trim().toLowerCase();
 
   const loadedMatches = sections.reduce((sum, section) => {
     const loaded = state.sections[section.key];
-    return sum + (loaded ? loaded.items.filter((item) => matches(item, query, errorsOnly)).length : 0);
+    const items = loaded?.items.filter(
+      (item) => !section.itemFamilyKey || item.familyKey === section.itemFamilyKey,
+    );
+    return sum + (items ? items.filter((item) => matches(item, query, errorsOnly)).length : 0);
   }, 0);
   const sectionErrors = sections.some((section) => section.error);
   // The Overview opens the first family with load errors; name the rest.

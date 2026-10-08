@@ -9,6 +9,7 @@ import type {
   AppState,
   ComplianceReportState,
   ExportState,
+  SettingsSearchState,
 } from "./types";
 
 const SIDEBAR_KEY = "intunedoc.sidebar.open";
@@ -22,6 +23,12 @@ function initialSidebar(): boolean {
   }
   return window.innerWidth >= 1100;
 }
+
+const initialSettingsSearch: SettingsSearchState = {
+  query: "",
+  families: [],
+  platforms: [],
+};
 
 export function persistSidebar(open: boolean): void {
   try {
@@ -75,6 +82,8 @@ export function createInitialState(): AppState {
     screen: "overview",
     activeFamilyKey: null,
     activeSectionFilter: null,
+    activeSectionQuery: null,
+    settingsSearch: initialSettingsSearch,
     sidebarOpen: initialSidebar(),
     collection: {
       running: false,
@@ -130,6 +139,8 @@ export function reducer(state: AppState, action: Action): AppState {
             : null,
         activeSectionFilter:
           action.screen === "section" ? (action.filter ?? null) : null,
+        activeSectionQuery:
+          action.screen === "section" ? (action.query ?? null) : null,
       };
     case "sectionFilter":
       return { ...state, activeSectionFilter: action.filter };
@@ -214,9 +225,12 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         collection: { ...state.collection, toast: action.toast },
       };
+    case "settingsSearch":
+      return { ...state, settingsSearch: action.search };
     case "resetCollection":
       return {
         ...state,
+        settingsSearch: initialSettingsSearch,
         sections: {},
         selection: {},
         exportState:

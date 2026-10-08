@@ -55,6 +55,34 @@ export interface SectionCount {
   label: string;
   count: number;
   error?: string;
+  // Items created by Microsoft rather than an administrator. They stay in
+  // count and are documented and exported like every other item.
+  microsoftDefaults?: number;
+  // Set when the items of one Graph section belong to several display
+  // families, for example Settings Catalog policies that are endpoint
+  // security policies or security baselines. The counts add up to count.
+  families?: SectionFamilyCount[];
+}
+
+export interface SectionFamilyCount {
+  familyKey: string;
+  count: number;
+  microsoftDefaults?: number;
+}
+
+// What the collected items are. Every item is in exactly one of policies,
+// apps or rbac or is a Microsoft default outside RBAC, so
+// policies + apps + rbac + (microsoftDefaults - microsoftDefaultsInRbac)
+// equals totalConfigurations.
+export interface CollectionBreakdown {
+  policies: number;
+  apps: number;
+  appsAssigned: number;
+  rbac: number;
+  microsoftDefaults: number;
+  // Built in role definitions and the Default scope tag: Microsoft defaults
+  // that are already counted in rbac.
+  microsoftDefaultsInRbac: number;
 }
 
 export interface FetchErrorSummary {
@@ -85,6 +113,8 @@ export interface FullCollectionSummary {
   fetchErrors: FetchErrorSummary[];
   permissionErrors: PermissionErrorSummary[];
   pdfEstimate: PdfEstimate | null;
+  // Missing on summaries from older builds.
+  breakdown?: CollectionBreakdown;
 }
 
 export interface CollectProgress {
@@ -110,6 +140,9 @@ export interface SectionItemSummary {
   assignedToAllUsers: boolean;
   assignedToAllDevices: boolean;
   hasFetchError: boolean;
+  // Display family when the section is split across families.
+  familyKey?: string;
+  microsoftDefault?: boolean;
 }
 
 export interface SectionItemsResult {
@@ -118,6 +151,49 @@ export interface SectionItemsResult {
   label: string;
   error: string | null;
   items: SectionItemSummary[];
+}
+
+export interface SettingsSearchRequest {
+  query: string;
+  // Family keys; empty or missing searches every family.
+  families?: string[];
+  // Platform labels such as "Windows"; empty or missing searches all.
+  platforms?: string[];
+  // Maximum hits returned; defaults to 200.
+  limit?: number;
+}
+
+export interface SettingSearchHit {
+  sectionKey: string;
+  sectionLabel: string;
+  familyKey: string;
+  policyId: string;
+  policyName: string;
+  platforms: string[];
+  assignmentCount: number | null;
+  assignedToAllUsers: boolean;
+  assignedToAllDevices: boolean;
+  name: string;
+  value: string;
+  definitionId: string | null;
+  path: string[];
+  category: string | null;
+}
+
+export interface SettingsSearchFacet {
+  value: string;
+  count: number;
+}
+
+export interface SettingsSearchResult {
+  query: string;
+  // Matches after filters; hits holds at most limit of them.
+  total: number;
+  hits: SettingSearchHit[];
+  // Match counts of the query alone, so filters can show what they hold.
+  families: SettingsSearchFacet[];
+  platforms: SettingsSearchFacet[];
+  indexedSettings: number;
 }
 
 export interface ExportOptions {
@@ -313,6 +389,9 @@ export interface IntunedocApi {
   collectCancel(): Promise<boolean>;
   collectSectionItems(key: string): Promise<SectionItemsResult>;
   collectLast(): Promise<FullCollectionSummary | null>;
+  collectSearchSettings(
+    request: SettingsSearchRequest,
+  ): Promise<SettingsSearchResult>;
   prepareExport(options: ExportOptions): Promise<PreparedExport>;
   estimateExport(scope: ExportScopeRequest): Promise<PdfEstimate>;
   licenseStatus(): Promise<LicenseStatus>;

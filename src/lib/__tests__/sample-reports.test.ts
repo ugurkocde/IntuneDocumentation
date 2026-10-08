@@ -10,9 +10,22 @@ import {
 } from "../compliance/demo/sample-plan";
 import { renderSampleReport } from "../compliance/demo/render-sample";
 import { SAMPLE_REPORTS } from "../compliance/samples";
+import { extractPdfStreamText } from "./helpers/pdf-text";
 
 const SAMPLES_DIR = path.join(process.cwd(), "public", "samples");
 const REBUILD = "Run `npm run build:samples` and commit public/samples.";
+
+// Points at the first text difference so a stale sample is easy to diagnose.
+function firstTextDifference(fresh: Uint8Array, committed: Uint8Array) {
+  const left = extractPdfStreamText(fresh);
+  const right = extractPdfStreamText(committed);
+  let index = 0;
+  while (index < left.length && left[index] === right[index]) index += 1;
+  if (index === left.length && index === right.length)
+    return "text is identical, only binary content differs";
+  const from = Math.max(0, index - 80);
+  return `fresh: ${JSON.stringify(left.slice(from, index + 80))} committed: ${JSON.stringify(right.slice(from, index + 80))}`;
+}
 
 function frameworkFor(sample: (typeof SAMPLE_REPORTS)[number]) {
   const assessment = assessCompliance(sampleTenant(sample));
@@ -62,9 +75,12 @@ describe("published sample reports", () => {
       );
       const committed = readFileSync(committedPath);
       const fresh = Buffer.from(await renderSampleReport(sample));
+      const current = fresh.equals(committed);
       expect(
-        fresh.equals(committed),
-        `${file} is stale: the generator output changed. ${REBUILD}`,
+        current,
+        current
+          ? ""
+          : `${file} is stale: the generator output changed (${firstTextDifference(fresh, committed)}). ${REBUILD}`,
       ).toBe(true);
       const pages = (
         committed.toString("latin1").match(/\/Type \/Page\b(?!s)/g) ?? []

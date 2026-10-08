@@ -1455,6 +1455,8 @@ export function complianceReportFileName(
   return `Compliance-Report-${frameworkLabel}${tenantPart}-${localIsoDate(now)}-${localTime(now)}.pdf`;
 }
 
+const REGISTRY_KEY_COLLATOR = new Intl.Collator("en");
+
 function mixColor(color: RgbColor, target: RgbColor, amount: number): RgbColor {
   return [
     Math.round(color[0] + (target[0] - color[0]) * amount),
@@ -1707,9 +1709,13 @@ export async function generateComplianceReportPDF(
       const capability = capabilitiesById.get(capabilityId);
       if (!capability) continue;
       // Sort by registry key so E-nnn references stay stable when Graph
-      // returns policies in a different order on a later export.
+      // returns policies in a different order on a later export. The collator
+      // is pinned to "en" so the order does not depend on the host locale.
       const sortedEvidence = [...capability.evidence].sort((a, b) =>
-        evidenceRegistryKey(a).localeCompare(evidenceRegistryKey(b)),
+        REGISTRY_KEY_COLLATOR.compare(
+          evidenceRegistryKey(a),
+          evidenceRegistryKey(b),
+        ),
       );
       for (const evidence of sortedEvidence) {
         const key = evidenceRegistryKey(evidence);

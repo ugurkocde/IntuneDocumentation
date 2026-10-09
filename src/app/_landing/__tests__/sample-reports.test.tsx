@@ -65,6 +65,15 @@ describe("sample report links", () => {
         "NIS2 Directive is available in the desktop app only.",
       );
     }
+
+    const nis2SampleCard = sampleLinks(
+      renderToStaticMarkup(<CompliancePage />),
+    ).find(
+      (link) =>
+        link.getAttribute("href") === "/samples/nis2.pdf" &&
+        link.textContent?.includes("View sample (PDF)"),
+    );
+    expect(nis2SampleCard?.textContent).toContain("desktop app only");
   });
 
   it("links every sample from the /compliance page", () => {

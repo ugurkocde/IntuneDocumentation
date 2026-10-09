@@ -113,6 +113,8 @@ services:
 ```
 
 This is the same file as [`compose.yaml` in the repository](https://github.com/ugurkocde/IntuneDocumentation/blob/main/compose.yaml).
+
+If a reverse proxy on the same host serves the app over HTTPS, publish the port on the loopback address only, so the plain HTTP port is not reachable from the network: `"127.0.0.1:3000:3000"`.
 </Step>
 <Step>
 ### Add your IDs

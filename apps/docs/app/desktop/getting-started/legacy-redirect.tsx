@@ -24,7 +24,13 @@ const ANCHORS: Record<string, { path: string; keepHash?: boolean }> = {
 };
 
 export function resolveLegacyAnchor(hash: string): string {
-  const anchor = decodeURIComponent(hash.replace(/^#/, ''));
+  const raw = hash.replace(/^#/, '');
+  let anchor = raw;
+  try {
+    anchor = decodeURIComponent(raw);
+  } catch {
+    // A malformed escape is not one of our anchors; fall through to the default page.
+  }
   const target = Object.hasOwn(ANCHORS, anchor) ? ANCHORS[anchor] : undefined;
   if (!target) return FALLBACK;
   return target.keepHash ? `${target.path}#${anchor}` : target.path;

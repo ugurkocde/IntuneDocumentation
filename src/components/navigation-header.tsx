@@ -13,6 +13,7 @@ import { loginRequest, shouldUseRedirectLogin } from "~/lib/msal-config";
 import { ChangelogBell } from "~/components/changelog-bell";
 import { clearDashboardSession } from "~/lib/dashboard-session-cache";
 import { DEMO_BOOKING_URL } from "~/lib/demo-booking";
+import { DOCS_URL } from "~/lib/docs";
 
 interface NavLinksProps {
   vertical?: boolean;
@@ -77,6 +78,13 @@ const NavLinks = memo(function NavLinks({
       >
         Desktop app
       </Link>
+      <a
+        href={DOCS_URL}
+        onClick={onNavigate}
+        className={`inline-flex min-h-11 items-center rounded-md text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none ${linkBase}`}
+      >
+        Docs
+      </a>
       <a
         href={DEMO_BOOKING_URL}
         target="_blank"

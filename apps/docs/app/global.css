@@ -1,0 +1,100 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/*
+ * Brand tokens from intunedocumentation.com (src/styles/globals.css),
+ * mapped onto the Fumadocs color variables.
+ *   petrol-950 #082f36  petrol-900 #0c3b43  petrol-800 #164c53
+ *   petrol-700 #285e64  petrol-600 #44747a
+ *   teal-700 #26777c  teal-600 #318990  teal-500 #45a0a5
+ *   teal-100 #dceff0  teal-50 #eef8f7
+ *   mint-100 #e7eeec  mint-50 #f1f5f3  surface #f7faf9
+ */
+@theme {
+  --font-sans:
+    'Avenir Next', 'Segoe UI Variable', 'Segoe UI', ui-sans-serif, system-ui, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+
+  --color-fd-background: #fcfdfd;
+  --color-fd-foreground: #082f36;
+  --color-fd-muted: #f1f5f3;
+  --color-fd-muted-foreground: #4e6f74;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #082f36;
+  --color-fd-card: #f7faf9;
+  --color-fd-card-foreground: #082f36;
+  --color-fd-border: #dfe8e5;
+  --color-fd-primary: #26777c;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #f1f5f3;
+  --color-fd-secondary-foreground: #0c3b43;
+  --color-fd-accent: #e4f2f1;
+  --color-fd-accent-foreground: #164c53;
+  --color-fd-ring: #45a0a5;
+  --color-fd-overlay: rgb(8 47 54 / 0.28);
+}
+
+/*
+ * Callout colors are only read through var() by Fumadocs components, so
+ * Tailwind would drop them from a plain @theme block. Keep them static.
+ */
+@theme static {
+  --color-fd-info: #318990;
+}
+
+.dark {
+  --color-fd-background: #06252b;
+  --color-fd-foreground: #e6efed;
+  --color-fd-muted: #0a3239;
+  --color-fd-muted-foreground: #96b3b4;
+  --color-fd-popover: #082f36;
+  --color-fd-popover-foreground: #e6efed;
+  --color-fd-card: #082d33;
+  --color-fd-card-foreground: #e6efed;
+  --color-fd-border: rgb(69 160 165 / 0.18);
+  --color-fd-primary: #6cc3c6;
+  --color-fd-primary-foreground: #06252b;
+  --color-fd-secondary: #0c3b43;
+  --color-fd-secondary-foreground: #e6efed;
+  --color-fd-accent: rgb(69 160 165 / 0.16);
+  --color-fd-accent-foreground: #d7eeee;
+  --color-fd-ring: #45a0a5;
+  --color-fd-overlay: rgb(2 18 21 / 0.6);
+  --color-fd-info: #6cc3c6;
+}
+
+/* neutral.css tints the sidebar grey in dark mode; keep it petrol */
+.dark #nd-sidebar {
+  --color-fd-muted: #0a3239;
+  --color-fd-secondary: #0c3b43;
+  --color-fd-muted-foreground: #96b3b4;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgb(69 160 165 / 0.24);
+}
+
+a,
+button {
+  -webkit-tap-highlight-color: rgb(49 137 144 / 0.14);
+}
+
+/* Long technical ids in inline code must wrap on small screens */
+.prose :where(:not(pre) > code) {
+  overflow-wrap: anywhere;
+}

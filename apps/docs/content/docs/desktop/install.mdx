@@ -1,0 +1,102 @@
+---
+title: "Install the desktop app"
+description: "Download and install the Intune Documentation desktop app on Windows or macOS, then start the setup wizard."
+---
+
+The desktop app runs on your own Mac or Windows PC. Installing it takes a minute or two. When you open it for the first time, a setup wizard guides you through connecting your tenant.
+
+## System requirements
+
+- **macOS:** macOS 13 Ventura or later, on Apple Silicon or Intel.
+- **Windows:** Windows 10 or 11, 64-bit (x64).
+
+The computer needs internet access to Microsoft and to intunedocumentation.com. Everything else you need before setup is listed in [Before you start](/desktop/before-you-start).
+
+## Download the app
+
+Each link always downloads the newest version for your platform.
+
+| Platform | Download |
+| --- | --- |
+| macOS, Apple Silicon (M-series Macs) | [Download for Apple Silicon](https://intunedocumentation.com/api/desktop-update/mac-arm64) |
+| macOS, Intel | [Download for Intel Macs](https://intunedocumentation.com/api/desktop-update/mac-x64) |
+| Windows 10 or 11 (x64) | [Download for Windows](https://intunedocumentation.com/api/desktop-update/windows) |
+
+Not sure which Mac you have? Open the Apple menu and choose <Ui>About This Mac</Ui>. A chip name that starts with "Apple M" means Apple Silicon. "Intel" means an Intel Mac.
+
+Older versions and release notes are on [GitHub Releases](https://github.com/ugurkocde/IntuneDocumentation/releases?q=desktop-v). What changed in each version is also listed in [What's new](/help/whats-new).
+
+## Install on macOS
+
+The Mac download is a DMG disk image.
+
+<Steps>
+<Step>
+**Open the DMG.** Double-click the downloaded file. A window opens with the app and your <Ui>Applications</Ui> folder.
+</Step>
+<Step>
+**Drag the app to Applications.** Drag <Ui>Intune Documentation</Ui> onto the <Ui>Applications</Ui> folder. You can then eject the disk image.
+</Step>
+<Step>
+**Open the app.** Open <Ui>Intune Documentation</Ui> from your <Ui>Applications</Ui> folder or Launchpad.
+</Step>
+</Steps>
+
+## Install on Windows
+
+The Windows download is a Setup installer (`Intunedocumentation-Setup-<version>.exe`). It installs the app for your own user account.
+
+<Steps>
+<Step>
+**Run the installer.** Double-click the downloaded Setup file.
+</Step>
+<Step>
+**Follow the prompts.** Accept the license agreement. You can keep the suggested installation folder or choose another one.
+</Step>
+<Step>
+**Open the app.** When setup finishes, open <Ui>Intune Documentation</Ui> from the Start menu.
+</Step>
+</Steps>
+
+## First launch: the setup wizard
+
+The first time you open the app, it starts a setup wizard. The wizard connects the app to your tenant in seven steps and shows you exactly what to do in the Microsoft Entra admin center along the way.
+
+<Screenshot
+  src="/images/desktop/wizard-welcome.png"
+  alt="The first step of the setup wizard, Register the app in Microsoft Entra, with the list of all seven steps on the left"
+  caption="The setup wizard lists all seven steps on the left. You can go back to any finished step."
+  width={2880}
+  height={1800}
+/>
+
+1. <Ui>Register the app</Ui>: create the app registration in Microsoft Entra. See [Create the registration](/desktop/app-registration#register).
+2. <Ui>Authentication</Ui>: add the redirect URI for the desktop platform. See [Add the desktop platform](/desktop/app-registration#platform).
+3. <Ui>API permissions</Ui>: add the nine read-only Microsoft Graph permissions. See [Add the API permissions](/desktop/app-registration#permissions).
+4. <Ui>Admin consent</Ui>: grant consent once for your tenant. See [Grant admin consent](/desktop/app-registration#consent).
+5. <Ui>Connect the app</Ui>: paste the client ID and tenant ID into the app. See [Copy the IDs into the app](/desktop/app-registration#ids).
+6. <Ui>Sign in and verify</Ui>: sign in with Microsoft. The app checks every permission. See [Sign in and verify](/desktop/sign-in-and-license#sign-in).
+7. <Ui>License</Ui>: paste your license key, or skip and add it later. See [Activate your license](/desktop/sign-in-and-license#license).
+
+Your progress is saved as you go. If you close the app halfway, the wizard opens again at the step where you stopped.
+
+<Note>
+  Someone else creates the app registration for you? Select <Ui>Continue</Ui> through steps 1 to 4, then paste the two IDs they send you. See [Before you start](/desktop/before-you-start#who-needs-to-do-what).
+</Note>
+
+Need the wizard again later, for example to connect another app registration? Select <Ui>Redo setup</Ui> under <Ui>Settings</Ui>. See [Settings and updates](/desktop/settings-and-updates).
+
+## Updates
+
+The app checks for new versions in the background and tells you when an update is available. You decide when to install it, or you let the app install updates automatically. Both options are in <Ui>Settings</Ui>. See [Settings and updates](/desktop/settings-and-updates#updates).
+
+## If something does not work
+
+- **The download link does not start a download:** try again in a minute, or download the installer from [GitHub Releases](https://github.com/ugurkocde/IntuneDocumentation/releases?q=desktop-v).
+- **Other problems:** see [Troubleshooting](/help/troubleshooting) or [contact support](/help/support).
+
+## Next steps
+
+1. [Create the app registration](/desktop/app-registration)
+2. [Sign in and activate your license](/desktop/sign-in-and-license)
+3. [Collect your configuration](/desktop/collect)

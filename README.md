@@ -19,15 +19,17 @@ Endpoint Security policies represented by Microsoft Graph as configuration polic
 
 ## Use the hosted version
 
-Go to [intunedocumentation.com](https://intunedocumentation.com), sign in, and start documenting your tenant. On first use, an administrator may need to grant consent for the delegated Microsoft Graph permissions.
+Go to [intunedocumentation.com](https://intunedocumentation.com), sign in, and start documenting your tenant. Step by step guides for both apps are at [docs.intunedocumentation.com](https://docs.intunedocumentation.com). On first use, an administrator may need to grant consent for the delegated Microsoft Graph permissions.
 
 ## Desktop app
 
-The paid desktop app for macOS and Windows collects your Intune configuration on your own machine with your own Entra app registration and exports Word, PDF, and compliance evidence locally. Tenant data and tokens never leave the machine; only license validation reaches our licensing service. See [intunedocumentation.com/desktop](https://intunedocumentation.com/desktop) for plans and downloads, and the [getting started guide](https://intunedocumentation.com/desktop/getting-started) for setup.
+The paid desktop app for macOS and Windows collects your Intune configuration on your own machine with your own Entra app registration and exports Word, PDF, and compliance evidence locally. Tenant data and tokens never leave the machine; only license validation reaches our licensing service. See [intunedocumentation.com/desktop](https://intunedocumentation.com/desktop) for plans and downloads, and the [documentation](https://docs.intunedocumentation.com) for setup and every feature.
 
 The desktop app needs its own app registration with the **Mobile and desktop applications** platform and the redirect URI `http://localhost`. This is different from the website's **Single-page application** registration described below; a SPA registration fails desktop sign-in with AADSTS50011. It also needs `Policy.Read.All` in addition to the permissions listed below.
 
-To select Windows configurations without including iOS or Android policies, follow the [Windows configuration selection guide](https://intunedocumentation.com/desktop/getting-started#windows-only), which includes a screenshot and explains how search and selected-item exports work.
+To find every policy that configures a setting, open **Search settings** in the desktop app and search by setting name, value, or technical id; results show the configured value, platform, and assignment of each policy. See the [Search settings guide](https://docs.intunedocumentation.com/desktop/search-settings). Sample compliance evidence reports, based on a fictional tenant, are on the [compliance page](https://intunedocumentation.com/compliance#samples).
+
+To select Windows configurations without including iOS or Android policies, follow the [Windows configuration selection guide](https://docs.intunedocumentation.com/desktop/select-and-export), which explains how search and selected-item exports work.
 
 ## Self-host with Docker
 

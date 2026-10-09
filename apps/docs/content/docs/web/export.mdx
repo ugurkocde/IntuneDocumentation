@@ -1,0 +1,105 @@
+---
+title: "Export your configuration"
+description: "Choose what to export from the web app and download your Intune configuration as a document."
+---
+
+Once your configuration has loaded, you pick the policies you want and export them as a PDF or Word document. The document is built in your browser and saved straight to your device. Nothing is uploaded to us.
+
+If you have not collected your configuration yet, start with [Get started with the web app](/web/get-started).
+
+## What the document contains
+
+Every export is a readable report, not a data dump. It includes:
+
+- **A cover page** with your organization, the author and the generation date.
+- **An executive summary** with key metrics, assignment coverage, potential gaps such as unassigned or stale policies, a configuration inventory and platform coverage.
+- **Every selected policy** with its created and modified dates, its assignments and a table of each setting with its value and description.
+- **Assignments resolved to names.** Group targets and assignment filters are shown by name, not by ID.
+- **A compliance evidence section** that maps your configuration to frameworks, unless you turn it off.
+- **Collection warnings.** If Microsoft Graph returned partial data for a section, the document says so instead of looking empty.
+
+Sensitive values such as script bodies, passwords and tokens appear as `[Redacted]`. See [Security and privacy](/security#redaction-of-sensitive-values).
+
+<Screenshot
+  src="/images/web/report-cover.png"
+  alt="Cover page of a sample Intune configuration report with the organization, author, generation date and version"
+  caption="The cover page of a sample report."
+  width={707}
+  height={1000}
+/>
+
+<Screenshot
+  src="/images/web/report-summary.png"
+  alt="Executive summary page with key metrics, assignment coverage, potential gaps, configuration inventory and platform coverage"
+  caption="The executive summary flags unassigned and stale configurations up front."
+  width={707}
+  height={1000}
+/>
+
+Want to see a full example first? [Download the sample report (PDF)](https://intunedocumentation.com/api/pdf/sample).
+
+## Select what to export
+
+You decide exactly which policies go into the document. Nothing is selected when the dashboard first loads.
+
+- **Whole categories:** on the <Ui>Overview</Ui>, use the checkboxes under <Ui>Selection progress</Ui> to add or remove all policies of a type.
+- **Everything:** open any configuration type in the sidebar and tick <Ui>Select all configurations</Ui> above the list.
+- **One section at a time:** use the checkbox in a section header to select all items in it.
+- **Single policies:** tick the checkbox next to each policy you want.
+- **By name:** type in <Ui>Search configurations…</Ui> to narrow the list, then select <Ui>Select matching</Ui> to add only the results.
+
+The <Ui>Selected for export</Ui> card and the sidebar show how many items you have picked.
+
+## Export the document
+
+<Steps>
+<Step>
+### Open the export dialog
+
+Select <Ui>Export selected</Ui> at the bottom of the sidebar. The button is available once collection has finished and at least one item is selected.
+</Step>
+<Step>
+### Choose the format
+
+Under <Ui>Select export format</Ui>, pick one:
+
+- <Ui>Detailed PDF report</Ui> for a finished document you can share or archive.
+- <Ui>Word document (.docx)</Ui> if you want to edit the text, add your own chapters or paste it into an existing template.
+</Step>
+<Step>
+### Decide on compliance evidence
+
+<Ui>Include compliance evidence preview</Ui> is on by default. It adds the framework-to-control evidence mapping to the document. Turn it off to export only the selected configuration details.
+
+For a full, audit-ready evidence report per framework, use [Compliance mapping](/web/compliance) instead.
+</Step>
+<Step>
+### Start the export
+
+Select <Ui>Start export</Ui>. A progress view shows each stage. You can minimize it to a notification and keep working in the dashboard.
+
+When it finishes you see <Ui>Export complete</Ui> and the download starts automatically. If it does not, check your downloads folder.
+</Step>
+</Steps>
+
+<Callout type="warn" title="Export completed with warnings">
+  If some policies could not be exported, the dialog shows how many failed. Select <Ui>View failed policies</Ui> to see which ones. The rest of the document is complete. If it keeps happening, see [Troubleshooting](/help/troubleshooting).
+</Callout>
+
+## Add your branding
+
+Select <Ui>Branding</Ui> in the sidebar to make the report look like your own. The settings are grouped in four tabs:
+
+| Tab | What you can set |
+| --- | --- |
+| <Ui>Company Info</Ui> | Company name, department, contact email, website, and your company logo with its position. |
+| <Ui>Colors & Style</Ui> | Primary, secondary, accent and text colors, and the font family. |
+| <Ui>Layout</Ui> | Cover page with report title and subtitle, header and footer text, a confidentiality notice, and a watermark (PDF). |
+| <Ui>Document</Ui> | Table of contents, document title, author and classification (Public, Internal, Confidential or Restricted). |
+
+Select <Ui>Save Settings</Ui> to apply them. Your branding is saved in your browser, so it is still there next time you use the same browser. <Ui>Reset to Default</Ui> restores the original look.
+
+## Next steps
+
+- [Map your configuration to a compliance framework](/web/compliance) and download an evidence report.
+- Need exports for many tenants, or collection that stays on your machine? See the [desktop app](/desktop/select-and-export).

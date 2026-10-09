@@ -16,6 +16,7 @@ import {
   Lock,
   Monitor,
   RefreshCw,
+  Search,
   Settings2,
   ShieldCheck,
   WifiOff,
@@ -27,7 +28,7 @@ import {
   DESKTOP_APP_NAME,
   DESKTOP_DOWNLOAD_URL,
   DESKTOP_DOWNLOADS,
-  DESKTOP_GETTING_STARTED_PATH,
+  DESKTOP_SETUP_GUIDE_URL,
   DESKTOP_INSTALLS_PER_TENANT,
   DESKTOP_OFFLINE_GRACE_DAYS,
   DESKTOP_PLANS,
@@ -174,8 +175,14 @@ const features = [
     icon: ShieldCheck,
     title: "Compliance evidence for 11 frameworks",
     detail:
-      "Map your configuration to NIS2, ISO/IEC 27001, SOC 2, NIST, BSI IT-Grundschutz, Cyber Essentials, Essential Eight, and more.",
+      "Map your configuration to NIS2, ISO/IEC 27001, SOC 2, NIST, BSI IT-Grundschutz, Cyber Essentials, Essential Eight, and more. Each report is built to hand to an auditor, with sample reports to preview.",
     href: "/compliance",
+  },
+  {
+    icon: Search,
+    title: "Search every setting",
+    detail:
+      "Find a setting across all collected policies by name, value, or setting id, and see every policy that sets it, with its value, platform, and assignment. Search runs locally, without an internet connection.",
   },
   {
     icon: ChartColumn,
@@ -574,7 +581,7 @@ export default async function DesktopPage() {
               <p className="text-petrol-600 mt-5 text-sm leading-6">
                 From {formatDesktopPrice(pro.price.monthly)} per month.{" "}
                 {DESKTOP_REFUND_DAYS}-day money-back guarantee. Cancel anytime.{" "}
-                <Link href={DESKTOP_GETTING_STARTED_PATH} className={textLink}>
+                <Link href={DESKTOP_SETUP_GUIDE_URL} className={textLink}>
                   Getting started guide
                 </Link>
               </p>
@@ -836,7 +843,7 @@ export default async function DesktopPage() {
                   Buy a license
                 </a>
                 <Link
-                  href={DESKTOP_GETTING_STARTED_PATH}
+                  href={DESKTOP_SETUP_GUIDE_URL}
                   className={buttonStyles.secondary}
                 >
                   Getting started guide
@@ -955,7 +962,7 @@ export default async function DesktopPage() {
               </p>
             </div>
             <Link
-              href={DESKTOP_GETTING_STARTED_PATH}
+              href={DESKTOP_SETUP_GUIDE_URL}
               className="inline-flex min-h-11 items-center gap-2 rounded-full bg-teal-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-500 focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:outline-none"
             >
               Getting started guide

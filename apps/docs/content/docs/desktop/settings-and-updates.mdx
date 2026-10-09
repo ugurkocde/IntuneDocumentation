@@ -1,0 +1,127 @@
+---
+title: "Settings and updates"
+description: "Change the app registration, keep the desktop app up to date, export diagnostics, sign out and reset the app."
+---
+
+Open <Ui>Settings</Ui> at the bottom of the sidebar, under <Ui>Workspace</Ui>. It holds the app registration the app signs in with, update options, help and support, and a reset.
+
+<Screenshot
+  src="/images/desktop/settings.png"
+  alt="The Settings screen scrolled down: Setup and support with Redo setup, Open guide, Get support and Export diagnostics, Updates with version 0.3.2 Up to date, Check for updates and the two automatic update checkboxes, and Clear local data"
+  caption="Settings, scrolled past the app registration card at the top. Both automatic update options are switched on in this example. By default, automatic install is off."
+  width={2880}
+  height={1800}
+/>
+
+## App registration
+
+The <Ui>App registration</Ui> card at the top shows the <Ui>Application (client) ID</Ui> and <Ui>Directory (tenant) ID</Ui> the app signs in with. You entered them in the setup wizard.
+
+To use a different app registration, for example another customer tenant, enter the new values and select <Ui>Save changes</Ui>. If you are signed in or have collected data, the app asks first: <Ui>Save and sign out?</Ui> Saving signs you out and discards the collected data. Sign in again and collect for the new registration. <Ui>Discard</Ui> brings back the saved values.
+
+See [Work with multiple tenants](/desktop/multiple-tenants) for the full switching flow.
+
+## Setup and support
+
+| Option | What it does |
+| --- | --- |
+| <Ui>Redo setup</Ui> | Opens the setup wizard again, to walk through the app registration, permissions and license. |
+| <Ui>Open guide</Ui> | Opens the getting started guide in your browser. |
+| <Ui>Get support</Ui> | Opens the support page. See [Get support](/help/support). |
+| <Ui>Export diagnostics</Ui> | Saves a diagnostics file for support. It contains the app version, system details, your tenant ID, your license plan and status, collection counts and recent log lines, and no license key, tokens or policy contents. Attach it when you contact support. |
+
+The same help links are also in the app's <Ui>Help</Ui> menu.
+
+## Updates [#updates]
+
+Updates are free with every plan. The <Ui>Updates</Ui> card shows your installed version and its state, for example <Ui>Up to date</Ui> or <Ui>Update ready</Ui>.
+
+### Check for updates now
+
+Select <Ui>Check for updates</Ui>. When a new version is available, select <Ui>Download update</Ui>. When it has downloaded, select <Ui>Restart to update</Ui>. The app restarts on the new version.
+
+A banner at the bottom of the sidebar also tells you when an update is available or ready. While an update waits to be downloaded, the banner has a close button (<Ui>Later</Ui>). Select it to hide the banner for this session.
+
+### Automatic update options
+
+| Option | Default | When on | When off |
+| --- | --- | --- | --- |
+| <Ui>Check for updates automatically</Ui> | On | The app checks shortly after launch and every four hours, and tells you when an update is available. | The app never checks in the background. You can still check for and download updates yourself. |
+| <Ui>Install updates automatically</Ui> | Off | Updates download in the background and install when you restart the app. | The app tells you when an update is available, and you choose when to install it. |
+
+<Ui>Install updates automatically</Ui> needs automatic update checks, so it is only available while <Ui>Check for updates automatically</Ui> is on.
+
+Update checks contain no tenant or account data. They include a random update identifier that the updater creates on your computer, and our hosting provider processes your IP address at request level. Installers are downloaded from GitHub. See [Security and privacy](/security#update-checks).
+
+<Note>
+  Prefer to update by hand, or the update cannot be downloaded on your network? Download the newest installer from [Install the desktop app](/desktop/install) and install it over the current version. Update messages are explained in [Troubleshooting](/help/troubleshooting#update-problems).
+</Note>
+
+## Sign out
+
+Signing out ends your Microsoft session in the app and discards the collected data. Your license and your settings stay.
+
+Select the sign out button next to your account at the bottom of the sidebar, or <Ui>Sign out</Ui> on the account card under <Ui>License and account</Ui>. To continue, select <Ui>Sign in</Ui> and collect again.
+
+## Deactivate this machine
+
+Deactivating frees this computer's installation, so you can use the license on another computer. Do this before you replace or hand over a computer.
+
+<Steps>
+<Step>
+### Open License and account
+
+Select <Ui>License and account</Ui> in the sidebar.
+</Step>
+<Step>
+### Deactivate
+
+Select <Ui>Deactivate this machine</Ui>. The app confirms: "This machine was deactivated. You can use the key on another machine."
+</Step>
+</Steps>
+
+Deactivating releases the license on this computer for every tenant it was activated for, and removes the key from this computer. To use the app here again, paste your key under <Ui>License and account</Ui>. More details are in [Deactivate a machine](/account/plans-and-billing#deactivate-a-machine).
+
+## Clear local data
+
+<Ui>Clear local data</Ui> resets the app to a fresh install. Use it when you hand over a computer, or when the setup is in a state you cannot recover from.
+
+<Steps>
+<Step>
+### Start the reset
+
+Under <Ui>Clear local data</Ui>, select <Ui>Clear data</Ui>.
+</Step>
+<Step>
+### Confirm
+
+The app asks <Ui>Clear all local data?</Ui> Select <Ui>Clear and restart</Ui>.
+</Step>
+</Steps>
+
+The app deactivates the license on this computer when possible, signs you out, removes the app registration settings and setup progress, and restarts with the setup wizard.
+
+<Callout type="warn" title="If the deactivation is not confirmed">
+  When the licensing service does not confirm the deactivation, the app tells you so, because this computer may still use one of your license's installations. Select <Ui>Open customer portal</Ui> to release it there. See [Plans and billing](/account/plans-and-billing#manage-your-subscription-in-the-customer-portal).
+</Callout>
+
+## Where the app stores data
+
+Your tenant configuration and your Microsoft tokens are only held in memory while the app runs. PDF and Word files are saved where you choose. On disk, the app keeps these files in its app data folder:
+
+| File | Contents |
+| --- | --- |
+| `settings.json` | Client ID, tenant ID and your update options |
+| `license.bin` | Your license key and signed license token, encrypted with the operating system keychain |
+| `install-id` | The random installation ID used for license checks |
+| `window-state.json` | Window size and position |
+| `logs` | Recent app log lines, used for diagnostics |
+
+The app data folder is the standard per-user location for an app named Intune Documentation, usually `~/Library/Application Support/Intune Documentation` on macOS and `%APPDATA%\Intune Documentation` on Windows. <Ui>Clear data</Ui> removes the files listed above. The folder also holds small files kept by the browser engine built into the app and by the updater, which are not listed here.
+
+## Related pages
+
+- [Work with multiple tenants](/desktop/multiple-tenants)
+- [Plans and billing](/account/plans-and-billing)
+- [Security and privacy](/security)
+- [What's new](/help/whats-new)

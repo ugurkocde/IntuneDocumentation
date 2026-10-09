@@ -1,0 +1,180 @@
+---
+title: "Select and export"
+description: "Browse your configuration by family, pick the policies you need and export them as a PDF report or an editable Word document."
+---
+
+Most documentation requests are not about the whole tenant. An auditor wants your Windows baseline, a colleague needs the compliance policies, a change board asks for the BitLocker settings. The desktop app lets you pick exactly those policies and export them as a PDF report or a Word document, with every setting and assignment.
+
+You can also export everything at once. Both work from your last collection, so collect first. See [Collect your configuration](/desktop/collect).
+
+## Browse a configuration family [#browse]
+
+The sidebar groups your configuration into families, such as <Ui>Settings Catalog</Ui>, <Ui>Endpoint security</Ui>, <Ui>Security baselines</Ui>, <Ui>Device Configs</Ui> and <Ui>Compliance</Ui>. The number next to each family is how many items it holds.
+
+Select a family to open it. Each item shows its name, platform badges, its description, when it was last modified and how it is assigned, for example <Ui>Assigned to 1 group</Ui> or <Ui>Not assigned</Ui>.
+
+<Note>
+  Endpoint security policies and security baselines have their own families. They do not appear under Settings Catalog.
+</Note>
+
+## Search within a family [#search]
+
+The search box at the top right of a family, such as <Ui>Search Settings Catalog</Ui>, filters the list while you type. It matches item names, descriptions, policy types and platforms. The count on each section changes to show how many items match, for example <Ui>11 of 12</Ui>.
+
+This search looks at the items themselves, not their settings. To find every policy that configures a particular setting, use [Search settings](/desktop/search-settings) instead.
+
+## Select items [#select]
+
+Every item has a checkbox. Select the ones you want in your document.
+
+- **One by one:** select the checkbox of each item.
+- **All at once:** select <Ui>Select all</Ui> at the top of a section. While a search is active it reads <Ui>Select all matches</Ui> and selects only the items that match.
+- **Across families:** your selection stays when you switch to another family, and when a search hides selected items. You can build one document from several families.
+
+As soon as something is selected, the selection bar appears at the bottom of the window. It shows how many items are selected, and in how many sections.
+
+## Export your selection [#export-selection]
+
+The selection bar is the quickest way to export what you picked.
+
+<Steps>
+<Step>
+
+### Choose a format in the selection bar
+
+Select <Ui>Export PDF</Ui> or <Ui>Export Word</Ui>. Select <Ui>Clear</Ui> instead to start over with an empty selection.
+
+</Step>
+<Step>
+
+### Wait for the document
+
+The app shows the export progress in steps: it prepares the data, resolves group names, fetches device counts and generates the document. You can keep browsing while it works.
+
+</Step>
+<Step>
+
+### Choose where to save
+
+A save dialog opens in your Documents folder. Pick a folder and a name, then save. When the export is done, select <Ui>Open file</Ui> to open it, or <Ui>Show in folder</Ui> (<Ui>Show in Finder</Ui> on macOS) to find it.
+
+</Step>
+</Steps>
+
+You can export up to 5,000 selected items in one document. For more, export the whole tenant.
+
+## The Export documentation screen [#export-screen]
+
+<Ui>Export documentation</Ui> gives you all options on one screen. Open it with the <Ui>Export</Ui> button at the bottom of the sidebar.
+
+<Screenshot src="/images/desktop/export-dialog.png" alt="The Export documentation screen with What to export set to Only selected items (11), the PDF report format selected, an estimated length of about 24 pages and the Start export button" caption="With items selected, you choose between the whole tenant and only your selection. The estimate updates with your choice." width={2880} height={1800} />
+
+<Steps>
+<Step>
+
+### Choose what to export
+
+When you have selected items, <Ui>What to export</Ui> offers two choices:
+
+- <Ui>Whole tenant</Ui>: every collected item, including apps and Microsoft defaults.
+- <Ui>Only selected items</Ui>: just your selection. The number in brackets is how many items you selected, and the first names are listed below it.
+
+Without a selection, the app exports the whole tenant and does not show this choice.
+
+</Step>
+<Step>
+
+### Choose a format
+
+- <Ui>PDF report</Ui>: every setting and assignment, ready to share.
+- <Ui>Word document (.docx)</Ui>: an editable document for your own notes and branding.
+
+For a PDF, the screen shows the estimated length, for example <Ui>Estimated length: about 24 pages.</Ui> For a very large tenant it warns that generating can take a few minutes, and suggests the Word document, which is quicker to create.
+
+</Step>
+<Step>
+
+### Start the export
+
+Select <Ui>Start export</Ui>, then choose where to save the file.
+
+</Step>
+</Steps>
+
+<Note>
+  The documentation export contains configuration details and assignments. Compliance evidence is a separate report. Select <Ui>Open Compliance Evidence</Ui> on this screen, or see [Compliance evidence](/desktop/compliance-evidence).
+</Note>
+
+## Other ways to export [#other-ways]
+
+- **One item:** every item has its own <Ui>Export</Ui> menu with <Ui>Export PDF</Ui> and <Ui>Export Word</Ui>.
+- **One section:** <Ui>Export section</Ui> at the top of a section exports everything in it.
+
+## Where files are saved [#where-files-are-saved]
+
+The app never saves a document without asking. Every export opens a save dialog that starts in your Documents folder, and you decide where the file goes. If a file with that name already exists, the app asks before replacing it.
+
+The finished screen shows the full path of the file. The document is created on your machine. To read group names and device counts, the export calls Microsoft Graph directly, so you need to be signed in and have an active license. See [Security and privacy](/security).
+
+## Select only Windows configurations [#windows-only]
+
+To document Windows settings without your iOS, Android or macOS policies, search each family for Windows and export the selection. The app selects policies and profiles for documentation, not individual devices.
+
+<Steps>
+<Step>
+
+### Open a family
+
+After collection, open a family such as <Ui>Settings Catalog</Ui>, <Ui>Endpoint security</Ui>, <Ui>Security baselines</Ui>, <Ui>Device Configs</Ui> or <Ui>Compliance</Ui>. If you already selected items, select <Ui>Clear</Ui> in the selection bar to start fresh.
+
+</Step>
+<Step>
+
+### Search for Windows
+
+Enter `Windows` in the search box at the top right. Search matches names, descriptions, policy types and platforms, so it also finds Windows policies whose names do not contain the word.
+
+</Step>
+<Step>
+
+### Select the matches
+
+Check the platform badges and policy types of the results. Select <Ui>Select all matches</Ui> in each section you want, or select single checkboxes. Deselect anything that does not belong in your report.
+
+</Step>
+<Step>
+
+### Repeat in other families
+
+The search resets when you change families, so enter `Windows` again in each one. Your selection stays. Before you export, clear the search once to check for items you did not mean to select.
+
+</Step>
+<Step>
+
+### Export
+
+Select <Ui>Export PDF</Ui> or <Ui>Export Word</Ui> in the selection bar. Or open <Ui>Export documentation</Ui>, choose <Ui>Only selected items</Ui> and select <Ui>Start export</Ui>.
+
+</Step>
+</Steps>
+
+<Screenshot src="/images/desktop/select-windows.png" alt="Settings Catalog searched for Windows: 11 of 12 policies match, Select all matches is checked, 11 selected, and the selection bar offers Export PDF, Export Word and Clear" caption="Searching the Settings Catalog for Windows matches 11 of 12 policies. Select all matches selects them, and the selection bar exports them." width={2880} height={1800} />
+
+<Callout type="warn" title="Search is a text filter">
+  Family search is not a strict platform filter. A mobile policy that mentions Windows in its description can match, and a Windows item without Windows in its searchable fields can be missed. Review the results and add missing items by hand.
+</Callout>
+
+<Callout type="warn" title="Export section ignores your search">
+  <Ui>Export section</Ui> exports the entire section, including items hidden by the search. To export only what you picked, use the selection bar or <Ui>Only selected items</Ui>.
+</Callout>
+
+## If something does not work
+
+- **An export button is greyed out:** hover over it to see why. Common reasons are a running collection, no collection yet, being signed out or no active license.
+- **"Choose at least one configuration to export."** and other export messages: see [Troubleshooting](/help/troubleshooting#collection-and-export-problems).
+
+## Next steps
+
+- [Search settings](/desktop/search-settings): find every policy that configures a setting.
+- [Compliance evidence](/desktop/compliance-evidence): export evidence reports for frameworks such as NIS2 and ISO/IEC 27001.
+- [Management report](/desktop/management-report): a one-page summary for management.

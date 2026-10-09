@@ -1,0 +1,94 @@
+---
+title: "Get started with the web app"
+description: "Sign in to the web app with your Microsoft account and run your first Intune export in the browser."
+---
+
+The web app is the fastest way to document your tenant. It is free, has no usage limits and needs nothing installed. You sign in with your work account, the app reads your Intune configuration, and you export a report.
+
+## Before you start
+
+- **A work account with read access to Intune.** The app only shows what your own Intune role allows. A read-only role is enough.
+- **One-time admin consent.** The first time anyone in your tenant signs in, Microsoft asks for tenant-wide consent to the read-only permissions. A Global Administrator, Privileged Role Administrator or Cloud Application Administrator can approve it. After that, anyone with Intune read access can sign in.
+- **Pop-ups allowed** for intunedocumentation.com. On a computer, Microsoft sign-in opens in a pop-up window.
+
+<Note>
+  If your tenant requires user assignment for enterprise apps, only users assigned to the Intune Documentation app can sign in. If third-party apps are blocked in your tenant, use the [desktop app](/desktop/before-you-start) or [host the web app yourself](/self-hosting).
+</Note>
+
+The permissions and how your data is handled are listed on [Security and privacy](/security).
+
+## Sign in and collect your configuration
+
+<Steps>
+<Step>
+### Open the website
+
+Go to [intunedocumentation.com](https://intunedocumentation.com) and select <Ui>Sign in with Microsoft</Ui>.
+</Step>
+<Step>
+### Sign in with your work account
+
+Choose your account in the Microsoft window and complete MFA if asked.
+
+If you see "Pop-up was blocked", allow pop-ups for the site in your browser and select <Ui>Sign in with Microsoft</Ui> again.
+</Step>
+<Step>
+### Approve the permissions (first sign-in only)
+
+Microsoft shows the list of read-only permissions the app requests.
+
+- **If you are an administrator:** review the list, select <Ui>Consent on behalf of your organization</Ui> and then <Ui>Accept</Ui>. This approves the app once for the whole tenant.
+- **If you are not an administrator:** Microsoft tells you that admin approval is needed. Send an administrator this page so they can sign in once and consent.
+</Step>
+<Step>
+### Wait for the collection
+
+You land on the dashboard and the app starts reading your configuration right away. Sections appear as they finish, with live progress. You can browse a finished category while others are still loading.
+
+When everything has loaded, the <Ui>Collection status</Ui> card on the <Ui>Overview</Ui> shows <Ui>All data loaded</Ui>. How long this takes depends on the size of your tenant and on Microsoft Graph throttling.
+</Step>
+</Steps>
+
+## Find your way around the dashboard
+
+The sidebar on the left has three groups:
+
+- **Main.** <Ui>Overview</Ui> shows totals, a chart of configuration types and <Ui>Selection progress</Ui>, where you can add whole categories to your export with one checkbox. <Ui>Compliance Evidence</Ui> maps your configuration to compliance frameworks, see [Compliance mapping](/web/compliance).
+- **Configurations.** One entry per configuration type, such as Settings Catalog or compliance policies. Each opens a list of the policies of that type.
+- **Workspace.** <Ui>Settings</Ui> controls optional data such as Conditional Access. <Ui>Branding</Ui> controls the look of your report.
+
+Use <Ui>Search configurations…</Ui> at the top to find a policy by name or description.
+
+## Include Conditional Access (optional)
+
+Conditional Access policies are not collected by default, because they need one more permission, <CopyValue value="Policy.Read.All" />.
+
+<Steps>
+<Step>
+### Turn it on
+
+Open <Ui>Settings</Ui> in the sidebar and switch on <Ui>Fetch policies using Policy.Read.All</Ui>.
+</Step>
+<Step>
+### Approve the extra permission
+
+Microsoft may ask you, or an administrator, to consent to the additional read-only permission. After that, Conditional Access policies are collected and appear in the dashboard and your exports.
+</Step>
+</Steps>
+
+If you see "Conditional Access wasn't loaded", it means sign-in did not provide access to read those policies. It does not mean your tenant has none. Sign in again, and ask an administrator to grant `Policy.Read.All` if Microsoft requests approval.
+
+## When data is missing or out of date
+
+- **Some resources could not be loaded.** A banner lists every resource Microsoft Graph did not fully return, with the endpoint and a permission hint. Everything that loaded stays available and can be exported. A failed request is never shown as an empty result.
+- **Limited permissions detected.** Some configuration types could not be read with the current consent. Ask an administrator to grant the permissions the banner lists.
+- **Refresh.** The header shows how long ago the data was collected. After 30 minutes it shows <Ui>Refresh recommended</Ui>. Select <Ui>Refresh data</Ui> to collect again. If a refresh fails, your previous data stays in place.
+- **Reloading the page** restores your data for up to one hour after collection, without collecting again.
+
+For more fixes, see [Troubleshooting](/help/troubleshooting).
+
+## Next steps
+
+- [Export your configuration](/web/export) as a PDF or Word document.
+- [Map it to a compliance framework](/web/compliance) and download an evidence report.
+- Need collection to run only on your own computer? Compare with the [desktop app](/desktop/before-you-start).

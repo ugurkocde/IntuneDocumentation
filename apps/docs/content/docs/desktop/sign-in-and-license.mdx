@@ -1,0 +1,174 @@
+---
+title: "Sign in and activate your license"
+description: "Connect the desktop app to your app registration, sign in with Microsoft, check the permissions and activate your license."
+---
+
+This is the last part of the setup. You connect the app to your app registration, sign in with your own Microsoft account, and activate your license for your tenant. It takes about two minutes once the [app registration](/desktop/app-registration) exists.
+
+## Connect the app registration
+
+The app needs two IDs to find your app registration. In the wizard step <Ui>Connect the app registration</Ui>, paste the <Ui>Application (client) ID</Ui> and the <Ui>Directory (tenant) ID</Ui>, then select <Ui>Save and continue</Ui>. Where to find both values is explained in [Copy the IDs into the app](/desktop/app-registration#ids).
+
+<Screenshot
+  src="/images/desktop/wizard-app-registration.png"
+  alt="The Connect the app registration step with the Application (client) ID and Directory (tenant) ID fields"
+  caption="Step 5 of the wizard: paste both IDs from the Overview page of your app registration."
+  width={2880}
+  height={1800}
+/>
+
+## Sign in and verify [#sign-in]
+
+Signing in lets the app read your tenant with your own account. The app only sees what your account is allowed to see, and it never changes anything.
+
+<Steps>
+<Step>
+### Start the sign in
+
+On the step <Ui>Sign in and verify</Ui>, select <Ui>Sign in with Microsoft</Ui>. Your default browser opens the Microsoft sign in page.
+
+<Screenshot
+  src="/images/desktop/wizard-sign-in.png"
+  alt="The Sign in and verify step before sign in, showing Not signed in yet and the Sign in with Microsoft button"
+  caption="The app signs in through your default browser."
+  width={2880}
+  height={1800}
+/>
+</Step>
+<Step>
+### Sign in in your browser
+
+Sign in with an account from the tenant you want to document. Your organization's usual sign in rules apply, including MFA and Conditional Access.
+
+When you see "You are signed in", close the browser tab and return to the app. Finish within five minutes, otherwise the sign in times out and you start it again.
+</Step>
+<Step>
+### Check the permissions
+
+Back in the app, your account and tenant ID appear at the top. The app checks all nine permissions and shows how many are granted. When everything is in place, you see <Ui>9 of 9 granted</Ui> and <Ui>All permissions are granted</Ui>.
+
+<Screenshot
+  src="/images/desktop/wizard-permissions.png"
+  alt="The Sign in and verify step after sign in, with nine permissions listed, 9 of 9 granted, and the message All permissions are granted"
+  caption="All nine read-only permissions are granted. Select Continue to add your license."
+  width={2880}
+  height={1800}
+/>
+
+Select <Ui>Continue</Ui>.
+</Step>
+</Steps>
+
+### If permissions are missing
+
+When the check finds missing permissions, the wizard shows how many and marks each one. Admin consent was usually not granted yet, or a permission was added after consent. You have two ways to fix it:
+
+- **Grant consent in Entra.** An administrator selects <Ui>Grant admin consent</Ui> on the <Ui>API permissions</Ui> page of the registration, as described in [Grant admin consent](/desktop/app-registration#consent). Then select <Ui>Sign in again</Ui> in the app.
+- **Consent from the app.** A Global Administrator selects <Ui>Sign in and consent for the organization</Ui>. On the Microsoft page, they tick <Ui>Consent on behalf of your organization</Ui> and accept.
+
+Select <Ui>Check again</Ui> at any time to repeat the check. You can continue with missing permissions, but the areas that need them stay empty in your documentation.
+
+### Which account to sign in with
+
+What the app can document depends on the roles of the account you sign in with:
+
+- <Ui>Security Reader</Ui> or <Ui>Global Reader</Ui> each cover everything the app reads.
+- Intune roles such as <Ui>Intune Administrator</Ui> or <Ui>Read Only Operator</Ui> cannot read Conditional Access policies. Pair them with <Ui>Security Reader</Ui>.
+
+If the account cannot read an area, the app still collects everything else and lists the gaps on the Overview. See [Warnings and permission gaps](/desktop/collect#warnings-and-permission-gaps).
+
+<Note>
+  Your sign in lasts while the app is open. After you restart the app, select <Ui>Sign in</Ui> again. Your Microsoft tokens stay in memory on your computer and the app calls Microsoft Graph directly.
+</Note>
+
+## Activate your license [#license]
+
+Collecting and exporting need an active license for the tenant you signed in to. The license key arrives by email right after checkout and is also in the [customer portal](https://polar.sh/ugurlabs/portal).
+
+<Steps>
+<Step>
+### Paste your key
+
+On the wizard step <Ui>Activate your license</Ui>, paste the key into <Ui>License key</Ui>.
+
+<Screenshot
+  src="/images/desktop/wizard-license.png"
+  alt="The Activate your license step with the License key field, the Activate button, Buy a license and Skip for now"
+  caption="Step 7: paste the key from your purchase email, or skip and add it later."
+  width={2880}
+  height={1800}
+/>
+</Step>
+<Step>
+### Activate
+
+Select <Ui>Activate</Ui>. The app activates the key for your signed in tenant and confirms with "License activated for this tenant."
+</Step>
+<Step>
+### Finish setup
+
+Select <Ui>Finish setup</Ui>. The app opens the <Ui>Overview</Ui>, where you [collect your configuration](/desktop/collect).
+</Step>
+</Steps>
+
+No key yet? Select <Ui>Skip for now</Ui> to finish the setup and add the key later under <Ui>License and account</Ui>. <Ui>Buy a license</Ui> opens the plans on our website. Pro covers one tenant, MSP covers 10 or more, and every plan comes with a 30-day money-back guarantee. See [Plans and billing](/account/plans-and-billing).
+
+### Already licensed through your organization
+
+If a colleague already shares a license with your tenant, you do not need a key. The app finds the license when you sign in, and the last wizard step reads <Ui>Your organization's license is active</Ui>. Select <Ui>Finish setup</Ui>.
+
+- A **Pro** license is shared with its tenant automatically.
+- An **MSP** license is shared only with the customer tenants where the key holder turned on <Ui>Let other admins in this tenant use this license</Ui>.
+
+Each colleague's computer still counts as one of the tenant's installations. Details are in [Share a license with colleagues](/account/plans-and-billing#share-a-license-with-colleagues).
+
+## License and account
+
+<Ui>License and account</Ui> in the sidebar shows who is signed in and the state of your license. Open it to add a key you skipped in the wizard, check your plan or share the license.
+
+<Screenshot
+  src="/images/desktop/license-account.png"
+  alt="The License and account screen: the signed in account with Sign out, and an active Pro license with plan, tenants allowed, verified until, tenant, the masked license key, Deactivate this machine and the sharing checkbox"
+  caption="License and account with an active Pro license."
+  width={2880}
+  height={1800}
+/>
+
+| Field | Meaning |
+| --- | --- |
+| <Ui>Plan</Ui> | Pro or MSP. |
+| <Ui>Tenants allowed</Ui> | How many tenants your license covers. |
+| <Ui>Verified until</Ui> | When the current license check expires. The app checks again automatically while it is online. |
+| <Ui>Tenant</Ui> | The tenant this license is active for. |
+| <Ui>License key</Ui> | The last four characters of your key. The full key is never shown again in the app. |
+
+From here you can also:
+
+- **Share the license with colleagues** with <Ui>Let other admins in this tenant use this license</Ui>. Only the computer that holds the key shows this option.
+- **Free an installation** with <Ui>Deactivate this machine</Ui>, for example before you replace a computer. See [Deactivate a machine](/account/plans-and-billing#deactivate-a-machine).
+- **Open the customer portal** with <Ui>Manage subscription</Ui> for invoices, your key and your plan.
+- **Sign out** with <Ui>Sign out</Ui> on the account card.
+
+## Where your key is kept
+
+Your license key and the signed license token are stored on your computer, encrypted with the operating system keychain (Keychain on macOS, Windows' built-in credential encryption on Windows). If secure storage is not available on a system, the app keeps the license in memory only, and you enter the key again after a restart.
+
+Lost the key? You find it again in the [customer portal](https://polar.sh/ugurlabs/portal). Sign in with the email address you used at checkout.
+
+## What a license check sends
+
+The app checks your license when you activate it and regularly afterwards. A check sends your license key, or for an organization license your Microsoft sign in token, which is verified, used only for its tenant ID and never stored. It also sends a random installation ID, the tenant ID, the client ID of your app registration and the app version. Your tenant configuration is never sent.
+
+After a successful check, the app keeps working for 14 days without reaching the licensing service. The full list is on [Security and privacy](/security#what-the-licensing-service-receives).
+
+## If something does not work
+
+- **Sign in fails with AADSTS50011 or AADSTS65001:** see [Sign in problems](/help/troubleshooting#sign-in-problems).
+- **A license message appears:** see [License messages](/help/troubleshooting#license-messages).
+- **"Licensing service offline":** see [The licensing service cannot be reached](/help/troubleshooting#the-licensing-service-cannot-be-reached).
+
+## Next steps
+
+- [Collect your configuration](/desktop/collect)
+- [Work with multiple tenants](/desktop/multiple-tenants) if you are on the MSP plan
+- [Plans and billing](/account/plans-and-billing)

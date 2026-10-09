@@ -35,10 +35,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fbfcfc' },
-    { media: '(prefers-color-scheme: dark)', color: '#06252b' },
-  ],
+  themeColor: '#fbfcfc',
 };
 
 export default function Layout({ children }: LayoutProps<'/'>) {
@@ -46,6 +43,8 @@ export default function Layout({ children }: LayoutProps<'/'>) {
     <html lang="en" suppressHydrationWarning>
       <body className="flex min-h-screen flex-col">
         <RootProvider
+          // Light by default for every visitor; the toggle still offers dark.
+          theme={{ defaultTheme: 'light' }}
           search={{
             links: [
               ['Install the desktop app', '/desktop/install'],

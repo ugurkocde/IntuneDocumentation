@@ -224,10 +224,24 @@ export function SiteFooter() {
       </div>
 
       <div className="border-petrol-950/8 border-t">
-        <div className="mx-auto flex max-w-6xl items-center justify-center px-5 py-6 sm:px-8 lg:px-10">
+        <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-5 py-6 sm:flex-row sm:items-center sm:justify-center sm:gap-6 sm:px-8 lg:px-10">
           <div className="text-petrol-600 text-xs">
             © {year} UgurLabs. All rights reserved.
           </div>
+          <a
+            href="https://www.cisecurity.org/cis-securesuite"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-sm"
+          >
+            <Image
+              src="/badges/cis-securesuite-membership.png"
+              alt="CIS SecureSuite Member"
+              width={153}
+              height={32}
+              className="h-8 w-[153px]"
+            />
+          </a>
         </div>
       </div>
     </footer>

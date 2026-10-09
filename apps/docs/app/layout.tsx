@@ -1,5 +1,5 @@
 import { RootProvider } from 'fumadocs-ui/provider/next';
-import type { Metadata, Viewport } from 'next';
+import type { Metadata } from 'next';
 import './global.css';
 import { ogImage, siteDescription, siteName, siteUrl } from '@/lib/shared';
 
@@ -32,10 +32,6 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     images: [ogImage.url],
   },
-};
-
-export const viewport: Viewport = {
-  themeColor: '#fbfcfc',
 };
 
 export default function Layout({ children }: LayoutProps<'/'>) {

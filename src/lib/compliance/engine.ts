@@ -22,6 +22,7 @@ import { ISO_27001 } from "./frameworks/iso-27001";
 import { NIST_800_53 } from "./frameworks/nist-800-53";
 import { NIST_800_171 } from "./frameworks/nist-800-171";
 import { NIST_800_171_R3 } from "./frameworks/nist-800-171-r3";
+import { HIPAA_SECURITY_RULE } from "./frameworks/hipaa-security-rule";
 import { NIST_CSF } from "./frameworks/nist-csf";
 import { NIS2 } from "./frameworks/nis2";
 import { SOC_2 } from "./frameworks/soc2";
@@ -49,7 +50,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.2";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.3";
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -867,6 +868,7 @@ export function assessCompliance(
         scope,
       ),
       assessFramework(capabilities, NIS2, scope),
+      assessFramework(capabilities, HIPAA_SECURITY_RULE, scope),
     ],
   };
 }

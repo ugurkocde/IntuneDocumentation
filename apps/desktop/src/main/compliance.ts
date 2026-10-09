@@ -8,6 +8,7 @@ import {
   CYBER_ESSENTIALS,
   DEF_STAN_05_138,
   essentialEightFramework,
+  HIPAA_SECURITY_RULE,
   ISO_27001,
   NIS2,
   NIS2_OUTSIDE_INTUNE_SCOPE,
@@ -62,6 +63,7 @@ const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "nist-800-171-r2": () => NIST_800_171,
   "nist-800-171-r3": () => NIST_800_171_R3,
   "nis2-2022-2555": () => NIS2,
+  "hipaa-security-rule": () => HIPAA_SECURITY_RULE,
 };
 const FRAMEWORK_IDS = Object.keys(FRAMEWORKS) as ComplianceFrameworkId[];
 const PLATFORMS: readonly CompliancePlatform[] = [

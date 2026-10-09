@@ -26,6 +26,12 @@ export const SAMPLE_REPORTS: readonly SampleReport[] = [
   },
   { frameworkId: "soc2-tsc", label: "SOC 2", file: "soc2.pdf", locale: "en" },
   {
+    frameworkId: "hipaa-security-rule",
+    label: "HIPAA Security Rule",
+    file: "hipaa-security-rule.pdf",
+    locale: "en",
+  },
+  {
     frameworkId: "nist-800-53-r5",
     label: "NIST SP 800-53",
     file: "nist-800-53-r5.pdf",

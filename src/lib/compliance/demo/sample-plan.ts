@@ -33,6 +33,10 @@ export const SAMPLE_EXCERPTS: Readonly<
     { controlId: "CC6.7", status: "partialEvidence" },
     { controlId: "CC6.6", status: "noEvidence" },
   ],
+  "hipaa-security-rule": [
+    { controlId: "164.312(a)(2)(iv)", status: "partialEvidence" },
+    { controlId: "164.312(b)", status: "noEvidence" },
+  ],
   "nist-800-53-r5": [
     { controlId: "SC-28", status: "partialEvidence" },
     { controlId: "SC-7", status: "noEvidence" },
@@ -78,6 +82,7 @@ const REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
   "nis2-2022-2555": "NIS2",
+  "hipaa-security-rule": "HIPAA",
 };
 
 export function sampleReportId(frameworkId: ComplianceFrameworkId): string {

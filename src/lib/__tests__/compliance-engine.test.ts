@@ -15,6 +15,7 @@ import {
   NIST_800_171,
   NIST_800_171_R3,
   NIS2,
+  HIPAA_SECURITY_RULE,
 } from "../compliance";
 import { defenderForEndpointPolicyFixture } from "./fixtures/intune-beta";
 
@@ -579,6 +580,7 @@ describe("framework assessment", () => {
       "nist-800-171-r3",
       "essential-eight",
       "nis2-2022-2555",
+      "hipaa-security-rule",
     ]);
     for (const framework of assessment.frameworks) {
       expect(
@@ -749,6 +751,7 @@ describe("framework assessment", () => {
       NIST_800_171,
       NIST_800_171_R3,
       NIS2,
+      HIPAA_SECURITY_RULE,
     ]) {
       for (const [capabilityId, controlIds] of Object.entries(
         framework.mappings,

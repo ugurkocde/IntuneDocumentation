@@ -66,7 +66,8 @@ export type ComplianceFrameworkId =
   | "nist-800-171-r2"
   | "nist-800-171-r3"
   | "essential-eight"
-  | "nis2-2022-2555";
+  | "nis2-2022-2555"
+  | "hipaa-security-rule";
 
 type Locale = "en" | "de";
 
@@ -262,6 +263,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
       "nis2-2022-2555": "NIS2",
+      "hipaa-security-rule": "HIPAA-Security-Rule",
     },
   },
   de: {
@@ -405,6 +407,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
       "nis2-2022-2555": "NIS2",
+      "hipaa-security-rule": "HIPAA-Security-Rule",
     },
   },
 };
@@ -695,6 +698,7 @@ const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
   "nis2-2022-2555": "NIS2",
+  "hipaa-security-rule": "HIPAA",
 };
 
 function frameworkReportCode(frameworkId: ComplianceFrameworkId): string {
@@ -1135,6 +1139,7 @@ const SHORT_FRAMEWORK_NAMES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r3": "NIST SP 800-171",
   "essential-eight": "Essential Eight",
   "nis2-2022-2555": "NIS2 Directive",
+  "hipaa-security-rule": "HIPAA Security Rule",
 };
 
 const ISO_THEMES: Readonly<Record<string, string>> = {
@@ -1187,6 +1192,12 @@ const NIST_800_171_FAMILIES: readonly string[] = [
   "Supply Chain Risk Management",
 ];
 
+const HIPAA_SECTIONS: Readonly<Record<string, string>> = {
+  "164.308": "Administrative safeguards",
+  "164.310": "Physical safeguards",
+  "164.312": "Technical safeguards",
+};
+
 const NIST_CSF_FUNCTIONS: Readonly<Record<string, string>> = {
   GV: "Govern",
   ID: "Identify",
@@ -1224,6 +1235,8 @@ function groupLabel(
       return { code: key, name: NIST_CSF_FUNCTIONS[key] };
     case "nis2-2022-2555":
       return { code: key, name: "Cybersecurity risk-management measures" };
+    case "hipaa-security-rule":
+      return { code: `§ ${key}`, name: HIPAA_SECTIONS[key] };
     case "essential-eight":
     case "def-stan-05-138-i4":
     case "bsi-it-grundschutz":
@@ -1248,7 +1261,9 @@ function controlFamily(
             control.control.id.slice(0, 2))
           : frameworkId === "nis2-2022-2555"
             ? "Art. 21(2)"
-            : control.control.id.split(".")[0];
+            : frameworkId === "hipaa-security-rule"
+              ? control.control.id.split("(")[0]
+              : control.control.id.split(".")[0];
 }
 
 /**

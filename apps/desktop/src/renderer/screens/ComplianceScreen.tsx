@@ -233,7 +233,7 @@ export function ComplianceScreen() {
       <div className="space-y-5">
         <Header
           title="Compliance Evidence"
-          description="Review the technical evidence found in your Intune policies and assignments for eleven supported frameworks."
+          description="Review the technical evidence found in your Intune policies and assignments for twelve supported frameworks."
         />
         <EmptyState
           icon={ShieldCheck}

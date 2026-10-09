@@ -88,12 +88,27 @@ describe("working detectors across every framework", () => {
       expect(nonEnforcing.status).not.toBe("partialEvidence");
     },
   );
+  // HIPAA has no counterpart for Office macro restrictions, so it is checked
+  // with an audit setting that maps to 164.312(b).
+  it("hipaa-security-rule recognizes assigned Settings Catalog evidence for 164.312(b)", () => {
+    const scriptBlockLogging =
+      "device_vendor_msft_policy_config_windowspowershell_turnonpowershellscriptblocklogging";
+    const control = (value: string) =>
+      result([setting(scriptBlockLogging, value)])
+        .frameworks.find((f) => f.framework.id === "hipaa-security-rule")!
+        .controls.find((c) => c.control.id === "164.312(b)")!;
+    expect(control("1").status).toBe("partialEvidence");
+    expect(control("1").enforcedCapabilityIds).toContain(
+      "windows-powershell-scriptblock-logging",
+    );
+    expect(control("0").status).not.toBe("partialEvidence");
+  });
   it("covers every framework exposed by the assessment", () => {
     expect(
       result([])
         .frameworks.map((f) => f.framework.id)
         .sort(),
-    ).toEqual(matrix.map((row) => row[0]).sort());
+    ).toEqual([...matrix.map((row) => row[0]), "hipaa-security-rule"].sort());
   });
   it("only displays controls backed by policy detectors in every framework", () => {
     const assessment = result([]);

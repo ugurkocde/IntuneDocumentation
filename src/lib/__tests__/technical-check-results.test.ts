@@ -186,9 +186,9 @@ describe("independent assessment and configuration results", () => {
       "enabledForReportingButNotEnforced",
     );
   });
-  it("gives every listed requirement in all eleven frameworks checks or an explicit unavailable reason", () => {
+  it("gives every listed requirement in all twelve frameworks checks or an explicit unavailable reason", () => {
     const assessment = assessCompliance(data());
-    expect(assessment.frameworks).toHaveLength(11);
+    expect(assessment.frameworks).toHaveLength(12);
     const capabilities = new Map(
       assessment.capabilities.map((row) => [row.capability.id, row]),
     );
@@ -212,7 +212,10 @@ describe("independent assessment and configuration results", () => {
     "uses the same %s comparison in every framework mapping",
     (value) => {
       const assessment = assessCompliance(configured(value));
-      for (const framework of assessment.frameworks) {
+      // The HIPAA Security Rule has no counterpart for macro restrictions.
+      for (const framework of assessment.frameworks.filter(
+        (item) => item.framework.id !== "hipaa-security-rule",
+      )) {
         expect(
           framework.controls.some((control) =>
             control.capabilityIds.includes("windows-office-macros-disabled"),

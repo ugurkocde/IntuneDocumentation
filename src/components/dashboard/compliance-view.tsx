@@ -80,6 +80,13 @@ const FRAMEWORK_OPTIONS: ReadonlyArray<{
       "Selected Trust Services Criteria mapped to managed-device configuration evidence.",
   },
   {
+    id: "hipaa-security-rule",
+    label: "HIPAA Security Rule",
+    shortLabel: "HIPAA",
+    description:
+      "Selected 45 CFR Part 164 safeguards for electronic protected health information. Administrative and physical safeguards need separate assessment.",
+  },
+  {
     id: "nist-800-53-r5",
     label: "NIST SP 800-53",
     shortLabel: "NIST 800-53",

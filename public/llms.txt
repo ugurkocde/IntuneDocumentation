@@ -5,7 +5,7 @@
 ## Primary pages
 
 - [Product overview](https://intunedocumentation.com/): Features, security model, supported configuration areas, workflow, and frequently asked questions.
-- [Compliance evidence](https://intunedocumentation.com/compliance): Framework mapping for ISO/IEC 27001, NIS2, SOC 2, NIST, BSI IT-Grundschutz, Def Stan 05-138, Cyber Essentials, and ASD Essential Eight.
+- [Compliance evidence](https://intunedocumentation.com/compliance): Framework mapping for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST, BSI IT-Grundschutz, Def Stan 05-138, Cyber Essentials, and ASD Essential Eight.
 - [Desktop app](https://intunedocumentation.com/desktop): Paid macOS and Windows app that collects Intune configuration locally with your own Entra app registration, with Word and PDF exports, compliance evidence, a management report, and search across every collected setting.
 - [Documentation](https://docs.intunedocumentation.com): Guides for the web app and the desktop app: setup, app registration, license, collection, Search settings, exports, compliance evidence, management report, troubleshooting, and self-hosting. Full index at https://docs.intunedocumentation.com/llms.txt.
 - [Privacy policy](https://intunedocumentation.com/privacy-policy): Data access, transient processing, redaction, analytics, retention, and user rights.
@@ -20,8 +20,9 @@
 Short PDF excerpts of compliance evidence reports for the fictional tenant Contoso Ltd. Overview: [Sample reports](https://intunedocumentation.com/compliance#samples).
 
 - [ISO/IEC 27001:2022 sample report](https://intunedocumentation.com/samples/iso-27001-2022.pdf): Evidence report excerpt.
-- [NIS2 Directive sample report](https://intunedocumentation.com/samples/nis2.pdf): Evidence report excerpt.
+- [NIS2 Directive sample report](https://intunedocumentation.com/samples/nis2.pdf): Evidence report excerpt. NIS2 reports are created in the desktop app only.
 - [SOC 2 sample report](https://intunedocumentation.com/samples/soc2.pdf): Evidence report excerpt.
+- [HIPAA Security Rule sample report](https://intunedocumentation.com/samples/hipaa-security-rule.pdf): Evidence report excerpt.
 - [NIST SP 800-53 sample report](https://intunedocumentation.com/samples/nist-800-53-r5.pdf): Evidence report excerpt.
 - [NIST SP 800-171 sample report](https://intunedocumentation.com/samples/nist-800-171-r3.pdf): Evidence report excerpt.
 - [NIST CSF 2.0 sample report](https://intunedocumentation.com/samples/nist-csf-2.pdf): Evidence report excerpt.

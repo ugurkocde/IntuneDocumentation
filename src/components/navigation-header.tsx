@@ -5,13 +5,14 @@ import { useMsal } from "@azure/msal-react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Github, User, LogOut, Menu, X } from "lucide-react";
+import { CalendarDays, Github, User, LogOut, Menu, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useUserProfile } from "~/hooks/use-user-profile";
 import { useEffect, useState, memo } from "react";
 import { loginRequest, shouldUseRedirectLogin } from "~/lib/msal-config";
 import { ChangelogBell } from "~/components/changelog-bell";
 import { clearDashboardSession } from "~/lib/dashboard-session-cache";
+import { DEMO_BOOKING_URL } from "~/lib/demo-booking";
 
 interface NavLinksProps {
   vertical?: boolean;
@@ -76,6 +77,16 @@ const NavLinks = memo(function NavLinks({
       >
         Desktop app
       </Link>
+      <a
+        href={DEMO_BOOKING_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onNavigate}
+        className="hover:text-petrol-950 inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-teal-700 transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+      >
+        <CalendarDays className="h-4 w-4" aria-hidden="true" />
+        Book a demo
+      </a>
       <a
         href="https://github.com/ugurkocde/IntuneDocumentation"
         target="_blank"

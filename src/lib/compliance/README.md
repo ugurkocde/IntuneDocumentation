@@ -123,7 +123,7 @@ by paragraph, for example `164.312(a)(2)(iv)`. `totalRequirements` is 54: the
 18 standards and 36 implementation specifications in Appendix A to Subpart C.
 The tier follows Appendix A: `Required` for standards without implementation
 specifications, `Addressable` for addressable specifications, and `Standard`
-for a standard whose specifications are not mapped. Every mapping is
+for a standard that is mapped as a whole, separately from its specifications. Every mapping is
 supporting evidence. The text was checked against the eCFR (last amended in
 2013) and the key activities and sample questions of
 [NIST SP 800-66 Rev. 2](https://csrc.nist.gov/pubs/sp/800/66/r2/final) on
@@ -143,8 +143,9 @@ supporting evidence. The text was checked against the eCFR (last amended in
 
 Encryption is not mapped to 164.310(d)(1) device and media controls, whose key
 activities cover disposal, re-use, accountability and backup. Updates, host
-firewalls and Office or browser hardening have no HIPAA counterpart in SP
-800-66 Rev. 2 and stay unmapped. Unique user identification, automatic logoff
+firewalls, Office macro restrictions and browser hardening have no HIPAA
+counterpart in SP 800-66 Rev. 2 and stay unmapped; antivirus scanning of
+macros counts as malware protection under 164.308(a)(5)(ii)(B). Unique user identification, automatic logoff
 and transmission security have no suitable detector and are not listed. The
 January 2025 proposed rule (RIN 0945-AA22) is not final and is not reflected.
 HITRUST CSF content is not shipped.

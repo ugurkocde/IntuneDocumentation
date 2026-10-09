@@ -7,9 +7,11 @@ import type { FrameworkDefinition } from "../types";
 // activities and sample questions in NIST SP 800-66 Rev. 2 on 2026-10-09.
 // Tier follows Appendix A to Subpart C: "Required" for standards without
 // implementation specifications, "Addressable" for addressable specifications
-// and "Standard" for standards whose specifications are not mapped here.
-// Patching, host firewalls and Office or browser hardening have no HIPAA
-// counterpart in SP 800-66 Rev. 2 and stay unmapped. Encryption maps to
+// and "Standard" for a standard that is mapped as a whole, separately from any
+// of its specifications. Patching, host firewalls, Office macro restrictions
+// and browser hardening have no HIPAA counterpart in SP 800-66 Rev. 2 and stay
+// unmapped; antivirus scanning of macros is mapped as malware protection
+// under 164.308(a)(5)(ii)(B). Encryption maps to
 // 164.310(c) and 164.312(a)(2)(iv), not to 164.310(d)(1), whose key activities
 // cover disposal, re-use, accountability and backup. The January 2025 proposed
 // rule (RIN 0945-AA22) is not final and is not reflected.

@@ -781,7 +781,7 @@ export default async function DesktopPage() {
             centered
             eyebrow="Pricing"
             title="One plan per organization, one for partners."
-            lead="Both plans include Word and PDF exports, compliance evidence, offline use, and updates. MSP adds more tenants and switching between them. Prices in EUR, including VAT where applicable."
+            lead="Both plans include Word and PDF exports, compliance evidence, offline use, and updates. MSP adds more tenants and switching between them. Prices in EUR. VAT is added at checkout where applicable."
           />
           <ol className="mx-auto mt-10 grid max-w-4xl gap-3 sm:grid-cols-3">
             {steps.map((step, index) => (

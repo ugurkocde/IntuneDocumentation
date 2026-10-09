@@ -40,7 +40,11 @@ export interface ManagementMetrics {
   conflicting: number;
   /** Mapped capabilities configured on a policy that is not assigned. */
   unassignedConfigs: number;
-  /** Published requirements without an Intune evidence mapping, when known. */
+  /**
+   * Published requirements without an Intune evidence mapping, when known.
+   * Excludes measures marked notEvaluated, which Intune or Entra settings
+   * could support but this ruleset does not check yet.
+   */
   outsideIntuneScope: number | null;
   /** Mapped capabilities whose evidence could not be read (re-collect). */
   dataGaps: number;
@@ -58,7 +62,10 @@ export type BaselineMetrics = Omit<
   "safeguardsTotal" | "safeguardsInPlace" | "safeguardPct"
 > &
   Partial<
-    Pick<ManagementMetrics, "safeguardsTotal" | "safeguardsInPlace" | "safeguardPct">
+    Pick<
+      ManagementMetrics,
+      "safeguardsTotal" | "safeguardsInPlace" | "safeguardPct"
+    >
   >;
 
 export interface SafeguardCount {
@@ -91,6 +98,8 @@ export interface NextAction {
 export interface OutsideScopeMeasure {
   id: string;
   title: { en: string; de: string };
+  /** Related Intune or Entra settings exist, but no detector checks them yet. */
+  notEvaluated?: true;
 }
 
 export interface ManagementSummary {

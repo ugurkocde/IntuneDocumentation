@@ -1,3 +1,4 @@
+import type { OutsideScopeMeasure } from "../management/types";
 import type { FrameworkDefinition } from "../types";
 
 // The HIPAA Security Rule (45 CFR Part 164, Subpart C) is US federal
@@ -207,3 +208,332 @@ export const HIPAA_SECURITY_RULE: FrameworkDefinition = {
     "android-app-data-transfer": ["164.312(a)(1)"],
   },
 };
+
+/**
+ * Appendix A standards and implementation specifications without an Intune
+ * evidence mapping, in rule order. Entries marked notEvaluated relate to
+ * Intune or Entra settings that this ruleset has no detector for yet; the
+ * others are organizational or physical safeguards.
+ */
+export const HIPAA_OUTSIDE_INTUNE_SCOPE: readonly OutsideScopeMeasure[] = [
+  {
+    id: "164.308(a)(1)",
+    title: {
+      en: "Security Management Process",
+      de: "Prozess für das Sicherheitsmanagement",
+    },
+  },
+  {
+    id: "164.308(a)(1)(ii)(A)",
+    title: {
+      en: "Risk Analysis",
+      de: "Risikoanalyse",
+    },
+  },
+  {
+    id: "164.308(a)(1)(ii)(B)",
+    title: {
+      en: "Risk Management",
+      de: "Risikomanagement",
+    },
+  },
+  {
+    id: "164.308(a)(1)(ii)(C)",
+    title: {
+      en: "Sanction Policy",
+      de: "Sanktionsrichtlinie",
+    },
+  },
+  {
+    id: "164.308(a)(1)(ii)(D)",
+    title: {
+      en: "Information System Activity Review",
+      de: "Überprüfung der Aktivitäten in Informationssystemen",
+    },
+  },
+  {
+    id: "164.308(a)(2)",
+    title: {
+      en: "Assigned Security Responsibility",
+      de: "Zugewiesene Sicherheitsverantwortung",
+    },
+  },
+  {
+    id: "164.308(a)(3)",
+    title: {
+      en: "Workforce Security",
+      de: "Sicherheit der Belegschaft",
+    },
+  },
+  {
+    id: "164.308(a)(3)(ii)(A)",
+    title: {
+      en: "Authorization and/or Supervision",
+      de: "Autorisierung und Beaufsichtigung",
+    },
+  },
+  {
+    id: "164.308(a)(3)(ii)(B)",
+    title: {
+      en: "Workforce Clearance Procedure",
+      de: "Verfahren zur Freigabe von Beschäftigten",
+    },
+  },
+  {
+    id: "164.308(a)(3)(ii)(C)",
+    title: {
+      en: "Termination Procedures",
+      de: "Verfahren bei Beendigung des Beschäftigungsverhältnisses",
+    },
+  },
+  {
+    id: "164.308(a)(4)",
+    title: {
+      en: "Information Access Management",
+      de: "Verwaltung des Informationszugriffs",
+    },
+  },
+  {
+    id: "164.308(a)(4)(ii)(A)",
+    title: {
+      en: "Isolating Health Care Clearinghouse Functions",
+      de: "Abgrenzung der Funktionen von Health Care Clearinghouses",
+    },
+  },
+  {
+    id: "164.308(a)(4)(ii)(B)",
+    title: {
+      en: "Access Authorization",
+      de: "Zugriffsautorisierung",
+    },
+  },
+  {
+    id: "164.308(a)(4)(ii)(C)",
+    title: {
+      en: "Access Establishment and Modification",
+      de: "Einrichtung und Änderung von Zugriffen",
+    },
+  },
+  {
+    id: "164.308(a)(5)",
+    title: {
+      en: "Security Awareness and Training",
+      de: "Sicherheitsbewusstsein und Schulung",
+    },
+  },
+  {
+    id: "164.308(a)(5)(ii)(A)",
+    title: {
+      en: "Security Reminders",
+      de: "Sicherheitshinweise",
+    },
+  },
+  {
+    id: "164.308(a)(5)(ii)(C)",
+    title: {
+      en: "Log-in Monitoring",
+      de: "Überwachung von Anmeldungen",
+    },
+  },
+  {
+    id: "164.308(a)(6)",
+    title: {
+      en: "Security Incident Procedures",
+      de: "Verfahren bei Sicherheitsvorfällen",
+    },
+  },
+  {
+    id: "164.308(a)(6)(ii)",
+    title: {
+      en: "Response and Reporting",
+      de: "Reaktion und Meldung",
+    },
+  },
+  {
+    id: "164.308(a)(7)",
+    title: {
+      en: "Contingency Plan",
+      de: "Notfallplan",
+    },
+  },
+  {
+    id: "164.308(a)(7)(ii)(A)",
+    title: {
+      en: "Data Backup Plan",
+      de: "Plan zur Datensicherung",
+    },
+  },
+  {
+    id: "164.308(a)(7)(ii)(B)",
+    title: {
+      en: "Disaster Recovery Plan",
+      de: "Plan zur Wiederherstellung nach einem Notfall",
+    },
+  },
+  {
+    id: "164.308(a)(7)(ii)(C)",
+    title: {
+      en: "Emergency Mode Operation Plan",
+      de: "Plan für den Notbetrieb",
+    },
+  },
+  {
+    id: "164.308(a)(7)(ii)(D)",
+    title: {
+      en: "Testing and Revision Procedures",
+      de: "Verfahren für Tests und Überarbeitung",
+    },
+  },
+  {
+    id: "164.308(a)(7)(ii)(E)",
+    title: {
+      en: "Applications and Data Criticality Analysis",
+      de: "Analyse der Kritikalität von Anwendungen und Daten",
+    },
+  },
+  {
+    id: "164.308(a)(8)",
+    title: {
+      en: "Evaluation",
+      de: "Bewertung",
+    },
+  },
+  {
+    id: "164.308(b)(1)",
+    title: {
+      en: "Business Associate Contracts and Other Arrangements",
+      de: "Verträge mit Business Associates und andere Vereinbarungen",
+    },
+  },
+  {
+    id: "164.308(b)(3)",
+    title: {
+      en: "Written Contract or Other Arrangement",
+      de: "Schriftlicher Vertrag oder andere Vereinbarung",
+    },
+  },
+  {
+    id: "164.310(a)(1)",
+    title: {
+      en: "Facility Access Controls",
+      de: "Zutrittskontrolle zu Einrichtungen",
+    },
+  },
+  {
+    id: "164.310(a)(2)(i)",
+    title: {
+      en: "Contingency Operations",
+      de: "Betrieb im Notfall",
+    },
+  },
+  {
+    id: "164.310(a)(2)(ii)",
+    title: {
+      en: "Facility Security Plan",
+      de: "Sicherheitsplan für Einrichtungen",
+    },
+  },
+  {
+    id: "164.310(a)(2)(iii)",
+    title: {
+      en: "Access Control and Validation Procedures",
+      de: "Verfahren zur Zutrittskontrolle und -prüfung",
+    },
+  },
+  {
+    id: "164.310(a)(2)(iv)",
+    title: {
+      en: "Maintenance Records",
+      de: "Wartungsnachweise",
+    },
+  },
+  {
+    id: "164.310(d)(1)",
+    title: {
+      en: "Device and Media Controls",
+      de: "Kontrolle von Geräten und Datenträgern",
+    },
+  },
+  {
+    id: "164.310(d)(2)(i)",
+    title: {
+      en: "Disposal",
+      de: "Entsorgung",
+    },
+  },
+  {
+    id: "164.310(d)(2)(ii)",
+    title: {
+      en: "Media Re-use",
+      de: "Wiederverwendung von Datenträgern",
+    },
+  },
+  {
+    id: "164.310(d)(2)(iii)",
+    title: {
+      en: "Accountability",
+      de: "Nachverfolgbarkeit",
+    },
+  },
+  {
+    id: "164.310(d)(2)(iv)",
+    title: {
+      en: "Data Backup and Storage",
+      de: "Datensicherung und Speicherung",
+    },
+  },
+  {
+    id: "164.312(a)(2)(i)",
+    title: {
+      en: "Unique User Identification",
+      de: "Eindeutige Benutzerkennung",
+    },
+    notEvaluated: true,
+  },
+  {
+    id: "164.312(a)(2)(ii)",
+    title: {
+      en: "Emergency Access Procedure",
+      de: "Verfahren für den Notfallzugriff",
+    },
+  },
+  {
+    id: "164.312(a)(2)(iii)",
+    title: {
+      en: "Automatic Logoff",
+      de: "Automatische Abmeldung",
+    },
+    notEvaluated: true,
+  },
+  {
+    id: "164.312(c)(2)",
+    title: {
+      en: "Mechanism to Authenticate Electronic Protected Health Information",
+      de: "Mechanismus zur Authentifizierung elektronischer geschützter Gesundheitsinformationen",
+    },
+  },
+  {
+    id: "164.312(e)(1)",
+    title: {
+      en: "Transmission Security",
+      de: "Übertragungssicherheit",
+    },
+    notEvaluated: true,
+  },
+  {
+    id: "164.312(e)(2)(i)",
+    title: {
+      en: "Integrity Controls",
+      de: "Integritätskontrollen",
+    },
+    notEvaluated: true,
+  },
+  {
+    id: "164.312(e)(2)(ii)",
+    title: {
+      en: "Encryption",
+      de: "Verschlüsselung",
+    },
+    notEvaluated: true,
+  },
+];

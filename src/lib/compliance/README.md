@@ -145,8 +145,12 @@ Encryption is not mapped to 164.310(d)(1) device and media controls, whose key
 activities cover disposal, re-use, accountability and backup. Updates, host
 firewalls, Office macro restrictions and browser hardening have no HIPAA
 counterpart in SP 800-66 Rev. 2 and stay unmapped; antivirus scanning of
-macros counts as malware protection under 164.308(a)(5)(ii)(B). Unique user identification, automatic logoff
-and transmission security have no suitable detector and are not listed. The
+macros counts as malware protection under 164.308(a)(5)(ii)(B).
+`HIPAA_OUTSIDE_INTUNE_SCOPE` lists the other 45 Appendix A rows for the
+management summary. Unique user identification, automatic logoff, transmission
+security and its integrity controls and encryption specifications are marked
+`notEvaluated`: Intune or Entra settings could support them, but no detector
+checks them yet. The remaining 40 are organizational or physical. The
 January 2025 proposed rule (RIN 0945-AA22) is not final and is not reflected.
 HITRUST CSF content is not shipped.
 
@@ -163,7 +167,11 @@ Everything it produces is identifiers, statuses and counts.
   to the framework's assessed controls with status `configuredNotAssigned`.
   `assignmentUnknown` and `collectionIncomplete` count as data gaps instead.
 - **Measures outside Intune scope** is `totalRequirements` minus assessed
-  controls when the framework publishes a total (NIS2: a, c, d and f).
+  controls when the framework publishes a total (NIS2: a, c, d and f), minus
+  listed measures marked `notEvaluated`. Those relate to Intune or Entra
+  settings without a detector yet; the report counts and labels them apart
+  (HIPAA: unique user identification, automatic logoff, transmission security
+  and its two specifications).
 - **Next actions** (top 5) are deterministic. Candidates are mapped
   capabilities that are not enforced and not a data gap. They are ordered by:
   touching a control without evidence first; then tier (conflicting,

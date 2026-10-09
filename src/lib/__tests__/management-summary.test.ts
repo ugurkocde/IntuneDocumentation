@@ -245,6 +245,10 @@ describe("computeMetrics", () => {
     expect(
       computeMetrics(framework(controls, 10), caps, 1).outsideIntuneScope,
     ).toBe(0);
+    expect(
+      computeMetrics(framework(controls, 10), caps, undefined, 3)
+        .outsideIntuneScope,
+    ).toBe(5);
   });
 });
 

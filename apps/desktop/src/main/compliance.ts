@@ -8,6 +8,7 @@ import {
   CYBER_ESSENTIALS,
   DEF_STAN_05_138,
   essentialEightFramework,
+  HIPAA_OUTSIDE_INTUNE_SCOPE,
   HIPAA_SECURITY_RULE,
   ISO_27001,
   NIS2,
@@ -29,6 +30,7 @@ import type {
   BaselineFile,
   Crosswalk,
   ManagementSummary,
+  OutsideScopeMeasure,
 } from "../../../../src/lib/compliance/management/types";
 import { frameworkCoverageLabel } from "../../../../src/lib/compliance/presentation";
 import type {
@@ -48,6 +50,15 @@ import { localDateStamp } from "../shared/dates";
 import { getCollectionOwner, getLastCollection } from "./collect";
 
 type Collection = NonNullable<ReturnType<typeof getLastCollection>>;
+
+// Unmapped measures listed in the management summary, where the framework
+// publishes them.
+const OUTSIDE_SCOPE: Partial<
+  Record<ComplianceFrameworkId, readonly OutsideScopeMeasure[]>
+> = {
+  "nis2-2022-2555": NIS2_OUTSIDE_INTUNE_SCOPE,
+  "hipaa-security-rule": HIPAA_OUTSIDE_INTUNE_SCOPE,
+};
 
 // Order of view.frameworks. The picker order comes from the renderer's
 // FRAMEWORK_OPTIONS, which places NIS2 after ISO 27001.
@@ -261,8 +272,7 @@ export function managementSummaryFor(
   frameworkId: ComplianceFrameworkId,
 ): ManagementSummary {
   return buildManagementSummary(assessment, frameworkId, {
-    outsideScope:
-      frameworkId === NIS2.id ? NIS2_OUTSIDE_INTUNE_SCOPE : undefined,
+    outsideScope: OUTSIDE_SCOPE[frameworkId],
   });
 }
 

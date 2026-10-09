@@ -79,6 +79,7 @@ export function computeMetrics(
   fa: FrameworkAssessment,
   capabilities: readonly CapabilityResult[],
   totalRequirements: number | undefined = fa.framework.totalRequirements,
+  notEvaluated = 0,
 ): ManagementMetrics {
   const evidenceFound = countStatus(fa, "evidenceFound");
   const partialEvidence = countStatus(fa, "partialEvidence");
@@ -112,7 +113,10 @@ export function computeMetrics(
     outsideIntuneScope:
       totalRequirements === undefined
         ? null
-        : Math.max(0, totalRequirements - fa.summary.totalControls),
+        : Math.max(
+            0,
+            totalRequirements - fa.summary.totalControls - notEvaluated,
+          ),
     dataGaps: distinctWith(DATA_GAP_STATUSES),
     safeguardsTotal: safeguards.total,
     safeguardsInPlace: safeguards.inPlace,
@@ -295,7 +299,13 @@ export function buildManagementSummary(
     generatedAt: assessment.generatedAt,
     rulesetVersion: assessment.provenance.rulesetVersion,
     scopeKey: scopeKeyOf(assessment.scope),
-    metrics: computeMetrics(fa, assessment.capabilities),
+    metrics: computeMetrics(
+      fa,
+      assessment.capabilities,
+      fa.framework.totalRequirements,
+      (options.outsideScope ?? []).filter((measure) => measure.notEvaluated)
+        .length,
+    ),
     nextActions: rankNextActions(fa, assessment.capabilities, options.limit),
     controls: Object.fromEntries(
       fa.controls.map((control) => [control.control.id, control.status]),

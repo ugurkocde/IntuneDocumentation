@@ -215,6 +215,11 @@ export async function generateManagementReportPDF(
   const { summary, delta } = input;
   const metrics = summary.metrics;
   const disclaimer = strings.disclaimer ?? input.disclaimer;
+  // Unmapped measures that related settings could support, counted apart from
+  // those outside Intune scope.
+  const notEvaluated = summary.outsideScope.filter(
+    (measure) => measure.notEvaluated,
+  ).length;
 
   // Measures shown on page 1 and in the IT sections: every assessed control
   // except those outside the selected platform scope, in framework order.
@@ -598,6 +603,26 @@ export async function generateManagementReportPDF(
       }
       y += lines.length * 4.2 + 1;
     }
+    if (notEvaluated > 0) {
+      const lines = wrap(
+        strings.notEvaluatedLine(notEvaluated),
+        contentWidth - 24,
+        9,
+      );
+      setText(9, "normal", TEXT);
+      lines.forEach((line, index) =>
+        doc.text(line, margin + 2, y + index * 4.2),
+      );
+      setText(7.5, "normal", SECONDARY);
+      doc.text(strings.details, right - 1, y, { align: "right" });
+      linkTo("outsideScope", [
+        margin,
+        y - 3.5,
+        contentWidth,
+        lines.length * 4.2 + 1,
+      ]);
+      y += lines.length * 4.2 + 1;
+    }
     if (metrics.dataGaps > 0) {
       const lines = wrap(
         strings.dataGapsNote(metrics.dataGaps),
@@ -959,6 +984,13 @@ export async function generateManagementReportPDF(
           strings.measuresValue(metrics.outsideIntuneScope),
         ),
       );
+    if (notEvaluated > 0)
+      rows.push(
+        figure(
+          strings.figures.notEvaluated,
+          strings.measuresValue(notEvaluated),
+        ),
+      );
     rows.push(
       figure(
         strings.figures.dataGaps,
@@ -1200,14 +1232,20 @@ export async function generateManagementReportPDF(
   // Measures outside Intune scope
   if (summary.outsideScope.length > 0) {
     startItPage("outsideScope", strings.outsideScopeHeading);
-    paragraph(strings.outsideScopeIntro, { after: 4 });
+    paragraph(strings.outsideScopeIntro, { after: notEvaluated > 0 ? 2 : 4 });
+    if (notEvaluated > 0) paragraph(strings.notEvaluatedIntro, { after: 4 });
     table(
       strings.outsideScopeHeaders,
       [28, contentWidth - 28],
       summary.outsideScope.map((measure) => ({
         cells: [
           [{ text: measure.id, style: "bold" }],
-          [{ text: measure.title[input.locale] }],
+          [
+            { text: measure.title[input.locale] },
+            ...(measure.notEvaluated
+              ? [{ text: strings.notEvaluatedNote, size: 7.2, color: MUTED }]
+              : []),
+          ],
         ],
       })),
     );

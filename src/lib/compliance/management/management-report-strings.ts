@@ -47,6 +47,7 @@ export interface ManagementReportStrings {
   measuresCaption: string;
   moreMeasures: (count: number) => string;
   outsideScopeLine: (count: number) => string;
+  notEvaluatedLine: (count: number) => string;
   dataGapsNote: (count: number) => string;
   nextStepsHeading: string;
   noNextSteps: string;
@@ -74,6 +75,7 @@ export interface ManagementReportStrings {
     conflicting: FigureText;
     notSwitchedOn: FigureText;
     outsideScope: FigureText;
+    notEvaluated: FigureText;
     dataGaps: FigureText;
   };
   measuresValue: (count: number) => string;
@@ -122,6 +124,8 @@ export interface ManagementReportStrings {
   outsideScopeHeading: string;
   outsideScopeIntro: string;
   outsideScopeHeaders: readonly [string, string];
+  notEvaluatedNote: string;
+  notEvaluatedIntro: string;
   footer: string;
   pageNumber: (page: number, total: number) => string;
   fileNamePrefix: string;
@@ -174,6 +178,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       count === 1
         ? "1 measure cannot be checked in Intune and needs a separate review."
         : `${count} measures cannot be checked in Intune and need a separate review.`,
+    notEvaluatedLine: (count) =>
+      count === 1
+        ? "1 measure relates to Intune or Entra settings that this report does not check yet; review it in the admin center."
+        : `${count} measures relate to Intune or Entra settings that this report does not check yet; review them in the admin center.`,
     dataGapsNote: (count) =>
       `${plural(count, "safeguard", "safeguards")} could not be read. Ask your IT team to collect the data again before sharing this report.`,
     nextStepsHeading: "Recommended next steps",
@@ -259,6 +267,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         label: "Measures outside Intune scope",
         note: "Framework requirements with no Intune mapping; they need a separate review.",
       },
+      notEvaluated: {
+        label: "Measures not checked yet",
+        note: "Framework requirements that Intune or Entra settings could support, but that this report does not check yet; review them in the admin center.",
+      },
       dataGaps: {
         label: "Safeguards that could not be read",
         note: "Mapped safeguards whose Intune data was missing or incomplete, for example because of a missing permission. They do not count as in place; collect the data again.",
@@ -339,6 +351,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     outsideScopeIntro:
       "These measures cannot be checked from the Intune configuration. They need a separate review, for example of processes, contracts or other systems.",
     outsideScopeHeaders: ["Measure", "Description"],
+    notEvaluatedNote:
+      "Not checked yet: related Intune or Entra settings exist, review them in the admin center.",
+    notEvaluatedIntro:
+      "Rows marked Not checked yet are the exception: Intune or Entra settings can support them, but this report does not check them yet.",
     footer: "Generated with Intune Documentation (intunedocumentation.com)",
     pageNumber: (page, total) => `Page ${page} of ${total}`,
     fileNamePrefix: "Security-Summary",
@@ -381,6 +397,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       count === 1
         ? "1 Maßnahme lässt sich nicht in Intune prüfen und braucht eine gesonderte Bewertung."
         : `${count} Maßnahmen lassen sich nicht in Intune prüfen und brauchen eine gesonderte Bewertung.`,
+    notEvaluatedLine: (count) =>
+      count === 1
+        ? "1 Maßnahme betrifft Intune- oder Entra-Einstellungen, die dieser Bericht noch nicht prüft; bewerten Sie sie im Admin Center."
+        : `${count} Maßnahmen betreffen Intune- oder Entra-Einstellungen, die dieser Bericht noch nicht prüft; bewerten Sie sie im Admin Center.`,
     dataGapsNote: (count) =>
       `${plural(count, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden. Bitten Sie Ihr IT-Team, die Daten erneut zu erfassen, bevor Sie diesen Bericht weitergeben.`,
     nextStepsHeading: "Empfohlene nächste Schritte",
@@ -467,6 +487,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         label: "Maßnahmen außerhalb des Intune-Umfangs",
         note: "Anforderungen des Frameworks ohne Intune-Zuordnung; sie brauchen eine gesonderte Bewertung.",
       },
+      notEvaluated: {
+        label: "Noch nicht geprüfte Maßnahmen",
+        note: "Anforderungen des Frameworks, die Intune- oder Entra-Einstellungen unterstützen könnten, die dieser Bericht aber noch nicht prüft; bewerten Sie sie im Admin Center.",
+      },
       dataGaps: {
         label: "Nicht lesbare Schutzfunktionen",
         note: "Zugeordnete Schutzfunktionen, deren Intune-Daten fehlten oder unvollständig waren, etwa wegen einer fehlenden Berechtigung. Sie zählen nicht als aktiv; erfassen Sie die Daten erneut.",
@@ -550,6 +574,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     outsideScopeIntro:
       "Diese Maßnahmen lassen sich nicht anhand der Intune-Konfiguration prüfen. Sie brauchen eine gesonderte Bewertung, zum Beispiel von Prozessen, Verträgen oder anderen Systemen.",
     outsideScopeHeaders: ["Maßnahme", "Beschreibung"],
+    notEvaluatedNote:
+      "Noch nicht geprüft: Es gibt passende Intune- oder Entra-Einstellungen, bewerten Sie diese im Admin Center.",
+    notEvaluatedIntro:
+      "Ausgenommen sind Zeilen mit dem Hinweis Noch nicht geprüft: Intune- oder Entra-Einstellungen können sie unterstützen, dieser Bericht prüft sie aber noch nicht.",
     footer: "Erstellt mit Intune Documentation (intunedocumentation.com)",
     pageNumber: (page, total) => `Seite ${page} von ${total}`,
     fileNamePrefix: "Sicherheitsuebersicht",

@@ -1,0 +1,127 @@
+---
+title: "Work with multiple tenants"
+description: "Document several customer tenants with one MSP license: one app registration per tenant, switching tenants, tenant counts, sharing and per-tenant baselines."
+---
+
+The MSP plan is built for partners who document many customer tenants. One license key covers every tenant you activate, so you switch between customers without juggling keys. Every feature works the same in each tenant: exports, Search settings, compliance evidence and the management report.
+
+<Note>
+  A Pro license covers one tenant. To document more tenants, you need the MSP plan. Compare both on [Plans and billing](/account/plans-and-billing).
+</Note>
+
+## How it works
+
+- **One app registration per customer tenant.** Each customer keeps control of its own registration, consent and Conditional Access, and we never get access to any of them.
+- **One tenant at a time.** The app is connected to one app registration and signed in to one tenant at a time. Switching means connecting the next customer's registration and signing in again.
+- **One license key for all of them.** The key activates for each tenant the first time you use it there. Your plan's tenant count limits how many tenants can be active.
+
+## Set up a customer tenant
+
+Do this once per customer.
+
+<Steps>
+<Step>
+### Create the app registration in the customer tenant
+
+In the customer's Microsoft Entra admin center, create the registration, add the redirect URI, add the nine permissions and grant admin consent. Every step is in [Create the app registration](/desktop/app-registration).
+
+If someone at the customer does this for you, send them that page and ask for the <Ui>Application (client) ID</Ui> and the <Ui>Directory (tenant) ID</Ui>. Neither is a secret.
+</Step>
+<Step>
+### Note the two IDs
+
+Keep both IDs per customer, for example in your documentation or password manager. You need them each time you switch to that customer.
+</Step>
+</Steps>
+
+## Switch to another tenant
+
+There is no separate tenant list in the app. You switch by connecting the other tenant's app registration.
+
+<Steps>
+<Step>
+### Open Settings
+
+Select <Ui>Settings</Ui> in the sidebar. The <Ui>App registration</Ui> card shows the IDs you are connected with now.
+</Step>
+<Step>
+### Enter the other tenant's IDs
+
+Replace the <Ui>Application (client) ID</Ui> and the <Ui>Directory (tenant) ID</Ui> with the values of the customer you want to work on. Instead of the tenant ID, you can also enter a verified domain such as contoso.onmicrosoft.com.
+</Step>
+<Step>
+### Save and sign out
+
+Select <Ui>Save changes</Ui>. The app asks <Ui>Save and sign out?</Ui> Confirm with <Ui>Save and sign out</Ui>.
+
+This signs you out and discards the collected data of the previous tenant, so data from two customers never mixes.
+</Step>
+<Step>
+### Sign in to the new tenant
+
+Select <Ui>Sign in</Ui> at the bottom of the sidebar, or on the <Ui>Overview</Ui>, and sign in with an account in the customer tenant. The app activates your license for this tenant.
+</Step>
+<Step>
+### Collect
+
+On the <Ui>Overview</Ui>, select <Ui>Collect tenant data</Ui>. See [Collect your configuration](/desktop/collect).
+</Step>
+</Steps>
+
+You can also select <Ui>Redo setup</Ui> under <Ui>Settings</Ui> to walk through the setup wizard for a new customer, including the permission check after sign in.
+
+<Callout type="idea" title="Check which tenant you are in">
+  The signed in account is shown at the bottom of the sidebar. <Ui>License and account</Ui> shows the tenant ID of the current sign in, and the <Ui>Tenant</Ui> your license is active for.
+</Callout>
+
+## How tenants count against your license
+
+Your MSP plan includes 10 tenants, or the tenant count you purchased. <Ui>Tenants allowed</Ui> under <Ui>License and account</Ui> shows the number.
+
+- A tenant counts from the first time the license is activated for it, on any computer.
+- Switching back to a tenant you already activated does not count it again.
+- Each tenant can have up to 5 active installations.
+
+When all tenants are in use, activating a new one shows "This license already covers its maximum number of tenants." Add tenants or release one you no longer document in the customer portal. Select <Ui>Manage subscription</Ui> under <Ui>License and account</Ui> to open it. Details are in [Plans and billing](/account/plans-and-billing#manage-your-subscription-in-the-customer-portal).
+
+<Note>
+  <Ui>Deactivate this machine</Ui> releases this computer's activations for every tenant at once and removes the key from this computer. To stop documenting a single customer, release that tenant in the customer portal instead.
+</Note>
+
+## Share the license with admins in a customer tenant
+
+Sometimes admins at the customer, or colleagues who work on that customer, should use the app without your key. You can share your MSP license with selected tenants.
+
+<Steps>
+<Step>
+### Sign in to the customer tenant
+
+On the computer that holds the license key, connect and sign in to the tenant as described above.
+</Step>
+<Step>
+### Turn on sharing
+
+Open <Ui>License and account</Ui> and turn on <Ui>Let other admins in this tenant use this license</Ui>. The app confirms: "Other admins in this tenant can now use this license after signing in."
+</Step>
+</Steps>
+
+From then on, anyone who signs in to that tenant's Intune Documentation app registration is licensed automatically, without a key. The key stays on your computer. Their computers count toward that tenant's 5 installations.
+
+- Sharing is off by default on the MSP plan. You choose each tenant yourself.
+- Turn the checkbox off to stop sharing with a tenant.
+- Only the computer that holds the key can change sharing.
+
+## Management report baselines per tenant
+
+The [management report](/desktop/management-report) can show the change since last month by loading a saved baseline. A baseline belongs to one tenant, one framework and one scope. The app rejects a baseline from another tenant with "This baseline belongs to a different tenant."
+
+The saved baseline file name contains the framework and the date, but not the customer. The management report PDF file name also includes the first 8 characters of the tenant ID, which is hard to recognize at a glance. Keep one folder per customer for its baselines and reports, so you always load the right file.
+
+Switching tenants also clears a loaded baseline and an imported crosswalk. Load or import them again after you sign in to the next tenant.
+
+## Related pages
+
+- [Create the app registration](/desktop/app-registration)
+- [Plans and billing](/account/plans-and-billing)
+- [Management report](/desktop/management-report)
+- [License messages in Troubleshooting](/help/troubleshooting#license-messages)

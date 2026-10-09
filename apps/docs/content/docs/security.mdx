@@ -1,0 +1,146 @@
+---
+title: "Security and privacy"
+description: "How Intune Documentation handles your tenant data, which permissions it uses and what never leaves your device."
+---
+
+This page explains exactly what Intune Documentation reads, where that data goes, and what is sent to us. It covers the free web app and the paid desktop app, because the two handle data differently.
+
+## The short version
+
+- **Read-only.** Both apps use delegated, read-only Microsoft Graph permissions. They can read your Intune configuration, never change it. No application (app-only) permissions are used.
+- **Your own Intune role applies.** Delegated access means the app acts as the signed-in person. It never sees more than that person's Intune role allows.
+- **Sensitive values are redacted.** Script bodies, passwords, tokens and similar values are replaced with `[Redacted]` before anything is shown or exported.
+- **Documents are built on your device.** PDF and Word files are generated in your browser (web app) or on your computer (desktop app). They are never uploaded to us.
+- **No stored tenant configuration.** We do not persist your Intune configuration or your Microsoft access tokens.
+
+## What is read
+
+Both apps read your Intune configuration through Microsoft Graph: configuration profiles, Settings Catalog, compliance policies, security baselines, administrative templates, scripts and remediations, apps and app policies, Windows updates, enrollment and Autopilot, assignment filters, RBAC, tenant settings, connectors and specialist policies. Assignments are resolved to group names. Conditional Access is optional in the web app and included in the desktop app.
+
+### Permissions
+
+All permissions are delegated and read-only.
+
+| Permission | Why it is needed |
+| --- | --- |
+| <CopyValue value="User.Read" /> | Sign in and read the signed-in person's basic profile. |
+| <CopyValue value="DeviceManagementConfiguration.Read.All" /> | Configuration profiles, Settings Catalog, compliance, baselines and templates. |
+| <CopyValue value="DeviceManagementApps.Read.All" /> | Apps, app protection and app configuration policies. |
+| <CopyValue value="DeviceManagementManagedDevices.Read.All" /> | Device counts by platform for assignments. |
+| <CopyValue value="DeviceManagementRBAC.Read.All" /> | Scope tags, roles and role assignments. |
+| <CopyValue value="DeviceManagementServiceConfig.Read.All" /> | Enrollment configurations, Autopilot and tenant service settings. |
+| <CopyValue value="DeviceManagementScripts.Read.All" /> | Scripts and remediations. Script bodies are redacted. |
+| <CopyValue value="Group.Read.All" /> | Resolve group names in policy assignments. |
+| <CopyValue value="Policy.Read.All" /> | Conditional Access policies. Optional in the web app, requested only when you turn Conditional Access on. Always requested by the desktop app. |
+
+The Intune and group permissions need tenant-wide admin consent once. A Global Administrator, Privileged Role Administrator or Cloud Application Administrator can grant it.
+
+<Note>
+  Microsoft Defender may raise an alert called "Suspicious application consent for offline access". It refers to the standard `offline_access` permission, which lets the app refresh tokens without asking you to sign in again. It does not grant any data access beyond the read-only permissions above.
+</Note>
+
+## Redaction of sensitive values
+
+Some Intune resources contain secrets. Before data reaches the dashboard or an export, both apps replace these values with `[Redacted]`:
+
+- script bodies (PowerShell, shell, detection and remediation scripts)
+- passwords, pre-shared keys, private keys and tokens
+- QR-code payloads and images
+- encoded configuration files and setting payloads
+- large app icons
+
+The report keeps the surrounding metadata, such as the name and type of the resource, so a reviewer can still identify it.
+
+## Web app
+
+### Where your data is processed
+
+When you collect data in the web app, this happens:
+
+<Steps>
+<Step>
+### You sign in with Microsoft
+
+Microsoft Entra ID handles the sign-in. We never see your password. Your access token is kept by Microsoft's sign-in library in your browser's session storage.
+</Step>
+<Step>
+### Our application server reads Microsoft Graph
+
+For each collection request, your browser passes the token to our application server, which calls Microsoft Graph on your behalf. The server collects, normalizes and redacts the responses in memory, then returns them to your browser. It does not store the configuration or the token. The token is discarded when the request ends.
+</Step>
+<Step>
+### Your browser shows the data and builds the report
+
+The dashboard and every PDF and Word export are generated in your browser. Files are saved directly to your device.
+</Step>
+</Steps>
+
+### What stays in your browser
+
+- **Dashboard snapshot.** To survive a page reload, the dashboard keeps one compressed snapshot of the collected data in the browser tab's session storage. It is scoped to your account, tenant and collection options, and expires one hour after collection. Signing out clears it and tells your other open app tabs to clear theirs. It is never stored on our server, in local storage or in IndexedDB.
+- **Preferences.** Your branding settings and the Conditional Access preference are saved in your browser's local storage.
+
+### Analytics and support chat on the hosted site
+
+- **Plausible Analytics** runs on the public website only. It is cookieless and collects aggregated metrics such as page views, referrers and device types.
+- **Usage counters.** When you open the dashboard, we store a one-way scrambled form (a hash) of your tenant ID and user principal name to count monthly active users. The original values cannot be read back from it and are not stored. An aggregate counter goes up each time a document is exported. It contains no configuration data and no user identifier.
+- **Support chat (Crisp).** The chat opens in an isolated panel served from the public website. It receives no account details, tokens or tenant configuration from the app. If you use it, Crisp processes the messages and details you choose to share.
+
+### Revoke access
+
+Signing out only ends your session. To remove consent for your whole tenant, delete the **Intune Documentation** app (publisher Ugurlabs) under <Ui>Entra ID</Ui> &gt; <Ui>Enterprise applications</Ui>.
+
+## Desktop app
+
+The desktop app removes the server hop. It signs in through an app registration you create in your own tenant and talks to Microsoft directly from your computer.
+
+### What stays on your computer
+
+- Your Intune configuration and your Microsoft tokens are held in memory on your computer.
+- PDF and Word documents are generated locally and saved only to a folder you choose.
+- Your license key, if you entered one, and the signed license token are encrypted with the operating system keychain (Keychain on macOS, Windows' built-in credential encryption on Windows).
+- The app sends no telemetry.
+
+### Everything that leaves your computer
+
+| Purpose | Destination | What is sent |
+| --- | --- | --- |
+| Sign in | `login.microsoftonline.com` | A standard sign-in request to your tenant, using your own app registration. |
+| Read configuration | `graph.microsoft.com` | Read-only requests with your token. Intune data flows only from Microsoft to your computer. |
+| License check | `intunedocumentation.com` | See below. No Intune data. |
+| Update check | `intunedocumentation.com`, `github.com` | A version check with a random update identifier, and, when you install an update, the installer download. No tenant or account data. Can be turned off. |
+
+### What the licensing service receives
+
+The app contacts our licensing service when you activate a license and periodically afterwards. It receives:
+
+- your license key and a short-lived Microsoft sign-in token (ID token), or only the token when your organization shares its license with your tenant. We verify the token and use only its tenant ID and the ID of the app registration it was issued to. The token contains your name and user principal name, and it is not stored.
+- a random installation ID generated by the app. It does not identify you or your hardware.
+- the tenant ID you signed in to
+- when you use a license key, the client ID of the app registration you signed in with
+- your operating system and the app version
+- your IP address, processed at request level by our hosting provider to limit request rates
+
+The licensing service is hosted in Frankfurt (EU). For retention details and the providers involved, read the [privacy policy](https://intunedocumentation.com/privacy-policy).
+
+### Update checks
+
+Unless you turn them off in the app's settings, the app checks for a new version shortly after launch and every four hours. The request contains no tenant or account data. It includes a random update identifier that the updater creates on your computer, and our hosting provider processes your IP address at request level. Installers are downloaded from GitHub, which receives standard request data such as your IP address. See [Settings and updates](/desktop/settings-and-updates).
+
+### Your controls
+
+- **Limit who can sign in.** Turn on assignment required for the enterprise app and assign a named admin group.
+- **Apply Conditional Access.** Require MFA and a compliant device for the app. Sign-ins appear in your Entra sign-in logs.
+- **Use least privilege.** Read-only roles are enough, for example Intune Read Only Operator plus Global Reader.
+- **Revoke at any time.** Disable or delete the app registration and the app stops working.
+
+### For your security review
+
+Share the one-page [security and architecture overview (PDF)](https://intunedocumentation.com/desktop/intune-documentation-desktop-security-overview.pdf) with your security team. It lists every permission and every connection the app makes, including what the licensing service receives.
+
+## Related pages
+
+- [Privacy policy](https://intunedocumentation.com/privacy-policy)
+- [Create the app registration](/desktop/app-registration) for the desktop app
+- [Self-hosting](/self-hosting) if you want to run the web app yourself
+- [Support](/help/support) for security questions

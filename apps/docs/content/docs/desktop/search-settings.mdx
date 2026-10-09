@@ -1,0 +1,133 @@
+---
+title: "Search settings"
+description: "Find any setting across every collected policy by name, value or technical id, and see where it is configured, with its value, platform and assignment."
+---
+
+Intune spreads one topic over many places. BitLocker can be set in a Settings Catalog policy, an endpoint security policy, a security baseline and a compliance policy at the same time. <Ui>Search settings</Ui> looks through every setting of your last collection at once, so you see all of them on one screen.
+
+Use it to answer the questions that usually take an afternoon of clicking through the Intune admin center:
+
+- **Which policies configure BitLocker?** Search for `BitLocker` and every policy that sets a BitLocker setting appears, with the value it sets.
+- **Where is a setting set differently?** Search for the setting and compare the values side by side. A policy that sets XTS-AES 128-bit stands out next to the ones that set 256-bit.
+- **Where is this setting id used?** Paste a technical id from a script, a Microsoft article or a Graph response, such as `device_vendor_msft_bitlocker_requiredeviceencryption`, and find the policies that use it.
+- **Is the policy actually assigned?** Every result shows how its policy is assigned, so an unassigned policy is easy to spot.
+
+<Screenshot src="/images/desktop/search-results.png" alt="Search settings with the query BitLocker: 20 matches in 6 policies, Family and Platform filters, and a result card listing the BitLocker settings of one policy with their values" caption="A search for BitLocker finds 20 settings in 6 policies across six configuration families." width={2880} height={1800} />
+
+## Before you start
+
+Search runs on the configuration you collected, so collect your tenant first. See [Collect your configuration](/desktop/collect). Until there is a collection, the page shows <Ui>Collect your tenant first</Ui> with a <Ui>Collect tenant data</Ui> button.
+
+## Search for a setting [#search]
+
+<Screenshot src="/images/desktop/search-start.png" alt="The empty Search settings page with the heading Search every collected setting and three example searches: BitLocker, firewall and device_vendor_msft_policy_config" caption="Before you type, the page suggests three example searches. Select one to try it." width={2880} height={1800} />
+
+<Steps>
+<Step>
+
+### Open Search settings
+
+Select <Ui>Search settings</Ui> in the sidebar, under <Ui>Overview</Ui>. The search box is ready for typing.
+
+</Step>
+<Step>
+
+### Type what you are looking for
+
+Type a setting name, a configured value or a technical id. Results appear while you type.
+
+**Every word has to match.** The words can appear in any order and in any of these places: the setting name, its value, its technical id, the group it belongs to in the policy, or the policy name. Upper and lower case do not matter. So `require encryption` finds <Ui>Require Device Encryption</Ui>, and adding a word always narrows the results.
+
+</Step>
+<Step>
+
+### Read the results
+
+The line above the results shows the count, for example <Ui>20 matches in 6 policies</Ui>. Results are grouped by policy. Each policy card shows:
+
+- the policy name, its configuration family and its platform, such as <Ui>Settings Catalog</Ui> and <Ui>Windows</Ui>
+- how it is assigned, for example <Ui>Assigned to 1 group</Ui>, <Ui>Assigned to All users</Ui> or <Ui>Not assigned</Ui>
+- how many of its settings match, for example <Ui>9 settings</Ui>
+- each matching setting with its name, its technical id and the configured value
+
+Your search words are highlighted, so you see at a glance why a setting matched.
+
+</Step>
+<Step>
+
+### Narrow the results
+
+Use the <Ui>Family</Ui> and <Ui>Platform</Ui> filters above the results. Each filter shows how many matches it holds. Select a filter to keep only those matches, and select it again to remove it. You can combine several.
+
+Select <Ui>Clear filters</Ui> to remove all filters at once. Long filter lists are shortened, and <Ui>More</Ui> shows the rest.
+
+</Step>
+<Step>
+
+### Open a policy
+
+Select a policy name on a result card. The app opens the policy's configuration family with the policy name already in the family's search box, so you can select it for export or check its other details. When you come back to <Ui>Search settings</Ui>, your search is still there.
+
+</Step>
+</Steps>
+
+## See every setting of one policy [#one-policy]
+
+Search also matches the policy name. Type the name of a policy, or a distinctive part of it, to list all of its settings and values on one card. Add a <Ui>Family</Ui> filter if policies in other families share the name.
+
+<Screenshot src="/images/desktop/policy-detail.png" alt="Search settings with a BitLocker baseline policy name as the query and the Settings Catalog filter selected: 9 matches in 1 policy, showing Require Device Encryption Enabled and XTS-AES 256-bit values" caption="Searching for a policy name lists its settings. Here the Settings Catalog filter narrows the results to the BitLocker baseline policy and its 9 settings." width={2880} height={1800} />
+
+## Long values and copying [#long-values]
+
+Some values are long: certificates, XML, JSON or script content. They are shortened to six lines. Select <Ui>Show full value</Ui> to expand the value, and <Ui>Show less</Ui> to fold it again.
+
+Every value has a copy button on the right. Use it to paste a value into a ticket, a change request or a comparison.
+
+<Screenshot src="/images/desktop/search-long-value.png" alt="Search for start pins showing the Configure Start Pins setting with its full JSON value expanded and a Show less link" caption="The Configure Start Pins value expanded with Show full value. The copy button is on the right." width={2880} height={1800} />
+
+<Note>
+  Values longer than 1,000 characters are searched in full, but the result shows only the first 1,000 characters followed by three dots, also when expanded or copied.
+</Note>
+
+## How search works with your data [#how-it-works]
+
+- **Works on your current collection.** Search reads the collection that the open app holds in memory. It sends nothing to Microsoft or to us, so it also works without an internet connection. The collection is not saved to disk: after you restart the app, sign in and collect again before you search.
+- **Refreshing keeps your search.** When a new collection finishes while the page is open, the results update in place and keep your query and filters. You do not need to type again after <Ui>Refresh data</Ui>.
+- **Sign out or tenant switch clears it.** Your query and filters are cleared when you sign out or switch to another tenant, together with the collection they belong to. See [Work with multiple tenants](/desktop/multiple-tenants).
+- **Up to 200 results at a time.** When more settings match, the page shows the first 200 and says how many there are. Add a word or a filter to narrow the results.
+- **Keyboard friendly.** Press <Ui>Esc</Ui> in the search box to clear it.
+
+## When something goes wrong [#errors]
+
+| What you see | What to do |
+| --- | --- |
+| <Ui>No settings match your search</Ui> | The page says how many settings it searched. Try fewer words, part of a technical id or a value. |
+| <Ui>No settings match your search and filters</Ui> | The page says how many settings match without filters. Select <Ui>Clear filters</Ui>. |
+| <Ui>Search failed. Try again.</Ui> | Select <Ui>Retry</Ui>. |
+| <Ui>The collection is no longer available</Ui> | Select the collect button on the message to collect your tenant again. |
+
+More fixes are in [Troubleshooting](/help/troubleshooting#collection-and-export-problems).
+
+## Tips for good searches [#tips]
+
+- **Everything about disk encryption:** try `BitLocker`, or `FileVault` for macOS.
+- **Firewall settings across all profiles:** try `firewall`.
+- **Where device encryption is required:** try `require device encryption`.
+- **A specific setting from documentation or a script:** try its technical id, for example `device_vendor_msft_bitlocker_requiredeviceencryption`.
+- **Settings that come from the Windows Policy CSP:** try the start of an id, such as `device_vendor_msft_policy_config`.
+- **Policies that set a specific value:** try the value itself, such as `XTS-AES 256-bit`.
+- **Start menu or taskbar layout:** try `start pins`.
+- **Everything one policy configures:** try the policy name.
+
+More tips:
+
+- **Start broad, then add words.** One word shows you where a topic lives. Each extra word narrows the list.
+- **Use part of a technical id.** Ids are long, but any part of one works, such as `bitlocker_requiredeviceencryption`.
+- **Search for a value to find outliers.** A value search shows which policies use a value, and the filters show in which families.
+- **Combine with filters.** Select the <Ui>Windows</Ui> platform filter to hide macOS and mobile policies that share a setting name.
+
+## Next steps
+
+- [Select and export](/desktop/select-and-export): turn the policies you found into a PDF or Word document.
+- [Compliance evidence](/desktop/compliance-evidence): see how your settings map to frameworks such as NIS2 and ISO/IEC 27001.
+- [Collect your configuration](/desktop/collect): refresh your data after a change in Intune.

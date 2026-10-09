@@ -1,0 +1,163 @@
+---
+title: "Compliance evidence"
+description: "Map your Intune configuration to frameworks such as NIS2, ISO/IEC 27001, SOC 2, NIST and BSI IT-Grundschutz, and export an evidence report for your auditor."
+---
+
+Auditors, insurers and customer questionnaires all ask the same thing: show me that the control is in place. For the technical controls, the answer is in your Intune configuration. Finding it by hand means screenshots, exports and a spreadsheet.
+
+<Ui>Compliance Evidence</Ui> does that work for you. It checks your collected policies against the technical controls of a framework, shows which settings provide evidence, which are missing or set differently, and whether each policy is assigned. Then it turns the result into a PDF evidence report you can hand straight to an auditor.
+
+<Callout type="info" title="Evidence, not certification">
+  Evidence reports document technical configuration evidence from Intune and Conditional Access. They are not a compliance certification, a compliance score or an audit result, and they do not replace an audit. Organisational measures, such as policies, training and supplier management, need their own assessment.
+</Callout>
+
+## Before you start
+
+- **Collect your tenant.** The assessment runs on your last collection. See [Collect your configuration](/desktop/collect).
+- **Be signed in with an active license.** Compliance evidence is part of every desktop plan. See [Plans and billing](/account/plans-and-billing).
+- **Grant Policy.Read.All.** Many controls depend on Conditional Access, for example MFA. Without this permission the app cannot collect Conditional Access and tells you so. See [Create the app registration](/desktop/app-registration#permissions).
+
+## Supported frameworks [#frameworks]
+
+The app supports eleven frameworks.
+
+| Framework | What is covered |
+| --- | --- |
+| ASD Essential Eight | Australian enterprise IT requirements with target Maturity Levels 1, 2 and 3. Configuration evidence only. |
+| ISO/IEC 27001 | Selected Annex A technology controls mapped to managed-device configuration evidence. |
+| NIS2 Directive | EU Directive 2022/2555 Article 21(2) measures with Danish and German law references. Organisational measures need separate assessment. |
+| SOC 2 | Selected Trust Services Criteria mapped to managed-device configuration evidence. |
+| NIST SP 800-53 | Security and privacy controls for information systems and organizations. |
+| NIST CSF 2.0 | Outcome-based guidance for managing and reducing cybersecurity risk. |
+| BSI IT-Grundschutz | Baseline safeguards for systematic information security management. The report is in German. |
+| Def Stan 05-138 | UK MOD supplier controls under DEFCON 658, with the Cyber Risk Profile levels at which each applies. |
+| Cyber Essentials | The five NCSC control themes mapped to managed-device configuration evidence. |
+| NIST SP 800-171 Rev. 2 | Requirements for protecting controlled unclassified information, as referenced by CMMC 2.0 Level 2. |
+| NIST SP 800-171 Rev. 3 | May 2024 requirements for protecting controlled unclassified information. Organization-defined parameters need separate review. Select Revision 2 for CMMC Level 2. |
+
+## Choose a framework [#choose]
+
+<Steps>
+<Step>
+
+### Open Compliance Evidence
+
+Select <Ui>Compliance Evidence</Ui> in the sidebar. The first time, you see <Ui>Choose a compliance framework</Ui> with a card for every framework.
+
+</Step>
+<Step>
+
+### Pick a framework
+
+Select a card. Where the app knows the size of the published framework, the card says how many of its requirements have Intune evidence mappings, for example <Ui>6 of 10 requirements mapped. Supporting evidence only.</Ui>
+
+The app remembers your choice. To switch later, use the framework menu at the top right of the screen, or <Ui>Show all frameworks</Ui> in that menu to return to the cards.
+
+</Step>
+</Steps>
+
+<Screenshot src="/images/desktop/compliance-picker.png" alt="The Choose a compliance framework screen with cards for ASD Essential Eight, ISO/IEC 27001, NIS2 Directive, SOC 2, NIST SP 800-53, NIST CSF 2.0, BSI IT-Grundschutz, Def Stan 05-138 and Cyber Essentials. The two NIST SP 800-171 cards are further down the screen" caption="Each card shows the framework version and how much of it maps to Intune evidence." width={2880} height={1800} />
+
+## Set the scope [#scope]
+
+The scope decides what the assessment, the evidence report and the [management report](/desktop/management-report) cover.
+
+- **Platforms in scope.** Choose <Ui>Windows</Ui>, <Ui>macOS</Ui>, <Ui>iOS / iPadOS</Ui> and <Ui>Android</Ui>. At least one platform stays selected. Leave out platforms you do not manage. A platform without policies is not treated as out of scope on its own.
+- **Essential Eight target maturity level.** For ASD Essential Eight, choose <Ui>Maturity Level 1</Ui>, <Ui>2</Ui> or <Ui>3</Ui>. The default is Level 1. The app shows evidence against the target you choose. It does not calculate the maturity level you have achieved.
+- **Def Stan Cyber Risk Profile.** For Def Stan 05-138, choose <Ui>Level 0</Ui> to <Ui>Level 3</Ui>, or leave <Ui>All levels (scope not selected)</Ui>.
+
+The assessment updates as soon as you change the scope.
+
+## Read the results [#results]
+
+The framework screen has four parts, from summary to detail.
+
+1. **Management summary.** The share of safeguards in place, with tiles that filter the control list and the next actions. See [Management report](/desktop/management-report).
+2. **Scope and collection.** The scope options above, when the data was collected, and <Ui>Collection and detection coverage</Ui>, which shows per policy family how much was collected and recognized.
+3. **Check results.** Three counts across all technical checks in scope: <Ui>Matches expected value</Ui>, <Ui>Different value</Ui> and <Ui>Missing</Ui>, each with how many are in assigned policies.
+4. **Mapped controls.** Every control of the framework that has Intune evidence mappings.
+
+<Screenshot src="/images/desktop/compliance-framework.png" alt="Mapped controls for ISO/IEC 27001, such as 8.8 Technical vulnerability management with 5 of 6 safeguards in place and 7 match, 0 missing, 1 different" caption="Each mapped control shows its safeguards in place and how its checks turned out." width={2880} height={1800} />
+
+Each control shows its id and title, a bar with its safeguards in place, for example <Ui>5 of 6 safeguards in place</Ui>, and a summary of its checks, for example <Ui>7 match, 0 missing, 1 different</Ui>. Controls with mixed policy evidence are listed first.
+
+Select a control to expand it. For each safeguard you see:
+
+- every check with its <Ui>Expected value</Ui> and <Ui>Actual value</Ui>, and the policy it comes from
+- the evidence: policy, policy type, setting, configured value and assignment
+- warnings when a policy sets a value that works against the control, and whether that policy is assigned
+
+Use <Ui>Expand all</Ui> to open every control at once.
+
+### What safeguards in place means [#safeguards-in-place]
+
+A safeguard is one technical capability behind a control, such as requiring device encryption. It counts as **in place** when a recognized setting is configured with a recognized value in an Intune or Conditional Access policy that is assigned. A setting in a policy that is not assigned does not count, because it protects no one.
+
+Safeguards in place is a coverage figure from your configuration. It is not a compliance score or an audit result. The app does not verify device state or effective access.
+
+### Statuses in the report [#statuses]
+
+Each control in the evidence report gets one status.
+
+| Status | Meaning |
+| --- | --- |
+| Technical configuration evidence detected | Recognized settings with recognized values are configured in assigned policies. |
+| Technical configuration evidence partially detected | Some of the expected evidence is there, some is missing. |
+| No supported technical configuration evidence detected | No recognized setting with a known assignment was found. This does not mean the control is unmet by other means. |
+| Mixed policy evidence | Policies give contradicting evidence for the control, for example one sets the expected value and another works against it. |
+| Not assessed | The control needs evidence outside the collected settings, or data was not available. |
+| Outside selected scope | The control only applies to platforms or levels outside your scope. |
+
+## Download the evidence report [#download]
+
+<Steps>
+<Step>
+
+### Start the report
+
+On the framework screen, select <Ui>Download evidence report (PDF)</Ui>. The report covers all mapped controls of the framework and uses the scope you selected.
+
+</Step>
+<Step>
+
+### Wait and save
+
+The app resolves group names, generates the report and then asks where to save the file. When it is saved, select <Ui>Open file</Ui> or <Ui>Show in folder</Ui> (<Ui>Show in Finder</Ui> on macOS).
+
+</Step>
+</Steps>
+
+Need the data in machine-readable form, for a GRC tool or your own records? Select <Ui>Download evidence record (JSON)</Ui> in the scope section. The file contains the assessment and records which data and rules the result was based on.
+
+## What the evidence report contains [#report-contents]
+
+Every framework report is designed to go straight to an auditor, an insurer or a customer questionnaire.
+
+- **Cover.** The share of controls with technical evidence at a glance, with the document control details underneath.
+- **Executive summary.** The share of controls with technical evidence, the number of safeguards in place, counts per status, coverage per control family and the key findings.
+- **Results overview.** Every control with its status, how many of its capabilities have evidence, the evidence references and the page of its detail section.
+- **Control details.** Each capability has its own card with a table of expected and actual values, the policies behind it and whether each policy is assigned. Settings and values use their names from Intune, such as "Require Device Encryption: Enabled", with the technical name underneath. Gaps and conflicting settings are highlighted, and the parts of a control that need an organisational review are listed separately.
+- **Evidence register.** Every piece of evidence with its policy, type, setting, value and assignment, with a short guide on how to read the report.
+
+The PDF is bookmarked by control family. Status is always shown with a shape and a label as well as a colour, so the report stays readable when printed in black and white.
+
+### BSI IT-Grundschutz in German [#bsi]
+
+The BSI IT-Grundschutz report is written entirely in German. For each requirement it adds a block for the manual assessment (IT-Grundschutz-Check) with fields for implementation status, the person responsible, a target date and a comment. Your reviewer fills these in, independently of the automated technical evidence.
+
+### See a sample first [#samples]
+
+Want to know what your auditor will receive before you share your own report? [Sample evidence reports](https://intunedocumentation.com/compliance#samples) for every framework, based on a fictional tenant, are on intunedocumentation.com.
+
+## Tips for a good evidence report
+
+- **Collect right before you export.** The report shows when the data was collected. Fresh data avoids questions.
+- **Fix permission gaps first.** If <Ui>Collection and detection coverage</Ui> shows a family as incomplete, the controls that depend on it lack evidence. See [Permission gaps](/help/troubleshooting#permission-gaps-after-collection).
+- **Look at Set up but not switched on.** Policies that are configured but not assigned are the quickest wins: assign them, collect again, and the safeguards count.
+- **Keep a baseline.** Save a baseline with every report so next month's [management report](/desktop/management-report) shows your progress.
+
+## Next steps
+
+- [Management report](/desktop/management-report): a one-page summary for management, with month-over-month change.
+- [Search settings](/desktop/search-settings): find every policy that sets a value the report flags as different.
+- [Select and export](/desktop/select-and-export): attach the full configuration of the policies behind the evidence.

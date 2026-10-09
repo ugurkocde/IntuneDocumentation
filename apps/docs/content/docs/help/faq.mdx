@@ -1,0 +1,192 @@
+---
+title: "Frequently asked questions"
+description: "Answers to the questions people ask most about Intune Documentation, the desktop app, licensing and data handling."
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+
+## General
+
+<Accordions type="single">
+<Accordion title="What is Intune Documentation?" id="what-is-intune-documentation">
+
+Intune Documentation is a read-only tool that collects your Microsoft Intune configuration through Microsoft Graph and turns it into a PDF or Word report. It comes in two editions:
+
+- The **web app** is free, with no usage limits and no credit card. See [Get started with the web app](/web/get-started).
+- The **desktop app** is a paid app for macOS and Windows. Collection runs entirely on your own machine through an app registration in your own tenant. See [Before you start](/desktop/before-you-start).
+
+</Accordion>
+<Accordion title="What is the difference between the web app and the desktop app?" id="web-or-desktop">
+
+Both produce the same Word, PDF and compliance evidence reports. The difference is where your data is processed.
+
+| | Web app | Desktop app |
+| --- | --- | --- |
+| Where Graph responses are processed | On our server, in memory only, never stored | Only on your machine |
+| App registration you sign in with | Ours, consented in your tenant | Your own, with the permissions you choose |
+| Word, PDF and compliance evidence | Included | Included |
+| Many tenants | Sign in to each tenant separately | Switch tenants in the app (MSP plan) |
+| Updates | Always the latest version | Installed when you choose |
+| Price | Free | Paid subscription, see the [pricing page](https://intunedocumentation.com/desktop#pricing) |
+
+</Accordion>
+<Accordion title="What Intune policies can I export?" id="what-can-i-export">
+
+Coverage includes device configurations, Settings Catalog, compliance, security baselines, administrative templates, scripts and remediations, app protection and configuration, managed apps, Windows updates, enrollment and Autopilot, assignment filters, RBAC, tenant and service settings, connectors and specialist policies. Conditional Access is included through the Policy.Read.All permission.
+
+The exact resources returned depend on your tenant, licensing and permissions.
+
+</Accordion>
+<Accordion title="Which compliance frameworks are supported?" id="frameworks">
+
+Compliance evidence reports map your Intune configuration to 11 frameworks: ISO/IEC 27001, the NIS2 Directive, SOC 2, NIST SP 800-53, NIST SP 800-171 Rev. 2 and Rev. 3, NIST CSF 2.0, Cyber Essentials, ASD Essential Eight, BSI IT-Grundschutz (in German) and Def Stan 05-138. Each mapped requirement cites the policy names, settings, values and assignments used as evidence.
+
+Requirements that Intune configuration cannot prove stay explicitly unassessed, so the report is supporting evidence, not a certification. See [Compliance evidence](/desktop/compliance-evidence).
+
+</Accordion>
+<Accordion title="Can I use CIS Controls?" id="cis-controls">
+
+The app ships no CIS Controls content. You can import your own crosswalk from ISO/IEC 27001 and NIS2 to CIS Controls safeguards, using the CSV template from <Ui>Download template</Ui>. Your safeguard ids then appear on the matching controls and in the management report. See [Management report](/desktop/management-report).
+
+</Accordion>
+<Accordion title="Are secrets or script bodies included in the report?" id="secrets">
+
+No. Sensitive values such as script bodies, passwords, tokens, pre-shared keys, QR-code payloads, encoded configuration files and large app icons are replaced with [Redacted] before data reaches the dashboard or an export. The report keeps useful metadata so reviewers can still identify the resource.
+
+</Accordion>
+<Accordion title="How long does a collection take?" id="collection-time">
+
+It depends on tenant size, Microsoft Graph throttling and the resources in your environment. The desktop app reads about a thousand items in a typical tenant, usually within two minutes. Progress is shown while it runs.
+
+</Accordion>
+<Accordion title="What happens if Microsoft Graph cannot return a collection?" id="partial-collection">
+
+Successfully collected sections are kept, and partial or failed collections are clearly marked. Warnings include the affected section and a permission hint when available, so a failed request is not presented as a confirmed empty result. See [Troubleshooting](/help/troubleshooting#permission-gaps-after-collection).
+
+</Accordion>
+<Accordion title="Why does the tool use Microsoft Graph beta endpoints?" id="graph-beta">
+
+Several Intune administration resources needed for complete documentation are currently only available through Microsoft Graph beta. The tool uses those endpoints only for delegated, read-only collection, and isolates failures by resource so one unavailable endpoint does not hide the rest of the report.
+
+</Accordion>
+</Accordions>
+
+## Desktop app setup
+
+<Accordions type="single">
+<Accordion title="What are the system requirements?" id="requirements">
+
+- macOS 13 Ventura or later, on Apple Silicon or Intel
+- Windows 10 or 11, 64-bit (x64)
+
+The machine needs internet access to Microsoft Graph for collection. See [Install the desktop app](/desktop/install).
+
+</Accordion>
+<Accordion title="Why do I need my own app registration?" id="app-registration">
+
+Because the app never connects through us. You create the app registration in your own Microsoft tenant, which is free and needs no Azure subscription. You own it, you control consent, permissions and Conditional Access, and you can delete it at any time. We never get an app, an account or any access in your tenant.
+
+In Entra it uses the platform type <Ui>Mobile and desktop applications</Ui>, which is a different registration from the one the web app uses. See [Create the app registration](/desktop/app-registration).
+
+</Accordion>
+<Accordion title="Do I need admin rights?" id="admin-rights">
+
+Admin consent is needed once per tenant. A Global Administrator, Privileged Role Administrator or Cloud Application Administrator can grant it. After that, anyone with read access can sign in, and what they see is limited by their own role. <Ui>Security Reader</Ui> or <Ui>Global Reader</Ui> each cover everything the desktop app reads. See [Before you start](/desktop/before-you-start#who-needs-to-do-what).
+
+</Accordion>
+<Accordion title="Are the installers signed?" id="signing">
+
+Yes. The macOS app is signed with an Apple Developer ID and notarized by Apple. The Windows installer is signed with Microsoft Trusted Signing under Ugurlabs UG (haftungsbeschränkt). The app verifies the same signature before it installs an update.
+
+</Accordion>
+<Accordion title="Can I use the app offline?" id="offline">
+
+Yes. Collection and export only need to reach Microsoft Graph. The app checks your license with our service regularly while online. If the service is unreachable, it keeps working for 14 days after the last successful check. Search settings also works offline on your last collection.
+
+</Accordion>
+</Accordions>
+
+## Licensing and billing
+
+<Accordions type="single">
+<Accordion title="How does licensing work?" id="licensing">
+
+You buy a Pro or MSP subscription and receive a license key by email. Paste the key into the app after signing in. The app activates the key for the tenant you signed in to and stores a signed license token on your machine.
+
+Colleagues can share an organization license. Once a key holder shares it with a tenant, anyone who signs in to that tenant's Intune Documentation app registration is licensed without a key. A Pro license is shared with its tenant by default. An MSP key holder turns sharing on per customer tenant. See [Plans and billing](/account/plans-and-billing).
+
+</Accordion>
+<Accordion title="How many tenants and installations are included?" id="limits">
+
+Pro covers 1 tenant and up to 5 installations for that tenant. MSP covers 10 tenants by default, or the tenant count you purchase, with up to 5 installations per tenant. You can free an installation from the app or the customer portal.
+
+</Accordion>
+<Accordion title="Is there a money-back guarantee?" id="refund">
+
+Yes. Every plan comes with a 30-day money-back guarantee. If you are not satisfied, email [support@ugurlabs.com](mailto:support@ugurlabs.com) within 30 days of your first payment for a full refund. Subscriptions renew until you cancel.
+
+</Accordion>
+<Accordion title="How do I cancel or change my plan?" id="cancel">
+
+Manage your subscription, invoices and tenant count in the Polar customer portal. Cancellation takes effect at the end of the current billing period, and the app stays licensed until then. Polar is our merchant of record and handles payments, taxes and invoices. See [Plans and billing](/account/plans-and-billing#manage-your-subscription-in-the-customer-portal).
+
+</Accordion>
+<Accordion title="Is the web app really free?" id="free">
+
+Yes. The web app is free with no usage limits and no credit card. The desktop app is a separate, paid app for teams that want collection to run entirely on their own machines and for MSPs that document many tenants. It comes with a 30-day money-back guarantee. See the [pricing page](https://intunedocumentation.com/desktop#pricing) for current prices.
+
+</Accordion>
+</Accordions>
+
+## Security and data
+
+<Accordions type="single">
+<Accordion title="What data does the desktop app send to your servers?" id="desktop-data">
+
+License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify its signature with Microsoft, use only its tenant ID and app registration ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version and, when you use a key, the client ID of your app registration.
+
+Update checks request the latest version from our update service with a random update identifier and standard request data such as your IP address. You can turn automatic update checks off in <Ui>Settings</Ui>.
+
+Tenant configuration, Microsoft access tokens and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft. See [Security and privacy](/security).
+
+</Accordion>
+<Accordion title="Is my Intune data secure in the web app?" id="web-data">
+
+The web app uses Microsoft OAuth 2.0 with delegated, read-only access. The server processes Graph responses transiently to collect, normalize and redact sensitive values, but it does not persist your tenant configuration or access token. PDF and DOCX generation happens in your browser, and generated documents are not uploaded or stored by us.
+
+</Accordion>
+<Accordion title="Why does Defender flag 'Suspicious application consent for offline access'?" id="defender-offline-access">
+
+This is a common alert when an app requests the standard offline_access permission from Microsoft identity, which is used to refresh tokens without asking you to sign in again. It does not grant extra data access beyond the approved read-only permissions, and only delegated permissions are used, no application permissions. In the web app, tokens are cached in your browser session and are never stored on our server, and we do not store tenant data.
+
+</Accordion>
+<Accordion title="Can I self-host Intune Documentation?" id="self-host">
+
+Yes. The web app is open source under the Elastic License 2.0. The source is on [GitHub](https://github.com/ugurkocde/IntuneDocumentation), and you can self-host it with a single docker compose command and your own Microsoft Entra app registration. Telemetry is disabled by default, and Graph responses are only processed by your own deployment. See [Self-hosting](/self-hosting).
+
+</Accordion>
+</Accordions>
+
+## Reports
+
+<Accordions type="single">
+<Accordion title="Can I customize the PDF report?" id="customize">
+
+In the web app you can brand your documentation with your company logo, custom colors, headers, footers and confidentiality notices. You can also select specific configurations to include or exclude from the report. See [Export documentation](/web/export).
+
+</Accordion>
+<Accordion title="Can I export only Windows policies?" id="windows-only">
+
+Yes. In the desktop app, search for Windows within a configuration family, select the matches and export only the selected items. See [Select and export](/desktop/select-and-export).
+
+</Accordion>
+<Accordion title="Is safeguards in place a compliance score?" id="safeguards">
+
+No. Safeguards in place in the management report is a coverage figure from your Intune and Conditional Access configuration. It is not a compliance score or an audit result. See [Management report](/desktop/management-report).
+
+</Accordion>
+</Accordions>
+
+## Still have a question?
+
+See [Troubleshooting](/help/troubleshooting) or [Get support](/help/support).

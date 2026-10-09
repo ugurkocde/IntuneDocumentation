@@ -1,0 +1,115 @@
+---
+title: "Plans and billing"
+description: "Compare the Pro and MSP plans, share a license with colleagues, free up installations and manage your subscription."
+---
+
+The web app is free. The desktop app is a paid subscription with two plans: **Pro** for one organization and **MSP** for partners who document many customer tenants. Both plans include the same features. MSP adds more tenants and switching between them.
+
+## Compare the plans
+
+| | Pro | MSP |
+| --- | --- | --- |
+| Who it is for | One organization documenting its own tenant | Partners who document many customer tenants |
+| Price | Monthly or yearly, see the [pricing page](https://intunedocumentation.com/desktop#pricing) | Monthly or yearly, see the [pricing page](https://intunedocumentation.com/desktop#pricing) |
+| Tenants | 1 Microsoft Entra tenant | 10 tenants included |
+| More tenants | Not available | Add tenants at any time |
+| Installations | Up to 5 | Up to 5 per tenant |
+| Sharing with colleagues | Shared with its tenant automatically | You choose which customer tenants to share with |
+| Word and PDF exports | Included | Included, for every tenant |
+| Compliance evidence for 11 frameworks, including NIS2 | Included | Included |
+| One-page management report with month-over-month change | Included | Included |
+| Offline use between license checks | 14 days | 14 days |
+| Updates | Free, installed when you choose | Free, installed when you choose |
+
+Current prices, in EUR, are on the [pricing page](https://intunedocumentation.com/desktop#pricing), where you can also buy a plan. VAT is added at checkout where applicable.
+
+<Note>
+  Need an invoice, a purchase order or a quote before you buy? Email [support@ugurlabs.com](mailto:support@ugurlabs.com).
+</Note>
+
+## Money-back guarantee
+
+Every plan comes with a 30-day money-back guarantee. If you are not satisfied, email [support@ugurlabs.com](mailto:support@ugurlabs.com) within 30 days of your first payment for a full refund.
+
+- The guarantee covers the first payment of a new subscription. It applies once per customer and does not cover renewals.
+- Refunds are processed through Polar, our merchant of record, and the license key is revoked when the refund is issued.
+
+The full conditions are in the [terms](https://intunedocumentation.com/terms#desktop-app).
+
+## After you buy
+
+Your license key arrives by email right after checkout. You paste it into the app during setup, or later under <Ui>License and account</Ui>. The app activates the key for the tenant you signed in to. See [Sign in and activate your license](/desktop/sign-in-and-license).
+
+## Installations per tenant
+
+Each tenant can have up to **5 active installations** of the app. An installation is one computer where the app is activated for that tenant.
+
+- **Pro** covers one tenant with up to 5 installations.
+- **MSP** covers 10 tenants by default, or the tenant count you purchase, with up to 5 installations per tenant.
+
+When a tenant reaches the limit, the app shows the message "This tenant already has 5 active installations." Free an installation you no longer use, as described below.
+
+## Share a license with colleagues
+
+Colleagues in the same tenant can use your license without their own key. Once a license is shared with a tenant, anyone who signs in to that tenant's Intune Documentation app registration is licensed automatically. Your key stays on your machine.
+
+- **Pro:** the license is shared with its tenant automatically.
+- **MSP:** sharing is off until you turn it on per customer tenant. On the machine that holds the key, open <Ui>License and account</Ui> and turn on <Ui>Let other admins in this tenant use this license</Ui>.
+
+Only the machine that holds the license key can change sharing. When your colleagues sign in, the wizard tells them their organization already has a license and no key is needed.
+
+<Note>
+  Each colleague's computer still counts as an installation for that tenant.
+</Note>
+
+## Deactivate a machine
+
+Deactivate the app on a computer you no longer use, so the installation becomes available again.
+
+<Steps>
+<Step>
+### Open License and account
+
+In the app, open <Ui>License and account</Ui> in the sidebar.
+</Step>
+<Step>
+### Deactivate
+
+Select <Ui>Deactivate this machine</Ui>. The app confirms: "This machine was deactivated. You can use the key on another machine."
+</Step>
+</Steps>
+
+No longer have access to that computer? Release the installation in the customer portal instead.
+
+<Note>
+  <Ui>Clear data</Ui> under <Ui>Settings</Ui> also deactivates the license on this machine when possible. If the licensing service does not confirm the deactivation, the app tells you so and offers <Ui>Open customer portal</Ui>, where you can release the installation yourself.
+</Note>
+
+## Manage your subscription in the customer portal
+
+Polar is our merchant of record and handles payments, taxes and invoices. In the Polar customer portal you can:
+
+- Download invoices
+- Change or cancel your subscription
+- Change the tenant count of an MSP plan
+- Find your license key again
+- Release installations and tenants you no longer use
+
+To open the portal, select <Ui>Manage subscription</Ui> under <Ui>License and account</Ui> in the app, or go to the [customer portal](https://polar.sh/ugurlabs/portal) and sign in with the email address you used at checkout.
+
+### Cancel
+
+You can cancel at any time. Cancellation takes effect at the end of the current billing period, and the app stays licensed until then. Subscriptions renew automatically until you cancel.
+
+## Offline grace period
+
+The app checks your license with our licensing service regularly while it is online. If the service cannot be reached, the app keeps working for **14 days** after the last successful check.
+
+Collection and export only need to reach Microsoft Graph, so short outages or travel without access to our service do not interrupt your work. What a license check sends is described on [Security and privacy](/security).
+
+## Related pages
+
+- [Sign in and activate your license](/desktop/sign-in-and-license)
+- [Work with multiple tenants](/desktop/multiple-tenants)
+- [License messages in Troubleshooting](/help/troubleshooting#license-messages)
+- [Get support](/help/support)

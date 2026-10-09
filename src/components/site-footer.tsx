@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Github, Linkedin } from "lucide-react";
+import { DOCS_URL } from "~/lib/docs";
 
 export function SiteFooter() {
   const year = new Date().getFullYear();
@@ -57,6 +58,14 @@ export function SiteFooter() {
                 >
                   Desktop app
                 </Link>
+              </li>
+              <li>
+                <a
+                  href={DOCS_URL}
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Documentation
+                </a>
               </li>
               <li>
                 <a

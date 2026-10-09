@@ -1,0 +1,101 @@
+---
+title: "Before you start"
+description: "What you need before you install the desktop app: a supported computer, a license, the right admin roles and about ten minutes."
+---
+
+Setting up the desktop app takes about ten minutes from download to your first export. Most of that time is spent once, in Microsoft Entra, creating the app registration the app signs in with. This page lists everything you need so the setup runs without interruptions.
+
+## What you need at a glance
+
+| You need | Why |
+| --- | --- |
+| A Mac or Windows PC that meets the [system requirements](#system-requirements) | The app runs and stores everything on this computer. |
+| A license key, or a colleague who already shares a license with your tenant | Collecting and exporting need an active license for the signed in tenant. |
+| Someone who can create an app registration in Microsoft Entra | The app signs in through an app registration that lives in your own tenant. |
+| Someone who can grant admin consent | The read-only Microsoft Graph permissions need a one-time tenant-wide consent. |
+| An account that can read Intune and Conditional Access | The app only sees what the signed in account is allowed to see. |
+| Internet access to Microsoft Graph and to the licensing service | Collection talks to Microsoft directly. License checks go to intunedocumentation.com. |
+
+## System requirements
+
+| Platform | Supported versions |
+| --- | --- |
+| macOS | macOS 13 Ventura or later, on Apple Silicon or Intel |
+| Windows | Windows 10 or 11, 64-bit (x64) |
+
+The machine needs internet access to Microsoft Graph for collection. See [Install the desktop app](/desktop/install) for the download for your platform.
+
+## A license
+
+You need a Pro or MSP license to collect and export. The key arrives by email right after checkout, and every plan comes with a 30-day money-back guarantee.
+
+- Compare the plans on [Plans and billing](/account/plans-and-billing), or buy directly on the [pricing page](https://intunedocumentation.com/desktop#pricing).
+- If a colleague already activated a shared license for your tenant, you do not need a key. The app finds the license when you sign in.
+
+You can also finish the setup without a key and add it later under <Ui>License and account</Ui>.
+
+## Who needs to do what
+
+Setting up involves up to three roles. In a small team one person often does all of it. In a larger organization, you may need to ask an Entra administrator for the middle part.
+
+<Steps>
+<Step>
+### Create the app registration
+
+Someone who is allowed to register applications in your tenant creates the registration, adds the redirect address and adds the permissions. By default in Microsoft Entra ID every user can register applications. If your organization has turned that off, the person needs the <Ui>Application Developer</Ui>, <Ui>Application Administrator</Ui> or <Ui>Cloud Application Administrator</Ui> role.
+</Step>
+<Step>
+### Grant admin consent
+
+A <Ui>Global Administrator</Ui>, <Ui>Privileged Role Administrator</Ui> or <Ui>Cloud Application Administrator</Ui> grants tenant-wide consent for the nine read-only permissions. This happens once per tenant.
+</Step>
+<Step>
+### Sign in and use the app
+
+Everyone who uses the app signs in with their own account. That account needs read access to the areas you want to document, as described in the next section.
+</Step>
+</Steps>
+
+<Callout type="idea" title="Someone else does the Entra part?">
+  Send them the page [Create the app registration](/desktop/app-registration). It covers creating the registration, adding the platform, adding the permissions and granting consent. When they are done, ask for the <Ui>Application (client) ID</Ui> and the <Ui>Directory (tenant) ID</Ui> from the registration's <Ui>Overview</Ui> page. Neither value is a secret.
+</Callout>
+
+## Roles for reading your configuration
+
+The app never writes to your tenant. It reads with your own sign in, and it only sees what your account can read.
+
+- <Ui>Security Reader</Ui> or <Ui>Global Reader</Ui> each cover everything the app reads.
+- Intune roles such as <Ui>Intune Administrator</Ui> or <Ui>Read Only Operator</Ui> cannot read Conditional Access policies. Pair them with <Ui>Security Reader</Ui>.
+
+If your account is missing access to an area, the app still collects everything else and lists the gaps after collection. See [Troubleshooting](/help/troubleshooting#permission-gaps-after-collection).
+
+## Network access
+
+The app needs to reach two places:
+
+- **Microsoft**, to sign in and to read your configuration through Microsoft Graph.
+- **The licensing service** at intunedocumentation.com, to activate and check your license. After a successful check, the app keeps working for 14 days without reaching it.
+
+If your organization uses a proxy, HTTPS inspection or a web filter, ask IT to allow the licensing service in advance. The exact address is listed under [Troubleshooting](/help/troubleshooting#the-licensing-service-cannot-be-reached).
+
+## Security approval
+
+If your security team needs to approve the app first, send them the one-page [security overview (PDF)](https://intunedocumentation.com/desktop/intune-documentation-desktop-security-overview.pdf) and the [Security and privacy](/security) page. In short: the app registration lives in your own tenant, uses delegated read-only permissions and gives us no access to your tenant.
+
+## Checklist
+
+Before you begin, check that you have:
+
+- [ ] A Mac with macOS 13 or later, or a Windows 10 or 11 PC (64-bit)
+- [ ] A license key from your purchase email, or a colleague who shares a license with your tenant
+- [ ] Permission to register applications in Microsoft Entra, or someone who can do it for you
+- [ ] A Global Administrator, Privileged Role Administrator or Cloud Application Administrator who can grant admin consent
+- [ ] An account with Security Reader or Global Reader, or an Intune role plus Security Reader
+- [ ] Internet access to Microsoft and to intunedocumentation.com
+- [ ] About ten minutes
+
+## Next steps
+
+1. [Install the desktop app](/desktop/install)
+2. [Create the app registration](/desktop/app-registration)
+3. [Sign in and activate your license](/desktop/sign-in-and-license)

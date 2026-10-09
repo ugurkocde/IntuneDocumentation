@@ -1,0 +1,186 @@
+---
+title: "Collect your configuration"
+description: "Collect your Intune configuration from Microsoft Graph with the desktop app, read the overview and browse every configuration family."
+---
+
+Collecting reads your Intune configuration from Microsoft Graph onto your computer. Everything else in the app works on this collection: browsing, [Search settings](/desktop/search-settings), [exports](/desktop/select-and-export) and [compliance evidence](/desktop/compliance-evidence). A typical tenant takes about two minutes.
+
+The collection only reads. Nothing in your tenant is changed.
+
+## Run your first collection
+
+Before the first collection, the <Ui>Overview</Ui> shows three steps: sign in, activate your license and collect. The first two are ticked once you finished the [setup](/desktop/sign-in-and-license).
+
+<Screenshot
+  src="/images/desktop/overview-empty.png"
+  alt="The Overview before the first collection, with the three steps Sign in to your tenant, Activate your license and Collect tenant data, and the Collect tenant data button at the top right"
+  caption="Before the first collection. Sign in and license are done, so Collect is ready."
+  width={2880}
+  height={1800}
+/>
+
+<Steps>
+<Step>
+### Start the collection
+
+Select <Ui>Collect tenant data</Ui> at the top right, or <Ui>Collect</Ui> next to the third step.
+
+If the button is not available, the reason is shown next to it, for example "Sign in to your tenant to collect data." or "Add a license key to collect tenant data."
+</Step>
+<Step>
+### Follow the progress
+
+A progress card opens at the bottom right. It shows how many items are loaded so far, how many steps are ready and which categories are still loading. You can minimize the card and keep using the app.
+
+<Screenshot
+  src="/images/desktop/collect-progress.png"
+  alt="A running collection: the progress card Collecting your tenant with 8 of 13 steps ready and the categories still loading, and Cancel collection at the top right"
+  caption="The collection is running. Cancel collection stops it at any time."
+  width={2880}
+  height={1800}
+/>
+</Step>
+<Step>
+### Review the result
+
+When the collection finishes, the card reads <Ui>Your workspace is up to date</Ui> and the Overview fills with your numbers. If some data could not be loaded, it reads <Ui>Collected with warnings</Ui> instead. Select <Ui>Review warnings</Ui> to see them.
+</Step>
+</Steps>
+
+To stop a running collection, select <Ui>Cancel collection</Ui>. Start it again whenever you are ready.
+
+## What is collected
+
+The app reads your Intune configuration and Conditional Access policies with the nine read-only permissions of your [app registration](/desktop/app-registration#permissions). That covers:
+
+- Settings Catalog policies, including endpoint security policies and security baselines
+- Device configuration profiles and administrative templates
+- Compliance policies and Conditional Access policies
+- App protection and app configuration policies, and your apps with their assignments
+- PowerShell and shell scripts, and remediations
+- Windows Update policies and update profiles
+- Enrollment configurations, Autopilot and provisioning
+- Assignment filters, roles, role assignments and scope tags
+- Tenant and service settings, connectors and specialist policies
+
+For each item, the app reads its settings, platform, last modified date and assignments, with group names resolved. What appears depends on what your tenant uses and on what your account can read.
+
+The collection is held in memory on your computer and never leaves it. It stays available until you sign out, change the app registration or close the app. After a restart, sign in and collect again.
+
+## The Overview explained
+
+After a collection, the Overview shows your tenant at a glance. Every card with a number can be selected to jump to the details behind it.
+
+<Screenshot
+  src="/images/desktop/overview.png"
+  alt="The Overview after a collection: Policies and profiles 55 of 121 collected items, Sections with data 23, Warnings None, Permission gaps None, Apps 40, Assignment and RBAC 18, Microsoft defaults 17, the family breakdown and Next steps"
+  caption="The Overview of the fictional Contoso tenant after a collection."
+  width={2880}
+  height={1800}
+/>
+
+### The top row
+
+| Card | What it counts |
+| --- | --- |
+| <Ui>Policies and profiles</Ui> | The configuration you created: policies and profiles only. Apps, assignment and RBAC items and Microsoft defaults are counted on their own cards. The line below shows the total number of collected items. |
+| <Ui>Sections with data</Ui> | How many configuration sections contain at least one item, and across how many families. |
+| <Ui>Warnings</Ui> | Resources Microsoft Graph did not return completely. <Ui>None</Ui> means every resource loaded. |
+| <Ui>Permission gaps</Ui> | Configuration types your account or app registration was not allowed to read. <Ui>None</Ui> means no missing access. |
+
+### The second row
+
+| Card | What it counts |
+| --- | --- |
+| <Ui>Apps</Ui> | All apps in the tenant, with how many are assigned and how many are unassigned. |
+| <Ui>Assignment and RBAC</Ui> | Roles, role assignments, scope tags, assignment filters and reusable settings. |
+| <Ui>Microsoft defaults</Ui> | Items Microsoft creates in every tenant: built-in roles, the Default scope tag, the default enrollment configurations, tenant settings, Microsoft published remediations and connectors that are not set up. The line below says how many of them are in RBAC. |
+
+<Callout type="info" title="Nothing is left out of your documentation">
+  The cards only change how items are counted on the Overview. Every collected item, Microsoft defaults included, can be browsed, searched and exported. A whole tenant export contains all collected items.
+</Callout>
+
+### By configuration family and Next steps
+
+<Ui>By configuration family</Ui> lists every family that has data, largest first. Families that contain Microsoft defaults show how many, for example "5 defaults". Select a family to browse it.
+
+<Ui>Next steps</Ui> takes you to <Ui>Export documentation</Ui> or <Ui>Compliance evidence</Ui>.
+
+## Configuration families in the sidebar
+
+The sidebar groups your configuration into families under <Ui>Configurations</Ui>. The number next to each family is how many items it holds.
+
+<Screenshot
+  src="/images/desktop/sidebar-families.png"
+  alt="The full sidebar with Main, Configurations with item counts, More coverage expanded, Workspace, the Export documentation card and the signed in account"
+  caption="The sidebar with More coverage expanded."
+  width={576}
+  height={3000}
+/>
+
+The everyday families are always visible:
+
+<Ui>Settings Catalog</Ui>, <Ui>Endpoint security</Ui>, <Ui>Security baselines</Ui>, <Ui>Device Configs</Ui>, <Ui>Admin Templates</Ui>, <Ui>Conditional Access</Ui>, <Ui>Compliance</Ui>, <Ui>App Protection</Ui>, <Ui>Scripts</Ui>, <Ui>App Configs</Ui>, <Ui>Windows Update</Ui> and <Ui>Enrollment</Ui>.
+
+Select <Ui>More coverage</Ui> to expand the rest. Only families with data or warnings appear there:
+
+<Ui>Update profiles</Ui>, <Ui>Endpoint security (legacy templates)</Ui>, <Ui>Scripts and remediation</Ui>, <Ui>Provisioning</Ui>, <Ui>Applications</Ui>, <Ui>Assignment and RBAC</Ui>, <Ui>Tenant and service</Ui>, <Ui>Connectors</Ui> and <Ui>Specialist policies</Ui>.
+
+A few families are worth knowing:
+
+- **Endpoint security** and **Security baselines** hold Settings Catalog policies created from an endpoint security or security baseline template. They do not appear a second time under Settings Catalog.
+- **Endpoint security (legacy templates)** holds policies created from the older endpoint security templates.
+- **Connectors** includes the Apple enrollment program token.
+
+## Browse a family
+
+Select a family in the sidebar or on the Overview. The page lists its sections and every item in them.
+
+<Screenshot
+  src="/images/desktop/section-settings-catalog.png"
+  alt="The Settings Catalog family with 12 items in 1 section, a search field, Export section, Select all and policy rows with Windows and MDM badges, description, modified date and Assigned to 1 group"
+  caption="The Settings Catalog family. Each row shows the platform, the description, when the policy was last modified and how it is assigned."
+  width={2880}
+  height={1800}
+/>
+
+Each item shows:
+
+- its name and description
+- platform and technology badges, such as Windows and MDM
+- when it was last modified
+- how it is assigned, for example "Assigned to 1 group", "All users", "All devices" or "Not assigned"
+- a <Ui>Microsoft default</Ui> label for items Microsoft created
+
+Use the search field at the top right to filter the family by name, description, type or platform. The search resets when you open another family.
+
+Want to see the settings inside a policy? Search for the policy name in [Search settings](/desktop/search-settings). It lists every setting the policy configures, with its value.
+
+Each item and each section has an <Ui>Export</Ui> menu. To pick items across families for one document, see [Select and export](/desktop/select-and-export).
+
+## Warnings and permission gaps
+
+The app collects everything it can, even when part of the tenant cannot be read. Anything missing is listed on the Overview.
+
+- **"Limited permissions detected"** lists each configuration type the app could not read, with the permission it requires. Ask a tenant administrator to grant that delegated permission, or sign in with an account that has a suitable role.
+- **"N resources could not be fully loaded"** means Microsoft Graph did not return complete data for some resources. Everything else was loaded, and the export marks what is missing. Select <Ui>View affected resources</Ui> to see which. This is often temporary, so collect again later.
+
+Selecting the <Ui>Warnings</Ui> card opens the first affected family, filtered to the items that could not be loaded, or scrolls to the warnings on the Overview. Select <Ui>Show all items</Ui> to clear that filter.
+
+Fixes for both messages are in [Permission gaps after collection](/help/troubleshooting#permission-gaps-after-collection).
+
+## Refresh your data
+
+Collect again whenever your configuration changes, so your documentation stays current. The Overview shows when the data was collected: "Data collected just now", then "Data collected 5 minutes ago" or "Data collected 3 hours ago". After 24 hours it shows the date and time instead, for example "Data collected 10/8/2026, 11:00:00 AM". Select <Ui>Refresh data</Ui> to run a new collection.
+
+The new collection replaces the previous one. If [Search settings](/desktop/search-settings) is open, its results update in place and keep your query and filters.
+
+## Export [#export]
+
+Once the collection has finished, the <Ui>Export documentation</Ui> card in the sidebar shows how many items are ready. Select <Ui>Export</Ui> to create a PDF report or a Word document of the whole tenant or of selected items. See [Select and export](/desktop/select-and-export).
+
+## Next steps
+
+- [Search settings](/desktop/search-settings)
+- [Select and export](/desktop/select-and-export)
+- [Compliance evidence](/desktop/compliance-evidence)

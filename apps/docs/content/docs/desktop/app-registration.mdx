@@ -1,0 +1,191 @@
+---
+title: "Create the app registration"
+description: "Register an app in Microsoft Entra ID, add the redirect platform, grant the Graph permissions and copy the IDs the desktop app needs."
+---
+
+The desktop app signs in through an app registration that you create in your own Microsoft Entra tenant. You own it, you control consent, permissions and Conditional Access, and you can delete it at any time. It is free, needs no Azure subscription and gives us no access to your tenant.
+
+This page walks through the five parts in order. The app's setup wizard shows the same steps, so you can follow along in either place.
+
+<Note>
+  Doing this for someone else? Work through the whole page, then send them the <Ui>Application (client) ID</Ui> and the <Ui>Directory (tenant) ID</Ui> from the last step. Who can do which part is explained in [Before you start](/desktop/before-you-start#who-needs-to-do-what).
+</Note>
+
+## Create the registration [#register]
+
+The registration is the identity the app uses when it signs in to your tenant.
+
+<Steps>
+<Step>
+### Open App registrations
+
+Open the [Microsoft Entra admin center](https://entra.microsoft.com) and go to <Ui>Entra ID</Ui>, then <Ui>App registrations</Ui>.
+</Step>
+<Step>
+### Start a new registration
+
+Select <Ui>New registration</Ui> and give it a name, for example <CopyValue value="Intune Documentation Desktop" />.
+</Step>
+<Step>
+### Choose who can sign in
+
+Under <Ui>Supported account types</Ui>, choose <Ui>Accounts in this organizational directory only</Ui> (single tenant).
+</Step>
+<Step>
+### Register
+
+Leave <Ui>Redirect URI</Ui> empty and select <Ui>Register</Ui>. You add the redirect address in the next part.
+
+Entra opens the <Ui>Overview</Ui> page of your new registration.
+</Step>
+</Steps>
+
+<Note>
+  MSPs create one registration in each customer tenant. To switch tenants, you enter that tenant's client ID and tenant ID in the app and sign in again. See [Work with multiple tenants](/desktop/multiple-tenants).
+</Note>
+
+## Add the desktop platform [#platform]
+
+The app signs in through your system browser, and Microsoft sends you back to the app through a local address. This part tells Entra that address is allowed.
+
+<Steps>
+<Step>
+### Open Authentication
+
+In the new registration, open <Ui>Authentication</Ui>.
+</Step>
+<Step>
+### Add the platform
+
+Select <Ui>Add a platform</Ui> (in the newer view, <Ui>Add Redirect URI</Ui>) and choose <Ui>Mobile and desktop applications</Ui>.
+</Step>
+<Step>
+### Enter the redirect URI
+
+Under <Ui>Custom redirect URIs</Ui>, enter this address exactly, with no port and no trailing slash: <CopyValue value="http://localhost" />
+
+Then select <Ui>Configure</Ui>.
+</Step>
+<Step>
+### Leave public client flows off
+
+Keep <Ui>Allow public client flows</Ui> set to <Ui>No</Ui>. The app does not need it.
+</Step>
+</Steps>
+
+<Callout type="warn" title="Use Mobile and desktop applications">
+  Do not use the <Ui>Single-page application</Ui> platform. That is what the website uses, and it does not work for the desktop app. A wrong platform shows up as error AADSTS50011 when you sign in.
+</Callout>
+
+<Note>
+  Why no port? The app listens on a random free port while you sign in. Microsoft ignores the port for localhost addresses, so you only register <CopyValue value="http://localhost" /> once.
+</Note>
+
+## Add the API permissions [#permissions]
+
+These permissions let the app read your Intune configuration through Microsoft Graph. Every one of them is read-only, and the app never writes to your tenant.
+
+<Steps>
+<Step>
+### Open API permissions
+
+Open <Ui>API permissions</Ui> and select <Ui>Add a permission</Ui>.
+</Step>
+<Step>
+### Choose delegated Microsoft Graph permissions
+
+Choose <Ui>Microsoft Graph</Ui>, then <Ui>Delegated permissions</Ui>.
+</Step>
+<Step>
+### Add all nine permissions
+
+Search for and select each permission in the table below, then select <Ui>Add permissions</Ui>.
+</Step>
+</Steps>
+
+| Permission | Why the app needs it |
+| --- | --- |
+| <CopyValue value="User.Read" /> | Sign in and read the signed-in admin's profile. |
+| <CopyValue value="DeviceManagementConfiguration.Read.All" /> | Configuration profiles, settings catalog, compliance, baselines and templates. |
+| <CopyValue value="DeviceManagementApps.Read.All" /> | Apps, app protection and app configuration policies. |
+| <CopyValue value="DeviceManagementManagedDevices.Read.All" /> | Device counts per assignment. |
+| <CopyValue value="DeviceManagementRBAC.Read.All" /> | Scope tags, roles and role assignments. |
+| <CopyValue value="DeviceManagementServiceConfig.Read.All" /> | Enrollment configurations, Autopilot and tenant service settings. |
+| <CopyValue value="DeviceManagementScripts.Read.All" /> | PowerShell and shell scripts, and remediations. |
+| <CopyValue value="Group.Read.All" /> | Resolve assignment group names. |
+| <CopyValue value="Policy.Read.All" /> | Conditional Access policies. |
+
+<Callout type="warn" title="Delegated, not Application">
+  Choose <Ui>Delegated permissions</Ui>, not <Ui>Application permissions</Ui>. With delegated permissions the app reads only what the signed in admin is allowed to see.
+</Callout>
+
+## Grant admin consent [#consent]
+
+Consent approves the permissions once for the whole tenant, so nobody who uses the app sees a consent prompt for each permission.
+
+<Steps>
+<Step>
+### Grant consent
+
+Still on <Ui>API permissions</Ui>, select <Ui>Grant admin consent for</Ui> your tenant name.
+</Step>
+<Step>
+### Confirm
+
+Confirm with <Ui>Yes</Ui>. Every permission now shows the status <Ui>Granted</Ui>.
+</Step>
+</Steps>
+
+A <Ui>Global Administrator</Ui>, <Ui>Privileged Role Administrator</Ui> or <Ui>Cloud Application Administrator</Ui> can grant tenant-wide consent for these delegated permissions. Without consent, sign in fails with error AADSTS65001.
+
+<Note>
+  No admin at hand right now? Continue with the next part. When the app finds missing permissions after you sign in, a Global Administrator can select <Ui>Sign in and consent for the organization</Ui> in the app instead. See [Sign in and activate your license](/desktop/sign-in-and-license).
+</Note>
+
+## Copy the IDs into the app [#ids]
+
+The app needs two values to find your registration. Both are on the registration's <Ui>Overview</Ui> page.
+
+<Steps>
+<Step>
+### Open the Overview page
+
+Open the <Ui>Overview</Ui> page of your app registration.
+</Step>
+<Step>
+### Paste both IDs
+
+In the app's setup wizard, on the step <Ui>Connect the app registration</Ui>, paste the <Ui>Application (client) ID</Ui> and the <Ui>Directory (tenant) ID</Ui> into the fields with the same names.
+
+Instead of the tenant ID you can also enter a verified domain, such as contoso.onmicrosoft.com.
+</Step>
+<Step>
+### Save
+
+Select <Ui>Save and continue</Ui>. The wizard moves on to sign in.
+</Step>
+</Steps>
+
+<Screenshot
+  src="/images/desktop/wizard-app-registration.png"
+  alt="The Connect the app registration step of the setup wizard, with the Application (client) ID and Directory (tenant) ID fields filled in"
+  caption="Paste both IDs from the Overview page of your app registration, then select Save and continue."
+  width={2880}
+  height={1800}
+/>
+
+Both values are GUIDs in the form `00000000-0000-0000-0000-000000000000`. Neither is a secret, and no client secret is needed.
+
+If you change these values later under <Ui>Settings</Ui>, the app signs you out, and you sign in again with the new registration.
+
+## If something does not work
+
+- **AADSTS50011, the redirect URI does not match:** the registration uses the wrong platform. See [Troubleshooting](/help/troubleshooting#aadsts50011).
+- **AADSTS65001, consent missing:** admin consent has not been granted yet. See [Troubleshooting](/help/troubleshooting#aadsts65001).
+- **Some permissions are missing after sign in:** see [Permission gaps](/help/troubleshooting#permission-gaps-after-collection).
+
+## Next steps
+
+- [Sign in and activate your license](/desktop/sign-in-and-license)
+- [Collect your configuration](/desktop/collect)
+- [Security and privacy](/security)

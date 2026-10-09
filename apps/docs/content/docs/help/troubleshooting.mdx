@@ -1,0 +1,249 @@
+---
+title: "Troubleshooting"
+description: "Fixes for common sign in, permission, license, collection and export problems in the desktop app."
+---
+
+Find the message or symptom you see, then follow the fix. Messages in quotes are shown exactly as the app displays them.
+
+If nothing here helps, see [Get support](/help/support). Include a diagnostics file from <Ui>Settings</Ui> so we can help faster.
+
+## Sign in problems
+
+### AADSTS50011: the redirect URI does not match [#aadsts50011]
+
+The app registration has the wrong platform type. Most often this is the <Ui>Single-page application</Ui> platform used for the website, which does not work for the desktop app.
+
+**Fix:** in your app registration, open <Ui>Authentication</Ui>, add the <Ui>Mobile and desktop applications</Ui> platform and enter <CopyValue value="http://localhost" /> as the redirect URI. Do not add a port or path. The full steps are in [Add the desktop platform](/desktop/app-registration#platform).
+
+### AADSTS65001: consent missing [#aadsts65001]
+
+Admin consent has not been granted for this app registration.
+
+**Fix:** grant it as described in [Grant admin consent](/desktop/app-registration#consent). Then check that the <Ui>Application (client) ID</Ui> in the app matches the registration you consented to. You find the ID the app uses under <Ui>Settings</Ui>.
+
+### "Sign-in timed out. Please try again." or "Sign-in was cancelled."
+
+The app waits for you to finish signing in in your browser. If you close the browser tab, wait too long or start another sign in, the attempt ends.
+
+**Fix:** select <Ui>Sign in with Microsoft</Ui> again and finish signing in in the browser window that opens, then return to the app.
+
+### "The sign-in listener could not start. Please try again."
+
+The app could not open the local address it uses to receive the sign in response.
+
+**Fix:** try again. If it keeps happening, restart the app and [contact support](/help/support) with a diagnostics file.
+
+### "Add your Entra app registration client ID in Settings before signing in."
+
+The app does not know which app registration to use yet.
+
+**Fix:** open <Ui>Settings</Ui>, or the setup wizard, and enter the <Ui>Application (client) ID</Ui> and <Ui>Directory (tenant) ID</Ui> from your registration's <Ui>Overview</Ui> page. See [Copy the IDs into the app](/desktop/app-registration#ids).
+
+### "The client ID must be the Application (client) ID of your app registration."
+
+The value you entered is not a valid GUID.
+
+**Fix:** copy the value shown as <Ui>Application (client) ID</Ui> on the registration's <Ui>Overview</Ui> page. It looks like `00000000-0000-0000-0000-000000000000`.
+
+### "The tenant ID must be a Directory (tenant) ID or a verified domain."
+
+**Fix:** paste the <Ui>Directory (tenant) ID</Ui> GUID from the <Ui>Overview</Ui> page, or enter a verified domain such as contoso.onmicrosoft.com.
+
+### "Sign in when a collection has finished."
+
+You cannot sign in while a collection, an export, an evidence report or a compliance assessment is running. If one started while you were signing in, the app shows "The sign-in was not applied because a collection started meanwhile. Sign in again when it has finished."
+
+**Fix:** wait until the running work has finished, then sign in again.
+
+### "Your Microsoft sign-in could not be verified by the licensing service. Sign in again and retry."
+
+Shared organization licenses are checked with your Microsoft sign in. The licensing service could not verify it.
+
+**Fix:** sign out, sign in again, then retry.
+
+## Permission gaps after collection [#permission-gaps-after-collection]
+
+### "N permissions are missing" during setup
+
+After you sign in, the setup wizard checks all nine permissions and shows how many are granted. If some are missing:
+
+1. Grant admin consent on the <Ui>API permissions</Ui> page of your app registration, then select <Ui>Sign in again</Ui>.
+2. Or let a Global Administrator select <Ui>Sign in and consent for the organization</Ui> and tick <Ui>Consent on behalf of your organization</Ui> on the Microsoft page.
+
+Parts of the documentation stay empty until every permission is granted.
+
+### "Limited permissions detected"
+
+After collection, the <Ui>Overview</Ui> shows <Ui>Permission gaps</Ui> and lists each configuration type the app could not read, with the permission it requires.
+
+**Fix:**
+
+1. Compare your registration with the [permissions table](/desktop/app-registration#permissions). All nine permissions must be <Ui>Delegated</Ui> and show <Ui>Granted</Ui>.
+2. If you added a permission later, grant consent again, then sign out and back in.
+3. Check the role of the signed in account. It needs a role that can read those areas. <Ui>Security Reader</Ui> or <Ui>Global Reader</Ui> each cover everything the app reads. Intune roles alone cannot read Conditional Access policies, so pair them with <Ui>Security Reader</Ui>.
+
+Then select <Ui>Collect</Ui> again.
+
+### "N resources could not be fully loaded"
+
+Microsoft Graph did not return complete data for some resources. Everything else was loaded, and the export marks what is missing. Select <Ui>View affected resources</Ui> to see which ones.
+
+**Fix:** collect again later. Temporary Microsoft Graph errors and throttling usually clear on their own. If the same resource fails every time, check its permission as described above.
+
+## Collection and export problems
+
+### "The collection did not finish"
+
+The collection stopped before it was complete, for example because the connection dropped or the collection was cancelled. The message below the title explains the reason.
+
+**Fix:** check your connection and select <Ui>Collect</Ui> again. If you see a license message instead, see [License messages](#license-messages).
+
+### "Collect tenant data first."
+
+Search settings, browsing and exports work on your last collection. There is no collection yet for this account.
+
+**Fix:** open <Ui>Overview</Ui> and select <Ui>Collect</Ui>. See [Collect your configuration](/desktop/collect).
+
+### "Collect tenant data again for the account that is currently signed in."
+
+The stored collection belongs to a different account or tenant than the one now signed in.
+
+**Fix:** select <Ui>Collect</Ui> again, then export.
+
+### "Choose at least one configuration to export."
+
+You chose <Ui>Only selected items</Ui> without selecting anything.
+
+**Fix:** select items with their checkboxes, or export everything. See [Select and export](/desktop/select-and-export).
+
+### A file with that name already exists
+
+When you save an export with the name of an existing file, the app asks whether to replace it. Select <Ui>Replace</Ui> to overwrite it, or <Ui>Cancel</Ui> and choose another name.
+
+### "The file could not be opened. It may have been moved."
+
+The exported file is no longer where it was saved. Open it from its new location, or export again.
+
+## License messages [#license-messages]
+
+These messages appear under <Ui>License and account</Ui>, in the setup wizard or when you collect or export.
+
+### "A license is required to collect and export. Add your license key under License and account."
+
+**Fix:** open <Ui>License and account</Ui> in the app and paste your key. Sign in first so the app knows which tenant to activate. If a colleague shares a license with your tenant, sign in to that tenant and the app finds it. See [Sign in and activate your license](/desktop/sign-in-and-license).
+
+### "This license already covers its maximum number of tenants."
+
+An MSP license is at its tenant count, or a Pro license is already active for another tenant.
+
+**Fix:** add tenants or release one in the customer portal. See [Plans and billing](/account/plans-and-billing#manage-your-subscription-in-the-customer-portal).
+
+### "This tenant already has 5 active installations."
+
+Each tenant allows up to 5 active installations.
+
+**Fix:** select <Ui>Deactivate this machine</Ui> in the app on a machine you no longer use, or release that installation in the customer portal. See [Deactivate a machine](/account/plans-and-billing#deactivate-a-machine).
+
+### "This license has no activations left."
+
+**Fix:** release an installation you no longer use in the customer portal, then try again.
+
+### "This license key is not valid, or it has been revoked or has expired."
+
+**Fix:** check that you pasted the whole key and that the subscription is active in the customer portal.
+
+The app can also show these related messages:
+
+| Message | What to do |
+| --- | --- |
+| "This license key is not valid for Intune Documentation." | Check that you pasted the key from your Intune Documentation purchase email. |
+| "This license has been revoked. Check your subscription." | Check the subscription in the customer portal. A refund also revokes the key. |
+| "This license key has been disabled." | Check the subscription in the customer portal, or [contact support](/help/support). |
+| "This license key has expired." | Check the subscription in the customer portal. |
+| "The license is not valid for this tenant." | The key is not active for the tenant you signed in to. Sign in to the right tenant, or check the tenant count of your plan. |
+| "This installation is no longer activated. It will activate again on the next collection or export." | No action needed. Collect or export as usual. |
+| "Sign in to this tenant again to check your organization's license." | Sign in again so the app can confirm the shared license. |
+| "Sign in again to share the license with this tenant." | Sign in to the tenant again, then turn sharing on again. |
+| "Only the machine that holds the license key can change sharing." | Change sharing on the computer where the key was entered. |
+| "The sharing setting could not be saved. Please try again later." | Try again later. |
+| "Deactivate this machine before entering a different license key." | Select <Ui>Deactivate this machine</Ui>, then enter the new key. |
+| "Enter a valid license key." or "Enter a license key first." | Paste the full key from your purchase email. |
+| "The tenant quantity of this subscription could not be read. Please try again later or contact support." | Try again later. If it persists, [contact support](/help/support). |
+| "The license token could not be verified." or "The licensing service returned an invalid response." | Retry. If it persists, [contact support](/help/support) with a diagnostics file. |
+
+### "Key saved, not active"
+
+Your key is saved, but it is not active for the signed in tenant. Select <Ui>Retry activation</Ui>. If it still fails, the message under the title tells you why, and the entries above explain what to do.
+
+### "License active" for another tenant
+
+The status reads "Active, last verified for tenant ..." when your license was last verified for a tenant you are not signed in to right now. Sign in to that tenant to collect.
+
+## The licensing service cannot be reached [#the-licensing-service-cannot-be-reached]
+
+When a license check cannot reach the licensing service, <Ui>License and account</Ui> shows <Ui>Licensing service offline</Ui> or a message describing the cause. After a successful check the app keeps working for 14 days without the service, so you can keep collecting and exporting while you fix the connection.
+
+Select <Ui>Details</Ui> under the message to see the error code, the address that failed and the exact allow rule for your IT team. <Ui>Copy details</Ui> copies all of it as plain text. The details contain no license key, token or tenant data.
+
+By default the app contacts <CopyValue value="https://intunedocumentation.com/api/desktop-license/*" />. Ask IT to allow this address for the Intune Documentation app.
+
+| Message | Likely cause | What to do |
+| --- | --- | --- |
+| "The secure connection to the licensing service could not be verified" | A proxy or security tool that inspects HTTPS traffic presented a certificate this device does not trust. | Ask IT to exclude the licensing host from HTTPS inspection, or to deploy the inspection root certificate to this device. Check that the date and time on this device are correct. |
+| "Your proxy could not forward the request to the licensing service" | The app uses this device's proxy settings, and the proxy refused or failed the connection. | Ask IT to allow the licensing address through the proxy. Check the proxy settings of this device. |
+| "Your proxy requires a sign-in the app cannot provide" | The proxy asked for credentials (HTTP 407). Browsers answer this automatically, but the app cannot. | Ask IT to allow the licensing address without proxy authentication for the app. |
+| "A firewall or web filter blocked the licensing service" | The connection was refused, reset or answered with a block page. The website can still open in a browser while the app's requests are blocked. | Ask IT to allow the licensing address for the app. |
+| "The licensing service address could not be resolved" | This device could not look up the licensing host in DNS. | Check the network connection and DNS settings. If your network filters DNS, ask IT to allow the host. |
+| "This device is offline" | No network connection was available. | Connect to the internet and retry. |
+| "The licensing service did not answer in time" | No answer arrived within 20 seconds, usually because a firewall silently drops traffic or a proxy is slow. | Retry in a moment. If it keeps happening, ask IT to allow the licensing address. |
+| "The licensing service is unavailable" | The service answered with an error. This is usually temporary. | Wait a few minutes and retry. If it persists, [contact support](/help/support) with the details. |
+| "The licensing service could not be reached" | The connection failed for a reason the app does not recognize. | Retry in a moment. If it keeps happening, send the details to your IT team or to support. |
+
+When the connection works again, select <Ui>Retry activation</Ui>.
+
+## Update problems
+
+| Message | What to do |
+| --- | --- |
+| "Could not check for updates. Check your connection." | Check your connection, then select <Ui>Check for updates</Ui> in <Ui>Settings</Ui>. |
+| "The update could not be downloaded. It will be retried later." | No action needed. The app tries again. |
+| "The update could not be downloaded. Check for updates to try again." | Select <Ui>Check for updates</Ui> in <Ui>Settings</Ui>. |
+
+You can also download the newest installer from [Install the desktop app](/desktop/install). See [Settings and updates](/desktop/settings-and-updates).
+
+## Management report baselines and crosswalks
+
+### Baseline file is rejected
+
+When you select <Ui>Load baseline</Ui>, the app only accepts a baseline from the same tenant, framework and scope.
+
+| Message | What to do |
+| --- | --- |
+| "This file is not a valid IntuneDoc baseline." | Choose the file you saved with <Ui>Save baseline</Ui>. Baselines saved with version 0.2.2 or newer need 0.2.2 or newer, so update every installation that loads them. |
+| "This baseline was changed or damaged after it was saved." | Use an unchanged copy of the file. Baselines cannot be edited. |
+| "This baseline belongs to a different tenant." | Sign in to the tenant the baseline was saved for, or choose that tenant's file. |
+| "This baseline was created for a different framework." | Choose the same framework you used when you saved the baseline. |
+| "This baseline was created with a different assessment scope." | Use the same platform selection as when you saved the baseline. |
+| "This baseline is newer than the current assessment." | The baseline was saved after your current collection. Collect again, then load the baseline. |
+| "The signed in account changed while the file was opened. Open it again." | Open the file again. |
+
+See [Management report](/desktop/management-report).
+
+### Crosswalk import fails
+
+| Message | What to do |
+| --- | --- |
+| "The crosswalk file is larger than 1 MB." | Remove unused rows, or split the file. |
+| "The crosswalk file could not be read." | Check that you chose the CSV file you filled in, then import it again. |
+| "The crosswalk file contains no usable rows." | Start from <Ui>Download template</Ui> and fill in the columns `iso27001_control`, `nis2_measure`, `cis_safeguard` and `notes`. If a line number is shown, fix that line. |
+
+The crosswalk stays in memory for the current session only, so import it again after restarting the app.
+
+## Start over
+
+If the setup is in a state you cannot recover from, open <Ui>Settings</Ui> and select <Ui>Clear data</Ui> under <Ui>Clear local data</Ui>. The app deactivates the license on this machine when possible, signs you out, removes the app registration settings and restarts with the setup wizard.
+
+## Still stuck?
+
+1. Open <Ui>Settings</Ui> and select <Ui>Export diagnostics</Ui>. The file contains the app version, system details, your tenant ID, your license plan and status, collection counts and recent log lines. It contains no license key, tokens or policy contents.
+2. [Contact support](/help/support) and attach the file.

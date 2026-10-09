@@ -1,0 +1,101 @@
+---
+title: "Compliance mapping"
+description: "Map your exported Intune settings to compliance frameworks in the web app."
+---
+
+When an auditor, a cyber insurer or a customer questionnaire asks you to prove that your devices enforce encryption, screen lock or patching, the answer is already in your Intune configuration. The <Ui>Compliance Evidence</Ui> view in the web app maps that configuration to a framework and shows, requirement by requirement, which policies, settings, values and assignments support it. You can then download the result as a PDF report.
+
+It uses the same data you already collected for your documentation. Nothing extra is read and nothing is stored on our servers.
+
+<Callout type="info" title="Evidence, not a certificate">
+  The report states the technical evidence found in your Intune tenant. It never claims you are compliant, because only your auditor can decide that. Requirements that Intune configuration cannot prove, such as organizational or governance requirements, stay marked for manual assessment.
+</Callout>
+
+## Supported frameworks
+
+The web app supports these frameworks:
+
+- ASD Essential Eight, with target Maturity Levels 1, 2 and 3
+- ISO/IEC 27001
+- SOC 2
+- NIST SP 800-53
+- NIST CSF 2.0
+- BSI IT-Grundschutz (the report is in German)
+- Def Stan 05-138, with the Cyber Risk Profile levels at which each control applies
+- Cyber Essentials
+- NIST SP 800-171 Rev. 2 (select this one for CMMC 2.0 Level 2)
+- NIST SP 800-171 Rev. 3
+
+<Note>
+  The [desktop app](/desktop/compliance-evidence) adds the NIS2 Directive, a one-page [management report](/desktop/management-report) with month-over-month change, and the option to import your own CIS crosswalk for ISO/IEC 27001 and NIS2.
+</Note>
+
+## See a sample first
+
+Every framework has a free sample report generated from the fictional tenant Contoso Ltd. It is the quickest way to see what your auditor will receive. Browse them on the [sample reports page](https://intunedocumentation.com/compliance#samples).
+
+## Review evidence for a framework
+
+<Steps>
+<Step>
+### Load your configuration
+
+Sign in and let the collection finish. See [Get started with the web app](/web/get-started). If you want checks for MFA and access requirements, turn on Conditional Access in <Ui>Settings</Ui> first.
+</Step>
+<Step>
+### Open Compliance Evidence
+
+Select <Ui>Compliance Evidence</Ui> in the sidebar. You see <Ui>Choose a compliance framework</Ui> with a tile for each framework. Select one.
+
+To switch later, open the framework menu at the top and select another one, or <Ui>Show all frameworks</Ui>.
+</Step>
+<Step>
+### Set the scope
+
+Under <Ui>Platforms in scope</Ui>, tick the platforms this assessment covers: <Ui>Windows</Ui>, <Ui>macOS</Ui>, <Ui>iOS / iPadOS</Ui>, <Ui>Android</Ui> and <Ui>Tenant</Ui>. Requirements on platforms you leave out are shown as <Ui>Outside selected scope</Ui>.
+
+Some frameworks have one more choice:
+
+- **ASD Essential Eight:** choose the <Ui>Essential Eight target maturity level</Ui>. The default is Level 1. The tool shows evidence against the target you choose. It does not calculate an achieved maturity level.
+- **Def Stan 05-138:** choose the <Ui>Def Stan Cyber Risk Profile</Ui> level, or leave <Ui>All levels (scope not selected)</Ui>.
+</Step>
+<Step>
+### Read the results
+
+Three summary cards count the individual setting checks: <Ui>Matches expected value</Ui>, <Ui>Different value</Ui> and <Ui>Missing</Ui>. These count setting comparisons, not passed requirements.
+
+Below them, each requirement of the framework is listed with a status. Expand a requirement to see the checks behind it: the policy, the setting, the expected value, the actual value and the assignment.
+</Step>
+</Steps>
+
+### What the statuses mean
+
+| Status | Meaning |
+| --- | --- |
+| <Ui>Configuration evidence</Ui> | A recognized setting is configured with the value that enforces the requirement, on an assigned policy. |
+| <Ui>Partial configuration evidence</Ui> | Some of the required settings are in place, or the evidence only supports the requirement. |
+| <Ui>Mixed policy evidence</Ui> | Policies disagree. For example, one enforces BitLocker and another explicitly disables it. Counter-evidence is reported as a risk, never as coverage. |
+| <Ui>No recognized configuration evidence</Ui> | No Intune setting that supports this requirement was found. The PDF report lists the settings that could provide it. |
+| <Ui>Not assessed</Ui> | The requirement needs evidence that Intune configuration cannot provide, or the data needed was not collected. |
+| <Ui>Outside selected scope</Ui> | The requirement applies only to platforms or levels you did not select. |
+
+Unassigned policies are flagged instead of counted, and a policy that only mentions a topic is not treated as evidence.
+
+<Callout type="warn" title="Collection incomplete">
+  If part of the collection failed, a notice says so. Checks that need the missing data are affected; all other checks still run. If Conditional Access was not collected, turn it on in <Ui>Settings</Ui>, complete sign-in or consent, and refresh.
+</Callout>
+
+## Download the evidence
+
+You have two downloads, both generated in your browser:
+
+- **<Ui>Download report (PDF)</Ui>** creates the full, requirement-level evidence report for the selected framework and scope. It is built as an audit deliverable, with a table of contents, a data-basis section that states which policies were assessed, an evidence register with references, key findings and gap guidance. The BSI IT-Grundschutz report is fully in German and includes fields for your manual assessment.
+- **<Ui>Download evidence record (JSON)</Ui>** saves the same assessment as structured data, for your GRC tool or audit trail.
+
+You can also add a short compliance evidence section to your configuration document with the <Ui>Include compliance evidence preview</Ui> option. See [Export your configuration](/web/export).
+
+## Next steps
+
+- [Export your configuration](/web/export) as a PDF or Word document.
+- Need NIS2, a management summary or many tenants? See [Compliance evidence in the desktop app](/desktop/compliance-evidence).
+- Questions about what the report proves? See the [FAQ](/help/faq).

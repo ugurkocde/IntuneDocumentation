@@ -1,0 +1,210 @@
+---
+title: "Self-hosting"
+description: "Run the open source web app in your own environment for full control over where it runs."
+---
+
+The web app is open source, so you can run it on your own infrastructure. Your Microsoft Graph responses are then processed only by your own deployment, users sign in through your own app registration, and telemetry is off by default.
+
+This page is for the IT team that will run the container.
+
+## Is self-hosting right for you?
+
+| | Hosted web app | Self-hosted web app | Desktop app |
+| --- | --- | --- | --- |
+| Price | Free | Free | Paid |
+| Where Graph responses are processed | Our server, in memory only | Your server | The admin's computer |
+| App registration | Ours | Yours (single-page application) | Yours (mobile and desktop) |
+| Updates | Automatic | You pull new images | Installed when you choose |
+| You operate | Nothing | A container, HTTPS and DNS | Installs on admin computers |
+
+Self-hosting is a good fit if you want the free web app but your policy does not allow a third-party Entra app or a third-party server. If you prefer not to run a server at all, look at the [desktop app](/desktop/before-you-start).
+
+<Note>
+  Intune Documentation is licensed under the Elastic License 2.0. You may use, modify and self-host it, but you may not offer it to third parties as a hosted or managed service.
+</Note>
+
+## What you need
+
+- A host that runs Docker with Docker Compose.
+- A URL your users will open, for example `https://intune-docs.example.com`. Microsoft Entra ID requires HTTPS redirect URIs for anything other than `localhost`, so publish the app over HTTPS, for example behind your existing reverse proxy.
+- Permission to create an app registration and grant admin consent in Microsoft Entra ID.
+
+## Step 1: Create the app registration
+
+The web app signs users in through an app registration in your tenant. It is a browser-based public client, so it needs no client secret.
+
+<Steps>
+<Step>
+### Start a new registration
+
+In the [Microsoft Entra admin center](https://entra.microsoft.com), open <Ui>Identity</Ui> &gt; <Ui>Applications</Ui> &gt; <Ui>App registrations</Ui> and select <Ui>New registration</Ui>.
+
+Give it a name your users will recognize, for example `Intune Documentation`.
+</Step>
+<Step>
+### Choose who can sign in
+
+Under <Ui>Supported account types</Ui>, choose:
+
+- <Ui>Accounts in this organizational directory only</Ui> if only your own tenant will use it.
+- <Ui>Accounts in any organizational directory</Ui> if users from several tenants will use the deployment.
+</Step>
+<Step>
+### Add the single-page application platform
+
+Open <Ui>Authentication</Ui>, select <Ui>Add a platform</Ui> and choose <Ui>Single-page application</Ui>. Enter a redirect URI that exactly matches the address users browse to, with no path and no trailing slash. For example <CopyValue value="http://localhost:3000" /> for a test on your own machine, or `https://intune-docs.example.com` in production.
+
+The app uses the address in the browser as its redirect URI, so add one entry for every address users will use.
+
+<Callout type="warn" title="Use Single-page application">
+  Do not choose <Ui>Web</Ui> or <Ui>Mobile and desktop applications</Ui> here. Sign-in fails with error AADSTS50011 or a similar redirect error if the platform or address does not match. The desktop app is the opposite: it needs <Ui>Mobile and desktop applications</Ui>, see [Create the app registration](/desktop/app-registration).
+</Callout>
+</Step>
+<Step>
+### Add the read-only permissions
+
+Open <Ui>API permissions</Ui>, select <Ui>Add a permission</Ui> &gt; <Ui>Microsoft Graph</Ui> &gt; <Ui>Delegated permissions</Ui> and add:
+
+- <CopyValue value="User.Read" />
+- <CopyValue value="DeviceManagementConfiguration.Read.All" />
+- <CopyValue value="DeviceManagementApps.Read.All" />
+- <CopyValue value="DeviceManagementManagedDevices.Read.All" />
+- <CopyValue value="DeviceManagementRBAC.Read.All" />
+- <CopyValue value="DeviceManagementServiceConfig.Read.All" />
+- <CopyValue value="DeviceManagementScripts.Read.All" />
+- <CopyValue value="Group.Read.All" />
+
+Optional: add <CopyValue value="Policy.Read.All" /> if users will include Conditional Access policies. Adding it now means one admin consent covers everything.
+
+All of these are read-only. Do not add application permissions.
+</Step>
+<Step>
+### Grant admin consent
+
+Select <Ui>Grant admin consent for</Ui> your tenant and confirm with <Ui>Yes</Ui>. The <Ui>Status</Ui> column now shows that consent is granted for every permission.
+</Step>
+<Step>
+### Copy the IDs
+
+On the <Ui>Overview</Ui> page, copy the <Ui>Application (client) ID</Ui>. For a single-tenant deployment, also copy the <Ui>Directory (tenant) ID</Ui>.
+</Step>
+</Steps>
+
+## Step 2: Start the container
+
+The image is published as <CopyValue value="ghcr.io/ugurkocde/intune-documentation" /> with `latest`, `X.Y` and `X.Y.Z` tags.
+
+<Steps>
+<Step>
+### Create the compose file
+
+In a new directory on your Docker host, create `compose.yaml`:
+
+```yaml title="compose.yaml"
+services:
+  intune-documentation:
+    image: ghcr.io/ugurkocde/intune-documentation:latest
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      AZURE_AD_CLIENT_ID: "${AZURE_AD_CLIENT_ID:?Set AZURE_AD_CLIENT_ID to your Entra app registration client ID}"
+      AZURE_AD_TENANT_ID: "${AZURE_AD_TENANT_ID:-common}"
+```
+
+This is the same file as [`compose.yaml` in the repository](https://github.com/ugurkocde/IntuneDocumentation/blob/main/compose.yaml).
+
+If a reverse proxy on the same host serves the app over HTTPS, publish the port on the loopback address only, so the plain HTTP port is not reachable from the network: `"127.0.0.1:3000:3000"`.
+</Step>
+<Step>
+### Add your IDs
+
+Create a `.env` file next to it:
+
+```ini title=".env"
+AZURE_AD_CLIENT_ID="your-entra-application-client-id"
+# Optional. Defaults to "common".
+AZURE_AD_TENANT_ID="common"
+```
+
+Set `AZURE_AD_TENANT_ID` to your tenant ID for a single-tenant deployment. Leave it as `common` if users from several tenants will sign in.
+</Step>
+<Step>
+### Start it
+
+```sh
+docker compose up -d
+```
+
+Open [http://localhost:3000](http://localhost:3000) on the host, or your HTTPS address through your reverse proxy. Select <Ui>Sign in with Microsoft</Ui> and run a collection to confirm everything works.
+</Step>
+</Steps>
+
+## Environment variables
+
+These are the only variables a self-hosted deployment needs. They are read when the container starts, so you can change them without rebuilding the image.
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `AZURE_AD_CLIENT_ID` | Yes | The application (client) ID of your app registration. |
+| `AZURE_AD_TENANT_ID` | No | Your tenant ID for single-tenant sign-in. Defaults to `common`. |
+
+The repository's `.env.example` lists more variables, for example for the hosted support form, desktop licensing and usage counters. Those run the public intunedocumentation.com service. Leave them unset for a self-hosted deployment.
+
+## Privacy and telemetry
+
+A self-hosted deployment sends nothing to us.
+
+- **No analytics.** Plausible Analytics only loads on a configured public website origin with the analytics flag turned on. A self-hosted deployment runs in app mode with no third-party scripts.
+- **No usage counters.** The monthly-active-user and export counters need a Supabase database, which is not configured.
+- **No support chat.** The Crisp chat needs a website ID and a separate public origin, neither of which is set.
+- **Same data handling as the hosted app.** Your server collects, normalizes and redacts Graph responses in memory during the request and stores neither configuration nor tokens. Documents are built in the user's browser. See [Security and privacy](/security#web-app).
+
+## Updating
+
+Pull the newest image and recreate the container:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+To control upgrades, pin a version tag such as `X.Y.Z` instead of `latest` in `compose.yaml`.
+
+## Troubleshooting
+
+<details>
+<summary>docker compose says "Set AZURE_AD_CLIENT_ID to your Entra app registration client ID"</summary>
+
+The `.env` file is missing, is not next to `compose.yaml`, or does not set `AZURE_AD_CLIENT_ID`. Fix the file and run `docker compose up -d` again.
+
+</details>
+
+<details>
+<summary>Sign-in reports "Microsoft Entra configuration is missing"</summary>
+
+The container started without a client ID. Check the environment of the running container and restart it with `AZURE_AD_CLIENT_ID` set.
+
+</details>
+
+<details>
+<summary>Sign-in fails with AADSTS50011 or a redirect URI error</summary>
+
+The address in the browser does not exactly match a redirect URI on the app registration, or the URI was added under the wrong platform. Add the exact origin, for example `https://intune-docs.example.com`, under <Ui>Single-page application</Ui>.
+
+</details>
+
+<details>
+<summary>Users see an approval request or "Limited permissions detected"</summary>
+
+Admin consent has not been granted for all permissions. Open the app registration, go to <Ui>API permissions</Ui> and select <Ui>Grant admin consent</Ui> again.
+
+</details>
+
+For other problems, see [Troubleshooting](/help/troubleshooting) or open an issue on [GitHub](https://github.com/ugurkocde/IntuneDocumentation/issues).
+
+## Next steps
+
+- [Get started with the web app](/web/get-started) to run your first collection.
+- [Export your configuration](/web/export) as PDF or Word.
+- Want to contribute or run it from source? See [CONTRIBUTING.md](https://github.com/ugurkocde/IntuneDocumentation/blob/main/CONTRIBUTING.md).

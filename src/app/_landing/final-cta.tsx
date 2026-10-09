@@ -1,4 +1,5 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CalendarDays } from "lucide-react";
+import { DEMO_BOOKING_URL } from "~/lib/demo-booking";
 import { AuthCta } from "./auth-cta";
 import { SAMPLE_REPORT_URL } from "./content";
 import { buttonStyles } from "./primitives";
@@ -22,13 +23,24 @@ export function FinalCta() {
         <AuthCta
           inverted
           secondaryAction={
-            <a
-              href={SAMPLE_REPORT_URL}
-              className={buttonStyles.secondaryInverted}
-            >
-              Sample report
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </a>
+            <>
+              <a
+                href={SAMPLE_REPORT_URL}
+                className={buttonStyles.secondaryInverted}
+              >
+                Sample report
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </a>
+              <a
+                href={DEMO_BOOKING_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonStyles.secondaryInverted}
+              >
+                <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                Book a demo
+              </a>
+            </>
           }
         />
       </div>

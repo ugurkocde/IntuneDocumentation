@@ -2,6 +2,7 @@ import { ArrowRight, Check, FileText } from "lucide-react";
 import Link from "next/link";
 import { SAMPLE_REPORTS, sampleReportUrl } from "~/lib/compliance/samples";
 import {
+  desktopOnlyFrameworksNote,
   FEATURED_SAMPLE_REPORT,
   sampleReportLabel,
   trackSampleReport,
@@ -87,13 +88,19 @@ export function Compliance() {
                       DE
                     </span>
                   )}
+                  {sample.desktopOnly && (
+                    <span className="text-petrol-600 text-[10px] font-semibold tracking-[0.1em] uppercase">
+                      Desktop
+                    </span>
+                  )}
                 </a>
               </li>
             ))}
           </ul>
           <p className="text-petrol-600 border-petrol-950/8 mt-6 border-t pt-5 text-xs leading-5">
             Reports are supporting evidence for an assessment, not a
-            certification or a calculated maturity level.
+            certification or a calculated maturity level.{" "}
+            {desktopOnlyFrameworksNote}
           </p>
         </div>
       </div>

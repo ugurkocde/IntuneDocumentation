@@ -27,14 +27,27 @@ export const complianceFrameworks = SAMPLE_REPORTS.map(
   (sample) => sample.label,
 );
 
+const desktopOnlyFrameworks = SAMPLE_REPORTS.filter(
+  (sample) => sample.desktopOnly,
+).map((sample) => sample.label);
+
+export const desktopOnlyFrameworksNote =
+  desktopOnlyFrameworks.length > 0
+    ? `${desktopOnlyFrameworks.join(" and ")} ${desktopOnlyFrameworks.length === 1 ? "is" : "are"} available in the desktop app only.`
+    : "";
+
 export const FEATURED_SAMPLE_REPORT = sampleReportFor("iso-27001-2022");
 
 // Plausible tagged-event class names, counted as a custom goal
 export const trackSampleReport = (frameworkId: string) =>
   `plausible-event-name=Sample+Report+Open plausible-event-framework=${frameworkId}`;
 
-export const sampleReportLabel = (sample: SampleReport) =>
-  `View the ${sample.label} sample report (PDF${sample.locale === "de" ? ", in German" : ""})`;
+export const sampleReportLabel = (sample: SampleReport) => {
+  const notes = ["PDF"];
+  if (sample.locale === "de") notes.push("in German");
+  if (sample.desktopOnly) notes.push("desktop app only");
+  return `View the ${sample.label} sample report (${notes.join(", ")})`;
+};
 
 export const scopeDescriptions: Record<string, string> = {
   "User.Read":
@@ -83,7 +96,13 @@ export const faqs: Array<{ question: string; answer: string }> = [
   },
   {
     question: "Which compliance frameworks are supported?",
-    answer: `Compliance reports map your Intune configuration to ${complianceFrameworks.join(", ")}. Each mapped requirement cites the policy names, settings, values, and assignments used as evidence. Requirements that Intune configuration cannot prove stay explicitly unassessed, so the report is supporting evidence, not a certification.`,
+    answer: [
+      `Compliance reports map your Intune configuration to ${complianceFrameworks.join(", ")}.`,
+      desktopOnlyFrameworksNote,
+      "Each mapped requirement cites the policy names, settings, values, and assignments used as evidence. Requirements that Intune configuration cannot prove stay explicitly unassessed, so the report is supporting evidence, not a certification.",
+    ]
+      .filter(Boolean)
+      .join(" "),
   },
   {
     question: "Are secrets or script bodies included in the report?",

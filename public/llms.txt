@@ -5,7 +5,7 @@
 ## Primary pages
 
 - [Product overview](https://intunedocumentation.com/): Features, security model, supported configuration areas, workflow, and frequently asked questions.
-- [Compliance evidence](https://intunedocumentation.com/compliance): Framework mapping for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST, BSI IT-Grundschutz, Def Stan 05-138, Cyber Essentials, and ASD Essential Eight.
+- [Compliance evidence](https://intunedocumentation.com/compliance): Framework mapping for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST, BSI IT-Grundschutz, Def Stan 05-138, Cyber Essentials, and ASD Essential Eight. NIS2 is available in the desktop app only.
 - [Desktop app](https://intunedocumentation.com/desktop): Paid macOS and Windows app that collects Intune configuration locally with your own Entra app registration, with Word and PDF exports, compliance evidence, a management report, and search across every collected setting.
 - [Documentation](https://docs.intunedocumentation.com): Guides for the web app and the desktop app: setup, app registration, license, collection, Search settings, exports, compliance evidence, management report, troubleshooting, and self-hosting. Full index at https://docs.intunedocumentation.com/llms.txt.
 - [Privacy policy](https://intunedocumentation.com/privacy-policy): Data access, transient processing, redaction, analytics, retention, and user rights.

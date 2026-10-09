@@ -1,5 +1,5 @@
 import { RootProvider } from 'fumadocs-ui/provider/next';
-import type { Metadata, Viewport } from 'next';
+import type { Metadata } from 'next';
 import './global.css';
 import { ogImage, siteDescription, siteName, siteUrl } from '@/lib/shared';
 
@@ -34,18 +34,13 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fbfcfc' },
-    { media: '(prefers-color-scheme: dark)', color: '#06252b' },
-  ],
-};
-
 export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="flex min-h-screen flex-col">
         <RootProvider
+          // Light by default for every visitor; the toggle still offers dark.
+          theme={{ defaultTheme: 'light' }}
           search={{
             links: [
               ['Install the desktop app', '/desktop/install'],

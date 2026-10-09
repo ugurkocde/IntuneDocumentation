@@ -58,6 +58,8 @@ The app uses the address in the browser as its redirect URI, so add one entry fo
 
 <Callout type="warn" title="Use Single-page application">
   Do not choose <Ui>Web</Ui> or <Ui>Mobile and desktop applications</Ui> here. Sign-in fails with error AADSTS50011 or a similar redirect error if the platform or address does not match. The desktop app is the opposite: it needs <Ui>Mobile and desktop applications</Ui>, see [Create the app registration](/desktop/app-registration).
+
+  Also keep `localhost` addresses off the other platforms of this registration. Microsoft ignores the port when it matches `localhost` redirect URIs, so an entry such as `http://localhost` under <Ui>Web</Ui> also matches `http://localhost:3000` and sign-in fails with error AADSTS9002326.
 </Callout>
 </Step>
 <Step>
@@ -191,6 +193,13 @@ The container started without a client ID. Check the environment of the running 
 <summary>Sign-in fails with AADSTS50011 or a redirect URI error</summary>
 
 The address in the browser does not exactly match a redirect URI on the app registration, or the URI was added under the wrong platform. Add the exact origin, for example `https://intune-docs.example.com`, under <Ui>Single-page application</Ui>.
+
+</details>
+
+<details>
+<summary>Sign-in fails with AADSTS9002326 "Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type"</summary>
+
+The app registration has a `localhost` redirect URI under another platform as well, for example `http://localhost` under <Ui>Web</Ui> next to `http://localhost:3000` under <Ui>Single-page application</Ui>. Microsoft ignores the port when it matches `localhost` addresses and can pick the other platform's entry. Entra then rejects the token request from the browser because that entry is not a single-page application. Open <Ui>Authentication</Ui>, delete the `localhost` entries under <Ui>Web</Ui> and <Ui>Mobile and desktop applications</Ui>, and keep the address under <Ui>Single-page application</Ui>. If you also need the [desktop app](/desktop/app-registration), give it its own app registration.
 
 </details>
 

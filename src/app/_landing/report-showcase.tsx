@@ -83,7 +83,7 @@ export function ReportShowcase() {
             >
               See sample compliance evidence reports
             </a>{" "}
-            for ISO 27001, NIS2, SOC 2, and more.
+            for ISO 27001, SOC 2, HIPAA, and more.
           </p>
         </div>
 

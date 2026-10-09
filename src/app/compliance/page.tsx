@@ -7,7 +7,11 @@ import {
   sampleReportFor,
   sampleReportUrl,
 } from "~/lib/compliance/samples";
-import { sampleReportLabel, trackSampleReport } from "../_landing/content";
+import {
+  desktopOnlyFrameworksNote,
+  sampleReportLabel,
+  trackSampleReport,
+} from "../_landing/content";
 import { NavigationHeader } from "~/components/navigation-header";
 import { SiteFooter } from "~/components/site-footer";
 import { BackToTopButton } from "~/components/back-to-top-button";
@@ -15,12 +19,12 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 is available in the desktop app only. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Sample reports for every framework are free to view.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 is available in the desktop app only. Sample reports for every framework are free to view.",
     url: "/compliance",
     type: "website",
   },
@@ -149,6 +153,16 @@ const reportFeatures = [
   },
 ];
 
+function DesktopOnlyTag() {
+  return (
+    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 align-middle text-[10px] font-semibold tracking-[0.1em] text-slate-600 uppercase">
+      <span className="sr-only">, </span>
+      Desktop app
+      <span className="sr-only"> only</span>
+    </span>
+  );
+}
+
 const principles = [
   {
     title: "Real evidence, not keyword matching",
@@ -211,6 +225,7 @@ export default function CompliancePage() {
                 >
                   <h3 className="font-semibold text-slate-900">
                     {sample.label}
+                    {sample.desktopOnly && <DesktopOnlyTag />}
                   </h3>
                   <p className="mt-1 mb-3 text-sm leading-relaxed text-slate-600">
                     {sampleDescriptions[sample.frameworkId] ??
@@ -224,7 +239,10 @@ export default function CompliancePage() {
                   >
                     <FileText className="h-4 w-4" aria-hidden="true" />
                     View sample (PDF)
-                    <span className="sr-only">: {sample.label}</span>
+                    <span className="sr-only">
+                      : {sample.label}
+                      {sample.desktopOnly && ", desktop app only"}
+                    </span>
                   </a>
                 </li>
               ))}
@@ -244,6 +262,7 @@ export default function CompliancePage() {
                 >
                   <h3 className="font-semibold text-slate-900">
                     {framework.name}
+                    {sample?.desktopOnly && <DesktopOnlyTag />}
                   </h3>
                   <p className="mt-1 text-sm leading-relaxed text-slate-600">
                     {framework.detail}
@@ -314,7 +333,14 @@ export default function CompliancePage() {
               every signed-in user. Review framework controls and download full
               requirement-level reports as PDF. For ASD Essential Eight, select
               Maturity Level 1, 2 or 3 to review evidence against that target
-              and include it in your PDF report and JSON evidence record.
+              and include it in your PDF report and JSON evidence record.{" "}
+              {desktopOnlyFrameworksNote}{" "}
+              <Link
+                href="/desktop"
+                className="font-semibold text-teal-700 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
+              >
+                About the desktop app
+              </Link>
             </p>
             <Link
               href="/dashboard"

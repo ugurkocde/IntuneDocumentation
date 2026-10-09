@@ -50,6 +50,23 @@ describe("sample report links", () => {
     expect(html).toContain("View a sample ISO 27001 evidence report");
   });
 
+  it("marks NIS2 as desktop only, since the web dashboard does not offer it", () => {
+    for (const html of [
+      renderToStaticMarkup(<Compliance />),
+      renderToStaticMarkup(<CompliancePage />),
+    ]) {
+      const nis2 = sampleLinks(html).find(
+        (link) =>
+          link.getAttribute("href") === "/samples/nis2.pdf" &&
+          link.hasAttribute("aria-label"),
+      );
+      expect(nis2?.getAttribute("aria-label")).toContain("desktop app only");
+      expect(html).toContain(
+        "NIS2 Directive is available in the desktop app only.",
+      );
+    }
+  });
+
   it("links every sample from the /compliance page", () => {
     const html = renderToStaticMarkup(<CompliancePage />);
     expect(html).toContain('id="samples"');

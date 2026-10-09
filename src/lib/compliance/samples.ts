@@ -7,6 +7,8 @@ export interface SampleReport {
   label: string;
   file: string;
   locale: "en" | "de";
+  /** Not offered in the web dashboard; only the desktop app creates it. */
+  desktopOnly?: true;
 }
 
 export const SAMPLE_REPORTS_DIR = "/samples";
@@ -23,6 +25,7 @@ export const SAMPLE_REPORTS: readonly SampleReport[] = [
     label: "NIS2 Directive",
     file: "nis2.pdf",
     locale: "en",
+    desktopOnly: true,
   },
   { frameworkId: "soc2-tsc", label: "SOC 2", file: "soc2.pdf", locale: "en" },
   {

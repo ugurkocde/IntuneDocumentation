@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DetailedExportData } from "../configuration-analyzer";
-import { assessCompliance, HIPAA_SECURITY_RULE } from "../compliance";
+import {
+  assessCompliance,
+  HIPAA_OUTSIDE_INTUNE_SCOPE,
+  HIPAA_SECURITY_RULE,
+} from "../compliance";
 import { frameworkCoverageLabel } from "../compliance/presentation";
 import {
   complianceReportFileName,
@@ -100,6 +104,29 @@ describe("HIPAA Security Rule", () => {
         (item) => item.status !== "evidenceFound",
       ),
     ).toBe(true);
+  });
+
+  it("lists every unmapped Appendix A row once, apart from the mapped controls", () => {
+    const ids = HIPAA_OUTSIDE_INTUNE_SCOPE.map((measure) => measure.id);
+    expect(new Set(ids).size).toBe(45);
+    expect(ids.length + Object.keys(HIPAA_SECURITY_RULE.controls).length).toBe(
+      HIPAA_SECURITY_RULE.totalRequirements,
+    );
+    for (const id of ids)
+      expect(HIPAA_SECURITY_RULE.controls[id]).toBeUndefined();
+    expect(
+      HIPAA_OUTSIDE_INTUNE_SCOPE.filter((measure) => measure.notEvaluated).map(
+        (measure) => measure.id,
+      ),
+    ).toEqual([
+      "164.312(a)(2)(i)",
+      "164.312(a)(2)(iii)",
+      "164.312(e)(1)",
+      "164.312(e)(2)(i)",
+      "164.312(e)(2)(ii)",
+    ]);
+    for (const measure of HIPAA_OUTSIDE_INTUNE_SCOPE)
+      expect(measure.title.de.length).toBeGreaterThan(0);
   });
 
   it("keeps updates and host firewalls unmapped", () => {

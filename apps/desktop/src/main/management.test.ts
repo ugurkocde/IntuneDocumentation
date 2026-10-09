@@ -314,6 +314,15 @@ describe("view", () => {
 
     const nis2 = toView(assessment, "nis2-2022-2555").selected!;
     expect(nis2.management.outsideScope.length).toBeGreaterThan(0);
+
+    // HIPAA lists every unmapped Appendix A row; the ones related settings
+    // could support are counted apart from those outside Intune scope.
+    const hipaa = toView(assessment, "hipaa-security-rule").selected!;
+    expect(hipaa.management.outsideScope).toHaveLength(45);
+    expect(
+      hipaa.management.outsideScope.filter((measure) => measure.notEvaluated),
+    ).toHaveLength(5);
+    expect(hipaa.management.metrics.outsideIntuneScope).toBe(40);
   });
 
   it("applies the crosswalk to ISO controls only", () => {

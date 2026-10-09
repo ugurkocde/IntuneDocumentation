@@ -396,8 +396,12 @@ describe.each(["en", "de"] as const)("security summary PDF (%s)", (locale) => {
       for (const text of [...section.paragraphs, ...(section.bullets ?? [])])
         expect(itText).toContain(text);
     }
-    for (const figure of Object.values(strings.figures))
+    // The fixture has no measures marked as not checked yet, so that figure
+    // is omitted; its own test covers it.
+    const { notEvaluated, ...shownFigures } = strings.figures;
+    for (const figure of Object.values(shownFigures))
       expect(itText).toContain(figure.label);
+    expect(itText).not.toContain(notEvaluated.label);
     expect(itText).toContain(
       `${strings.measuresOf(3, 6)} (${strings.percent(50)})`,
     );
@@ -574,6 +578,26 @@ describe.each(["en", "de"] as const)("security summary PDF (%s)", (locale) => {
     expect(change?.text).toContain(strings.changeSafeguardsMissing);
     expect(change?.text).not.toContain(strings.deltaPoints(17));
     expect(change?.text).not.toContain(strings.changePerMeasure);
+  });
+
+  it("counts measures not checked yet apart from those outside Intune scope", async () => {
+    const input = createInput(locale);
+    input.summary.outsideScope = [
+      ...input.summary.outsideScope,
+      {
+        id: "164.312(a)(2)(iii)",
+        title: { en: "Automatic Logoff", de: "Automatische Abmeldung" },
+        notEvaluated: true,
+      },
+    ];
+    const pages = readPages(await generateManagementReportPDF(input));
+    const text = pages.map((page) => page.text).join(" ");
+    expect(pages[0]?.text).toContain(strings.outsideScopeLine(4));
+    expect(pages[0]?.text).toContain(strings.notEvaluatedLine(1));
+    expect(text).toContain(strings.figures.notEvaluated.label);
+    expect(text).toContain(strings.notEvaluatedNote);
+    expect(text).toContain(strings.notEvaluatedIntro);
+    expect(pages[0]?.internal).toHaveLength(6 + LAB.length);
   });
 
   it("skips the outside-scope page and its link when there are no such measures", async () => {

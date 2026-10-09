@@ -200,6 +200,7 @@ export function ManagementPanel({
   onRefresh: () => void;
 }) {
   const { metrics, nextActions, outsideScope } = selected.management;
+  const notEvaluated = outsideScope.filter((measure) => measure.notEvaluated);
   const { delta, baseline, crosswalk } = selected;
   const { frameworkId } = request;
   const action = useAsyncAction();
@@ -380,11 +381,22 @@ export function ManagementPanel({
         </div>
       </div>
 
-      {(metrics.outsideIntuneScope ?? 0) > 0 && (
+      {((metrics.outsideIntuneScope ?? 0) > 0 || notEvaluated.length > 0) && (
         <details className="text-xs text-slate-700">
           <DisclosureSummary className="font-semibold hover:text-teal-700">
-            {metrics.outsideIntuneScope} {metrics.outsideIntuneScope === 1 ? "measure is" : "measures are"} outside
-            Intune scope and need separate assessment.
+            {(metrics.outsideIntuneScope ?? 0) > 0 && (
+              <>
+                {metrics.outsideIntuneScope} {metrics.outsideIntuneScope === 1 ? "measure is" : "measures are"} outside
+                Intune scope and need separate assessment.
+              </>
+            )}
+            {notEvaluated.length > 0 && (
+              <>
+                {(metrics.outsideIntuneScope ?? 0) > 0 && " "}
+                {notEvaluated.length} {notEvaluated.length === 1 ? "measure relates" : "measures relate"} to Intune or
+                Entra settings this report does not check yet.
+              </>
+            )}
           </DisclosureSummary>
           {outsideScope.length > 0 && (
             <ul className="mt-2 list-disc space-y-1 pl-9">
@@ -392,6 +404,7 @@ export function ManagementPanel({
                 <li key={measure.id}>
                   <span className="mr-1.5 font-mono text-teal-700">{measure.id}</span>
                   {measure.title.en}
+                  {measure.notEvaluated && <span className="ml-1.5 text-slate-500">(not checked yet)</span>}
                 </li>
               ))}
             </ul>

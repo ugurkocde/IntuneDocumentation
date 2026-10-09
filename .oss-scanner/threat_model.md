@@ -21,7 +21,7 @@ Most important:
 
 - `src/lib/desktop-license/**` and `src/app/api/desktop-license/**`: licence issuance and verification (Ed25519 signing), Polar API calls with the server's access token, rate limiting, organisation licences bound to Entra tenants. Licence forgery, privilege or tenant confusion, and leaking `POLAR_ACCESS_TOKEN` or the signing key are critical.
 - `src/lib/entra-id-token.ts` and `src/lib/auth-middleware.ts`: ID token verification (JWKS, algorithm, audience, issuer, nonce, lifetime).
-- `src/app/api/intune/**`, `src/lib/graph-request.ts`, `src/lib/intune-detailed-client.ts`: the Graph proxy. SSRF, sending the user's token anywhere other than Microsoft Graph, or mixing data between users or tenants are critical.
+- `src/app/api/intune/**`, `src/lib/graph-request.ts`, `src/lib/intune-detailed-client.ts`: the Graph proxy. Sending the user's token anywhere other than Microsoft Graph, or mixing data between users or tenants, is critical; SSRF that does neither is high.
 - `src/app/api/desktop-update/**` and `apps/desktop/src/main/updater.ts`: the update supply chain. Anything that makes the desktop app install a binary not published in this repository's GitHub releases is critical.
 - `apps/desktop/src/main/**` and `apps/desktop/src/preload/**`: IPC handlers, sender checks, `shell.openExternal`, navigation and permission hardening, the loopback auth listener, licence verification and file imports.
 - `src/middleware.ts`, `src/lib/site-boundary.ts`: CSP and origin separation.
@@ -48,7 +48,7 @@ Out of scope:
 ## How you rate severity
 
 - Critical: licence forgery or bypass of licence checks, leaking any server-side secret (`POLAR_ACCESS_TOKEN`, `DESKTOP_LICENSE_SIGNING_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `GITHUB_RELEASES_TOKEN`), leaking or redirecting a user's Graph token, reading one tenant's data from another tenant's session, code execution in the desktop main process, and update feed hijacking.
-- High: authentication or ID token verification bypass, SSRF from the Graph proxy, stored XSS in the web app from tenant data, renderer to main process escalation through IPC, `shell.openExternal` with attacker-controlled URLs, CSP or origin split bypass that exposes app routes on the public origin.
+- High: authentication or ID token verification bypass, SSRF from the Graph proxy that does not carry the user's token or cross tenants, stored XSS in the web app from tenant data, renderer to main process escalation through IPC, `shell.openExternal` with attacker-controlled URLs, CSP or origin split bypass that exposes app routes on the public origin.
 - Medium: rate limit bypass, abuse of the support form to send mail to arbitrary recipients, unauthenticated writes that inflate public statistics, content injection into generated PDF or DOCX files that misleads a reader.
 - Low: denial of service from large or malformed Graph responses or imported files, information disclosure of non-secret configuration, missing hardening without a demonstrated exploit.
 

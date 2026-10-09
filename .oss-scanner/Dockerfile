@@ -22,5 +22,6 @@ RUN npm run build
 RUN cd apps/desktop && npm ci && npm run build
 
 # Run the cheap checks so the image is known to work, without failing the build on a red test.
-RUN (npm run check && npm run test) || echo "WARNING: checks or tests reported failures"
+RUN npm run check || echo "WARNING: checks reported failures"
+RUN npm run test || echo "WARNING: tests reported failures"
 RUN (cd apps/desktop && npm run typecheck) || echo "WARNING: desktop typecheck reported failures"

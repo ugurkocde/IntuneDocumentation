@@ -20,6 +20,7 @@ export {
 export { CYBER_ESSENTIALS } from "./frameworks/cyber-essentials";
 export { NIST_800_171 } from "./frameworks/nist-800-171";
 export { NIST_800_171_R3 } from "./frameworks/nist-800-171-r3";
+export { HIPAA_SECURITY_RULE } from "./frameworks/hipaa-security-rule";
 export {
   NIS2,
   NIS2_OUTSIDE_INTUNE_SCOPE,

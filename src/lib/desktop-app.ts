@@ -6,7 +6,7 @@ import { DOCS_URL } from "~/lib/docs";
 // stay in one place. The legal pages state the same limits in fixed text.
 
 export const DESKTOP_APP_NAME = "Intune Documentation Desktop";
-export const DESKTOP_APP_VERSION = "0.3.2";
+export const DESKTOP_APP_VERSION = "0.3.3";
 export const DESKTOP_CURRENCY = "EUR";
 // Refund window for the first payment of a new subscription. The terms page
 // states the same guarantee in fixed text.
@@ -75,7 +75,7 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       `Up to ${DESKTOP_INSTALLS_PER_TENANT} installations`,
       "Other admins in your tenant sign in without a key",
       "Word and PDF exports",
-      "Compliance evidence for 11 frameworks, including NIS2",
+      "Compliance evidence for 12 frameworks, including NIS2 and HIPAA",
       "One-page management report with month-over-month change",
       `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
       "Free updates, installed when you choose",
@@ -95,7 +95,7 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       "Share the license with the customer tenants you choose",
       "Switch tenants without extra keys",
       "Word and PDF exports for every tenant",
-      "Compliance evidence for 11 frameworks, including NIS2",
+      "Compliance evidence for 12 frameworks, including NIS2 and HIPAA",
       "One-page management report with month-over-month change",
       `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
       "Free updates, installed when you choose",

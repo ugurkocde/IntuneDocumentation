@@ -3,8 +3,8 @@
 Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
 SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0, BSI IT-Grundschutz,
 UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, ASD Essential Eight
-with target Maturity Levels 1, 2 and 3, and NIS2 (Directive (EU) 2022/2555,
-Art. 21(2)).
+with target Maturity Levels 1, 2 and 3, NIS2 (Directive (EU) 2022/2555,
+Art. 21(2)), and the HIPAA Security Rule (45 CFR Part 164, Subpart C).
 
 ## Design rules
 
@@ -45,8 +45,12 @@ Art. 21(2)).
    Cyber Essentials is Crown copyright under the Open Government Licence v3.0;
    the five themes serve as identifiers because the document has none, and the
    logo is excluded from the licence. NIS2 is EU legislation, which may be
-   reused; titles are short paraphrases of the Directive. Do not add frameworks that require a
-   commercial license (for example CIS Benchmarks or CIS Controls).
+   reused; titles are short paraphrases of the Directive. The HIPAA Security
+   Rule is US federal regulation in the public domain (17 U.S.C. 105); titles
+   are the official specification names with original summaries. Do not add
+   frameworks that require a commercial license (for example CIS Benchmarks,
+   CIS Controls or HITRUST CSF, whose licence excludes security product
+   vendors and derivative works).
 7. **Match the control's technical requirement.** Firewall activation is not
    evidence of default-deny rules, password presence is not evidence of
    credential quality, and app-source restrictions are not evidence of an
@@ -110,6 +114,41 @@ and Germany `§ 30 Abs. 2 Nr. 1` to `Nr. 10 BSIG`
 checked against the official text on 1 October 2026. `nis2MeasureFromCode`
 normalizes references such as `21(2)(j)`, `(j)`, `10B` or `Nr. 10` to `21.2.j`.
 The website picker does not offer NIS2; it is intended for the desktop app.
+
+## HIPAA Security Rule (ruleset 2026.10.3)
+
+`hipaa-security-rule` lists nine standards and implementation specifications
+of [45 CFR Part 164, Subpart C](https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C)
+by paragraph, for example `164.312(a)(2)(iv)`. `totalRequirements` is 54: the
+18 standards and 36 implementation specifications in Appendix A to Subpart C.
+The tier follows Appendix A: `Required` for standards without implementation
+specifications, `Addressable` for addressable specifications, and `Standard`
+for a standard that is mapped as a whole, separately from its specifications. Every mapping is
+supporting evidence. The text was checked against the eCFR (last amended in
+2013) and the key activities and sample questions of
+[NIST SP 800-66 Rev. 2](https://csrc.nist.gov/pubs/sp/800/66/r2/final) on
+9 October 2026.
+
+| Control | Supporting device-management evidence |
+| --- | --- |
+| 164.308(a)(5)(ii)(B) Protection from malicious software | antimalware presence, real-time protection, scans, behavior monitoring, network inspection, Office macro scanning |
+| 164.308(a)(5)(ii)(D) Password management | Windows LAPS |
+| 164.310(b) Workstation use | application control, AppLocker, Gatekeeper, Android app sources |
+| 164.310(c) Workstation security | disk and storage encryption, device unlock credentials |
+| 164.312(a)(1) Access control | compliant-device Conditional Access, managed app data transfer |
+| 164.312(a)(2)(iv) Encryption and decryption | disk and storage encryption |
+| 164.312(b) Audit controls | process creation auditing, PowerShell logging |
+| 164.312(c)(1) Integrity | real-time antimalware, behavior monitoring, platform integrity (indirect) |
+| 164.312(d) Person or entity authentication | Conditional Access MFA, device unlock credentials |
+
+Encryption is not mapped to 164.310(d)(1) device and media controls, whose key
+activities cover disposal, re-use, accountability and backup. Updates, host
+firewalls, Office macro restrictions and browser hardening have no HIPAA
+counterpart in SP 800-66 Rev. 2 and stay unmapped; antivirus scanning of
+macros counts as malware protection under 164.308(a)(5)(ii)(B). Unique user identification, automatic logoff
+and transmission security have no suitable detector and are not listed. The
+January 2025 proposed rule (RIN 0945-AA22) is not final and is not reflected.
+HITRUST CSF content is not shipped.
 
 ## Management summary, baseline and crosswalk (desktop)
 

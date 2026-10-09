@@ -1,5 +1,5 @@
 {
-  "rulesetVersion": "2026.10.2",
+  "rulesetVersion": "2026.10.3",
   "fixtureHash": "94330bb547408687613a9f3fc4c89998892678f20bce16fc00e41b721c4ede5c",
   "files": [
     {
@@ -30,6 +30,16 @@
       "excerptControlIds": [
         "CC6.7",
         "CC6.6"
+      ]
+    },
+    {
+      "frameworkId": "hipaa-security-rule",
+      "file": "hipaa-security-rule.pdf",
+      "locale": "en",
+      "reportId": "IDOC-HIPAA-20261008-CTSO",
+      "excerptControlIds": [
+        "164.312(a)(2)(iv)",
+        "164.312(b)"
       ]
     },
     {

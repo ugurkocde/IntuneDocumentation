@@ -105,7 +105,10 @@ describe("ComplianceView", () => {
     expect(
       screen.getByRole("button", { name: "NIST SP 800-171 Rev. 3" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("button")).toHaveLength(10);
+    expect(
+      screen.getByRole("button", { name: "HIPAA Security Rule" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(11);
     expect(
       screen.queryByRole("button", { name: /Download report/ }),
     ).not.toBeInTheDocument();

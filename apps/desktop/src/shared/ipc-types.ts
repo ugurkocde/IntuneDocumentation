@@ -223,7 +223,8 @@ export type ComplianceFrameworkId =
   | "cyber-essentials-v3"
   | "nist-800-171-r2"
   | "nist-800-171-r3"
-  | "nis2-2022-2555";
+  | "nis2-2022-2555"
+  | "hipaa-security-rule";
 
 export interface ComplianceRequest {
   frameworkId: ComplianceFrameworkId | null;

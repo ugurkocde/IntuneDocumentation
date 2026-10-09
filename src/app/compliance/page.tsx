@@ -15,12 +15,12 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, SOC 2, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Sample reports for every framework are free to view.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. Sample reports for every framework are free to view.",
     url: "/compliance",
     type: "website",
   },
@@ -30,6 +30,8 @@ const sampleDescriptions: Partial<Record<ComplianceFrameworkId, string>> = {
   "iso-27001-2022": "Annex A technology controls with cited policy evidence.",
   "nis2-2022-2555": "The Article 21(2) risk management measures.",
   "soc2-tsc": "Trust Services Criteria mapped to device configuration.",
+  "hipaa-security-rule":
+    "45 CFR 164 safeguards such as encryption and audit controls.",
   "nist-800-53-r5": "Rev. 5 controls such as SC-28, SI-3 and IA-5.",
   "nist-800-171-r3": "Rev. 3 requirements for protecting CUI.",
   "nist-csf-2": "Protect and Detect subcategories.",
@@ -68,6 +70,12 @@ const frameworks: {
     name: "SOC 2",
     detail:
       "Selected Trust Services Criteria are mapped to managed-device configuration evidence by criterion ID.",
+  },
+  {
+    id: "hipaa-security-rule",
+    name: "HIPAA Security Rule (45 CFR Part 164, Subpart C)",
+    detail:
+      "Supporting Intune evidence for 9 of the 54 standards and implementation specifications in Appendix A, including workstation security, encryption and decryption, audit controls, integrity and person or entity authentication. Each is labelled Required, Addressable or Standard. Administrative and physical safeguards and your risk analysis need separate assessment.",
   },
   {
     id: "nist-800-53-r5",
@@ -323,9 +331,10 @@ export default function CompliancePage() {
             original summaries. NIST publications are used with their
             public-domain status; BSI IT-Grundschutz is referenced from the
             freely published Kompendium. Def Stan 05-138 is referenced by
-            control identifier with original summaries. Cyber Essentials content
-            is used under the Open Government Licence v3.0, and evidence never
-            indicates certification. Essential Eight requirement text is
+            control identifier with original summaries. The HIPAA Security Rule
+            is US federal regulation in the public domain. Cyber Essentials
+            content is used under the Open Government Licence v3.0, and evidence
+            never indicates certification. Essential Eight requirement text is
             attributed to the Australian Signals Directorate, © Commonwealth of
             Australia 2026, under CC BY 4.0. Local requirement identifiers and
             evidence mappings are additions by Intune Documentation.{" "}

@@ -539,7 +539,17 @@ function Results({
       />
     );
   } else if (filter === "differences" && differences === 0) {
-    body = (
+    // These totals are the configuration settings only; Entra differences
+    // below keep the claim to the configuration.
+    const identityDiffers = identity !== null && countOf(identity, "differences") > 0;
+    body = identityDiffers ? (
+      <EmptyState
+        compact
+        icon={CheckCircle2}
+        title="No configuration differences"
+        description={`All ${plural(totals.matching, "compared configuration setting")} match ${sourceNoun(kind)}. The Entra tenant settings below differ.`}
+      />
+    ) : (
       <EmptyState
         compact
         icon={CheckCircle2}

@@ -1,4 +1,5 @@
 import { createServer, request } from "node:http";
+import { AuthError, NetworkError } from "@azure/msal-common";
 import { describe, expect, it, vi } from "vitest";
 import {
   AuthService,
@@ -20,6 +21,8 @@ const msal = vi.hoisted(() => ({
   // Lifetime of the next access token, and an error for silent requests.
   tokenLifetime: 3600_000,
   silentError: null as null | Record<string, unknown>,
+  // Holds the next silent request until the test settles it.
+  silentGate: null as null | Promise<void>,
 }));
 
 const idTokenIssued = (ms: number) =>
@@ -38,16 +41,22 @@ vi.mock("@azure/msal-node", () => ({
         expiresOn: new Date(Date.now() + msal.tokenLifetime),
       });
     }
-    acquireTokenSilent(request: { forceRefresh?: boolean }) {
+    async acquireTokenSilent(request: {
+      forceRefresh?: boolean;
+      account?: { homeAccountId: string; username: string; tenantId: string };
+    }) {
       msal.silent.push(Boolean(request.forceRefresh));
-      if (msal.silentError) return Promise.reject(msal.silentError);
+      const account = { ...(request.account ?? msal.nextAccount) };
+      const error = msal.silentError;
+      if (msal.silentGate) await msal.silentGate;
+      if (error) throw error;
       const age = request.forceRefresh ? 0 : msal.cachedIdTokenAge;
-      return Promise.resolve({
-        accessToken: `token-${msal.nextAccount.homeAccountId}`,
+      return {
+        accessToken: `token-${account.homeAccountId}`,
         idToken: idTokenIssued(Date.now() - age),
-        account: { ...msal.nextAccount },
+        account,
         expiresOn: new Date(Date.now() + msal.tokenLifetime),
-      });
+      };
     }
     getTokenCache() {
       return {
@@ -60,6 +69,70 @@ vi.mock("@azure/msal-node", () => ({
     }
   },
 }));
+
+// Errors the installed MSAL raises on a refresh token request, produced by
+// the real PublicClientApplication with fetch answering each request in
+// turn. "fresh" starts a new client, so no throttle carries over.
+const answer = (status: number, body: unknown) =>
+  new Response(typeof body === "string" ? body : JSON.stringify(body), {
+    status,
+    headers: { "content-type": typeof body === "string" ? "text/html" : "application/json" },
+  });
+
+async function realRefreshErrors(steps: Array<"fresh" | (() => Response)>) {
+  const { PublicClientApplication } = await vi.importActual<typeof import("@azure/msal-node")>(
+    "@azure/msal-node",
+  );
+  const tenant = "11111111-1111-1111-1111-111111111111";
+  const login = `https://login.microsoftonline.com/${tenant}`;
+  let next: () => Response = () => answer(500, {});
+  vi.stubGlobal("fetch", async (url: string, init?: { method?: string }) => {
+    if (init?.method === "POST") return next();
+    if (String(url).includes("openid-configuration")) {
+      return answer(200, {
+        token_endpoint: `${login}/oauth2/v2.0/token`,
+        authorization_endpoint: `${login}/oauth2/v2.0/authorize`,
+        end_session_endpoint: `${login}/oauth2/v2.0/logout`,
+        issuer: `${login}/v2.0`,
+        jwks_uri: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+      });
+    }
+    return answer(200, {
+      tenant_discovery_endpoint: `${login}/v2.0/.well-known/openid-configuration`,
+      metadata: [
+        {
+          preferred_network: "login.microsoftonline.com",
+          preferred_cache: "login.windows.net",
+          aliases: ["login.microsoftonline.com", "login.windows.net"],
+        },
+      ],
+    });
+  });
+  const errors: Array<{ name: string; errorCode: string }> = [];
+  try {
+    let clients = 0;
+    const create = () => new PublicClientApplication({ auth: { clientId: `client-${clients++}`, authority: login } });
+    let pca = create();
+    for (const step of steps) {
+      if (step === "fresh") {
+        pca = create();
+        continue;
+      }
+      next = step;
+      const error = await pca
+        .acquireTokenByRefreshToken({ refreshToken: "refresh-token", scopes: ["User.Read"] })
+        .then(
+          () => null,
+          (thrown: { name: string; errorCode: string }) => thrown,
+        );
+      if (!error) throw new Error("The refresh was expected to fail.");
+      errors.push(error);
+    }
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return errors;
+}
 
 const expected = { state: "expected-state", port: 51234 };
 const host = "localhost:51234";
@@ -316,27 +389,102 @@ describe("AuthService unreachable sign-in", () => {
     }
   });
 
-  it("keeps the session when Entra answers temporarily_unavailable or with a 5xx status", async () => {
+  it("keeps the session for the errors real MSAL raises when Entra is down, ends it when the grant is refused", async () => {
+    const outage = await realRefreshErrors([
+      // A 5xx JSON answer, then MSAL's throttle replay of it.
+      () => answer(503, { error: "server_error", error_description: "AADSTS90033", error_codes: [90033] }),
+      () => answer(200, {}),
+      // Without error codes the replay has an empty code.
+      "fresh",
+      () => answer(500, { error: "server_error", error_description: "busy" }),
+      () => answer(200, {}),
+      "fresh",
+      () => answer(503, { error: "temporarily_unavailable", error_description: "later", error_codes: [50001] }),
+      "fresh",
+      () => answer(429, { error: "temporarily_unavailable", error_description: "slow down", error_codes: [50196] }),
+      () => answer(200, {}),
+      // A proxy error page that is not JSON.
+      "fresh",
+      () => answer(502, "<html>Bad gateway</html>"),
+      "fresh",
+      () => {
+        throw new TypeError("fetch failed");
+      },
+    ]);
+    expect(outage.map((error) => [error.name, error.errorCode])).toEqual([
+      ["ServerError", "server_error"],
+      ["ServerError", "90033"],
+      ["ServerError", "server_error"],
+      ["ServerError", ""],
+      ["ServerError", "temporarily_unavailable"],
+      ["ServerError", "temporarily_unavailable"],
+      ["ServerError", "50196"],
+      ["AuthError", "token_parsing_error"],
+      ["AuthError", "network_error"],
+    ]);
+    // MSAL keeps no HTTP status on these.
+    expect(outage.every((error) => (error as { status?: number }).status === undefined)).toBe(true);
+    const verdicts = await realRefreshErrors([
+      () => answer(400, { error: "invalid_grant", error_description: "AADSTS70008", error_codes: [70008] }),
+      "fresh",
+      () =>
+        answer(400, {
+          error: "invalid_grant",
+          error_description: "AADSTS700082",
+          error_codes: [700082],
+          suberror: "bad_token",
+        }),
+      "fresh",
+      () => answer(400, { error: "interaction_required", error_description: "AADSTS50076", error_codes: [50076] }),
+      "fresh",
+      () => answer(400, { error: "invalid_client", error_description: "AADSTS7000218", error_codes: [7000218] }),
+    ]);
+    expect(verdicts.map((error) => [error.name, error.errorCode])).toEqual([
+      ["ServerError", "invalid_grant"],
+      ["InteractionRequiredAuthError", "invalid_grant"],
+      ["InteractionRequiredAuthError", "interaction_required"],
+      ["ServerError", "invalid_client"],
+    ]);
+
     const service = new AuthService(config);
     msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
     msal.tokenLifetime = 30_000;
     try {
       await signIn(service);
-      for (const error of [
-        { name: "ServerError", errorCode: "temporarily_unavailable" },
-        { name: "ServerError", errorCode: "server_error", status: 503 },
-        { name: "ServerError", errorCode: "", status: 500 },
-      ]) {
-        msal.silentError = error;
+      for (const error of outage) {
+        msal.silentError = error as unknown as Record<string, unknown>;
         expect(await service.getAccessToken()).toBeNull();
         expect(service.signInUnreachable()).toBe(true);
         expect(service.getStatus().signedIn).toBe(true);
       }
-      // A 4xx answer is a verdict on the session.
-      msal.silentError = { name: "ServerError", errorCode: "invalid_client", status: 400 };
+      for (const error of verdicts) {
+        msal.silentError = null;
+        expect(await service.getAccessToken()).toBe("token-a");
+        msal.silentError = error as unknown as Record<string, unknown>;
+        expect(await service.getAccessToken()).toBeNull();
+        expect(service.signInUnreachable()).toBe(false);
+        expect(service.getStatus().signedIn).toBe(false);
+      }
+    } finally {
+      msal.tokenLifetime = 3600_000;
+      msal.silentError = null;
+      await service.signOut();
+    }
+  });
+
+  it("keeps the session when a NetworkError carries a 5xx status", async () => {
+    const service = new AuthService(config);
+    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+    msal.tokenLifetime = 30_000;
+    try {
+      await signIn(service);
+      msal.silentError = new NetworkError(
+        new AuthError("some_failure", "", "failed"),
+        503,
+      ) as unknown as Record<string, unknown>;
       expect(await service.getAccessToken()).toBeNull();
-      expect(service.signInUnreachable()).toBe(false);
-      expect(service.getStatus().signedIn).toBe(false);
+      expect(service.signInUnreachable()).toBe(true);
+      expect(service.getStatus().signedIn).toBe(true);
     } finally {
       msal.tokenLifetime = 3600_000;
       msal.silentError = null;
@@ -362,6 +510,75 @@ describe("AuthService unreachable sign-in", () => {
     } finally {
       msal.tokenLifetime = 3600_000;
       msal.silentError = null;
+      await service.signOut();
+    }
+  });
+});
+
+describe("AuthService account switch during a silent refresh", () => {
+  const config = { clientId: "c", tenantId: "organizations", scopes: ["User.Read"] };
+  const a = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+  const b = { homeAccountId: "b", username: "b@fabrikam.com", tenantId: "t-b" };
+
+  async function switchDuringRefresh(
+    refresh: (service: AuthService) => Promise<string | null>,
+    error: Record<string, unknown> | null = null,
+  ) {
+    const statuses: Array<string | null> = [];
+    const service = new AuthService(config, (status) => statuses.push(status.account));
+    msal.nextAccount = { ...a };
+    // A's token is near its end, so the call goes to MSAL.
+    msal.tokenLifetime = 30_000;
+    await signIn(service);
+    let release!: () => void;
+    msal.silentGate = new Promise<void>((resolve) => (release = resolve));
+    msal.silentError = error;
+    const pending = refresh(service);
+    msal.silentGate = null;
+    msal.silentError = null;
+    msal.tokenLifetime = 3600_000;
+    msal.nextAccount = { ...b };
+    await signIn(service);
+    release();
+    return { service, statuses, result: await pending };
+  }
+
+  it("ignores a refreshed token of the previous account", async () => {
+    const { service, statuses, result } = await switchDuringRefresh((service) => service.getAccessToken());
+    try {
+      expect(result).toBeNull();
+      expect(service.getStatus()).toMatchObject({ signedIn: true, account: b.username, tenantId: b.tenantId });
+      expect(service.getOwnerKey()).toBe(`${b.username}|${b.tenantId}`);
+      expect(await service.getAccessToken()).toBe("token-b");
+      expect(statuses.at(-1)).toBe(b.username);
+    } finally {
+      await service.signOut();
+    }
+  });
+
+  it("does not end the new session when the previous account's refresh fails", async () => {
+    const { service, result } = await switchDuringRefresh(
+      (service) => service.getAccessToken(),
+      { name: "InteractionRequiredAuthError", errorCode: "invalid_grant" },
+    );
+    try {
+      expect(result).toBeNull();
+      expect(service.signInUnreachable()).toBe(false);
+      expect(service.getStatus()).toMatchObject({ signedIn: true, account: b.username });
+      expect(await service.getAccessToken()).toBe("token-b");
+    } finally {
+      await service.signOut();
+    }
+  });
+
+  it("returns no ID token of the previous account", async () => {
+    msal.cachedIdTokenAge = 0;
+    const { service, result } = await switchDuringRefresh((service) => service.getIdToken());
+    try {
+      expect(result).toBeNull();
+      expect(service.getStatus()).toMatchObject({ signedIn: true, account: b.username });
+      expect(await service.getAccessToken()).toBe("token-b");
+    } finally {
       await service.signOut();
     }
   });

@@ -296,12 +296,15 @@ describe("settings inside repeated groups", () => {
     settingDefinitionId: id,
     choiceSettingValue: { value, children: [] },
   });
-  const firewall = (rules: Array<[string, "allow" | "block"]>) =>
+  type Rule = [string, "allow" | "block"];
+  // One firewall policy per rule list, the first named as before.
+  const firewall = (...policies: Rule[][]) =>
     collection([
-      section("settingsCatalog", [
-        {
-          id: "firewall",
-          name: "WIN - Firewall rules",
+      section(
+        "settingsCatalog",
+        policies.map((rules, index) => ({
+          id: index ? `firewall-${index}` : "firewall",
+          name: index ? `WIN - Firewall rules ${index}` : "WIN - Firewall rules",
           platforms: "windows10",
           settings: [
             {
@@ -319,9 +322,10 @@ describe("settings inside repeated groups", () => {
               },
             },
           ],
-        },
-      ]),
+        })),
+      ),
     ]);
+  const rowsOf = (result: ReturnType<typeof compareSettings>) => result.groups.flatMap((group) => group.rows);
 
   it("treats swapped rule actions as a difference", async () => {
     const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
@@ -382,6 +386,84 @@ describe("settings inside repeated groups", () => {
     expect(reordered.totals.different + reordered.totals.missing + reordered.totals.extra).toBe(0);
     expect(reordered.totals.matching).toBeGreaterThan(0);
   });
+
+  it("treats an added rule as a difference when each of its values exists in other rules", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
+    const added = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]], [["Allow RDP", "block"]]))),
+    );
+    const rows = rowsOf(added);
+    expect(rows.find((row) => row.setting === `${RULES}_name`)?.status).toBe("different");
+    expect(rows.find((row) => row.setting === `${RULES}_action_type`)?.status).toBe("different");
+    expect(added.totals.matching).toBe(0);
+  });
+
+  it("treats a removed rule as a difference when each of its values exists in other rules", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]], [["Allow RDP", "block"]]));
+    const removed = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]))),
+    );
+    const rows = rowsOf(removed);
+    expect(rows.find((row) => row.setting === `${RULES}_name`)?.status).toBe("different");
+    expect(rows.find((row) => row.setting === `${RULES}_action_type`)?.status).toBe("different");
+    expect(removed.totals.matching).toBe(0);
+  });
+
+  it("matches a rule that another policy carries a second time, as for values", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
+    const copied = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]], [["Allow RDP", "allow"]]))),
+    );
+    expect(copied.totals).toMatchObject({ different: 0, missing: 0, extra: 0, notComparable: 0 });
+    expect(rowsOf(copied).some((row) => row.instanceChanged)).toBe(false);
+  });
+
+  it("pairs ten thousand rules per side in bounded time", () => {
+    const COUNT = 10_000;
+    const rules = (flip: boolean): SettingSet => ({
+      rulesetVersion: "test",
+      families: [{ key: "settingsCatalog", label: "Settings Catalog" }],
+      notCompared: [],
+      settings: Array.from({ length: COUNT }, (_, index) => {
+        const action = (index % 2 === 0) !== flip ? "allow" : "block";
+        const path = [RULES, String(index)];
+        const group = `${index}`.padStart(32, "0") + (action === "allow" ? "a" : "b").repeat(32);
+        const base = { platform: "Windows", family: "settingsCatalog", path, group, policy: "WIN - Firewall rules" };
+        return [
+          { ...base, setting: `${RULES}_name`, name: "Name", value: `Rule ${index}` },
+          { ...base, setting: `${RULES}_action_type`, name: "Action", value: action },
+        ];
+      }).flat(),
+    });
+    const started = performance.now();
+    const same = compareSettings(rules(false), rules(false));
+    // Every action flipped: no rule matches exactly, so all are paired.
+    const flipped = compareSettings(rules(false), rules(true));
+    const elapsed = performance.now() - started;
+    expect(same.totals).toMatchObject({ different: 0, matching: 2 });
+    const rows = rowsOf(flipped);
+    expect(rows.find((row) => row.setting === `${RULES}_action_type`)?.status).toBe("different");
+    const name = rows.find((row) => row.setting === `${RULES}_name`);
+    expect(name?.status).toBe("matching");
+    expect(name?.instanceChanged).toBe(true);
+    // Pairing every instance with every other one takes minutes and
+    // gigabytes; the bounded pairing takes well under a second.
+    expect(elapsed).toBeLessThan(3000);
+  }, 30_000);
+
+  it("reads ten thousand rules of one policy in bounded time", () => {
+    const projection = snap(firewall(Array.from({ length: 10_000 }, (_, index): Rule => [`Rule ${index}`, "allow"])));
+    const started = performance.now();
+    const settings = projectionSettings(projection).settings;
+    const elapsed = performance.now() - started;
+    expect(settings.filter((setting) => setting.group)).toHaveLength(20_000);
+    expect(new Set(settings.map((setting) => setting.group)).size).toBe(10_000);
+    // Scanning every path for each rule took seconds.
+    expect(elapsed).toBeLessThan(1500);
+  }, 30_000);
 });
 
 describe("platformOf", () => {

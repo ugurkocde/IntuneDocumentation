@@ -465,6 +465,44 @@ describe("CompareScreen", () => {
     expect(screen.getByText("All 12 compared settings match the reference.")).toBeTruthy();
   });
 
+  it("keeps the no differences claim to the configuration when Entra settings differ", async () => {
+    mocks.run.mockResolvedValue(
+      view({
+        totals: counts({ matching: 12 }),
+        groups: [group({ counts: counts({ matching: 12 }), rows: [row({ status: "matching" })], rowsTotal: 12 })],
+        notCompared: [],
+        identity: {
+          totals: counts({ different: 1 }),
+          groups: [
+            group({
+              platform: "Entra ID",
+              family: "authenticationMethods",
+              familyLabel: "Authentication methods policy",
+              counts: counts({ different: 1 }),
+              rows: [row({ setting: "method:sms:state", name: "State", path: ["SMS"] })],
+              rowsTotal: 1,
+            }),
+          ],
+          notCompared: [],
+        },
+      }),
+    );
+    await renderScreen();
+    await loadReference();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run comparison" })));
+    await settle();
+    expect(screen.queryByText("No differences")).toBeNull();
+    expect(screen.queryByText("All 12 compared settings match the reference.")).toBeNull();
+    expect(screen.getByText("No configuration differences")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "All 12 compared configuration settings match the reference. The Entra tenant settings below differ.",
+      ),
+    ).toBeTruthy();
+    const section = screen.getByRole("region", { name: "Entra tenant settings" });
+    expect(within(section).getByText("State")).toBeTruthy();
+  });
+
   it("retries a failed run and notes a newer collection", async () => {
     mocks.run.mockRejectedValueOnce(new Error("Collect tenant data first."));
     mocks.run.mockResolvedValue(view());

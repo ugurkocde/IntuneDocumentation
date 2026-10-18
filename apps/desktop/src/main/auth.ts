@@ -10,6 +10,9 @@ import { createServer } from "node:http";
 import type { IncomingMessage, RequestListener, Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { DesktopAuthConfig } from "./config";
+import { SignInUnreachableError } from "./auth-errors";
+
+export { SIGN_IN_UNREACHABLE, SignInUnreachableError } from "./auth-errors";
 
 export interface AuthStatus {
   signedIn: boolean;
@@ -54,23 +57,16 @@ h1{font-size:20px;margin:0 0 8px;letter-spacing:-0.02em}p{margin:0;color:#44747a
 <body><main><h1>${title}</h1><p>${text}</p></main></body></html>`;
 const INTERACTIVE_TIMEOUT_MS = 5 * 60_000;
 
-// Microsoft sign-in did not answer, for example while the network is still
-// coming back after sleep. The session is kept and the next call tries again.
-export const SIGN_IN_UNREACHABLE =
-  "Could not reach Microsoft sign-in. Check the network connection and try again.";
-
-export class SignInUnreachableError extends Error {
-  constructor() {
-    super(SIGN_IN_UNREACHABLE);
-  }
-}
-
 // MSAL network failures, the Node errors beneath them, and Entra saying it
-// cannot issue tokens right now. Anything else, such as a revoked session,
-// needs a new sign-in.
+// cannot issue tokens right now. MSAL reports a 5xx JSON answer as a
+// ServerError "server_error" without its HTTP status, and an answer that is
+// not JSON, such as a proxy error page, as "token_parsing_error". Anything
+// else, such as a revoked session, needs a new sign-in.
 const UNREACHABLE_CODES = new Set([
   "network_error",
   "temporarily_unavailable",
+  "server_error",
+  "token_parsing_error",
   "endpoints_resolution_error",
   "no_network_connectivity",
   "ENOTFOUND",
@@ -82,15 +78,28 @@ const UNREACHABLE_CODES = new Set([
   "EHOSTUNREACH",
 ]);
 
-// An MSAL ServerError carries the HTTP status: a 5xx answer is an outage,
-// not a verdict on the session.
+// After a 429 or 5xx answer MSAL throttles the request until its
+// Retry-After time, 60 seconds by default, and meanwhile throws a ServerError
+// carrying only the numeric error codes of that answer, or none, without
+// asking Entra again.
+const THROTTLED_CODES = /^[\d ]*$/;
+
+// A 5xx HTTP status, where MSAL keeps one (ServerError status, NetworkError
+// httpStatus), is an outage, not a verdict on the session.
 function isUnreachable(error: unknown): boolean {
-  const { errorCode, code, status } = (error ?? {}) as {
+  const { name, errorCode, code, status, httpStatus } = (error ?? {}) as {
+    name?: unknown;
     errorCode?: unknown;
     code?: unknown;
     status?: unknown;
+    httpStatus?: unknown;
   };
-  if (typeof status === "number" && status >= 500) return true;
+  if ([status, httpStatus].some((value) => typeof value === "number" && value >= 500)) {
+    return true;
+  }
+  if (name === "ServerError" && typeof errorCode === "string" && THROTTLED_CODES.test(errorCode)) {
+    return true;
+  }
   return [errorCode, code].some(
     (value) => typeof value === "string" && UNREACHABLE_CODES.has(value),
   );
@@ -272,16 +281,17 @@ export class AuthService {
     ) {
       return this.accessToken;
     }
-    if (!this.account) {
+    const account = this.account;
+    if (!account) {
       return null;
     }
     const generation = this.generation;
     try {
       const result = await this.pca.acquireTokenSilent({
-        account: this.account,
+        account,
         scopes: this.scopes,
       });
-      if (generation !== this.generation) {
+      if (!this.isCurrent(generation, account)) {
         return null;
       }
       if (!result) {
@@ -291,7 +301,7 @@ export class AuthService {
       this.accept(result);
       return this.accessToken;
     } catch (error) {
-      if (generation !== this.generation) return null;
+      if (!this.isCurrent(generation, account)) return null;
       if (isUnreachable(error)) {
         // Still signed in: the token is renewed once sign-in answers again.
         this.unreachable = true;
@@ -320,16 +330,17 @@ export class AuthService {
   // accepts tokens issued within the last 15 minutes, so an older cached one
   // is renewed with the refresh token.
   async getIdToken(): Promise<string | null> {
-    if (!this.account) return null;
+    const account = this.account;
+    if (!account) return null;
     const generation = this.generation;
     for (const forceRefresh of [false, true]) {
       try {
         const result = await this.pca.acquireTokenSilent({
-          account: this.account,
+          account,
           scopes: this.scopes,
           forceRefresh,
         });
-        if (generation !== this.generation || !result?.idToken) return null;
+        if (!this.isCurrent(generation, account) || !result?.idToken) return null;
         this.accept(result);
         const issued = idTokenIssuedAt(result.idToken);
         if (issued !== null && Date.now() - issued < ID_TOKEN_MAX_AGE_MS) {
@@ -340,6 +351,16 @@ export class AuthService {
       }
     }
     return null;
+  }
+
+  // A silent result or failure only counts for the session it was asked
+  // for: a sign-out, or an interactive sign-in as another account, may have
+  // finished while it was in flight.
+  private isCurrent(generation: number, account: AccountInfo): boolean {
+    return (
+      generation === this.generation &&
+      this.account?.homeAccountId === account.homeAccountId
+    );
   }
 
   // The refresh failed: the session no longer has a usable token. The account

@@ -1,4 +1,4 @@
-import { SignInUnreachableError } from "./auth";
+import { SignInUnreachableError } from "./auth-errors";
 import { ScheduleSkip, SKIP_RETRY_MS } from "./scheduler";
 
 // The one collection that may run at a time, manual or scheduled. A manual

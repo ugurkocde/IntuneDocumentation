@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SignInUnreachableError } from "./auth";
+import { SignInUnreachableError } from "./auth-errors";
 import {
   CollectionRunner,
   SCHEDULED_RUN_ACTIVE,

@@ -256,13 +256,19 @@ function groupInstances(rows: ReferenceSetting[]): void {
     list.push([row.setting, row.redacted ? REDACTED : (row.sha256 ?? row.value ?? "")].join(SEPARATOR));
     members.set(key, list);
   }
+  // Sorted, the paths below a path follow it directly, so each instance
+  // reads only its own settings.
+  const paths = [...members.keys()].sort();
   const digests = new Map<string, string>();
-  for (const key of members.keys()) {
-    const inside = [...members]
-      .filter(([other]) => other === key || other.startsWith(`${key}${SEPARATOR}`))
-      .flatMap(([other, list]) => list.map((entry) => `${other}${SEPARATOR}${entry}`.slice(key.length)));
+  paths.forEach((key, index) => {
+    const inside: string[] = [];
+    for (let next = index; next < paths.length; next++) {
+      const other = paths[next]!;
+      if (other !== key && !other.startsWith(`${key}${SEPARATOR}`)) break;
+      for (const entry of members.get(other)!) inside.push(`${other}${SEPARATOR}${entry}`.slice(key.length));
+    }
     digests.set(key, digest(inside.sort().join("\n")));
-  }
+  });
   for (const row of rows) {
     if (row.path?.length) row.group = digests.get(row.path.join(SEPARATOR));
   }
@@ -651,19 +657,72 @@ function overlap(a: Instance, b: Instance): number {
   return shared;
 }
 
+// Leftover instances paired with every candidate up to this many pairs;
+// beyond it each instance only considers the instances that share its
+// rarest settings and values, so the work stays linear.
+const FULL_PAIRING = 250_000;
+const NEAR_CANDIDATES = 16;
+
+type Candidate = { i: number; j: number; score: number };
+
+function allCandidates(
+  expected: readonly string[],
+  actual: readonly string[],
+  a: ReadonlyMap<string, Instance>,
+  b: ReadonlyMap<string, Instance>,
+): Candidate[] {
+  const candidates: Candidate[] = [];
+  expected.forEach((left, i) =>
+    actual.forEach((right, j) => candidates.push({ i, j, score: overlap(a.get(left)!, b.get(right)!) })),
+  );
+  return candidates;
+}
+
+function nearCandidates(
+  expected: readonly string[],
+  actual: readonly string[],
+  a: ReadonlyMap<string, Instance>,
+  b: ReadonlyMap<string, Instance>,
+): Candidate[] {
+  const index = new Map<string, number[]>();
+  actual.forEach((right, j) => {
+    for (const entry of b.get(right)!.tokens.keys()) {
+      const list = index.get(entry);
+      if (list) list.push(j);
+      else index.set(entry, [j]);
+    }
+  });
+  const candidates: Candidate[] = [];
+  expected.forEach((left, i) => {
+    const instance = a.get(left)!;
+    const lists = [...instance.tokens.keys()]
+      .map((entry) => index.get(entry) ?? [])
+      .sort((x, y) => x.length - y.length);
+    const near = new Set<number>();
+    for (const list of lists) {
+      for (const j of list) {
+        if (near.size >= NEAR_CANDIDATES) break;
+        near.add(j);
+      }
+    }
+    for (const j of near) candidates.push({ i, j, score: overlap(instance, b.get(actual[j]!)!) });
+  });
+  return candidates;
+}
+
 // Instances of both sides paired by the most settings they share; ties go
 // to the same position, so swapping one value between two rules pairs each
-// rule with itself and only that value differs.
+// rule with itself and only that value differs. Instances without a
+// candidate are paired in order.
 function pairInstances(
   expected: readonly string[],
   actual: readonly string[],
   a: ReadonlyMap<string, Instance>,
   b: ReadonlyMap<string, Instance>,
 ): Array<[string, string]> {
-  const candidates: Array<{ i: number; j: number; score: number }> = [];
-  expected.forEach((left, i) =>
-    actual.forEach((right, j) => candidates.push({ i, j, score: overlap(a.get(left)!, b.get(right)!) })),
-  );
+  const candidates = (
+    expected.length * actual.length <= FULL_PAIRING ? allCandidates : nearCandidates
+  )(expected, actual, a, b);
   candidates.sort((x, y) => y.score - x.score || Math.abs(x.i - x.j) - Math.abs(y.i - y.j) || x.i - y.i);
   const usedLeft = new Set<number>();
   const usedRight = new Set<number>();
@@ -674,6 +733,12 @@ function pairInstances(
     usedRight.add(j);
     pairs.push([expected[i]!, actual[j]!]);
   }
+  const restRight = actual.filter((_, j) => !usedRight.has(j));
+  expected
+    .filter((_, i) => !usedLeft.has(i))
+    .forEach((left, k) => {
+      if (k < restRight.length) pairs.push([left, restRight[k]!]);
+    });
   return pairs;
 }
 
@@ -684,18 +749,33 @@ interface InstanceContext {
   pairs: Map<string, Array<[string, string]>>;
 }
 
-function ownValues(list: readonly ReferenceSetting[], instance: string): string {
-  return list
-    .filter((setting) => instanceOf(setting) === instance)
-    .map((setting) => token(setting)!)
-    .sort()
-    .join(SEPARATOR);
+// The instances a setting is in, one per distinct content in setting order:
+// the same rule carried twice, or by two policies, counts once, as a value
+// configured by two policies does.
+function distinctInstances(list: readonly ReferenceSetting[]): Map<string, string> {
+  const instances = new Map<string, string>();
+  for (const setting of list) if (!instances.has(setting.group!)) instances.set(setting.group!, instanceOf(setting)!);
+  return instances;
+}
+
+// The values a setting has in each instance it is in.
+function ownValues(list: readonly ReferenceSetting[]): Map<string, string> {
+  const own = new Map<string, string[]>();
+  for (const setting of list) {
+    const key = instanceOf(setting)!;
+    const tokens = own.get(key);
+    if (tokens) tokens.push(token(setting)!);
+    else own.set(key, [token(setting)!]);
+  }
+  return new Map([...own].map(([key, tokens]) => [key, tokens.sort().join(SEPARATOR)]));
 }
 
 // A setting differs only when its own values differ. Inside group
-// instances its values are compared per paired instance, so a swapped value
-// is a difference, while the other settings of a changed instance stay
-// matching and are marked as part of a changed instance.
+// instances, instances with the same content on both sides match; the
+// others are paired, so a swapped value is a difference, while the other
+// settings of a changed instance stay matching and are marked as part of a
+// changed instance. An instance left without a counterpart, such as an
+// added rule whose values each exist in other rules, is a difference.
 function statusOf(
   expected: readonly ReferenceSetting[] | undefined,
   actual: readonly ReferenceSetting[] | undefined,
@@ -711,20 +791,22 @@ function statusOf(
   const b = new Set(actual.map(token));
   if (a.size !== b.size || ![...a].every((value) => b.has(value))) return { status: "different" };
   if (!all.every(instanceOf)) return { status: "matching" };
-  const left = [...new Set(expected.map(instanceOf) as string[])];
-  const right = [...new Set(actual.map(instanceOf) as string[])];
+  const leftAll = distinctInstances(expected);
+  const rightAll = distinctInstances(actual);
+  const left = [...leftAll].filter(([group]) => !rightAll.has(group)).map(([, key]) => key);
+  const right = [...rightAll].filter(([group]) => !leftAll.has(group)).map(([, key]) => key);
+  if (left.length !== right.length) return { status: "different" };
+  if (!left.length) return { status: "matching" };
   const cacheKey = JSON.stringify([left, right]);
   let pairs = context.pairs.get(cacheKey);
   if (!pairs) {
     pairs = pairInstances(left, right, context.expected, context.actual);
     context.pairs.set(cacheKey, pairs);
   }
-  let instanceChanged = false;
-  for (const [from, to] of pairs) {
-    if (ownValues(expected, from) !== ownValues(actual, to)) return { status: "different" };
-    if (context.expected.get(from)!.group !== context.actual.get(to)!.group) instanceChanged = true;
-  }
-  return instanceChanged ? { status: "matching", instanceChanged: true } : { status: "matching" };
+  const from = ownValues(expected);
+  const to = ownValues(actual);
+  for (const [x, y] of pairs) if (from.get(x) !== to.get(y)) return { status: "different" };
+  return { status: "matching", instanceChanged: true };
 }
 
 // --- Comparison ---------------------------------------------------------------

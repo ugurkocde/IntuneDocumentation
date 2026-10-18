@@ -533,7 +533,7 @@ users.
 | --- | --- | --- | --- |
 | `tenant-phishing-resistant-method-enabled` | `Fido2` enabled, or `X509Certificate` enabled with default mode `x509CertificateMultiFactor` | none | both disabled: Windows Hello for Business is phishing resistant and not part of this policy; single-factor certificate mode does not count. One enabled method is enough: the other method's check then has no result ("Not required"), never "different" |
 | `tenant-weak-methods-disabled` | `Sms`, `Voice` and `Email` all readable and none enabled | any of them enabled | legacy per-user MFA and SSPR settings are not read |
-| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: never counter-evidence; not a gap while assigned Conditional Access MFA is in place, and not applicable while enabled or report-only Conditional Access policies exist (see Alternative capabilities below) |
+| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: never counter-evidence; not a gap while assigned Conditional Access MFA is in place, and not applicable while any Conditional Access policy exists, disabled ones included (see Alternative capabilities below) |
 
 Mappings: NIST SP 800-53 IA-2 (phishing-resistant method, security defaults)
 and IA-5 (weak methods), ISO/IEC 27001 8.5, SP 800-171 3.5.3 and 03.05.03,
@@ -582,7 +582,9 @@ a row in the Intune summary shows "No status reported", never zero.
 ### Alternative capabilities
 
 Revised in ruleset 2026.10.6: precision first, an alternative is never named
-as set up unless it is assigned and enforcing.
+as set up unless it is assigned and enforcing. Revised in ruleset 2026.10.7:
+any Conditional Access policy, disabled ones included, makes security
+defaults not combinable.
 
 `ComplianceCapability.alternativeTo` lists capabilities that deliver the same
 safeguard another way, and `exclusiveWithConditionalAccess` marks a capability
@@ -598,8 +600,8 @@ unchanged first pass, in this order:
   "MFA or compliant device" or an unreadable custom authentication strength,
   because they produce no enforcing evidence;
 - **not combinable** (`notCombinable`, exclusive capabilities only): the
-  collection contains an enabled or report-only Conditional Access policy, so
-  the capability cannot be turned on. Nothing is named and nothing is claimed
+  collection contains a Conditional Access policy in any state (enabled,
+  report-only or disabled), so the capability cannot be turned on. Nothing is named and nothing is claimed
   as set up. The wording is "Not applicable while Conditional Access policies
   exist; require MFA through Conditional Access", and the Conditional Access
   MFA capabilities stay ordinary gaps;
@@ -607,12 +609,12 @@ unchanged first pass, in this order:
   `assignmentUnknown`, or every check of it is `unableToCheck`, leaving out
   checks of unassigned (disabled or report-only) policies, whose unreadable
   value cannot enforce anything; for an
-  exclusive capability also when Conditional Access was not collected, is
-  incomplete, has no collection timestamp or contains a policy without a
-  readable state;
-- otherwise the capability stays an ordinary gap. With only disabled
-  Conditional Access policies, or none in a complete collection, security
-  defaults stay a gap and may be recommended.
+  exclusive capability also when the collection contains no Conditional
+  Access policy but Conditional Access was not collected, is incomplete or
+  has no collection timestamp;
+- otherwise the capability stays an ordinary gap. Only when a complete
+  collection contains no Conditional Access policy at all do security
+  defaults stay a gap that may be recommended.
 
 `CapabilityResult.alternative` records the state and the named ids. The
 status stays `noEvidence` and the observed value stays visible, but its
@@ -632,8 +634,17 @@ capabilities (`tenant-mfa-required`, `tenant-mfa-all-apps`,
 `tenant-phishing-resistant-mfa`) and is exclusive with Conditional Access.
 A compliant-device requirement is not the same safeguard and is not an
 alternative; its policy still makes security defaults not combinable.
-Creating Conditional Access policies prevents enabling security defaults
-([Microsoft Learn, Plan a Conditional Access deployment](https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access)).
+Creating Conditional Access policies prevents enabling security defaults,
+with no distinction by policy state: "creating Conditional Access policies
+prevents you from enabling security defaults"
+([Microsoft Learn, Plan a Conditional Access deployment](https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access)),
+and where one or more Conditional Access policies exist the admin center
+says they prevent enabling security defaults and does not offer Manage
+security defaults
+([Microsoft Learn, Set up multifactor authentication for Microsoft 365, Manage security defaults](https://learn.microsoft.com/microsoft-365/admin/security-and-compliance/set-up-multi-factor-authentication#manage-security-defaults)).
+Microsoft also only offers automatic enablement to tenants that do not have
+any Conditional Access policies
+([Microsoft Learn, Security defaults in Microsoft Entra ID](https://learn.microsoft.com/entra/fundamentals/security-defaults#enabling-security-defaults)).
 Conditional Access does not list security defaults as its alternative:
 baseline MFA does not replace a configurable policy.
 

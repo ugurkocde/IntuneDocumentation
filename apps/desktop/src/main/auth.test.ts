@@ -1,6 +1,12 @@
 import { createServer, request } from "node:http";
 import { describe, expect, it, vi } from "vitest";
-import { AuthService, listenLoopback, readCallback } from "./auth";
+import {
+  AuthService,
+  listenLoopback,
+  readCallback,
+  SIGN_IN_UNREACHABLE,
+  SignInUnreachableError,
+} from "./auth";
 
 // A stand-in for MSAL: records the authorization request and answers the
 // code exchange for whichever account the test chooses.
@@ -231,6 +237,128 @@ describe("AuthService.getAccessToken", () => {
       expect(service.signInUnreachable()).toBe(false);
       expect(service.getStatus().signedIn).toBe(false);
       expect(statuses.at(-1)).toBe(false);
+    } finally {
+      msal.tokenLifetime = 3600_000;
+      msal.silentError = null;
+      await service.signOut();
+    }
+  });
+});
+
+describe("AuthService unreachable sign-in", () => {
+  const config = { clientId: "c", tenantId: "organizations", scopes: ["User.Read"] };
+
+  it("retries with backoff after a network error and ends the session once the sign-in is revoked", async () => {
+    const statuses: boolean[] = [];
+    const service = new AuthService(config, (status) => statuses.push(status.signedIn));
+    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+    await signIn(service);
+    // The token is near its end; the refresh timer of the sign-in is native
+    // and is cleared by the first retry.
+    vi.useFakeTimers({ now: Date.now() + 3600_000, shouldClearNativeTimers: true });
+    try {
+      msal.silentError = { errorCode: "network_error", message: "Network request failed" };
+      msal.silent = [];
+      expect(await service.getAccessToken()).toBeNull();
+      expect(service.signInUnreachable()).toBe(true);
+      expect(msal.silent).toHaveLength(1);
+
+      // Nothing calls Graph; the retry runs by itself after 30 seconds.
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(msal.silent).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(msal.silent).toHaveLength(2);
+      expect(service.getStatus().signedIn).toBe(true);
+
+      // Still unreachable: the next retry waits twice as long.
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(msal.silent).toHaveLength(2);
+      msal.silentError = { errorCode: "invalid_grant", name: "InteractionRequiredAuthError" };
+      await vi.advanceTimersByTimeAsync(1);
+      expect(msal.silent).toHaveLength(3);
+      expect(service.signInUnreachable()).toBe(false);
+      expect(service.getStatus().signedIn).toBe(false);
+      expect(statuses.at(-1)).toBe(false);
+
+      // The session ended: no more retries.
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(msal.silent).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+      msal.silentError = null;
+      await service.signOut();
+    }
+  });
+
+  it("caps the backoff at five minutes and stops retrying after sign-out", async () => {
+    const service = new AuthService(config);
+    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+    await signIn(service);
+    vi.useFakeTimers({ now: Date.now() + 3600_000, shouldClearNativeTimers: true });
+    try {
+      msal.silentError = { errorCode: "ENOTFOUND" };
+      msal.silent = [];
+      await service.getAccessToken();
+      // 30 s, 60 s, 120 s, 240 s, then every 300 s.
+      await vi.advanceTimersByTimeAsync(30_000 + 60_000 + 120_000 + 240_000);
+      expect(msal.silent).toHaveLength(5);
+      await vi.advanceTimersByTimeAsync(299_999);
+      expect(msal.silent).toHaveLength(5);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(msal.silent).toHaveLength(6);
+      await service.signOut();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(msal.silent).toHaveLength(6);
+    } finally {
+      vi.useRealTimers();
+      msal.silentError = null;
+      await service.signOut();
+    }
+  });
+
+  it("keeps the session when Entra answers temporarily_unavailable or with a 5xx status", async () => {
+    const service = new AuthService(config);
+    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+    msal.tokenLifetime = 30_000;
+    try {
+      await signIn(service);
+      for (const error of [
+        { name: "ServerError", errorCode: "temporarily_unavailable" },
+        { name: "ServerError", errorCode: "server_error", status: 503 },
+        { name: "ServerError", errorCode: "", status: 500 },
+      ]) {
+        msal.silentError = error;
+        expect(await service.getAccessToken()).toBeNull();
+        expect(service.signInUnreachable()).toBe(true);
+        expect(service.getStatus().signedIn).toBe(true);
+      }
+      // A 4xx answer is a verdict on the session.
+      msal.silentError = { name: "ServerError", errorCode: "invalid_client", status: 400 };
+      expect(await service.getAccessToken()).toBeNull();
+      expect(service.signInUnreachable()).toBe(false);
+      expect(service.getStatus().signedIn).toBe(false);
+    } finally {
+      msal.tokenLifetime = 3600_000;
+      msal.silentError = null;
+      await service.signOut();
+    }
+  });
+
+  it("explains a missing token by an unreachable sign-in, not by asking to sign in", async () => {
+    const service = new AuthService(config);
+    expect(service.noTokenError("Sign in before checking permissions.").message).toBe(
+      "Sign in before checking permissions.",
+    );
+    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+    msal.tokenLifetime = 30_000;
+    try {
+      await signIn(service);
+      msal.silentError = { errorCode: "network_error" };
+      expect(await service.grantedScopes()).toBeNull();
+      const error = service.noTokenError("Sign in before checking permissions.");
+      expect(error).toBeInstanceOf(SignInUnreachableError);
+      expect(error.message).toBe(SIGN_IN_UNREACHABLE);
+      expect(service.noTokenError()).toBeInstanceOf(SignInUnreachableError);
     } finally {
       msal.tokenLifetime = 3600_000;
       msal.silentError = null;

@@ -510,6 +510,12 @@ function Results({
   const expectedLabel = kind === "reference" ? "Reference" : "Other tenant";
   const differences = countOf(totals, "differences");
   const compared = ORDER.reduce((sum, status) => sum + totals[status], 0);
+  // The filter applies to the configuration rows and the Entra rows, so it
+  // is shown when either has rows and counts both; each summary keeps its
+  // own totals.
+  const identity = view.identity?.totals ?? null;
+  const identityCompared = identity ? ORDER.reduce((sum, status) => sum + identity[status], 0) : 0;
+  const both = (choice: Filter) => countOf(totals, choice) + (identity ? countOf(identity, choice) : 0);
   const groups = view.groups.filter((group) => countOf(group.counts, filter) > 0);
   const platforms: Array<{ platform: string; groups: CompareGroup[] }> = [];
   for (const group of groups) {
@@ -518,8 +524,8 @@ function Results({
     else platforms.push({ platform: group.platform, groups: [group] });
   }
   const choices: Choice<Filter>[] = [
-    { id: "differences", label: "All differences", count: differences },
-    ...ORDER.map((status) => ({ id: status, label: STATUS[status].label, count: totals[status] })),
+    { id: "differences", label: "All differences", count: both("differences") },
+    ...ORDER.map((status) => ({ id: status, label: STATUS[status].label, count: both(status) })),
   ];
 
   let body: ReactNode;
@@ -528,8 +534,8 @@ function Results({
       <EmptyState
         compact
         icon={ShieldCheck}
-        title="No settings were compared"
-        description="Neither side has settings in the families that could be compared."
+        title="No configuration settings were compared"
+        description="Neither side has configuration settings in the families that could be compared."
       />
     );
   } else if (filter === "differences" && differences === 0) {
@@ -590,7 +596,7 @@ function Results({
           </ul>
         </Alert>
       )}
-      {compared > 0 && (
+      {(compared > 0 || identityCompared > 0) && (
         <div className="space-y-2">
           <RadioGroup label="Show settings" value={filter} choices={choices} onChange={onFilter} variant="chips" />
           <p className="text-petrol-600 px-1 text-xs leading-5">{statusDescription(filter, kind)}</p>

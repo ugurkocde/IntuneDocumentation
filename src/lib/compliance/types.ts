@@ -167,8 +167,8 @@ export interface ComplianceCapability {
    */
   alternativeTo?: readonly string[];
   /**
-   * The capability cannot be turned on while an enabled or report-only
-   * Conditional Access policy exists (security defaults). It is then not
+   * The capability cannot be turned on while any Conditional Access policy
+   * exists, disabled ones included (security defaults). It is then not
    * applicable, and nothing is claimed as set up.
    */
   exclusiveWithConditionalAccess?: boolean;
@@ -177,8 +177,8 @@ export interface ComplianceCapability {
 /**
  * Why a capability without evidence is not an ordinary gap. `inUse`: an
  * alternative is enforced or requirementAssigned; `capabilityIds` names only
- * those. `notCombinable`: enabled or report-only Conditional Access policies
- * exist, so the capability cannot be turned on; `capabilityIds` is empty.
+ * those. `notCombinable`: Conditional Access policies exist (in any state),
+ * so the capability cannot be turned on; `capabilityIds` is empty.
  * `unknown`: an alternative or the Conditional Access policies could not be
  * read; a data gap.
  */

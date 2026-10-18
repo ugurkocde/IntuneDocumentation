@@ -701,10 +701,12 @@ function statusOf(
   actual: readonly ReferenceSetting[] | undefined,
   context: InstanceContext,
 ): { status: SettingComparison; instanceChanged?: true } {
+  // A value that is redacted or not kept cannot be compared, also when only
+  // one side has the setting, so this is checked before presence.
+  const all = [...(expected ?? []), ...(actual ?? [])];
+  if (all.some((setting) => token(setting) === null)) return { status: "notComparable" };
   if (!actual?.length) return { status: "missing" };
   if (!expected?.length) return { status: "extra" };
-  const all = [...expected, ...actual];
-  if (all.some((setting) => token(setting) === null)) return { status: "notComparable" };
   const a = new Set(expected.map(token));
   const b = new Set(actual.map(token));
   if (a.size !== b.size || ![...a].every((value) => b.has(value))) return { status: "different" };

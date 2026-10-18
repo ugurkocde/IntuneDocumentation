@@ -361,6 +361,52 @@ describe("CompareScreen", () => {
     expect(within(summary).getByText("1 different")).toBeTruthy();
   });
 
+  it("offers the filter for Entra rows when no configuration settings were compared", async () => {
+    mocks.run.mockResolvedValue(
+      view({
+        totals: counts(),
+        groups: [],
+        notCompared: [],
+        rulesetChanged: false,
+        identity: {
+          totals: counts({ matching: 1 }),
+          groups: [
+            group({
+              platform: "Entra ID",
+              family: "securityDefaults",
+              familyLabel: "Security defaults",
+              counts: counts({ matching: 1 }),
+              rows: [
+                row({
+                  status: "matching",
+                  setting: "securityDefaults:isEnabled",
+                  name: "Security defaults enabled",
+                  expected: [{ value: "false", policy: "Security defaults" }],
+                  actual: [{ value: "false", policy: "Security defaults" }],
+                }),
+              ],
+              rowsTotal: 1,
+            }),
+          ],
+          notCompared: [],
+        },
+      }),
+    );
+    await renderScreen();
+    await loadReference();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run comparison" })));
+    await settle();
+    expect(screen.getByText("No configuration settings were compared")).toBeTruthy();
+    expect(screen.queryByText("Security defaults enabled")).toBeNull();
+    // The filter counts the Entra row, the configuration summary keeps zero.
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /^Matching/ })));
+    const section = screen.getByRole("region", { name: "Entra tenant settings" });
+    expect(within(section).getByText("Security defaults enabled")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /^Matching/ }).textContent).toContain("1");
+    const summary = screen.getByRole("group", { name: "Comparison summary" });
+    expect(within(summary).getByText("0 matching")).toBeTruthy();
+  });
+
   it("marks a matching setting inside a changed group", async () => {
     mocks.run.mockResolvedValue(
       view({

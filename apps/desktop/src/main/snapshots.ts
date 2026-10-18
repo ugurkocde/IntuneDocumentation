@@ -642,11 +642,14 @@ export class SnapshotStore {
 
   // The name shown for a stored tenant; an empty label removes it. False
   // when the guard says the account changed while the change was queued.
+  // The guard is checked before open, which can already expire and write,
+  // and again before the write.
   async setLabel(tenantId: string, label: string, isCurrent: MutationGuard): Promise<boolean> {
     const tenant = normalizeTenant(tenantId);
     const clean = label.trim();
     if (clean.length > MAX_TENANT_LABEL) throw new Error("The tenant name is too long.");
     return this.serial(async () => {
+      if (!isCurrent()) return false;
       const index = await this.open(true);
       if (!index?.tenants[tenant]) throw new Error("This tenant has no history on this computer.");
       if (!isCurrent()) return false;
@@ -662,6 +665,7 @@ export class SnapshotStore {
     const tenant = normalizeTenant(tenantId);
     if (!SNAPSHOT_ID_PATTERN.test(id)) throw new Error("Unknown snapshot.");
     return this.serial(async () => {
+      if (!isCurrent()) return false;
       const index = await this.open(true);
       if (!isCurrent()) return false;
       const bucket = index?.tenants[tenant];
@@ -683,6 +687,7 @@ export class SnapshotStore {
     const tenant = normalizeTenant(tenantId);
     if (this.damaged) return this.clear(isCurrent);
     return this.serial(async () => {
+      if (!isCurrent()) return false;
       const index = await this.open(true);
       if (!isCurrent()) return false;
       if (!index?.tenants[tenant]) return true;

@@ -3,9 +3,23 @@ import { labCollectionSections } from "./__fixtures__/lab-collection";
 
 const sections = labCollectionSections();
 
+// The digest the collector redacts with, as set by collectAll.
+const digest = vi.hoisted(() => ({
+  current: null as unknown,
+  duringCollection: [] as unknown[],
+}));
+
+vi.mock("../../../../src/lib/intune-policy-registry", async (original) => ({
+  ...(await original<object>()),
+  setRedactionDigest: (value: unknown) => {
+    digest.current = value;
+  },
+}));
+
 vi.mock("../../../../src/lib/intune-detailed-client", () => ({
   DetailedIntuneService: class {
     async getAllDetailedConfigurations() {
+      digest.duringCollection.push(digest.current);
       return {
         collectedAt: "2026-10-08T12:00:00.000Z",
         sections,
@@ -61,5 +75,19 @@ describe("collectAll summary", () => {
     const roles = getSectionItems("roleDefinitions", "owner");
     expect(roles.items.filter((item) => item.microsoftDefault)).toHaveLength(10);
     expect(getSectionItems("depOnboardingSettings", "owner").familyKey).toBe("connectors");
+  });
+});
+
+describe("collectAll redaction digests", () => {
+  it("keeps digests of redacted values only while history is on", async () => {
+    digest.duringCollection = [];
+    await collectAll(async () => "token", () => undefined, { owner: "owner" });
+    await collectAll(async () => "token", () => undefined, { owner: "owner", keepDigests: false });
+    await collectAll(async () => "token", () => undefined, { owner: "owner", keepDigests: true });
+    expect(digest.duringCollection[0]).toBeNull();
+    expect(digest.duringCollection[1]).toBeNull();
+    expect(typeof digest.duringCollection[2]).toBe("function");
+    // Nothing else, such as an export, digests afterwards.
+    expect(digest.current).toBeNull();
   });
 });

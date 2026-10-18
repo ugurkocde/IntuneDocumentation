@@ -472,6 +472,21 @@ describe("compareSettings", () => {
     expect(oma).toMatchObject({ status: "notComparable", name: "VPN shared secret" });
   });
 
+  it("shows a redacted setting on one side only as not comparable, not as missing or extra", async () => {
+    const withoutKey = structuredClone(SECRET_CATALOG);
+    withoutKey.settings = withoutKey.settings.slice(1);
+    const sides = (secret: object) =>
+      collection([...contoso().sections!, section("secretCatalog", [secret], "Secret catalog")]);
+    const psk = (from: object, to: object) =>
+      compareSettings(projectionSettings(snap(sides(from))), projectionSettings(snap(sides(to))))
+        .groups.flatMap((group) => group.rows)
+        .find((row) => row.setting === "device_vendor_msft_wifi_profile_presharedkey");
+    // Only in the reference.
+    expect(psk(SECRET_CATALOG, withoutKey)).toMatchObject({ status: "notComparable", actual: [] });
+    // Only in the current tenant.
+    expect(psk(withoutKey, SECRET_CATALOG)).toMatchObject({ status: "notComparable", expected: [] });
+  });
+
   it("lists families incomplete on either side as not compared instead of missing", async () => {
     const file = await reference();
     const failed = contoso();

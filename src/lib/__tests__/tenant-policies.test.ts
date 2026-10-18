@@ -471,6 +471,10 @@ describe("security defaults as an alternative to Conditional Access", () => {
 
   it.each([
     ["a report-only MFA policy", caPolicy("enabledForReportingButNotEnforced")],
+    // Microsoft Learn makes no distinction by state: any Conditional Access
+    // policy prevents enabling security defaults.
+    ["a disabled MFA policy", caPolicy("disabled")],
+    ["a policy without a readable state", { ...caPolicy("enabled"), state: undefined }],
     [
       "an MFA OR compliant-device policy",
       caPolicy("enabled", {
@@ -554,18 +558,22 @@ describe("security defaults as an alternative to Conditional Access", () => {
     );
   });
 
-  it("keeps security defaults a gap when the only Conditional Access policy is disabled", () => {
+  it("never recommends security defaults when the only Conditional Access policy is disabled", () => {
     const assessment = assessCompliance(withCa([caPolicy("disabled")]));
     const defaults = defaultsOf(assessment);
-    expect(defaults.alternative).toBeUndefined();
-    expect(defaults.checks[0]).toMatchObject({ result: "different" });
-    expect(safeguardState(defaults)).toBe("notConfigured");
+    expect(defaults.alternative).toEqual({
+      state: "notCombinable",
+      capabilityIds: [],
+    });
+    expect(defaults.checks[0]).toMatchObject({ result: null });
+    expect(safeguardState(defaults)).toBe("notCombinable");
     const summary = buildManagementSummary(assessment, "nist-800-53-r5", {
       limit: 50,
     });
-    expect(summary.nextActions.map((action) => action.capabilityId)).toContain(
-      DEFAULTS,
-    );
+    expect(
+      summary.nextActions.map((action) => action.capabilityId),
+    ).not.toContain(DEFAULTS);
+    expectNotRecommended(assessment, false);
   });
 
   it("counts security defaults as a data gap while Conditional Access is unreadable", () => {
@@ -601,15 +609,17 @@ describe("security defaults as an alternative to Conditional Access", () => {
     }
   });
 
-  it("is unknown while a Conditional Access policy has no readable state", () => {
+  it("is not combinable while a Conditional Access policy has no readable state", () => {
     const policy = { ...caPolicy("enabled"), state: undefined };
     const defaults = defaultsOf(assessCompliance(withCa([policy])));
-    expect(defaults.alternative?.state).toBe("unknown");
+    expect(defaults.alternative?.state).toBe("notCombinable");
     expect(defaults.checks[0]).toMatchObject({
-      assessmentStatus: "unableToCheck",
+      assessmentStatus: "checked",
       result: null,
     });
-    expect(defaults.checks[0]?.reason).toContain("Not compared");
+    expect(defaults.checks[0]?.reason).toContain(
+      "Not applicable while Conditional Access policies exist",
+    );
   });
 
   const caFailure = {
@@ -648,10 +658,11 @@ describe("security defaults as an alternative to Conditional Access", () => {
     });
     expect(
       defaultsOf(assessCompliance(section([caPolicy("disabled")]))).alternative,
-    ).toBeUndefined();
+    ).toEqual({ state: "notCombinable", capabilityIds: [] });
+    expect(defaultsOf(assessCompliance(section([]))).alternative).toBeUndefined();
   });
 
-  it("is not combinable when an incomplete collection still shows an active policy", () => {
+  it("is not combinable when an incomplete collection still shows a policy", () => {
     const active = defaultsOf(
       assessCompliance(
         withCa([caPolicy("enabledForReportingButNotEnforced")], {
@@ -665,11 +676,16 @@ describe("security defaults as an alternative to Conditional Access", () => {
         withCa([caPolicy("disabled")], { fetchErrors: [caFailure] }),
       ),
     );
-    expect(disabledOnly.alternative?.state).toBe("unknown");
-    expect(safeguardState(disabledOnly)).toBe("dataMissing");
+    expect(disabledOnly.alternative?.state).toBe("notCombinable");
+    expect(safeguardState(disabledOnly)).toBe("notCombinable");
+    const none = defaultsOf(
+      assessCompliance(withCa([], { fetchErrors: [caFailure] })),
+    );
+    expect(none.alternative?.state).toBe("unknown");
+    expect(safeguardState(none)).toBe("dataMissing");
   });
 
-  it("is unknown without a collection timestamp unless an active policy is seen", () => {
+  it("is unknown without a collection timestamp unless a policy is seen", () => {
     const undated = (ca: Record<string, unknown>[]) => ({
       ...data(policies(), null),
       conditionalAccessPolicies: ca,
@@ -683,7 +699,7 @@ describe("security defaults as an alternative to Conditional Access", () => {
     expect(
       defaultsOf(assessCompliance(undated([caPolicy("disabled")]))).alternative
         ?.state,
-    ).toBe("unknown");
+    ).toBe("notCombinable");
     expect(
       defaultsOf(
         assessCompliance(
@@ -693,7 +709,7 @@ describe("security defaults as an alternative to Conditional Access", () => {
     ).toBe("notCombinable");
   });
 
-  it("keeps a gap for a disabled policy with an unreadable authentication strength", () => {
+  it("is not combinable, not unknown, for a disabled policy with an unreadable authentication strength", () => {
     const assessment = assessCompliance(
       withCa([
         caPolicy("disabled", {
@@ -703,13 +719,16 @@ describe("security defaults as an alternative to Conditional Access", () => {
       ]),
     );
     const defaults = defaultsOf(assessment);
-    expect(defaults.alternative).toBeUndefined();
-    expect(defaults.checks[0]).toMatchObject({ result: "different" });
+    expect(defaults.alternative).toEqual({
+      state: "notCombinable",
+      capabilityIds: [],
+    });
+    expect(safeguardState(defaults)).toBe("notCombinable");
     expect(
       buildManagementSummary(assessment, "nist-800-53-r5", {
         limit: 50,
       }).nextActions.map((action) => action.capabilityId),
-    ).toContain(DEFAULTS);
+    ).not.toContain(DEFAULTS);
   });
 
   it("names only readable enforcing alternatives next to an unreadable strength", () => {

@@ -25,6 +25,10 @@ export interface SignInResult {
 }
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+// While Microsoft sign-in cannot be reached, the refresh is tried again
+// after 30 seconds, doubling up to every 5 minutes.
+const RETRY_FIRST_MS = 30_000;
+const RETRY_MAX_MS = 5 * 60_000;
 // Entra backdates iat by five minutes to allow for clock skew, so a token
 // issued just now reads as five minutes old. Ten minutes means at most five
 // real minutes, well inside the licensing service's 15 minute window.
@@ -61,10 +65,12 @@ export class SignInUnreachableError extends Error {
   }
 }
 
-// MSAL network failures and the Node errors beneath them. Anything else,
-// such as a revoked session, needs a new sign-in.
+// MSAL network failures, the Node errors beneath them, and Entra saying it
+// cannot issue tokens right now. Anything else, such as a revoked session,
+// needs a new sign-in.
 const UNREACHABLE_CODES = new Set([
   "network_error",
+  "temporarily_unavailable",
   "endpoints_resolution_error",
   "no_network_connectivity",
   "ENOTFOUND",
@@ -76,8 +82,15 @@ const UNREACHABLE_CODES = new Set([
   "EHOSTUNREACH",
 ]);
 
+// An MSAL ServerError carries the HTTP status: a 5xx answer is an outage,
+// not a verdict on the session.
 function isUnreachable(error: unknown): boolean {
-  const { errorCode, code } = (error ?? {}) as { errorCode?: unknown; code?: unknown };
+  const { errorCode, code, status } = (error ?? {}) as {
+    errorCode?: unknown;
+    code?: unknown;
+    status?: unknown;
+  };
+  if (typeof status === "number" && status >= 500) return true;
   return [errorCode, code].some(
     (value) => typeof value === "string" && UNREACHABLE_CODES.has(value),
   );
@@ -210,6 +223,8 @@ export class AuthService {
   private expiresOn: Date | null = null;
   // The last silent refresh failed because sign-in could not be reached.
   private unreachable = false;
+  // Delay of the last retry while unreachable, 0 when none is due.
+  private retryDelay = 0;
   private generation = 0;
   private activeCancel: (() => void) | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -280,6 +295,7 @@ export class AuthService {
       if (isUnreachable(error)) {
         // Still signed in: the token is renewed once sign-in answers again.
         this.unreachable = true;
+        this.retryLater();
         return null;
       }
       this.expire();
@@ -291,6 +307,12 @@ export class AuthService {
   // session needs a new sign-in.
   signInUnreachable(): boolean {
     return this.unreachable && this.account !== null;
+  }
+
+  // Why no token is available: Microsoft sign-in could not be reached, or
+  // the session needs a new sign-in, said with the caller's words.
+  noTokenError(signInMessage = "Sign in before continuing."): Error {
+    return this.signInUnreachable() ? new SignInUnreachableError() : new Error(signInMessage);
   }
 
   // A recent Microsoft ID token for the organization license check, or null
@@ -324,6 +346,7 @@ export class AuthService {
   // is kept so a later silent attempt can recover without a new sign-in.
   private expire(): void {
     this.unreachable = false;
+    this.retryDelay = 0;
     this.clearExpiryTimer();
     this.accessToken = null;
     this.expiresOn = null;
@@ -359,8 +382,23 @@ export class AuthService {
     this.expiryTimer.unref?.();
   }
 
+  // Tries the refresh again later, so the session recovers, or ends when
+  // the sign-in turns out to be revoked, even while nothing calls Graph.
+  // Shares the refresh timer, so accept, expire and signOut clear it.
+  private retryLater(): void {
+    this.retryDelay =
+      this.retryDelay === 0 ? RETRY_FIRST_MS : Math.min(this.retryDelay * 2, RETRY_MAX_MS);
+    this.clearExpiryTimer();
+    this.expiryTimer = setTimeout(() => {
+      this.expiryTimer = null;
+      void this.getAccessToken();
+    }, this.retryDelay);
+    this.expiryTimer.unref?.();
+  }
+
   private accept(result: AuthenticationResult): SignInResult {
     this.unreachable = false;
+    this.retryDelay = 0;
     this.accessToken = result.accessToken;
     this.account = result.account ?? null;
     this.expiresOn = result.expiresOn ?? null;
@@ -509,6 +547,7 @@ export class AuthService {
     this.accessToken = null;
     this.expiresOn = null;
     this.unreachable = false;
+    this.retryDelay = 0;
     this.report();
     await this.disposeCache();
   }

@@ -102,8 +102,8 @@ export const TENANT_POLICY_CAPABILITIES: readonly ComplianceCapability[] = [
     documentationUrl:
       "https://learn.microsoft.com/en-us/graph/api/resources/identitysecuritydefaultsenforcementpolicy?view=graph-rest-beta",
     // Assigned enforcing Conditional Access MFA delivers the same safeguard.
-    // Enabled or report-only Conditional Access policies prevent enabling
-    // security defaults (Microsoft Learn, Plan a Conditional Access
+    // Any Conditional Access policy, disabled ones included, prevents
+    // enabling security defaults (Microsoft Learn, Plan a Conditional Access
     // deployment), so they are then not applicable, never recommended.
     alternativeTo: CONDITIONAL_ACCESS_ALTERNATIVES,
     exclusiveWithConditionalAccess: true,

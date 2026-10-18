@@ -56,7 +56,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.6";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.7";
 
 const TENANT_POLICY_FAMILY_KEYS = new Set(
   Object.values(TENANT_POLICY_FAMILIES),
@@ -717,34 +717,25 @@ export function assessCapabilities(
   );
 }
 
-/** Conditional Access states that prevent turning on security defaults. */
-const ACTIVE_CONDITIONAL_ACCESS_STATES = [
-  "enabled",
-  "enabledForReportingButNotEnforced",
-];
-
 /**
- * Whether the collection shows an enabled or report-only Conditional Access
- * policy (`active`), shows completely that none exists (`none`), or cannot
- * tell (`unknown`: not collected, incomplete, no collection timestamp or a
- * policy without a readable state).
+ * Whether the collection shows a Conditional Access policy in any state
+ * (`exists`), shows completely that none exists (`none`), or cannot tell
+ * (`unknown`: not collected, incomplete or no collection timestamp). Any
+ * existing policy, disabled ones included, prevents turning on security
+ * defaults (README "Alternative capabilities").
  */
 function conditionalAccessState(
   data: ComplianceExportData,
   configurations: readonly Record<string, any>[],
-): "active" | "none" | "unknown" {
-  const policies = configurations.filter(
-    (config) => config.__evidenceFamily === "conditionalAccessPolicies",
-  );
+): "exists" | "none" | "unknown" {
   if (
-    policies.some((policy) =>
-      ACTIVE_CONDITIONAL_ACCESS_STATES.includes(policy.state),
+    configurations.some(
+      (config) => config.__evidenceFamily === "conditionalAccessPolicies",
     )
   )
-    return "active";
+    return "exists";
   if (
     !data.collectedAt ||
-    policies.some((policy) => policy.state !== "disabled") ||
     buildCollectionCoverage(data, [], true).some(
       (row) =>
         row.family === "conditionalAccessPolicies" &&
@@ -760,7 +751,7 @@ function conditionalAccessState(
  * is in use only with assigned enforcing evidence (enforced or
  * requirementAssigned); report-only, disabled, unassigned or merely compared
  * policies never count. A capability exclusive with Conditional Access is not
- * combinable while an enabled or report-only policy exists. Unknown when an
+ * combinable while any Conditional Access policy exists. Unknown when an
  * alternative or, for an exclusive capability, Conditional Access could not
  * be read; unreadable values on unassigned (disabled or report-only) policies
  * do not count. Outside scope and plainly absent alternatives leave the capability
@@ -769,7 +760,7 @@ function conditionalAccessState(
 function alternativeOf(
   result: CapabilityResult,
   byId: ReadonlyMap<string, CapabilityResult>,
-  conditionalAccess: "active" | "none" | "unknown",
+  conditionalAccess: "exists" | "none" | "unknown",
 ): CapabilityResult["alternative"] {
   const { alternativeTo = [], exclusiveWithConditionalAccess } =
     result.capability;
@@ -795,7 +786,7 @@ function alternativeOf(
       state: "inUse",
       capabilityIds: inUse.map((item) => item.capability.id),
     };
-  if (exclusiveWithConditionalAccess && conditionalAccess === "active")
+  if (exclusiveWithConditionalAccess && conditionalAccess === "exists")
     return { state: "notCombinable", capabilityIds: [] };
   const unknown = alternatives.filter((item) => {
     if (
@@ -832,7 +823,7 @@ function alternativeReason(
   if (alternative.state === "inUse")
     return `Not a gap: an alternative is configured and assigned in this tenant (${names}).`;
   if (alternative.state === "notCombinable")
-    return "Not applicable while Conditional Access policies exist: this setting cannot be turned on while an enabled or report-only Conditional Access policy exists. Require MFA through Conditional Access instead.";
+    return "Not applicable while Conditional Access policies exist: this setting cannot be turned on while any Conditional Access policy exists, including disabled ones. Require MFA through Conditional Access instead.";
   return `Not compared: whether this is needed depends on ${names || "the Conditional Access policies"}, which could not be read completely. Refresh the policies before acting on this value.`;
 }
 
@@ -842,7 +833,7 @@ function alternativeReason(
 // capabilities"). Alternatives are judged on the unchanged first pass.
 function applyAlternatives(
   results: CapabilityResult[],
-  conditionalAccess: "active" | "none" | "unknown",
+  conditionalAccess: "exists" | "none" | "unknown",
 ): CapabilityResult[] {
   const byId = new Map(results.map((result) => [result.capability.id, result]));
   return results.map((result) => {

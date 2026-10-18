@@ -6,6 +6,12 @@ import { ScheduleSkip, SKIP_RETRY_MS } from "./scheduler";
 // replaces work the user started, and a manual collection is refused while a
 // scheduled run is active, so neither fails the other. A scheduled run that
 // is cancelled or does not start counts as skipped, not as failed.
+//
+// The sign-in and entitlement checks before a collection count as running
+// work, so a sign-in cannot switch the account while they are pending, and a
+// cancel (sign-out, changed settings) stops them. After each check, and right
+// before collecting, the signed in account must still be the one checked:
+// the collector reads tokens from whoever is signed in at that moment.
 
 export const SCHEDULED_RUN_ACTIVE =
   "A scheduled collection is running. Wait until it finishes, or cancel it and collect again.";
@@ -18,6 +24,9 @@ export interface CollectionRunnerDeps<Summary, Progress> {
   requireOwner(): Promise<string>;
   // The entitlement of the signed in tenant; throws otherwise.
   requireLicense(): Promise<void>;
+  // The account known now, as requireOwner names it (account and tenant), or
+  // null.
+  owner(): string | null;
   // Work other than a collection, such as "an export", or null.
   otherWork(): string | null;
   // Progress is null for scheduled runs, which report no progress.
@@ -45,6 +54,10 @@ interface Active {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function startedMeanwhile(work: string): ScheduleSkip {
+  return new ScheduleSkip(`${work.charAt(0).toUpperCase()}${work.slice(1)} started meanwhile.`);
 }
 
 export class CollectionRunner<Summary, Progress> {
@@ -80,37 +93,67 @@ export class CollectionRunner<Summary, Progress> {
     this.active = null;
   }
 
-  async manual(owner: string, progress: Progress): Promise<Summary> {
+  // The sign-in and entitlement of the account to collect are checked here.
+  async manual(progress: Progress): Promise<Summary> {
     if (this.active?.scheduled) throw new Error(SCHEDULED_RUN_ACTIVE);
-    return this.run(owner, progress);
+    this.cancel("Replaced by a new collection.");
+    return this.run(this.begin(false), progress);
   }
 
   // One scheduled run. Sign in and entitlement are checked at the start;
   // when either fails, or work started meanwhile, the run is skipped.
   async scheduled(): Promise<void> {
-    let owner: string;
+    const busy = this.busy();
+    if (busy) throw startedMeanwhile(busy);
+    const entry = this.begin(true);
     try {
-      owner = await this.deps.requireOwner();
-      await this.deps.requireLicense();
+      await this.run(entry, null);
     } catch (error) {
+      if (entry.controller.signal.aborted) {
+        throw new ScheduleSkip(entry.reason ?? "The collection was cancelled.");
+      }
+      throw error;
+    }
+  }
+
+  private begin(scheduled: boolean): Active {
+    const entry: Active = { controller: new AbortController(), scheduled, reason: null };
+    this.active = entry;
+    return entry;
+  }
+
+  // The checks before collecting. Throws a skip for a scheduled run.
+  private async preflight(entry: Active): Promise<string> {
+    const stillCurrent = (owner: string) => {
+      if (entry.controller.signal.aborted) {
+        throw new Error(entry.reason ?? "The collection was cancelled.");
+      }
+      if (this.deps.owner() !== owner || !this.deps.signedIn()) {
+        throw new Error("The signed in account changed before the collection started.");
+      }
+    };
+    try {
+      const owner = await this.deps.requireOwner();
+      stillCurrent(owner);
+      await this.deps.requireLicense();
+      stillCurrent(owner);
+      return owner;
+    } catch (error) {
+      if (!entry.scheduled || entry.controller.signal.aborted) throw error;
       throw new ScheduleSkip(
         error instanceof SignInUnreachableError ? SCHEDULED_SIGN_IN_UNREACHABLE : message(error),
       );
     }
-    const busy = this.busy();
-    if (busy) {
-      throw new ScheduleSkip(`${busy.charAt(0).toUpperCase()}${busy.slice(1)} started meanwhile.`);
-    }
-    await this.run(owner, null);
   }
 
   // Null progress marks a scheduled run.
-  private async run(owner: string, progress: Progress | null): Promise<Summary> {
-    const scheduled = progress === null;
-    this.cancel("Replaced by a new collection.");
-    const entry: Active = { controller: new AbortController(), scheduled, reason: null };
-    this.active = entry;
+  private async run(entry: Active, progress: Progress | null): Promise<Summary> {
+    const scheduled = entry.scheduled;
     try {
+      const owner = await this.preflight(entry);
+      // Work other than a collection does not wait for the checks.
+      const other = this.deps.otherWork();
+      if (scheduled && other) throw startedMeanwhile(other);
       const summary = await this.deps.collect(owner, entry.controller.signal, progress);
       if (!entry.controller.signal.aborted) {
         const saved = this.deps.collected(owner, scheduled);
@@ -124,11 +167,6 @@ export class CollectionRunner<Summary, Progress> {
         }
       }
       return summary;
-    } catch (error) {
-      if (scheduled && entry.controller.signal.aborted) {
-        throw new ScheduleSkip(entry.reason ?? "The collection was cancelled.");
-      }
-      throw error;
     } finally {
       if (this.active === entry) this.active = null;
     }

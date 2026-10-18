@@ -521,6 +521,18 @@ describe("SnapshotStore", () => {
     expect(snapshotFiles()).toHaveLength(2);
   });
 
+  it("expires nothing for a mutation whose account changed before it ran", async () => {
+    const history = store();
+    const first = await history.save(TENANT, projection(), guard(history));
+    // Past the age limit: opening the index for a write would remove it.
+    clock += 400 * DAY;
+    const signedOut = () => false;
+    expect(await history.setLabel(TENANT, "Contoso", signedOut)).toBe(false);
+    expect(await history.delete(TENANT, first!.id, signedOut)).toBe(false);
+    expect(await history.deleteTenant(TENANT, signedOut)).toBe(false);
+    expect(snapshotFiles()).toHaveLength(1);
+  });
+
   it("clears snapshots, key and index after a running write", async () => {
     const history = store();
     const pending = history.save(TENANT, projection(), guard(history));

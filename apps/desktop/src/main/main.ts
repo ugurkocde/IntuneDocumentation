@@ -31,7 +31,7 @@ import { localDateStamp } from "../shared/dates";
 import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
 import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
-import { AuthService, SignInUnreachableError } from "./auth";
+import { AuthService } from "./auth";
 import {
   clearCollection,
   collectAll,
@@ -279,10 +279,7 @@ function resetHistorySession(): void {
 async function requireOwner(): Promise<string> {
   const service = await getAuth();
   const owner = service.getOwnerKey();
-  if (!owner || !(await service.getAccessToken())) {
-    if (service.signInUnreachable()) throw new SignInUnreachableError();
-    throw new Error("Sign in before continuing.");
-  }
+  if (!owner || !(await service.getAccessToken())) throw service.noTokenError();
   return owner;
 }
 
@@ -301,10 +298,7 @@ async function requireLicense(): Promise<void> {
 async function tokenProvider(): Promise<string> {
   const service = await getAuth();
   const token = await service.getAccessToken();
-  if (!token) {
-    if (service.signInUnreachable()) throw new SignInUnreachableError();
-    throw new Error("Sign in before continuing.");
-  }
+  if (!token) throw service.noTokenError();
   return token;
 }
 
@@ -659,6 +653,7 @@ const collections = new CollectionRunner<
 >({
   requireOwner,
   requireLicense,
+  owner: () => auth?.getOwnerKey() ?? null,
   otherWork,
   historyBlocker: () => history.unavailableReason(),
   signedIn: () => Boolean(signedInTenant()),
@@ -667,10 +662,12 @@ const collections = new CollectionRunner<
     const started = Date.now();
     log("info", "collection started", { scheduled: progress === null });
     try {
+      const { keepHistory } = await readSettings();
       const summary = await collectAll(tokenProvider, progress ?? (() => undefined), {
         owner,
         signal,
         budgetMs: 30 * 60_000,
+        keepDigests: keepHistory,
       });
       log("info", "collection finished", {
         items: summary.totalConfigurations,
@@ -876,11 +873,15 @@ function registerIpc(): void {
     return saved;
   });
 
-  // A session whose refresh failed earlier recovers here when the silent
-  // refresh works again, without a new interactive sign-in.
+  // A session whose refresh failed earlier, or could not reach Microsoft
+  // sign-in, recovers here when the silent refresh works again, without a
+  // new interactive sign-in.
   handle("auth:status", async () => {
     const service = await getAuth();
-    if (!service.getStatus().signedIn && service.getOwnerKey()) {
+    if (
+      (!service.getStatus().signedIn && service.getOwnerKey()) ||
+      service.signInUnreachable()
+    ) {
       await service.getAccessToken();
     }
     return service.getStatus();
@@ -934,10 +935,9 @@ function registerIpc(): void {
   });
 
   handle("auth:validatePermissions", async () => {
-    const granted = await (await getAuth()).grantedScopes();
-    if (!granted) {
-      throw new Error("Sign in before checking permissions.");
-    }
+    const service = await getAuth();
+    const granted = await service.grantedScopes();
+    if (!granted) throw service.noTokenError("Sign in before checking permissions.");
     const lower = new Set(granted.map((scope) => scope.toLowerCase()));
     return {
       granted: DEFAULT_SCOPES.filter((scope) => lower.has(scope.toLowerCase())),
@@ -945,10 +945,9 @@ function registerIpc(): void {
     };
   });
 
+  // The runner checks the sign-in and the entitlement.
   handle("collect:all", async (event) => {
-    const owner = await requireOwner();
-    await requireLicense();
-    return collections.manual(owner, (progress, loaded) => {
+    return collections.manual((progress, loaded) => {
       if (event.sender.isDestroyed()) return;
       event.sender.send("collect:progress", {
         step: progress.step,

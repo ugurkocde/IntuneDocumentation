@@ -26,11 +26,6 @@ import type {
   SectionItemsResult,
 } from "../shared/ipc-types";
 
-// The collector keeps a digest of each value it redacts, so history can tell
-// that a script or secret changed without storing it. The digests stay in
-// main and are keyed before a snapshot keeps them.
-setRedactionDigest(contentDigest);
-
 type FullCollection = Awaited<
   ReturnType<DetailedIntuneService["getAllDetailedConfigurations"]>
 >;
@@ -79,13 +74,18 @@ export async function collectAll(
     event: Parameters<ProgressCallback>[0],
     loaded: number,
   ) => void,
-  options: { owner: string; signal?: AbortSignal; budgetMs?: number },
+  // keepDigests is set while history is on: the collector then keeps a
+  // digest of each value it redacts, so history can tell that a script or
+  // secret changed without storing it. The digests stay in main and are
+  // keyed before a snapshot keeps them.
+  options: { owner: string; signal?: AbortSignal; budgetMs?: number; keepDigests?: boolean },
 ): Promise<FullCollectionSummary> {
   if (collecting) {
     throw new Error("A collection is already running.");
   }
   collecting = true;
   let loaded = 0;
+  setRedactionDigest(options.keepDigests ? contentDigest : null);
   try {
     const service = new DetailedIntuneService(
       accessToken,
@@ -126,6 +126,7 @@ export async function collectAll(
     collectionOwner = options.owner;
     return summary;
   } finally {
+    setRedactionDigest(null);
     collecting = false;
   }
 }

@@ -15,6 +15,8 @@ function setup() {
     // Microsoft sign-in did not answer, for example right after wake.
     unreachable: false,
     licensed: true,
+    // A pending entitlement check, released by the test.
+    license: null as Promise<void> | null,
     otherWork: null as string | null,
     historyBlocker: null as string | null,
     signedIn: true,
@@ -36,8 +38,10 @@ function setup() {
       return env.owner;
     },
     requireLicense: async () => {
+      if (env.license) await env.license;
       if (!env.licensed) throw new Error("The license is not valid for this tenant.");
     },
+    owner: () => env.owner,
     otherWork: () => env.otherWork,
     historyBlocker: () => env.historyBlocker,
     signedIn: () => env.signedIn,
@@ -94,7 +98,7 @@ describe("CollectionRunner", () => {
 
   it("skips while a manual collection runs and leaves it running", async () => {
     const { env, runner } = setup();
-    const manual = runner.manual("owner-1", () => undefined);
+    const manual = runner.manual(() => undefined);
     await flush();
     await expect(runner.scheduled()).rejects.toEqual(new ScheduleSkip("A collection started meanwhile."));
     expect(env.pending).toHaveLength(1);
@@ -109,7 +113,7 @@ describe("CollectionRunner", () => {
     await flush();
     expect(runner.current()).toBe("scheduled");
     expect(runner.busy()).toBe("a scheduled collection");
-    await expect(runner.manual("owner-1", () => undefined)).rejects.toThrow(SCHEDULED_RUN_ACTIVE);
+    await expect(runner.manual(() => undefined)).rejects.toThrow(SCHEDULED_RUN_ACTIVE);
     expect(env.pending).toHaveLength(1);
     expect(env.pending[0]!.signal.aborted).toBe(false);
     env.pending[0]!.resolve("scheduled summary");
@@ -117,7 +121,7 @@ describe("CollectionRunner", () => {
     expect(collected).toHaveBeenCalledWith("owner-1", true);
     expect(runner.current()).toBeNull();
     // Afterwards a manual collection works again.
-    const manual = runner.manual("owner-1", () => undefined);
+    const manual = runner.manual(() => undefined);
     await flush();
     env.pending[1]!.resolve("next");
     await expect(manual).resolves.toBe("next");
@@ -136,12 +140,12 @@ describe("CollectionRunner", () => {
 
   it("lets a new manual collection replace an earlier one, as before", async () => {
     const { env, runner, collected } = setup();
-    const first = runner.manual("owner-1", () => undefined);
+    const first = runner.manual(() => undefined);
     await flush();
     // Attached before the second run aborts the first, so the rejection is
     // never unhandled.
     const firstAborted = expect(first).rejects.toThrow("aborted");
-    const second = runner.manual("owner-1", () => undefined);
+    const second = runner.manual(() => undefined);
     await flush();
     await firstAborted;
     env.pending[1]!.resolve("second");
@@ -152,7 +156,7 @@ describe("CollectionRunner", () => {
   it("passes progress for manual runs only", async () => {
     const { env, runner } = setup();
     const progress = vi.fn();
-    void runner.manual("owner-1", progress).catch(() => undefined);
+    void runner.manual(progress).catch(() => undefined);
     await flush();
     expect(env.pending[0]!.progress).toBe(progress);
     runner.cancel();
@@ -197,7 +201,7 @@ describe("CollectionRunner", () => {
   it("does not wait for or fail on the snapshot of a manual run", async () => {
     const { env, runner, collected } = setup();
     collected.mockRejectedValueOnce(new Error("No space left on the disk."));
-    const manual = runner.manual("owner-1", () => undefined);
+    const manual = runner.manual(() => undefined);
     await flush();
     env.pending[0]!.resolve("summary");
     await expect(manual).resolves.toBe("summary");
@@ -212,5 +216,72 @@ describe("CollectionRunner", () => {
     env.pending[0]!.reject(new Error("Graph returned 503."));
     await expect(scheduled).rejects.toThrow("Graph returned 503.");
     await expect(scheduled).rejects.not.toBeInstanceOf(ScheduleSkip);
+  });
+
+  // A sign-in that switches the account while the entitlement of the first
+  // one is still being checked must not let the run collect the second
+  // account under the first one's name and entitlement.
+  it("counts the checks as running work and skips when the account changed during them", async () => {
+    const { env, runner, collected } = setup();
+    let release!: () => void;
+    env.license = new Promise<void>((resolve) => (release = resolve));
+    const scheduled = runner.scheduled();
+    await flush();
+    // A sign-in started now is refused: the checks count as running work.
+    expect(runner.busy()).toBe("a scheduled collection");
+    await expect(runner.manual(() => undefined)).rejects.toThrow(SCHEDULED_RUN_ACTIVE);
+    // A switch that happens anyway, for example a sign-in that was already
+    // open in the browser.
+    env.owner = "owner-2";
+    release();
+    await expect(scheduled).rejects.toEqual(
+      new ScheduleSkip("The signed in account changed before the collection started."),
+    );
+    expect(env.pending).toHaveLength(0);
+    expect(collected).not.toHaveBeenCalled();
+    expect(runner.busy()).toBeNull();
+  });
+
+  it("does not collect a manual run when the account changed during the checks", async () => {
+    const { env, runner } = setup();
+    let release!: () => void;
+    env.license = new Promise<void>((resolve) => (release = resolve));
+    const manual = runner.manual(() => undefined);
+    await flush();
+    expect(runner.busy()).toBe("a collection");
+    env.owner = "owner-2";
+    release();
+    await expect(manual).rejects.toThrow(
+      "The signed in account changed before the collection started.",
+    );
+    expect(env.pending).toHaveLength(0);
+  });
+
+  it("stops at the checks when cancelled, for example by a sign-out", async () => {
+    const { env, runner, collected } = setup();
+    let release!: () => void;
+    env.license = new Promise<void>((resolve) => (release = resolve));
+    const scheduled = runner.scheduled();
+    await flush();
+    runner.cancel("Stopped because the account or the settings changed.");
+    expect(runner.busy()).toBeNull();
+    release();
+    await expect(scheduled).rejects.toEqual(
+      new ScheduleSkip("Stopped because the account or the settings changed."),
+    );
+    expect(env.pending).toHaveLength(0);
+    expect(collected).not.toHaveBeenCalled();
+  });
+
+  it("skips a scheduled run when an export started during the checks", async () => {
+    const { env, runner } = setup();
+    let release!: () => void;
+    env.license = new Promise<void>((resolve) => (release = resolve));
+    const scheduled = runner.scheduled();
+    await flush();
+    env.otherWork = "an export";
+    release();
+    await expect(scheduled).rejects.toEqual(new ScheduleSkip("An export started meanwhile."));
+    expect(env.pending).toHaveLength(0);
   });
 });

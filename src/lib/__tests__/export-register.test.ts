@@ -300,3 +300,40 @@ describe("controlEvidenceCounts", () => {
     });
   });
 });
+
+describe("register About sheet scope", () => {
+  it("shows platforms, Def Stan risk level and the Essential Eight target", async () => {
+    const scoped = assessCompliance(CONTOSO_TENANT, {
+      platforms: ["windows", "macos"],
+      defStanRiskLevel: 2,
+      essentialEightMaturityLevel: 3,
+    });
+    const scope =
+      "platforms windows, macos; target Maturity Level 3; Def Stan risk level 2";
+    expect(buildEvidenceRegister(scoped).scope).toBe(scope);
+    const bytes = await registerToXlsx(buildEvidenceRegister(scoped), {
+      rulesetVersion: scoped.provenance.rulesetVersion,
+      generatedAt: "2026-10-18T09:00:00Z",
+    });
+    const about = sheetCells(
+      extractZipEntry(bytes, "xl/worksheets/sheet1.xml"),
+    );
+    const label = Object.entries(about).find(
+      ([, value]) => value === "Assessment scope",
+    )?.[0];
+    expect(label).toBeDefined();
+    expect(about[label!.replace("A", "B")]).toBe(scope);
+  });
+
+  it("names the framework scope only for the frameworks in the register", () => {
+    const scoped = assessCompliance(CONTOSO_TENANT, {
+      essentialEightMaturityLevel: 2,
+    });
+    expect(
+      buildEvidenceRegister(scoped, { frameworkId: "iso-27001-2022" }).scope,
+    ).toBe("all supported platforms");
+    expect(
+      buildEvidenceRegister(scoped, { frameworkId: "essential-eight" }).scope,
+    ).toBe("all supported platforms; target Maturity Level 2");
+  });
+});

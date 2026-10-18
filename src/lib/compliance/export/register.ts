@@ -10,6 +10,7 @@ import {
   CONTROL_STATUS_LABELS,
 } from "../presentation";
 import type {
+  AssessmentScope,
   AssignmentSummary,
   CapabilityEvidence,
   CapabilityResult,
@@ -61,8 +62,32 @@ export interface CheckRegisterRow {
 }
 
 export interface EvidenceRegister {
+  /** Assessment scope in words, from `assessment.scope`. */
+  scope: string;
   controls: ControlRegisterRow[];
   checks: CheckRegisterRow[];
+}
+
+/**
+ * The assessment scope in words: platforms, the Essential Eight target level
+ * when that framework is included, and the Def Stan risk level when set.
+ */
+export function assessmentScopeText(
+  scope: AssessmentScope,
+  frameworkIds: readonly string[],
+): string {
+  const parts = [
+    scope.platforms?.length
+      ? `platforms ${scope.platforms.join(", ")}`
+      : "all supported platforms",
+  ];
+  if (frameworkIds.includes("essential-eight"))
+    parts.push(
+      `target Maturity Level ${scope.essentialEightMaturityLevel ?? 1}`,
+    );
+  if (scope.defStanRiskLevel !== undefined)
+    parts.push(`Def Stan risk level ${scope.defStanRiskLevel}`);
+  return parts.join("; ");
 }
 
 /** Device status counts per policy, as reported by Intune. */
@@ -235,7 +260,14 @@ export function buildEvidenceRegister(
     : assessment.frameworks;
   if (options.frameworkId && !frameworks.length)
     throw new Error(`Unknown compliance framework: ${options.frameworkId}`);
-  const register: EvidenceRegister = { controls: [], checks: [] };
+  const register: EvidenceRegister = {
+    scope: assessmentScopeText(
+      assessment.scope,
+      frameworks.map((framework) => framework.framework.id),
+    ),
+    controls: [],
+    checks: [],
+  };
   for (const framework of frameworks) {
     const frameworkId = framework.framework.id;
     for (const control of framework.controls) {
@@ -375,7 +407,7 @@ const CHECK_DEFINITIONS: ReadonlyArray<readonly [string, string]> = [
   ],
   [
     "Empty check result",
-    "Compared or read without a result, for example a value that is not a gap because an alternative is configured; the note gives the reason.",
+    "Compared or read without a result, for example a value that is not a gap because an alternative is configured and assigned, or a setting that cannot be combined with Conditional Access; the note gives the reason.",
   ],
   [ASSESSMENT_LABELS.checked, "The configuration was compared."],
   [
@@ -388,13 +420,18 @@ const CHECK_DEFINITIONS: ReadonlyArray<readonly [string, string]> = [
   ],
 ];
 
-function aboutSheet(meta: RegisterMeta, framework: string): XlsxSheet {
+function aboutSheet(
+  meta: RegisterMeta,
+  framework: string,
+  scope: string,
+): XlsxSheet {
   const rows: CellValue[][] = [
     ["Field", "Value"],
     ["Tenant", meta.tenant ?? ""],
     ["Collected at", meta.collectedAt ?? ""],
     ["Ruleset version", meta.rulesetVersion],
     ["Framework", framework],
+    ["Assessment scope", scope],
     ["Generated at", meta.generatedAt],
     ["Disclaimer", COMPLIANCE_DISCLAIMER],
     [],
@@ -459,7 +496,7 @@ export function registerToXlsx(
     meta.framework ??
     [...new Set(register.controls.map((row) => row.frameworkName))].join("; ");
   const sheets: XlsxSheet[] = [
-    aboutSheet(meta, framework),
+    aboutSheet(meta, framework, register.scope),
     {
       name: "Controls",
       rows: table(CONTROL_COLUMNS, register.controls),

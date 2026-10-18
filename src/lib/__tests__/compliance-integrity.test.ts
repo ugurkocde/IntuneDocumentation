@@ -5,6 +5,7 @@ import { assignmentDetails } from "../compliance/assignments";
 import { DetailedIntuneService } from "../intune-detailed-client";
 import type { DetailedExportData } from "../configuration-analyzer";
 import type { ComplianceCapability } from "../compliance/types";
+import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 
 const assigned = [
   { target: { "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget" } },
@@ -777,6 +778,8 @@ describe("collection and reproducibility", () => {
     const second = await createEvidenceManifest(exportData, {
       platforms: ["windows"],
     });
+    // Schema 3: capability alternatives and their empty check results.
+    expect(first.schemaVersion).toBe(3);
     expect(first.snapshotSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(second.snapshotSha256).toBe(first.snapshotSha256);
     expect(second.rulesetSha256).toBe(first.rulesetSha256);
@@ -876,4 +879,65 @@ it("does not report a 21-day update ring as assigned counter-evidence", () => {
   const result = capability(input, "windows-quality-update-deadline");
   expect(result.status).toBe("noEvidence");
   expect(result.evidence).toHaveLength(0);
+});
+
+/** Unknown targets, self references and cycles in `alternativeTo`. */
+function alternativeGraphErrors(
+  capabilities: readonly Pick<ComplianceCapability, "id" | "alternativeTo">[],
+): string[] {
+  const byId = new Map(capabilities.map((item) => [item.id, item]));
+  const errors: string[] = [];
+  for (const item of capabilities)
+    for (const target of item.alternativeTo ?? []) {
+      if (target === item.id) errors.push(`${item.id}: refers to itself`);
+      else if (!byId.has(target)) errors.push(`${item.id}: unknown ${target}`);
+    }
+  const done = new Set<string>();
+  const visit = (id: string, path: string[]) => {
+    if (path.includes(id)) {
+      if (path[path.length - 1] !== id)
+        errors.push(
+          `cycle: ${[...path.slice(path.indexOf(id)), id].join(" > ")}`,
+        );
+      return;
+    }
+    if (done.has(id)) return;
+    for (const target of byId.get(id)?.alternativeTo ?? [])
+      visit(target, [...path, id]);
+    done.add(id);
+  };
+  for (const item of capabilities) visit(item.id, []);
+  return errors;
+}
+
+describe("alternative capability graph", () => {
+  it("has no unknown targets, self references or cycles", () => {
+    expect(
+      COMPLIANCE_CAPABILITIES.some((item) => item.alternativeTo?.length),
+    ).toBe(true);
+    expect(alternativeGraphErrors(COMPLIANCE_CAPABILITIES)).toEqual([]);
+  });
+
+  it("rejects self references, unknown targets and cycles", () => {
+    expect(alternativeGraphErrors([{ id: "a", alternativeTo: ["a"] }])).toEqual(
+      ["a: refers to itself"],
+    );
+    expect(
+      alternativeGraphErrors([{ id: "a", alternativeTo: ["missing"] }]),
+    ).toEqual(["a: unknown missing"]);
+    expect(
+      alternativeGraphErrors([
+        { id: "a", alternativeTo: ["b"] },
+        { id: "b", alternativeTo: ["c"] },
+        { id: "c", alternativeTo: ["a"] },
+      ]),
+    ).toEqual(["cycle: a > b > c > a"]);
+    expect(
+      alternativeGraphErrors([
+        { id: "a", alternativeTo: ["b", "c"] },
+        { id: "b", alternativeTo: ["c"] },
+        { id: "c" },
+      ]),
+    ).toEqual([]);
+  });
 });

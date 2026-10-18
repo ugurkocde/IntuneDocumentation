@@ -20,13 +20,11 @@ export const TENANT_POLICY_FAMILIES: Record<TenantIdentityPolicyName, string> =
   {
     authenticationMethods: "authenticationMethodsPolicy",
     securityDefaults: "identitySecurityDefaultsEnforcementPolicy",
-    authorization: "authorizationPolicy",
   };
 
 const POLICY_NAMES: Record<TenantIdentityPolicyName, string> = {
   authenticationMethods: "Authentication methods policy",
   securityDefaults: "Security defaults",
-  authorization: "Authorization policy",
 };
 
 // Delegated reads also need a directory role that may read the policy, for
@@ -47,12 +45,15 @@ const CAVEAT = {
   de: "Mandantenweite Einstellung einer Entra ID-Richtlinie. Sie zeigt, was der Mandant zulässt, nicht welche Methoden Benutzer registriert haben oder bei Anmeldungen verwendet wurden.",
 };
 
-/** Conditional Access capabilities that replace security defaults. */
+/**
+ * Conditional Access MFA capabilities that replace security defaults. A
+ * compliant-device requirement is not the same safeguard; it is covered by
+ * the exclusivity of security defaults with Conditional Access instead.
+ */
 export const CONDITIONAL_ACCESS_ALTERNATIVES = [
   "tenant-mfa-required",
   "tenant-mfa-all-apps",
   "tenant-phishing-resistant-mfa",
-  "tenant-compliant-device-required",
 ] as const;
 
 const methodsDocs =
@@ -100,10 +101,12 @@ export const TENANT_POLICY_CAPABILITIES: readonly ComplianceCapability[] = [
     caveat: CAVEAT,
     documentationUrl:
       "https://learn.microsoft.com/en-us/graph/api/resources/identitysecuritydefaultsenforcementpolicy?view=graph-rest-beta",
-    // Creating Conditional Access policies prevents enabling security defaults
-    // (Microsoft Learn, Plan a Conditional Access deployment), so any
-    // Conditional Access MFA or compliant-device evidence rules them out.
+    // Assigned enforcing Conditional Access MFA delivers the same safeguard.
+    // Enabled or report-only Conditional Access policies prevent enabling
+    // security defaults (Microsoft Learn, Plan a Conditional Access
+    // deployment), so they are then not applicable, never recommended.
     alternativeTo: CONDITIONAL_ACCESS_ALTERNATIVES,
+    exclusiveWithConditionalAccess: true,
     signals: [
       {
         source: "tenantPolicy",

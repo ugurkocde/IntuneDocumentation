@@ -1099,18 +1099,9 @@ const tenantIdentityPolicies: DetailedExportData["tenantIdentityPolicies"] = {
     displayName: "Security Defaults",
     isEnabled: false,
   },
-  authorization: {
-    id: "authorizationPolicy",
-    displayName: "Authorization Policy",
-    allowInvitesFrom: "adminsAndGuestInviters",
-    permissionGrantPolicyIdsAssignedToDefaultUserRole: [
-      "ManagePermissionGrantsForSelf.microsoft-user-default-low",
-    ],
-  },
   status: {
     authenticationMethods: "collected",
     securityDefaults: "collected",
-    authorization: "collected",
   },
 };
 

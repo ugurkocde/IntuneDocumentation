@@ -36,11 +36,9 @@ function data(...policies: ReturnType<typeof policy>[]): DetailedExportData {
         ],
       },
       securityDefaults: { isEnabled: false },
-      authorization: {},
       status: {
         authenticationMethods: "collected",
         securityDefaults: "collected",
-        authorization: "collected",
       },
     },
     settingsCatalog: [],

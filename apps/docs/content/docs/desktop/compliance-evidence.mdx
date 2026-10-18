@@ -99,7 +99,7 @@ Safeguards in place is a coverage figure from your configuration. It is not a co
 
 The evidence also covers three things beyond Intune policies:
 
-- **Entra tenant policies.** With the Policy.Read.All permission the app already requests for Conditional Access, it also reads the tenant authentication methods policy and security defaults. No new permissions are needed. If these cannot be read, the checks behind them are shown as unable to check, never as missing. Security defaults switched off is not a gap when Conditional Access policies are in use, because the two cannot be combined; the app then never suggests turning them on.
+- **Entra tenant policies.** With the Policy.Read.All permission the app already requests for Conditional Access, it also reads the tenant authentication methods policy and security defaults. No new permissions are needed. If these cannot be read, the checks behind them are shown as unable to check, never as missing. Security defaults cannot be combined with Conditional Access. While an enabled or report-only Conditional Access policy exists, security defaults switched off show as not applicable, and the app never suggests turning them on. They only show as not needed when an assigned Conditional Access policy requires MFA; otherwise the Conditional Access MFA safeguards stay open.
 - **Screen lock.** A configured screen lock after inactivity counts as supporting evidence where a framework asks for it.
 - **Device status counts.** Intune's per-policy device status counts are shown next to the evidence and in the report annex. They describe rollout, and they never change a control status. A policy with no reported status is shown as no status reported, not as zero.
 

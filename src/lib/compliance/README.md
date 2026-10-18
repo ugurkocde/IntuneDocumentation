@@ -167,7 +167,8 @@ Everything it produces is identifiers, statuses and counts.
   compliance score, and the report carries `COMPLIANCE_DISCLAIMER`.
 - **Unassigned security configurations** counts distinct capabilities mapped
   to the framework's assessed controls with status `configuredNotAssigned`.
-  `assignmentUnknown` and `collectionIncomplete` count as data gaps instead.
+  `assignmentUnknown`, `collectionIncomplete` and an `unknown` alternative
+  state count as data gaps instead.
 - **Measures outside Intune scope** is `totalRequirements` minus assessed
   controls when the framework publishes a total (NIS2: a, c, d and f), minus
   listed measures marked `notEvaluated`. Those relate to Intune or Entra
@@ -504,13 +505,15 @@ assesses them, so desktop output and the ruleset fingerprint are unchanged.
 
 ### Entra tenant policy signals
 
-The Conditional Access step also reads three tenant-wide Entra policies with
+The Conditional Access step also reads two tenant-wide Entra policies with
 the same token (Policy.Read.All, which Microsoft lists as a higher privileged
-permission for each of them): `GET /beta/policies/authenticationMethodsPolicy`,
-`/beta/policies/identitySecurityDefaultsEnforcementPolicy` and
-`/beta/policies/authorizationPolicy` (beta returns the last one as a `value`
-collection with one item; both shapes are read). The desktop app always reads
-them; the website only when Conditional Access is included. They are stored on
+permission for each of them): `GET /beta/policies/authenticationMethodsPolicy`
+and `/beta/policies/identitySecurityDefaultsEnforcementPolicy`. The desktop
+app always reads them; the website only when Conditional Access is included.
+The authorization policy is not read (ruleset 2026.10.6): user consent and
+guest invitation settings have no honest control mapping, and a denied read
+would mark the identity collection partial for nothing. Older collections and
+snapshots that contain it stay readable; the field and its status are ignored. They are stored on
 the collection as `tenantIdentityPolicies` with a status per policy
 (`collected`, `permissionDenied`, `failed`, `skipped`) and never in `sections`,
 so configuration counts, search, classification and the documentation export
@@ -530,15 +533,13 @@ users.
 | --- | --- | --- | --- |
 | `tenant-phishing-resistant-method-enabled` | `Fido2` enabled, or `X509Certificate` enabled with default mode `x509CertificateMultiFactor` | none | both disabled: Windows Hello for Business is phishing resistant and not part of this policy; single-factor certificate mode does not count. One enabled method is enough: the other method's check then has no result ("Not required"), never "different" |
 | `tenant-weak-methods-disabled` | `Sms`, `Voice` and `Email` all readable and none enabled | any of them enabled | legacy per-user MFA and SSPR settings are not read |
-| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: never counter-evidence; not a gap at all while Conditional Access is in use (see Alternative capabilities below) |
+| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: never counter-evidence; not a gap while assigned Conditional Access MFA is in place, and not applicable while enabled or report-only Conditional Access policies exist (see Alternative capabilities below) |
 
 Mappings: NIST SP 800-53 IA-2 (phishing-resistant method, security defaults)
 and IA-5 (weak methods), ISO/IEC 27001 8.5, SP 800-171 3.5.3 and 03.05.03,
 Cyber Essentials user access control, NIS2 21.2.j and DORA 9(4)(d) and RTS
 21(f)(ii). Essential Eight is not mapped: an enabled method does not show that
-MFA is used. IA-2 also lists the Conditional Access MFA capabilities. The
-authorization policy is collected but not evaluated: user consent and guest
-invitation settings have no honest control mapping yet. Portal links open the
+MFA is used. IA-2 also lists the Conditional Access MFA capabilities. Portal links open the
 Entra authentication methods policies page, and the Entra admin center root
 labelled with the security defaults path.
 
@@ -551,8 +552,10 @@ streams: `POST /beta/deviceManagement/reports/getConfigurationPolicyNonComplianc
 and `GET /beta/deviceManagement/deviceConfigurations?$select=id,displayName&$expand=deviceStatusOverview`
 (DeviceManagementConfiguration.Read.All, verified in the lab on 18 October
 2026). Report bodies are read as text and may be JSON or a JSON string; values
-are read by column name from `Schema`, paged with `top` 1000 and `skip` up to
-`TotalRowCount`. Errors are `NumberOfNonCompliantOrErrorDevices` for reports
+are read by column name from `Schema`, paged with `top` 1000 and `skip` set
+to the number of rows received so far, up to `TotalRowCount`, so a short page
+leaves no hole. Rows repeated across pages are kept once per source and policy
+id (compared without regard to case). Errors are `NumberOfNonCompliantOrErrorDevices` for reports
 and `errorCount + failedCount` for the overview; reports have no pending
 column, so pending is `null`. The website skips the annex with a recorded
 reason when less than 20 seconds of its 105 second budget remain, and the
@@ -569,50 +572,70 @@ The result is `policyDeviceStatus` on the collection. It is not a field on
 statuses, counts, coverage and the management summary are identical with and
 without it. `provenance.deviceState` stays `notCollected` (per-device state is
 not collected) and `provenance.policyStatusSummary` records whether the annex
-was collected (evidence record schema version 2). The framework PDF adds an
-annex (English and German) listing the cited device policies; a policy without
+was collected (evidence record schema version 2; version 3 adds the
+capability `alternative` states, see Alternative capabilities). The
+framework PDF adds an annex (English and German) listing the cited device policies; a policy without
 a row in the Intune summary shows "No status reported", never zero.
 
 ## Alternative capabilities and review corrections (ruleset 2026.10.5)
 
 ### Alternative capabilities
 
+Revised in ruleset 2026.10.6: precision first, an alternative is never named
+as set up unless it is assigned and enforcing.
+
 `ComplianceCapability.alternativeTo` lists capabilities that deliver the same
-safeguard another way. It applies only to a capability with status
-`noEvidence` whose own value was read and compared (a `different` or
-`missing` check). The engine then judges each listed alternative on the
-unchanged first pass:
+safeguard another way, and `exclusiveWithConditionalAccess` marks a capability
+that cannot be turned on while Conditional Access policies exist. Both apply
+only to a capability with status `noEvidence` whose own value was read and
+compared (a `different` or `missing` check). The engine judges them on the
+unchanged first pass, in this order:
 
-- **in use**: the alternative has evidence (any verdict and assignment state,
-  so report-only and unassigned policies count) or a check that compared a
-  collected policy;
-- **unknown**: otherwise, when the alternative is `collectionIncomplete` or
-  every check of it is `unableToCheck`;
-- otherwise the capability stays an ordinary gap.
+- **in use** (`inUse`): an alternative has status `enforced` or
+  `requirementAssigned`, that is assigned enforcing evidence. Only those
+  alternatives are named. Report-only, disabled, untargeted, unassigned and
+  merely compared policies never count, nor do optional OR grants such as
+  "MFA or compliant device" or an unreadable custom authentication strength,
+  because they produce no enforcing evidence;
+- **not combinable** (`notCombinable`, exclusive capabilities only): the
+  collection contains an enabled or report-only Conditional Access policy, so
+  the capability cannot be turned on. Nothing is named and nothing is claimed
+  as set up. The wording is "Not applicable while Conditional Access policies
+  exist; require MFA through Conditional Access", and the Conditional Access
+  MFA capabilities stay ordinary gaps;
+- **unknown** (`unknown`): an alternative is `collectionIncomplete` or
+  `assignmentUnknown`, or every check of it is `unableToCheck`, leaving out
+  checks of unassigned (disabled or report-only) policies, whose unreadable
+  value cannot enforce anything; for an
+  exclusive capability also when Conditional Access was not collected, is
+  incomplete, has no collection timestamp or contains a policy without a
+  readable state;
+- otherwise the capability stays an ordinary gap. With only disabled
+  Conditional Access policies, or none in a complete collection, security
+  defaults stay a gap and may be recommended.
 
-For in use and unknown, `CapabilityResult.alternative` records the state and
-the alternative ids. The status stays `noEvidence` and the observed value
-stays visible, but its `different` and `missing` checks carry no result (and
-become `unableToCheck` when unknown), with the reason in the check and the
-limitations. As a result the capability is in no "Different value" tally and
-no red PDF row, `rankNextActions` never proposes it, the management summary
-leaves it out of every safeguard count, the fix pack neither drafts nor
-lists it, and `safeguardState` reports
-`alternativeInUse` ("Not needed, an alternative is set up") or `dataMissing`.
+`CapabilityResult.alternative` records the state and the named ids. The
+status stays `noEvidence` and the observed value stays visible, but its
+`different` and `missing` checks carry no result (and become `unableToCheck`
+when unknown), with the reason in the check and the limitations. None of the
+three states is in a "Different value" tally, a red PDF row, a next action
+(`rankNextActions`) or the fix pack. In use and not combinable are left out
+of every management summary safeguard count; unknown stays in the safeguard
+totals and counts as a data gap. `safeguardState` reports `alternativeInUse`
+("Not needed, an alternative is set up"), `notCombinable` or `dataMissing`.
 Counter-evidence and unassigned configurations of the capability itself are
-never hidden.
+never hidden. `alternativeTo` must name existing capabilities without self
+references or cycles (integrity test).
 
-`tenant-security-defaults-enabled` lists the four Conditional Access
+`tenant-security-defaults-enabled` lists the three Conditional Access MFA
 capabilities (`tenant-mfa-required`, `tenant-mfa-all-apps`,
-`tenant-phishing-resistant-mfa`, `tenant-compliant-device-required`).
+`tenant-phishing-resistant-mfa`) and is exclusive with Conditional Access.
+A compliant-device requirement is not the same safeguard and is not an
+alternative; its policy still makes security defaults not combinable.
 Creating Conditional Access policies prevents enabling security defaults
-([Microsoft Learn, Plan a Conditional Access deployment](https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access)),
-so the product never recommends security defaults while Conditional Access
-MFA or compliant-device evidence exists or Conditional Access could not be
-read. A tenant without any such policy still sees security defaults as a gap
-next to the Conditional Access MFA capabilities. Conditional Access does not
-list security defaults as its alternative: baseline MFA does not replace a
-configurable policy.
+([Microsoft Learn, Plan a Conditional Access deployment](https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access)).
+Conditional Access does not list security defaults as its alternative:
+baseline MFA does not replace a configurable policy.
 
 A tenant-wide Entra setting holding the non-enforcing value, such as SMS
 enabled in the authentication methods policy, is `tenantSettingDiffers`
@@ -628,7 +651,10 @@ note says "No policy evidence found" only for `noEvidence` and "Not assessed,
 see the PDF for the reason." for `notAssessed`. A framework without Purview
 template data throws instead of reading as "No Purview template". XLSX cells
 with formula-like text keep their value under a `quotePrefix` cell style;
-CSV keeps the leading apostrophe. The fix pack requires the collection the
+CSV keeps the leading apostrophe. The XLSX About sheet states the assessment
+scope from `assessment.scope`: platforms, the Essential Eight target level
+when that framework is included and the Def Stan risk level when set, worded
+as in the evidence pack README. The fix pack requires the collection the
 assessment was made from, and keeps descriptions within 1000 characters:
 Microsoft documents no maximum, the warning is never shortened and the
 README lists every control.

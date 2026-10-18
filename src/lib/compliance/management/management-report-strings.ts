@@ -344,6 +344,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       conflicting: "Conflicting policies",
       notConfigured: "Not set up",
       alternativeInUse: "Not needed, an alternative is set up",
+      notCombinable:
+        "Not applicable while Conditional Access policies exist; require MFA through Conditional Access",
       dataMissing: "Could not be read",
     },
     notAssignedSuffix: "(not assigned)",
@@ -611,6 +613,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       conflicting: "Widersprüchliche Richtlinien",
       notConfigured: "Nicht eingerichtet",
       alternativeInUse: "Nicht nötig, eine Alternative ist eingerichtet",
+      notCombinable:
+        "Nicht anwendbar, solange Richtlinien für bedingten Zugriff bestehen; MFA über bedingten Zugriff verlangen",
       dataMissing: "Nicht lesbar",
     },
     notAssignedSuffix: "(nicht zugewiesen)",

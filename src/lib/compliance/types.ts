@@ -95,8 +95,7 @@ export type DetectionSignal =
 
 export type TenantIdentityPolicyName =
   | "authenticationMethods"
-  | "securityDefaults"
-  | "authorization";
+  | "securityDefaults";
 
 export type TenantPolicyCollectionStatus =
   | "collected"
@@ -112,7 +111,6 @@ export type TenantPolicyCollectionStatus =
 export interface TenantIdentityPolicies {
   authenticationMethods?: Record<string, unknown>;
   securityDefaults?: Record<string, unknown>;
-  authorization?: Record<string, unknown>;
   status: Partial<
     Record<TenantIdentityPolicyName, TenantPolicyCollectionStatus>
   >;
@@ -163,18 +161,29 @@ export interface ComplianceCapability {
   documentationUrl?: string;
   /**
    * Capabilities that deliver this safeguard another way. While one of them
-   * is in use, or cannot be read, this capability without evidence is not a
-   * gap (see CapabilityResult.alternative and README "Alternative capabilities").
+   * has assigned enforcing evidence, this capability without evidence is not
+   * a gap; while one cannot be read, it is a data gap (see
+   * CapabilityResult.alternative and README "Alternative capabilities").
    */
   alternativeTo?: readonly string[];
+  /**
+   * The capability cannot be turned on while an enabled or report-only
+   * Conditional Access policy exists (security defaults). It is then not
+   * applicable, and nothing is claimed as set up.
+   */
+  exclusiveWithConditionalAccess?: boolean;
 }
 
 /**
- * Why a capability without evidence is not a gap. `inUse`: an alternative has
- * evidence or a compared policy. `unknown`: an alternative could not be read.
+ * Why a capability without evidence is not an ordinary gap. `inUse`: an
+ * alternative is enforced or requirementAssigned; `capabilityIds` names only
+ * those. `notCombinable`: enabled or report-only Conditional Access policies
+ * exist, so the capability cannot be turned on; `capabilityIds` is empty.
+ * `unknown`: an alternative or the Conditional Access policies could not be
+ * read; a data gap.
  */
 export interface CapabilityAlternative {
-  state: "inUse" | "unknown";
+  state: "inUse" | "notCombinable" | "unknown";
   capabilityIds: string[];
 }
 
@@ -224,9 +233,10 @@ export interface CapabilityResult {
   limitations: string[];
   checks: TechnicalCheck[];
   /**
-   * Set only on a `noEvidence` capability with `alternativeTo`. It is then no
-   * next action, not counted as a safeguard and has no different or missing
-   * check result.
+   * Set only on a `noEvidence` capability with `alternativeTo` or
+   * `exclusiveWithConditionalAccess`. It is then no next action and has no
+   * different or missing check result. `inUse` and `notCombinable` are not
+   * counted as safeguards; `unknown` is counted and is a data gap.
    */
   alternative?: CapabilityAlternative;
 }

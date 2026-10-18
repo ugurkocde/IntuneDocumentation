@@ -24,7 +24,6 @@ type Retry = <T>(request: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
 const IDENTITY_ENDPOINTS: Record<TenantIdentityPolicyName, string> = {
   authenticationMethods: "/policies/authenticationMethodsPolicy",
   securityDefaults: "/policies/identitySecurityDefaultsEnforcementPolicy",
-  authorization: "/policies/authorizationPolicy",
 };
 
 function failure(error: unknown): {
@@ -68,13 +67,9 @@ export async function collectTenantIdentityPolicies(
       >
     ).map(async ([name, endpoint]) => {
       try {
-        const response = await retry(() =>
+        const policy = await retry(() =>
           client.api(endpoint).version("beta").get(),
         );
-        // Beta returns authorizationPolicy as a collection with one item.
-        const policy = Array.isArray(response?.value)
-          ? response.value[0]
-          : response;
         if (!policy || typeof policy !== "object")
           throw new Error("Graph returned no policy object");
         const rest: Record<string, unknown> = { ...policy };
@@ -314,7 +309,8 @@ export async function collectPolicyDeviceStatus(
             throw new Error(
               `The report did not end after ${MAX_REPORT_PAGES} pages`,
             );
-          const skip = pageIndex * REPORT_PAGE_SIZE;
+          // Skip what arrived, so a short page never leaves a hole.
+          const skip = received;
           const body = await bounded(() =>
             client
               .api(endpoint)
@@ -381,6 +377,14 @@ export async function collectPolicyDeviceStatus(
     })(),
   ]);
   clearTimeout(timer);
+  // Overlapping pages can repeat a policy; keep its first row per source.
+  const seen = new Set<string>();
+  result.rows = result.rows.filter((row) => {
+    const key = `${row.source}|${row.policyId.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   result.rows.sort(
     (left, right) =>
       left.source.localeCompare(right.source) ||

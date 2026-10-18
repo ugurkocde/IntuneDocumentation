@@ -9,7 +9,10 @@ import {
 } from "~/lib/desktop-app";
 import { getDesktopCheckoutUrl } from "~/lib/desktop-checkout";
 import { INSTALLS_PER_TENANT } from "~/lib/desktop-license/service";
-import { DEFAULT_SCOPES } from "../../../apps/desktop/src/shared/scopes";
+import {
+  DEFAULT_SCOPES,
+  SCOPE_REASONS,
+} from "../../../apps/desktop/src/shared/scopes";
 import { TOKEN_LIFETIME_SECONDS } from "~/lib/desktop-license/token";
 
 describe("desktop app constants", () => {
@@ -17,6 +20,16 @@ describe("desktop app constants", () => {
     expect(DESKTOP_GRAPH_PERMISSIONS.map((p) => p.scope)).toEqual(
       DEFAULT_SCOPES,
     );
+  });
+
+  it("names every Entra policy read with Policy.Read.All", () => {
+    const reason =
+      "Conditional Access policies, authentication methods and security defaults";
+    expect(SCOPE_REASONS["Policy.Read.All"]).toBe(reason);
+    expect(
+      DESKTOP_GRAPH_PERMISSIONS.find((p) => p.scope === "Policy.Read.All")
+        ?.reason,
+    ).toBe(`${reason}.`);
   });
 
   it("matches the licensing service limits", () => {

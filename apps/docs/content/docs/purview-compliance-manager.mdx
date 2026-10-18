@@ -37,13 +37,13 @@ That means Compliance Manager does not read:
 - Intune device compliance policies
 - Endpoint security policies
 
-It also does not show which Intune policy or which setting value satisfies a device control, because it never looks at that configuration.
+It also does not show which Intune policy or which setting value supports a device control, because it never looks at that configuration.
 
 ### What happens to device controls instead
 
 Controls that depend on device configuration are handled as customer managed work in Compliance Manager. Someone opens the improvement action, marks the status, and uploads evidence on the Evidence tab. Accepted evidence file types include `.pdf` and `.zip`. See [Storing evidence](https://learn.microsoft.com/purview/compliance-manager-improvement-actions#storing-evidence) on Microsoft Learn.
 
-In practice, an admin has to find the right Intune settings, prove their values, check that the policy is assigned, and package all of that as a file. Intune Documentation does that collection and packaging step.
+In practice, an admin has to find the right Intune settings, show their configured values, check that the policy is assigned, and package all of that as a file. Intune Documentation does that collection and packaging step.
 
 ## What Purview does better
 
@@ -121,7 +121,7 @@ Before you upload, check each control id in the index against the template versi
 
 In Compliance Manager, open the assessment, then open the improvement action for the device control. On the <Ui>Evidence</Ui> tab, use <Ui>Add evidence</Ui> and upload the evidence pack ZIP, or the framework PDF from it. The index in the pack says where each control is covered in the PDF. Repeat for each improvement action you are evidencing, then record the status your team decides on.
 
-Keep the rest of the pack, including the index and the register, with your assessment records. When the configuration changes, collect again, export a fresh pack, and replace or add the affected evidence. Local snapshot history in the desktop app helps you show what changed between the two packs.
+Keep the pack, including its index, and the register saved alongside it with your assessment records. When the configuration changes, collect again, export a fresh pack, and replace or add the affected evidence. Local snapshot history in the desktop app helps you show what changed between the two packs.
 
 </Step>
 </Steps>
@@ -157,7 +157,7 @@ Keep Compliance Manager as the assessment register, and use Intune Documentation
 
 No. Its automated testing comes from other Purview solutions, Microsoft Secure Score, Microsoft Defender for Cloud and connectors, including Salesforce, Zoom and Corporate Sustainability. There is no Intune connector, and Secure Score does not list Intune among its contributing products. See [Connectors in Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager-connectors) and [Microsoft Secure Score](https://learn.microsoft.com/defender-xdr/microsoft-secure-score).
 
-Because of that, Compliance Manager cannot tell you which Intune policy or setting satisfies a device control. That check happens in Intune Documentation, or by hand in the Intune admin center.
+Because of that, Compliance Manager cannot tell you which Intune policy or setting supports a device control. That check happens in Intune Documentation, or by hand in the Intune admin center.
 
 </Accordion>
 <Accordion title="Can the Purview evidence pack upload itself to Compliance Manager?" id="pack-upload">

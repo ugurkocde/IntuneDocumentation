@@ -61,14 +61,27 @@ function inPlaceCapabilityIds(
 }
 
 /**
- * Capabilities without evidence whose alternative is in use or unreadable.
- * They are not gaps, so they are neither safeguards to count nor next actions.
+ * Capabilities without evidence whose alternative is in use, or which cannot
+ * be combined with the Conditional Access policies that exist. They are not
+ * safeguards to count. An unreadable alternative stays counted, as a data gap.
  */
-function alternativeIds(capabilities: readonly CapabilityResult[]): Set<string> {
+function alternativeIds(
+  capabilities: readonly CapabilityResult[],
+): Set<string> {
   return new Set(
     capabilities
-      .filter((result) => result.alternative)
+      .filter(
+        (result) =>
+          result.alternative && result.alternative.state !== "unknown",
+      )
       .map((result) => result.capability.id),
+  );
+}
+
+function isDataGap(result: CapabilityResult): boolean {
+  return (
+    DATA_GAP_STATUSES.includes(result.status) ||
+    result.alternative?.state === "unknown"
   );
 }
 
@@ -105,12 +118,9 @@ export function computeMetrics(
   const mappedResults = capabilities.filter((result) =>
     mapped.has(result.capability.id),
   );
-  const distinctWith = (statuses: readonly CapabilityStatus[]) =>
-    new Set(
-      mappedResults
-        .filter((result) => statuses.includes(result.status))
-        .map((result) => result.capability.id),
-    ).size;
+  const distinctWhere = (keep: (result: CapabilityResult) => boolean) =>
+    new Set(mappedResults.filter(keep).map((result) => result.capability.id))
+      .size;
 
   const safeguards = safeguardCount(
     mapped,
@@ -126,7 +136,9 @@ export function computeMetrics(
       : null,
     withoutEvidence: noEvidence,
     conflicting,
-    unassignedConfigs: distinctWith(["configuredNotAssigned"]),
+    unassignedConfigs: distinctWhere(
+      (result) => result.status === "configuredNotAssigned",
+    ),
     outsideIntuneScope:
       totalRequirements === undefined
         ? null
@@ -134,7 +146,7 @@ export function computeMetrics(
             0,
             totalRequirements - fa.summary.totalControls - notEvaluated,
           ),
-    dataGaps: distinctWith(DATA_GAP_STATUSES),
+    dataGaps: distinctWhere(isDataGap),
     safeguardsTotal: safeguards.total,
     safeguardsInPlace: safeguards.inPlace,
     safeguardPct: safeguards.total
@@ -173,7 +185,9 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
   if (result.alternative)
     return result.alternative.state === "inUse"
       ? "alternativeInUse"
-      : "dataMissing";
+      : result.alternative.state === "notCombinable"
+        ? "notCombinable"
+        : "dataMissing";
   // Tenant-wide Entra settings are not policies that switch something off.
   if (
     result.status === "disabledByPolicy" &&
@@ -240,6 +254,7 @@ export function rankNextActions(
   for (const id of mappedCapabilityIds(fa)) {
     const result = resultById.get(id);
     // Never recommend a safeguard whose alternative is in use or unreadable,
+    // or which cannot be combined with existing Conditional Access policies,
     // such as security defaults in a Conditional Access tenant.
     if (result?.alternative) continue;
     // A non-enforcing value only switches a protection off where the policy

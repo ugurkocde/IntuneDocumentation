@@ -52,7 +52,8 @@ export interface ManagementMetrics {
   dataGaps: number;
   /**
    * Distinct safeguards (capabilities) mapped to the assessed controls,
-   * without capabilities whose alternative is in use or unreadable.
+   * without capabilities whose alternative is in use or which cannot be
+   * combined with existing Conditional Access policies.
    */
   safeguardsTotal: number;
   /** Safeguards configured and assigned (enforced or requirementAssigned). */
@@ -90,6 +91,11 @@ export type SafeguardState =
   | "notConfigured"
   /** Not needed: an alternative capability is in use (CapabilityResult.alternative). */
   | "alternativeInUse"
+  /**
+   * Not applicable: cannot be turned on while Conditional Access policies
+   * exist (security defaults). Claims nothing is set up.
+   */
+  | "notCombinable"
   | "dataMissing";
 
 export interface NextAction {

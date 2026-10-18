@@ -67,9 +67,11 @@ export async function createEvidenceManifest(
       })),
     }),
   ]);
-  // Schema 2 adds provenance.policyStatusSummary.
+  // Schema 2 adds provenance.policyStatusSummary. Schema 3 adds
+  // CapabilityResult.alternative (states inUse, notCombinable and unknown)
+  // and leaves its different or missing check results empty.
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     snapshotSha256,
     rulesetSha256,
     assessment:

@@ -160,6 +160,6 @@ export const DESKTOP_GRAPH_PERMISSIONS: readonly GraphPermission[] = [
   {
     scope: "Policy.Read.All",
     reason:
-      "Conditional Access policies, plus the tenant authentication methods policy and security defaults for evidence.",
+      "Conditional Access policies, authentication methods and security defaults.",
   },
 ];

@@ -136,6 +136,7 @@ const STATE_COLORS: Record<SafeguardState, RgbColor> = {
   notAssigned: [171, 95, 0],
   notConfigured: [100, 116, 139],
   alternativeInUse: [100, 116, 139],
+  notCombinable: [100, 116, 139],
   dataMissing: [196, 113, 31],
 };
 
@@ -150,6 +151,7 @@ const STATE_ORDER: readonly SafeguardState[] = [
   "notConfigured",
   "dataMissing",
   "alternativeInUse",
+  "notCombinable",
 ];
 
 const ALLOWED_LINK_HOSTS = new Set([

@@ -489,8 +489,9 @@ export function generateFixPack(
     const controls = controlIds(capability.id);
     if (options.frameworkId && !controls.length) continue;
     if (SKIPPED_STATUSES.has(status)) continue;
-    // Not a gap while an alternative is in use or unreadable (README
-    // "Alternative capabilities"), so it is neither a draft nor listed.
+    // No draft while an alternative is in use or unreadable, or the setting
+    // cannot be combined with Conditional Access (README "Alternative
+    // capabilities"), so it is neither a draft nor listed.
     if (result.alternative) continue;
     const gap = (reason: string) => gapFor(result, reason);
     const blocked = blocker(result);

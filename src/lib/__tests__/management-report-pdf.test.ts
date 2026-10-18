@@ -105,6 +105,7 @@ const OTHER_STATES: SafeguardState[] = [
   "dataMissing",
   "tenantSettingDiffers",
   "alternativeInUse",
+  "notCombinable",
 ];
 
 /** inPlace safeguards first in the input order is not assumed by the renderer. */

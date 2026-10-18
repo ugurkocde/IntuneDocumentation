@@ -49,37 +49,40 @@ function client(
 }
 
 describe("Entra tenant policy collection", () => {
-  it("reads the three policies and normalises the beta authorizationPolicy collection", async () => {
+  it("reads the two evaluated policies and never the authorization policy", async () => {
+    const calls: Array<{ path: string; body?: unknown }> = [];
     const result = await collectTenantIdentityPolicies(
-      client({
-        "/policies/authenticationMethodsPolicy": () => ({
-          "@odata.context": "https://graph.microsoft.com/beta/$metadata",
-          id: "authenticationMethodsPolicy",
-          authenticationMethodConfigurations: [],
-        }),
-        "/policies/identitySecurityDefaultsEnforcementPolicy": () => ({
-          id: "00000000-0000-0000-0000-000000000005",
-          isEnabled: false,
-        }),
-        "/policies/authorizationPolicy": () => ({
-          value: [{ id: "authorizationPolicy", allowInvitesFrom: "everyone" }],
-        }),
-      }),
+      client(
+        {
+          "/policies/authenticationMethodsPolicy": () => ({
+            "@odata.context": "https://graph.microsoft.com/beta/$metadata",
+            id: "authenticationMethodsPolicy",
+            authenticationMethodConfigurations: [],
+          }),
+          "/policies/identitySecurityDefaultsEnforcementPolicy": () => ({
+            id: "00000000-0000-0000-0000-000000000005",
+            isEnabled: false,
+          }),
+        },
+        calls,
+      ),
       passThrough,
     );
+    // The authorization policy is not evaluated, so it is not read: a 403 on
+    // it must never mark the identity collection partial.
+    expect(calls.map((call) => call.path).sort()).toEqual([
+      "/policies/authenticationMethodsPolicy",
+      "/policies/identitySecurityDefaultsEnforcementPolicy",
+    ]);
     expect(result.status).toEqual({
       authenticationMethods: "collected",
       securityDefaults: "collected",
-      authorization: "collected",
     });
     expect(result.errors).toBeUndefined();
+    expect(result).not.toHaveProperty("authorization");
     expect(result.authenticationMethods).toEqual({
       id: "authenticationMethodsPolicy",
       authenticationMethodConfigurations: [],
-    });
-    expect(result.authorization).toEqual({
-      id: "authorizationPolicy",
-      allowInvitesFrom: "everyone",
     });
   });
 
@@ -92,14 +95,12 @@ describe("Entra tenant policy collection", () => {
         "/policies/identitySecurityDefaultsEnforcementPolicy": () => {
           throw graphError(500, "Upstream failure");
         },
-        "/policies/authorizationPolicy": () => ({ value: [] }),
       }),
       passThrough,
     );
     expect(result.status).toEqual({
       authenticationMethods: "permissionDenied",
       securityDefaults: "failed",
-      authorization: "failed",
     });
     expect(result.authenticationMethods).toBeUndefined();
     expect(result.errors?.authenticationMethods).toContain("403");
@@ -326,6 +327,60 @@ describe("policy device status collection", () => {
     expect(result.sources.compliancePolicies).toBe("collected");
   });
 
+  it("skips by rows received and keeps one row per source and policy id", async () => {
+    const calls: Array<{ path: string; body?: any }> = [];
+    const result = await collectPolicyDeviceStatus(
+      client(
+        {
+          // The service returns shorter pages than requested.
+          [configuration]: (body) =>
+            page(
+              body.skip === 0
+                ? fullPage("cfg", 500)
+                : body.skip === 500
+                  ? [...fullPage("next", 199), ["CFG-0", "Repeated", 9]]
+                  : [],
+              700,
+            ),
+          [compliance]: () =>
+            page(
+              [
+                ["cmp-1", "Compliance", 1],
+                ["CMP-1", "Compliance again", 2],
+                // The same id in another source is another row.
+                ["cfg-0", "Compliance with a configuration id", 3],
+              ],
+              3,
+            ),
+          "/deviceManagement/deviceConfigurations": () => ({ value: [] }),
+        },
+        calls,
+      ),
+      passThrough,
+    );
+    expect(
+      calls
+        .filter((call) => call.path === configuration)
+        .map((call) => call.body.skip),
+    ).toEqual([0, 500]);
+    expect(result.sources.configurationPolicies).toBe("collected");
+    const configurationRows = result.rows.filter(
+      (row) => row.source === "configurationPolicies",
+    );
+    expect(configurationRows).toHaveLength(699);
+    expect(
+      configurationRows.find((row) => row.policyId.toLowerCase() === "cfg-0"),
+    ).toMatchObject({ policyId: "cfg-0", succeeded: 1 });
+    expect(
+      result.rows
+        .filter((row) => row.source === "compliancePolicies")
+        .map((row) => [row.policyId, row.succeeded]),
+    ).toEqual([
+      ["cmp-1", 1],
+      ["cfg-0", 3],
+    ]);
+  });
+
   it("marks a report failed when it returns fewer rows than its total", async () => {
     const result = await collectPolicyDeviceStatus(
       client({
@@ -532,11 +587,10 @@ describe("collector integration", () => {
       .mockResolvedValue(undefined);
     const full = await instance.getAllDetailedConfigurations(false);
     expect(identity).not.toHaveBeenCalled();
-    expect(Object.values(full.tenantIdentityPolicies.status)).toEqual([
-      "skipped",
-      "skipped",
-      "skipped",
-    ]);
+    expect(full.tenantIdentityPolicies.status).toEqual({
+      authenticationMethods: "skipped",
+      securityDefaults: "skipped",
+    });
     expect(status).toHaveBeenCalledOnce();
 
     const retry = await instance.getAllDetailedConfigurations(false, [

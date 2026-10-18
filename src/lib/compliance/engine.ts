@@ -56,7 +56,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.5";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.6";
 
 const TENANT_POLICY_FAMILY_KEYS = new Set(
   Object.values(TENANT_POLICY_FAMILIES),
@@ -711,24 +711,73 @@ export function assessCapabilities(
       ],
     };
   });
-  return applyAlternatives(results);
+  return applyAlternatives(
+    results,
+    conditionalAccessState(data, configurations),
+  );
+}
+
+/** Conditional Access states that prevent turning on security defaults. */
+const ACTIVE_CONDITIONAL_ACCESS_STATES = [
+  "enabled",
+  "enabledForReportingButNotEnforced",
+];
+
+/**
+ * Whether the collection shows an enabled or report-only Conditional Access
+ * policy (`active`), shows completely that none exists (`none`), or cannot
+ * tell (`unknown`: not collected, incomplete, no collection timestamp or a
+ * policy without a readable state).
+ */
+function conditionalAccessState(
+  data: ComplianceExportData,
+  configurations: readonly Record<string, any>[],
+): "active" | "none" | "unknown" {
+  const policies = configurations.filter(
+    (config) => config.__evidenceFamily === "conditionalAccessPolicies",
+  );
+  if (
+    policies.some((policy) =>
+      ACTIVE_CONDITIONAL_ACCESS_STATES.includes(policy.state),
+    )
+  )
+    return "active";
+  if (
+    !data.collectedAt ||
+    policies.some((policy) => policy.state !== "disabled") ||
+    buildCollectionCoverage(data, [], true).some(
+      (row) =>
+        row.family === "conditionalAccessPolicies" &&
+        (row.status === "incomplete" || row.status === "notCollected"),
+    )
+  )
+    return "unknown";
+  return "none";
 }
 
 /**
  * State of the alternatives of a capability without evidence. An alternative
- * is in use when it has evidence or compared a collected policy (a check with
- * a policy), and unknown when it could not be read. Outside scope and plainly
- * absent alternatives leave the capability a regular gap.
+ * is in use only with assigned enforcing evidence (enforced or
+ * requirementAssigned); report-only, disabled, unassigned or merely compared
+ * policies never count. A capability exclusive with Conditional Access is not
+ * combinable while an enabled or report-only policy exists. Unknown when an
+ * alternative or, for an exclusive capability, Conditional Access could not
+ * be read; unreadable values on unassigned (disabled or report-only) policies
+ * do not count. Outside scope and plainly absent alternatives leave the capability
+ * a regular gap.
  */
 function alternativeOf(
   result: CapabilityResult,
   byId: ReadonlyMap<string, CapabilityResult>,
+  conditionalAccess: "active" | "none" | "unknown",
 ): CapabilityResult["alternative"] {
+  const { alternativeTo = [], exclusiveWithConditionalAccess } =
+    result.capability;
   // Only a value that was read and compared counts; an unreadable capability
   // stays a data question of its own.
   if (
     result.status !== "noEvidence" ||
-    !result.capability.alternativeTo ||
+    (!alternativeTo.length && !exclusiveWithConditionalAccess) ||
     !result.checks.some(
       (check) =>
         check.assessmentStatus === "checked" &&
@@ -736,28 +785,36 @@ function alternativeOf(
     )
   )
     return undefined;
-  const alternatives = result.capability.alternativeTo
+  const alternatives = alternativeTo
     .map((id) => byId.get(id))
     .filter((item): item is CapabilityResult => Boolean(item))
     .filter((item) => item.status !== "notApplicable");
-  const inUse = alternatives.filter(
-    (item) =>
-      item.evidence.length > 0 || item.checks.some((check) => check.policyId),
-  );
+  const inUse = alternatives.filter((item) => hasAssignedEvidence(item.status));
   if (inUse.length)
     return {
       state: "inUse",
       capabilityIds: inUse.map((item) => item.capability.id),
     };
-  const unknown = alternatives.filter(
-    (item) =>
+  if (exclusiveWithConditionalAccess && conditionalAccess === "active")
+    return { state: "notCombinable", capabilityIds: [] };
+  const unknown = alternatives.filter((item) => {
+    if (
       item.status === "collectionIncomplete" ||
-      (item.checks.length > 0 &&
-        item.checks.every(
-          (check) => check.assessmentStatus === "unableToCheck",
-        )),
-  );
-  return unknown.length
+      item.status === "assignmentUnknown"
+    )
+      return true;
+    // A disabled or report-only policy cannot enforce the alternative, so its
+    // unreadable value leaves nothing open.
+    const relevant = item.checks.filter(
+      (check) => check.assignment?.state !== "notAssigned",
+    );
+    return (
+      relevant.length > 0 &&
+      relevant.every((check) => check.assessmentStatus === "unableToCheck")
+    );
+  });
+  return unknown.length ||
+    (exclusiveWithConditionalAccess && conditionalAccess === "unknown")
     ? {
         state: "unknown",
         capabilityIds: unknown.map((item) => item.capability.id),
@@ -765,22 +822,33 @@ function alternativeOf(
     : undefined;
 }
 
-// A capability whose alternative is in use is not a gap: its different and
-// missing comparisons keep their values but carry no result, so no tally,
-// next action or safeguard count treats it as missing (README "Alternative
+function alternativeReason(
+  alternative: NonNullable<CapabilityResult["alternative"]>,
+  byId: ReadonlyMap<string, CapabilityResult>,
+): string {
+  const names = alternative.capabilityIds
+    .map((id) => byId.get(id)!.capability.name)
+    .join(", ");
+  if (alternative.state === "inUse")
+    return `Not a gap: an alternative is configured and assigned in this tenant (${names}).`;
+  if (alternative.state === "notCombinable")
+    return "Not applicable while Conditional Access policies exist: this setting cannot be turned on while an enabled or report-only Conditional Access policy exists. Require MFA through Conditional Access instead.";
+  return `Not compared: whether this is needed depends on ${names || "the Conditional Access policies"}, which could not be read completely. Refresh the policies before acting on this value.`;
+}
+
+// A capability with an alternative state is no ordinary gap: its different
+// and missing comparisons keep their values but carry no result, so no tally,
+// next action or fix pack treats it as missing (README "Alternative
 // capabilities"). Alternatives are judged on the unchanged first pass.
-function applyAlternatives(results: CapabilityResult[]): CapabilityResult[] {
+function applyAlternatives(
+  results: CapabilityResult[],
+  conditionalAccess: "active" | "none" | "unknown",
+): CapabilityResult[] {
   const byId = new Map(results.map((result) => [result.capability.id, result]));
   return results.map((result) => {
-    const alternative = alternativeOf(result, byId);
+    const alternative = alternativeOf(result, byId, conditionalAccess);
     if (!alternative) return result;
-    const names = alternative.capabilityIds
-      .map((id) => byId.get(id)!.capability.name)
-      .join(", ");
-    const reason =
-      alternative.state === "inUse"
-        ? `Not a gap: an alternative is configured in this tenant (${names}).`
-        : `Not compared: whether this is needed depends on ${names}, which could not be read completely. Refresh the policies before acting on this value.`;
+    const reason = alternativeReason(alternative, byId);
     return {
       ...result,
       alternative,
@@ -789,9 +857,9 @@ function applyAlternatives(results: CapabilityResult[]): CapabilityResult[] {
           ? {
               ...check,
               assessmentStatus:
-                alternative.state === "inUse"
-                  ? check.assessmentStatus
-                  : ("unableToCheck" as const),
+                alternative.state === "unknown"
+                  ? ("unableToCheck" as const)
+                  : check.assessmentStatus,
               result: null,
               reason: check.reason ? `${reason} ${check.reason}` : reason,
             }

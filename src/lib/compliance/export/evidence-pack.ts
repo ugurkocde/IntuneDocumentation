@@ -1,14 +1,10 @@
 import JSZip from "jszip";
 import type { createEvidenceManifest } from "../manifest";
 import { CONTROL_STATUS_LABELS } from "../presentation";
-import type {
-  AssessmentScope,
-  ComplianceAssessment,
-  ControlStatus,
-} from "../types";
+import type { ComplianceAssessment, ControlStatus } from "../types";
 import { toCsv } from "./csv";
 import { purviewTemplateFor } from "./purview-templates";
-import { controlEvidenceCounts } from "./register";
+import { assessmentScopeText, controlEvidenceCounts } from "./register";
 
 export const NO_PURVIEW_TEMPLATE = "No Purview template";
 
@@ -67,22 +63,6 @@ const STATUS_NOTES: Partial<Record<ControlStatus, string>> = {
   notAssessed: "Not assessed, see the PDF for the reason.",
   noEvidence: "No policy evidence found for the mapped capabilities.",
 };
-
-function scopeText(assessment: ComplianceAssessment, frameworkId: string) {
-  const scope: AssessmentScope = assessment.scope;
-  const parts = [
-    scope.platforms?.length
-      ? `platforms ${scope.platforms.join(", ")}`
-      : "all supported platforms",
-  ];
-  if (frameworkId === "essential-eight")
-    parts.push(
-      `target Maturity Level ${scope.essentialEightMaturityLevel ?? 1}`,
-    );
-  if (scope.defStanRiskLevel !== undefined)
-    parts.push(`Def Stan risk level ${scope.defStanRiskLevel}`);
-  return parts.join("; ");
-}
 
 /**
  * ZIP for Purview Compliance Manager: the framework evidence PDF, the JSON
@@ -162,7 +142,7 @@ export async function buildEvidencePack(
     "WHAT THIS IS",
     `Technical evidence from the Intune configuration of ${meta.tenant ?? "the tenant"} for ${frameworkLabel}.`,
     `Collected at: ${assessment.provenance.collectedAt ?? "not recorded"}`,
-    `Scope: ${scopeText(assessment, frameworkId)}`,
+    `Scope: ${assessmentScopeText(assessment.scope, [frameworkId])}`,
     `Ruleset version: ${assessment.provenance.rulesetVersion}`,
     `Generated at: ${generatedAt}`,
     "",

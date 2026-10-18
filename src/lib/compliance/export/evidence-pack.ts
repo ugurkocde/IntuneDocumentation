@@ -1,0 +1,196 @@
+import JSZip from "jszip";
+import type { createEvidenceManifest } from "../manifest";
+import { CONTROL_STATUS_LABELS } from "../presentation";
+import type { AssessmentScope, ComplianceAssessment } from "../types";
+import { toCsv } from "./csv";
+import { purviewTemplateFor } from "./purview-templates";
+import { controlEvidence } from "./register";
+
+export const NO_PURVIEW_TEMPLATE = "No Purview template";
+
+export type EvidenceManifest = Awaited<
+  ReturnType<typeof createEvidenceManifest>
+>;
+
+export interface EvidencePackMeta {
+  /** The framework evidence PDF from generateComplianceReportPDF. */
+  reportPdf: Uint8Array;
+  reportFileName: string;
+  /** Name of the JSON evidence record; defaults to evidence-record.json. */
+  recordFileName?: string;
+  tenant?: string;
+  generatedAt?: string | Date;
+}
+
+const UMLAUTS: Readonly<Record<string, string>> = {
+  ä: "ae",
+  ö: "oe",
+  ü: "ue",
+  Ä: "Ae",
+  Ö: "Oe",
+  Ü: "Ue",
+  ß: "ss",
+};
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
+
+/**
+ * A file name that is valid on Windows, macOS and Linux: German umlauts are
+ * transliterated, other accents dropped, anything outside letters, digits,
+ * dot, hyphen and underscore replaced, and reserved device names prefixed.
+ */
+export function safeFileName(name: string, fallback = "file"): string {
+  const dot = name.lastIndexOf(".");
+  const extension =
+    dot > 0 && /^\.[A-Za-z0-9]{1,8}$/.test(name.slice(dot))
+      ? name.slice(dot).toLowerCase()
+      : "";
+  const stem = (extension ? name.slice(0, dot) : name)
+    .replace(/[äöüÄÖÜß]/g, (letter) => UMLAUTS[letter] ?? letter)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036F]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^[_.\s-]+|[_.\s]+$/g, "")
+    .slice(0, 120)
+    .replace(/[_.\s]+$/g, "");
+  const safe = stem || fallback;
+  return `${WINDOWS_RESERVED.test(safe) ? `_${safe}` : safe}${extension}`;
+}
+
+function scopeText(assessment: ComplianceAssessment, frameworkId: string) {
+  const scope: AssessmentScope = assessment.scope;
+  const parts = [
+    scope.platforms?.length
+      ? `platforms ${scope.platforms.join(", ")}`
+      : "all supported platforms",
+  ];
+  if (frameworkId === "essential-eight")
+    parts.push(
+      `target Maturity Level ${scope.essentialEightMaturityLevel ?? 1}`,
+    );
+  if (scope.defStanRiskLevel !== undefined)
+    parts.push(`Def Stan risk level ${scope.defStanRiskLevel}`);
+  return parts.join("; ");
+}
+
+/**
+ * ZIP for Purview Compliance Manager: the framework evidence PDF, the JSON
+ * evidence record, index.csv and README.txt. The PDF and the record are
+ * produced by the caller; `assessment` is normally `manifest.assessment`.
+ */
+export async function buildEvidencePack(
+  assessment: ComplianceAssessment,
+  manifest: EvidenceManifest,
+  frameworkId: string,
+  meta: EvidencePackMeta,
+): Promise<Uint8Array> {
+  const framework = assessment.frameworks.find(
+    (item) => item.framework.id === frameworkId,
+  );
+  if (!framework)
+    throw new Error(`Unknown compliance framework: ${frameworkId}`);
+  const capabilities = new Map(
+    assessment.capabilities.map((result) => [result.capability.id, result]),
+  );
+  const generatedAt = new Date(
+    meta.generatedAt ?? assessment.generatedAt,
+  ).toISOString();
+  const template = purviewTemplateFor(frameworkId, assessment.scope);
+  const frameworkLabel = `${framework.framework.name} ${framework.framework.version}`;
+  // The forced extensions keep both names distinct from README.txt and index.csv.
+  const pdfName = safeFileName(meta.reportFileName, "evidence-report").replace(
+    /(\.pdf)?$/i,
+    ".pdf",
+  );
+  const recordName = safeFileName(
+    meta.recordFileName ?? "evidence-record.json",
+    "evidence-record",
+  ).replace(/(\.json)?$/i, ".json");
+
+  const index = [
+    [
+      "Framework",
+      "Purview template",
+      "Control ID",
+      "Control title",
+      "Status",
+      "Evidence count",
+      "Where to find it",
+      "Note",
+    ],
+    ...framework.controls.map((control) => {
+      const evidenceCount = controlEvidence(control, capabilities).length;
+      const note = [
+        control.status === "notApplicable"
+          ? "Outside the selected scope."
+          : evidenceCount
+            ? undefined
+            : "No policy evidence found for the mapped capabilities.",
+        template?.note,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return [
+        frameworkLabel,
+        template?.displayName ?? NO_PURVIEW_TEMPLATE,
+        control.control.id,
+        control.control.title,
+        CONTROL_STATUS_LABELS[control.status],
+        evidenceCount,
+        `${pdfName}, section for control ${control.control.id}`,
+        note,
+      ];
+    }),
+  ];
+
+  const readme = [
+    "Intune Documentation evidence pack",
+    "",
+    "WHAT THIS IS",
+    `Technical evidence from the Intune configuration of ${meta.tenant ?? "the tenant"} for ${frameworkLabel}.`,
+    `Collected at: ${assessment.provenance.collectedAt ?? "not recorded"}`,
+    `Scope: ${scopeText(assessment, frameworkId)}`,
+    `Ruleset version: ${assessment.provenance.rulesetVersion}`,
+    `Generated at: ${generatedAt}`,
+    "",
+    "Files in this pack:",
+    `- ${pdfName}: the evidence report for every control, with checks, evidence and limitations.`,
+    `- ${recordName}: the machine readable evidence record with snapshot and ruleset fingerprints.`,
+    "- index.csv: every control with its status, evidence count and where to find it in the PDF.",
+    "- README.txt: this file.",
+    "",
+    "This is evidence, not a compliance verdict. Whether a control is met is decided in your assessment.",
+    assessment.disclaimer,
+    "",
+    "PURVIEW COMPLIANCE MANAGER TEMPLATE",
+    template
+      ? `Template: ${template.displayName}`
+      : `${NO_PURVIEW_TEMPLATE}. Purview Compliance Manager lists no template for this framework. Keep this pack with your own audit records.`,
+    ...(template?.note ? [template.note] : []),
+    "",
+    "HOW TO ATTACH THE EVIDENCE IN PURVIEW COMPLIANCE MANAGER",
+    "1. In the Microsoft Purview portal, open Compliance Manager and open the assessment that uses the template above.",
+    "2. Open the improvement action related to the control. index.csv lists the control IDs.",
+    "3. Open the Evidence tab.",
+    "4. Select Add evidence, then Document.",
+    `5. Choose this ZIP file or ${pdfName}.`,
+    "6. Select Done.",
+    "Purview accepts .pdf and .zip files as document evidence. Its list of accepted file types does not include .csv or .json, so attach the ZIP or the PDF.",
+    "",
+    "CONTROL IDS",
+    "Control IDs are as published by the regulation. A Purview template can number, split or group controls differently, so check each ID against the controls of the template in your tenant before you attach evidence.",
+    "",
+    "INTEGRITY",
+    `Snapshot SHA-256: ${manifest.snapshotSha256}`,
+    `Ruleset SHA-256: ${manifest.rulesetSha256}`,
+    "",
+  ].join("\r\n");
+
+  const date = new Date(generatedAt);
+  const zip = new JSZip();
+  zip.file("README.txt", readme, { date });
+  zip.file("index.csv", toCsv(index, { bom: true }), { date });
+  zip.file(pdfName, meta.reportPdf, { date, binary: true });
+  zip.file(recordName, JSON.stringify(manifest, null, 2), { date });
+  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}

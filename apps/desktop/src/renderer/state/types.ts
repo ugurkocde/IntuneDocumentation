@@ -17,6 +17,8 @@ export type Screen =
   | "overview"
   | "searchSettings"
   | "history"
+  | "compare"
+  | "portfolio"
   | "section"
   | "compliance"
   | "export"

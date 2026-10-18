@@ -173,7 +173,8 @@ function targetLabel(
   target: Record<string, unknown>,
   groupNames: Readonly<Record<string, string>>,
 ): string {
-  const type = String(target["@odata.type"] ?? "")
+  const odataType = target["@odata.type"];
+  const type = (typeof odataType === "string" ? odataType : "")
     .replace(/^#?(microsoft\.graph\.)?/, "")
     .toLowerCase();
   const groupId = typeof target.groupId === "string" ? target.groupId : "";
@@ -210,7 +211,7 @@ function assignmentsOf(
     const filterType = target.deviceAndAppManagementAssignmentFilterType;
     const filter =
       typeof filterId === "string" && filterId && filterType !== "none"
-        ? `, filter ${String(filterType ?? "unknown")} ${filterId}`
+        ? `, filter ${typeof filterType === "string" ? filterType : "unknown"} ${filterId}`
         : "";
     const intent = typeof entry.intent === "string" ? `${entry.intent}: ` : "";
     const key = [
@@ -220,7 +221,7 @@ function assignmentsOf(
       filterType,
       entry.intent,
     ]
-      .map((part) => String(part ?? ""))
+      .map((part) => (typeof part === "string" ? part : ""))
       .join("|");
     result.set(key, `${intent}${targetLabel(target, groupNames)}${filter}`);
   }
@@ -439,6 +440,10 @@ export interface EvidenceRef {
   observedValue: string;
   verdict: StoredEvidence["verdict"];
   assignment: StoredEvidence["assignment"];
+  // Readable names from the setting definitions stored with the snapshots,
+  // when the values are Settings Catalog ids.
+  settingName?: string;
+  valueLabel?: string;
 }
 
 export interface CheckChange {
@@ -691,3 +696,82 @@ export function capControlChanges(
     })),
   }));
 }
+
+// --- Readable names -----------------------------------------------------------
+
+export interface DefinitionLabels {
+  settings: Map<string, string>;
+  options: Map<string, string>;
+}
+
+function collectDefinitions(value: unknown, labels: DefinitionLabels): void {
+  if (!Array.isArray(value)) return;
+  for (const setting of value) {
+    if (!setting || typeof setting !== "object") continue;
+    const record = setting as Record<string, unknown>;
+    for (const definition of Array.isArray(record.settingDefinitions)
+      ? record.settingDefinitions
+      : []) {
+      if (!definition || typeof definition !== "object") continue;
+      const entry = definition as Record<string, unknown>;
+      if (typeof entry.id === "string" && typeof entry.displayName === "string")
+        labels.settings.set(entry.id, entry.displayName);
+      for (const option of Array.isArray(entry.options) ? entry.options : []) {
+        const item = (option ?? {}) as Record<string, unknown>;
+        const name = item.displayName ?? item.name;
+        if (typeof item.itemId === "string" && typeof name === "string" && name)
+          labels.options.set(item.itemId, name);
+      }
+    }
+  }
+}
+
+// Setting and option names from the Settings Catalog definitions stored with
+// the snapshots; later snapshots win.
+export function definitionLabels(
+  ...projections: readonly SnapshotProjection[]
+): DefinitionLabels {
+  const labels: DefinitionLabels = { settings: new Map(), options: new Map() };
+  for (const projection of projections)
+    for (const section of projection.sections)
+      for (const item of section.items) {
+        collectDefinitions(item.data.settings, labels);
+        for (const category of Array.isArray(item.data.categories)
+          ? item.data.categories
+          : [])
+          collectDefinitions(
+            (category as Record<string, unknown> | null)?.settings,
+            labels,
+          );
+      }
+  return labels;
+}
+
+function labelRef(ref: EvidenceRef, labels: DefinitionLabels): EvidenceRef {
+  const settingName = labels.settings.get(ref.settingId);
+  const valueLabel = labels.options.get(ref.observedValue);
+  return {
+    ...ref,
+    ...(settingName ? { settingName } : {}),
+    ...(valueLabel ? { valueLabel } : {}),
+  };
+}
+
+// Adds readable names to the evidence lines of control changes, the way the
+// policy changes show option names instead of option ids.
+export function labelControlChanges(
+  changes: readonly ControlStatusChange[],
+  labels: DefinitionLabels,
+): ControlStatusChange[] {
+  return changes.map((change) => ({
+    ...change,
+    causes: change.causes.map((cause) => ({
+      ...cause,
+      evidenceAdded: cause.evidenceAdded.map((ref) => labelRef(ref, labels)),
+      evidenceRemoved: cause.evidenceRemoved.map((ref) =>
+        labelRef(ref, labels),
+      ),
+    })),
+  }));
+}
+

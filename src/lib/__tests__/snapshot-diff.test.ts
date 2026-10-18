@@ -7,7 +7,9 @@ import { assessCompliance } from "~/lib/compliance/engine";
 import {
   capControlChanges,
   capSnapshotDiff,
+  definitionLabels,
   diffAssessments,
+  labelControlChanges,
   diffSnapshots,
   type PolicyChange,
 } from "~/lib/snapshots/diff";
@@ -501,3 +503,76 @@ describe("diffAssessments", () => {
         expect(ref.observedValue.length).toBeLessThanOrEqual(8);
   });
 });
+
+describe("readable names for control evidence", () => {
+  const BITLOCKER = "device_vendor_msft_bitlocker_requiredeviceencryption";
+
+  function withDefinitions(): DetailedExportData {
+    const data = contoso();
+    const policy = items(data, "settingsCatalog").find((item) =>
+      JSON.stringify(item).includes(BITLOCKER),
+    )!;
+    for (const setting of policy.settings as Item[]) {
+      if (setting.settingInstance?.settingDefinitionId !== BITLOCKER) continue;
+      setting.settingDefinitions = [
+        {
+          id: BITLOCKER,
+          displayName: "Require Device Encryption (stored)",
+          options: [
+            { itemId: `${BITLOCKER}_0`, displayName: "Disabled (stored)" },
+            { itemId: `${BITLOCKER}_1`, name: "Enabled (stored)" },
+          ],
+        },
+      ];
+    }
+    return data;
+  }
+
+  it("collects setting and option names from the stored definitions", () => {
+    const labels = definitionLabels(snap(withDefinitions()));
+    expect(labels.settings.get(BITLOCKER)).toBe("Require Device Encryption (stored)");
+    expect(labels.options.get(`${BITLOCKER}_1`)).toBe("Enabled (stored)");
+  });
+
+  it("labels evidence lines of control changes and keeps the raw values", () => {
+    const ref = (settingId: string, observedValue: string) => ({
+      policyName: "WIN - Baseline - BitLocker",
+      settingId,
+      observedValue,
+      verdict: "enforced" as const,
+      assignment: "assigned" as const,
+    });
+    const changes = [
+      {
+        controlId: "SC-28",
+        title: "Protection of information at rest",
+        before: "noEvidence" as const,
+        after: "evidenceFound" as const,
+        mappingChanged: false,
+        causes: [
+          {
+            capabilityId: "windows-disk-encryption",
+            name: "BitLocker",
+            before: "noEvidence" as const,
+            after: "enforced" as const,
+            evidenceAdded: [ref(BITLOCKER, `${BITLOCKER}_1`), ref("unknown_setting", "unknown_setting_1")],
+            evidenceRemoved: [ref(BITLOCKER, `${BITLOCKER}_0`)],
+            checksChanged: [],
+          },
+        ],
+      },
+    ];
+    const labelled = labelControlChanges(changes, definitionLabels(snap(withDefinitions())));
+    const cause = labelled[0]!.causes[0]!;
+    expect(cause.evidenceAdded[0]).toMatchObject({
+      settingName: "Require Device Encryption (stored)",
+      valueLabel: "Enabled (stored)",
+      observedValue: `${BITLOCKER}_1`,
+    });
+    expect(cause.evidenceRemoved[0]).toMatchObject({ valueLabel: "Disabled (stored)" });
+    const refs = [...cause.evidenceAdded, ...cause.evidenceRemoved];
+    // Unknown ids stay unlabelled.
+    expect(refs.some((entry) => entry.settingId !== BITLOCKER && entry.valueLabel)).toBe(false);
+  });
+});
+

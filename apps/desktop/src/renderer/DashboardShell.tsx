@@ -2,11 +2,13 @@ import { useEffect, useRef } from "react";
 import { CollectionStatusToast } from "./components/collection/CollectionStatusToast";
 import { Sidebar } from "./components/layout/Sidebar";
 import { isMac } from "./lib/ipc";
+import { CompareScreen } from "./screens/CompareScreen";
 import { ComplianceScreen } from "./screens/ComplianceScreen";
 import { ExportScreen } from "./screens/ExportScreen";
 import { HistoryScreen } from "./screens/HistoryScreen";
 import { LicenseScreen } from "./screens/LicenseScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
+import { PortfolioScreen } from "./screens/PortfolioScreen";
 import { SearchSettingsScreen } from "./screens/SearchSettingsScreen";
 import { SectionDetailScreen } from "./screens/SectionDetailScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -34,6 +36,8 @@ export function DashboardShell() {
             {screen === "overview" && <OverviewScreen />}
             {screen === "searchSettings" && <SearchSettingsScreen />}
             {screen === "history" && <HistoryScreen />}
+            {screen === "compare" && <CompareScreen />}
+            {screen === "portfolio" && <PortfolioScreen />}
             {screen === "section" && <SectionDetailScreen />}
             {screen === "compliance" && <ComplianceScreen />}
             {screen === "export" && <ExportScreen />}

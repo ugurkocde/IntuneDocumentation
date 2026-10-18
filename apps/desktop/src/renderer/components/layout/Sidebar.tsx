@@ -1,7 +1,9 @@
 import {
+  Building2,
   ChevronDown,
   ChevronRight,
   Download,
+  GitCompareArrows,
   History,
   KeyRound,
   LayoutGrid,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { ScheduleStatus } from "../../../shared/ipc-types";
 import { useAsyncAction } from "../../hooks/use-async-action";
 import { ipc, isMac } from "../../lib/ipc";
 import { FAMILIES, familyCounts } from "../../lib/section-catalog";
@@ -259,6 +262,34 @@ export function Sidebar() {
   const licenseKind = licenseView(state).kind;
   const licenseNeedsAction = licenseKind === "none" || licenseKind === "offline" || licenseKind === "saved";
   const busy = busyBlocker(state);
+  const msp = state.license?.plan === "msp";
+
+  // A scheduled collection runs in main; once one finishes, the store picks
+  // it up. The status at mount is the baseline, so only a later run counts.
+  const lastRun = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    const seen = (status: ScheduleStatus) => {
+      const previous = lastRun.current;
+      lastRun.current = status.lastRunAt;
+      return previous !== undefined && status.lastResult === "collected" && status.lastRunAt !== previous;
+    };
+    void ipc
+      .historyScheduleStatus()
+      .then((status) => {
+        if (active && lastRun.current === undefined) seen(status);
+      })
+      .catch(() => {
+        if (active && lastRun.current === undefined) lastRun.current = null;
+      });
+    const unsubscribe = ipc.onScheduleStatus((status) => {
+      if (seen(status)) void actions.syncCollection();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [actions]);
 
   return (
     <aside
@@ -326,6 +357,13 @@ export function Sidebar() {
               icon={History}
               label="History"
               onClick={() => actions.navigate("history")}
+            />
+            <NavButton
+              isOpen={isOpen}
+              active={screen === "compare"}
+              icon={GitCompareArrows}
+              label="Compare"
+              onClick={() => actions.navigate("compare")}
             />
             <NavButton
               isOpen={isOpen}
@@ -406,6 +444,15 @@ export function Sidebar() {
               label="License and account"
               badge={licenseNeedsAction ? { text: "Set up", tone: "amber" } : undefined}
               onClick={() => actions.navigate("license")}
+            />
+            <NavButton
+              isOpen={isOpen}
+              active={screen === "portfolio"}
+              icon={Building2}
+              label="Portfolio"
+              // Visible on every plan, so the screen can explain the MSP plan.
+              badge={msp ? undefined : { text: "MSP", tone: "teal" }}
+              onClick={() => actions.navigate("portfolio")}
             />
             <NavButton
               isOpen={isOpen}

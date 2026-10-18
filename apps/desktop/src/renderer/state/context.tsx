@@ -180,6 +180,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           autoUpdate: false,
           checkForUpdates: true,
           keepHistory: false,
+          scheduleHours: 0,
         }));
       const [auth, license, appInfo, update] = await Promise.all([
         settings.clientId ? ipc.authStatus().catch(() => null) : null,

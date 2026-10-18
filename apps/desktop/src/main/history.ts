@@ -1,9 +1,13 @@
+import type { ControlStatus } from "../../../../src/lib/compliance/types";
 import {
   capControlChanges,
   capSnapshotDiff,
+  definitionLabels,
   diffAssessments,
   diffSnapshots,
+  labelControlChanges,
   type AssessmentDiff,
+  type DefinitionLabels,
   type SnapshotDiff,
 } from "../../../../src/lib/snapshots/diff";
 import type { SnapshotProjection } from "../../../../src/lib/snapshots/projection";
@@ -11,6 +15,7 @@ import type {
   HistoryDiffRequest,
   HistoryDiffView,
   HistoryEntry,
+  ManagementReportChanges,
 } from "../shared/ipc-types";
 
 export const SNAPSHOT_ID_PATTERN = /^\d{8}T\d{6}Z-[0-9a-f]{8}$/;
@@ -73,6 +78,8 @@ export function pickPair(
 export interface ComparedSnapshots {
   snapshots: SnapshotDiff;
   assessments: AssessmentDiff;
+  // Setting and option names for the control evidence lines.
+  labels?: DefinitionLabels;
 }
 
 export function compareProjections(
@@ -82,6 +89,7 @@ export function compareProjections(
   return {
     snapshots: diffSnapshots(from, to),
     assessments: diffAssessments(from.assessment, to.assessment),
+    labels: definitionLabels(from, to),
   };
 }
 
@@ -115,8 +123,72 @@ export function historyDiffView(
         changed: framework.changes.length,
       })),
       frameworkId: selected?.id ?? null,
-      changes: capControlChanges(selected?.changes ?? []),
+      changes: labelControlChanges(
+        capControlChanges(selected?.changes ?? []),
+        compared.labels ?? { settings: new Map(), options: new Map() },
+      ),
       total: selected?.changes.length ?? 0,
     },
   };
 }
+
+// The newest snapshot collected before the given time: the earlier side of
+// the management report's change section. Entries are newest first.
+export function previousSnapshot(
+  entries: readonly HistoryEntry[],
+  collectedAt: string,
+): HistoryEntry | null {
+  const current = Date.parse(collectedAt);
+  if (Number.isNaN(current)) return null;
+  return entries.find((entry) => Date.parse(entry.collectedAt) < current) ?? null;
+}
+
+const HAS_EVIDENCE: ReadonlySet<ControlStatus | null> = new Set<ControlStatus | null>([
+  "evidenceFound",
+  "partialEvidence",
+]);
+
+// Counts and control status changes of one framework for the management
+// panel and report. No policy names or values, like the rest of the report.
+export function managementChanges(
+  from: Pick<SnapshotProjection, "collectedAt" | "partial">,
+  to: Pick<SnapshotProjection, "collectedAt" | "partial">,
+  compared: ComparedSnapshots,
+  frameworkId: string,
+): ManagementReportChanges {
+  const { totals } = compared.snapshots;
+  const framework = compared.assessments.frameworks.find(
+    (entry) => entry.id === frameworkId,
+  );
+  const controls = (framework?.changes ?? []).map((change) => ({
+    id: change.controlId,
+    before: change.before,
+    after: change.after,
+  }));
+  return {
+    since: from.collectedAt,
+    until: to.collectedAt,
+    policies: {
+      added: totals.added,
+      removed: totals.removed,
+      renamed: totals.renamed,
+      changed: totals.changed,
+      settingChanges: totals.settingChanges,
+      assignmentChanges: totals.assignmentChanges,
+      notComparedFamilies: totals.notComparedFamilies,
+      notComparedItems: totals.notComparedItems,
+    },
+    controls,
+    improved: controls.filter(
+      (control) => !HAS_EVIDENCE.has(control.before) && HAS_EVIDENCE.has(control.after),
+    ).length,
+    regressed: controls.filter(
+      (control) => HAS_EVIDENCE.has(control.before) && !HAS_EVIDENCE.has(control.after),
+    ).length,
+    rulesetChanged: compared.assessments.rulesetChanged,
+    fromRuleset: compared.assessments.fromRuleset,
+    toRuleset: compared.assessments.toRuleset,
+    partial: from.partial || to.partial,
+  };
+}
+

@@ -301,3 +301,69 @@ describe("SnapshotStore", () => {
     expect(await history.list(TENANT)).toEqual([]);
   });
 });
+
+describe("SnapshotStore tenants and labels", () => {
+  it("lists every stored tenant from the index without decrypting snapshots", async () => {
+    const target = store();
+    await target.save(TENANT, projection("A"), guard(target));
+    clock += DAY;
+    const latest = await target.save(TENANT, projection("B"), guard(target));
+    await target.save(OTHER, projection("C"), guard(target));
+    // A damaged snapshot file does not matter: only the index is read.
+    for (const file of snapshotFiles()) writeFileSync(file, "damaged");
+    const reopened = store();
+    const tenants = await reopened.tenants();
+    expect(tenants.map((entry) => entry.tenantId).sort()).toEqual([OTHER, TENANT].sort());
+    const own = tenants.find((entry) => entry.tenantId === TENANT)!;
+    expect(own).toMatchObject({ label: null, snapshots: 2 });
+    expect(own.latest?.id).toBe(latest!.id);
+    expect(own.latest?.frameworks.length).toBeGreaterThan(0);
+    expect(own.latest?.frameworks[0]).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+        totalControls: expect.any(Number),
+        withEvidence: expect.any(Number),
+        applicableControls: expect.any(Number),
+      }),
+    );
+    await expect(reopened.read(TENANT, latest!.id)).rejects.toThrow();
+  });
+
+  it("returns nothing before any history was saved", async () => {
+    expect(await store().tenants()).toEqual([]);
+  });
+
+  it("stores a label in the encrypted index and removes it when empty", async () => {
+    const target = store();
+    await target.save(TENANT, projection(), guard(target));
+    await target.setLabel(TENANT, "  Contoso Retail  ");
+    expect((await store().tenants())[0]!.label).toBe("Contoso Retail");
+    const text = allFiles(dir).map((file) => readFileSync(file).toString("latin1")).join("");
+    expect(text).not.toContain("Contoso Retail");
+    await target.setLabel(TENANT, "");
+    expect((await store().tenants())[0]!.label).toBeNull();
+  });
+
+  it("refuses a label for a tenant without history or a label that is too long", async () => {
+    const target = store();
+    await target.save(TENANT, projection(), guard(target));
+    await expect(target.setLabel(OTHER, "Fabrikam")).rejects.toThrow(
+      "This tenant has no history on this computer.",
+    );
+    await expect(target.setLabel(TENANT, "x".repeat(61))).rejects.toThrow("too long");
+    await expect(target.setLabel("not-a-tenant", "Fabrikam")).rejects.toThrow("Unknown tenant.");
+  });
+
+  it("keeps the label when the last snapshot is deleted and drops it with the tenant", async () => {
+    const target = store();
+    const entry = await target.save(TENANT, projection(), guard(target));
+    await target.setLabel(TENANT, "Contoso");
+    await target.delete(TENANT, entry!.id);
+    expect(await target.tenants()).toEqual([
+      { tenantId: TENANT, label: "Contoso", snapshots: 0, latest: null },
+    ]);
+    await target.deleteTenant(TENANT);
+    expect(await target.tenants()).toEqual([]);
+  });
+});
+

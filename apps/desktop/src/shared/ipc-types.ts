@@ -9,6 +9,9 @@ import type {
   ComplianceCapability,
   ControlAssessment,
   FrameworkAssessment,
+  PolicyDeviceStatusRow,
+  PolicyStatusSource,
+  TenantPolicyCollectionStatus,
 } from "../../../../src/lib/compliance/types";
 import type {
   BaselineDelta,
@@ -23,6 +26,15 @@ import type {
   PolicyChange,
   SnapshotDiffTotals,
 } from "../../../../src/lib/snapshots/diff";
+import type { ManagementReportChanges } from "../../../../src/lib/compliance/management/management-report-pdf";
+import type {
+  CompareGroup,
+  ComparisonCounts,
+  NotComparedSettingsFamily,
+} from "../../../../src/lib/snapshots/reference-types";
+
+// Scheduled collection interval in hours; 0 is off.
+export type ScheduleHours = 0 | 6 | 12 | 24;
 
 export interface AppSettings {
   clientId: string;
@@ -30,6 +42,7 @@ export interface AppSettings {
   autoUpdate: boolean;
   checkForUpdates: boolean;
   keepHistory: boolean;
+  scheduleHours: ScheduleHours;
 }
 
 // The app registration fields Settings and the setup wizard save together.
@@ -313,6 +326,34 @@ export interface ComplianceReportProgress {
   stage: "groups" | "generating" | "saving";
 }
 
+// The evidence register: CSV holds the Checks table, Excel every sheet.
+export type ComplianceRegisterFormat = "csv" | "xlsx";
+
+// What a draft fix pack would contain, shown before it is saved.
+export interface FixPackPreview {
+  summary: { draftPolicies: number; notGeneratable: number };
+  policies: Array<{ fileName: string; name: string; capabilityId: string }>;
+  notGeneratable: Array<{ capabilityId: string; name: string; reason: string }>;
+}
+
+export type PolicyDeviceStatusCounts = Pick<
+  PolicyDeviceStatusRow,
+  "succeeded" | "error" | "conflict" | "notApplicable" | "pending"
+>;
+
+// Intune's device status counts for the items of one collected section.
+// Context only: never used for an evidence status. A missing row means Intune
+// reported no status for the policy, never a count of zero.
+export interface PolicyDeviceStatusView {
+  source: PolicyStatusSource;
+  sourceLabel: string;
+  state: TenantPolicyCollectionStatus;
+  error: string | null;
+  collectedAt: string | null;
+  // Keyed by the section item id.
+  rows: Record<string, PolicyDeviceStatusCounts>;
+}
+
 // One stored snapshot of the signed in tenant.
 export interface HistoryEntry {
   id: string;
@@ -360,6 +401,102 @@ export interface HistoryDiffView {
     // Changes of the selected framework before capping.
     total: number;
   };
+}
+
+export type { ManagementReportChanges };
+
+// The management panel's "Changes since" section. none says why there is
+// nothing to show: history cannot be read, no earlier snapshot of this
+// tenant, or the selected scope differs from the stored full scope.
+export type ManagementChangesResult =
+  | { state: "ready"; changes: ManagementReportChanges }
+  | { state: "none"; reason: "unavailable" | "noSnapshot" | "scope" };
+
+export interface ScheduleStatus {
+  hours: ScheduleHours;
+  // paused: due runs wait until the reason is resolved.
+  state: "off" | "waiting" | "running" | "paused";
+  reason: string | null;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastResult: "collected" | "failed" | null;
+  lastError: string | null;
+  lastSkippedAt: string | null;
+  lastSkippedReason: string | null;
+}
+
+// A reference file loaded for comparison, kept in main for this session.
+export interface ReferenceSummary {
+  // The source tenant as a shortened label.
+  label: string;
+  createdAt: string;
+  rulesetVersion: string;
+  settings: number;
+  // Families the file does not cover because their collection was incomplete.
+  notCompared: number;
+}
+
+export type ReferenceLoadResult =
+  | { ok: true; reference: ReferenceSummary }
+  | { ok: false; message: string }
+  | { canceled: true };
+
+export type CompareSource =
+  | { kind: "reference" }
+  // The latest snapshot of another stored tenant. MSP plan only.
+  | { kind: "tenant"; tenantId: string };
+
+export interface CompareTenant {
+  tenantId: string;
+  label: string;
+  collectedAt: string;
+  partial: boolean;
+}
+
+// Rows are capped in main; counts cover everything.
+export interface CompareView {
+  source: {
+    kind: CompareSource["kind"];
+    label: string;
+    collectedAt: string;
+    rulesetVersion: string;
+  };
+  current: { collectedAt: string; rulesetVersion: string };
+  totals: ComparisonCounts;
+  groups: CompareGroup[];
+  notCompared: NotComparedSettingsFamily[];
+  rulesetChanged: boolean;
+}
+
+export interface PortfolioFramework {
+  id: string;
+  name: string;
+  withEvidence: number;
+  partial: number;
+  applicableControls: number;
+  totalControls: number;
+}
+
+// One stored tenant, from the encrypted index only.
+export interface PortfolioTenant {
+  tenantId: string;
+  // The name the user gave the tenant, or null.
+  label: string | null;
+  shortLabel: string;
+  current: boolean;
+  snapshots: number;
+  latest: {
+    collectedAt: string;
+    partial: boolean;
+    rulesetVersion: string;
+  } | null;
+  frameworks: PortfolioFramework[];
+}
+
+export interface PortfolioView {
+  available: boolean;
+  reason: string | null;
+  tenants: PortfolioTenant[];
 }
 
 export type LicenseIssueCause =
@@ -483,6 +620,24 @@ export interface IntunedocApi {
   complianceImportCrosswalk(): Promise<CrosswalkImportResult>;
   complianceClearCrosswalk(): Promise<boolean>;
   complianceSaveCrosswalkTemplate(): Promise<string | null>;
+  // Evidence register, Purview evidence pack and draft fix pack for the
+  // selected framework and scope. Saves return the saved path, or null when
+  // the save dialog was cancelled. The fix pack is only saved with
+  // confirmed set after the user accepted its warnings.
+  complianceSaveRegister(
+    request: ComplianceRequest,
+    format: ComplianceRegisterFormat,
+  ): Promise<string | null>;
+  complianceSaveEvidencePack(request: ComplianceRequest): Promise<string | null>;
+  compliancePreviewFixPack(request: ComplianceRequest): Promise<FixPackPreview>;
+  complianceSaveFixPack(
+    request: ComplianceRequest,
+    confirmed: boolean,
+  ): Promise<string | null>;
+  // Null when Intune reports no device status for the section's family.
+  compliancePolicyDeviceStatus(
+    sectionKey: string,
+  ): Promise<PolicyDeviceStatusView | null>;
   // Opens an https Intune or Entra admin center link from a next action.
   openPortalLink(url: string): Promise<boolean>;
   saveFile(defaultName: string, bytes: Uint8Array): Promise<string | null>;
@@ -511,6 +666,27 @@ export interface IntunedocApi {
   historyDiff(request: HistoryDiffRequest): Promise<HistoryDiffView>;
   historyDelete(id: string): Promise<HistoryEntry[]>;
   historyDeleteAll(): Promise<HistoryStatus>;
+  // Changes of the current collection since the previous snapshot, for the
+  // management panel and report.
+  historyChanges(
+    request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  ): Promise<ManagementChangesResult>;
+  historyScheduleStatus(): Promise<ScheduleStatus>;
+  // Saves the interval only; unlike settingsSave it keeps the sign in.
+  historySetSchedule(hours: ScheduleHours): Promise<ScheduleStatus>;
+  // Golden baseline. Saves return the saved path, or null when cancelled.
+  compareExportReference(): Promise<string | null>;
+  compareLoadReference(): Promise<ReferenceLoadResult>;
+  compareClearReference(): Promise<boolean>;
+  // The reference loaded in main for the signed in account, or null.
+  compareReferenceStatus(): Promise<ReferenceSummary | null>;
+  compareRun(source: CompareSource): Promise<CompareView>;
+  // Stored tenants other than the signed in one. MSP plan only.
+  compareTenants(): Promise<CompareTenant[]>;
+  // MSP plan only. Built from the encrypted index, never every snapshot.
+  portfolioList(): Promise<PortfolioView>;
+  portfolioSetLabel(tenantId: string, label: string): Promise<PortfolioView>;
+  portfolioDeleteTenant(tenantId: string): Promise<PortfolioView>;
   onCollectProgress(callback: (progress: CollectProgress) => void): () => void;
   onExportProgress(callback: (progress: ExportProgress) => void): () => void;
   onComplianceProgress(
@@ -524,4 +700,5 @@ export interface IntunedocApi {
   onMenuCommand(callback: (command: MenuCommand) => void): () => void;
   // Sent after a snapshot was saved or history was cleared.
   onHistoryChanged(callback: () => void): () => void;
+  onScheduleStatus(callback: (status: ScheduleStatus) => void): () => void;
 }

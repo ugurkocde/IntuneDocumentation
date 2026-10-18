@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { HistoryEntry } from "../shared/ipc-types";
 import {
   historyDiffView,
+  managementChanges,
   NEEDS_TWO_SNAPSHOTS,
   parseHistoryDiffRequest,
   parseSnapshotId,
   pickPair,
+  previousSnapshot,
   type ComparedSnapshots,
 } from "./history";
 
@@ -111,3 +113,106 @@ describe("historyDiffView", () => {
     expect(historyDiffView(PREVIOUS, LATEST, compared, "zz").controls.frameworkId).toBe("b");
   });
 });
+
+describe("previousSnapshot", () => {
+  it("picks the newest snapshot collected before the current data", () => {
+    expect(previousSnapshot(ENTRIES, LATEST.collectedAt)).toBe(PREVIOUS);
+    expect(previousSnapshot(ENTRIES, "2026-10-19T00:00:00Z")).toBe(LATEST);
+    expect(previousSnapshot(ENTRIES, OLDEST.collectedAt)).toBeNull();
+    expect(previousSnapshot([], LATEST.collectedAt)).toBeNull();
+    expect(previousSnapshot(ENTRIES, "not a date")).toBeNull();
+  });
+});
+
+describe("managementChanges", () => {
+  const change = (controlId: string, before: string | null, after: string | null) => ({
+    controlId,
+    title: controlId,
+    before: before as never,
+    after: after as never,
+    causes: [],
+    mappingChanged: false,
+  });
+  const compared: ComparedSnapshots = {
+    snapshots: {
+      policies: [],
+      notCompared: [],
+      notComparedItems: [],
+      totals: {
+        policies: 4,
+        added: 1,
+        removed: 1,
+        renamed: 1,
+        changed: 2,
+        settingChanges: 7,
+        assignmentChanges: 3,
+        notComparedFamilies: 1,
+        notComparedItems: 2,
+      },
+    },
+    assessments: {
+      fromRuleset: "1",
+      toRuleset: "2",
+      rulesetChanged: true,
+      frameworks: [
+        {
+          id: "nis2",
+          name: "NIS2",
+          changes: [
+            change("21.2.a", "noEvidence", "evidenceFound"),
+            change("21.2.b", "evidenceFound", "partialEvidence"),
+            change("21.2.c", "partialEvidence", "noEvidence"),
+            change("21.2.d", null, "notAssessed"),
+          ],
+        },
+        { id: "iso", name: "ISO", changes: [change("5.1", "noEvidence", "evidenceFound")] },
+      ],
+    },
+  };
+
+  it("summarizes counts and the selected framework's control changes", () => {
+    const result = managementChanges(
+      { collectedAt: "2026-10-10T10:00:00Z", partial: false },
+      { collectedAt: "2026-10-18T10:00:00Z", partial: true },
+      compared,
+      "nis2",
+    );
+    expect(result).toEqual({
+      since: "2026-10-10T10:00:00Z",
+      until: "2026-10-18T10:00:00Z",
+      policies: {
+        added: 1,
+        removed: 1,
+        renamed: 1,
+        changed: 2,
+        settingChanges: 7,
+        assignmentChanges: 3,
+        notComparedFamilies: 1,
+        notComparedItems: 2,
+      },
+      controls: [
+        { id: "21.2.a", before: "noEvidence", after: "evidenceFound" },
+        { id: "21.2.b", before: "evidenceFound", after: "partialEvidence" },
+        { id: "21.2.c", before: "partialEvidence", after: "noEvidence" },
+        { id: "21.2.d", before: null, after: "notAssessed" },
+      ],
+      improved: 1,
+      regressed: 1,
+      rulesetChanged: true,
+      fromRuleset: "1",
+      toRuleset: "2",
+      partial: true,
+    });
+  });
+
+  it("has no control changes for a framework without any", () => {
+    const result = managementChanges(
+      { collectedAt: "2026-10-10T10:00:00Z", partial: false },
+      { collectedAt: "2026-10-18T10:00:00Z", partial: false },
+      compared,
+      "missing",
+    );
+    expect(result).toMatchObject({ controls: [], improved: 0, regressed: 0, partial: false });
+  });
+});
+

@@ -71,6 +71,16 @@ interface StoredIndex {
   tenants: Record<string, { label?: string; snapshots: IndexEntry[] }>;
 }
 
+// One stored tenant as the encrypted index describes it.
+export interface StoredTenant {
+  tenantId: string;
+  label: string | null;
+  snapshots: number;
+  latest: (HistoryEntry & { frameworks: IndexEntry["frameworks"] }) | null;
+}
+
+export const MAX_TENANT_LABEL = 60;
+
 export class HistoryUnavailableError extends Error {}
 
 export const UNAVAILABLE_REASONS = {
@@ -496,6 +506,40 @@ export class SnapshotStore {
     return removed;
   }
 
+  // Every tenant with history, from the index only: no snapshot is
+  // decrypted.
+  async tenants(): Promise<StoredTenant[]> {
+    return this.serial(async () => {
+      const index = await this.open();
+      return Object.entries(index?.tenants ?? {}).map(([tenantId, bucket]) => {
+        const latest = [...bucket.snapshots].sort(byCollected).at(-1);
+        return {
+          tenantId,
+          label: bucket.label ?? null,
+          snapshots: bucket.snapshots.length,
+          latest: latest
+            ? { ...publicEntry(latest), frameworks: structuredClone(latest.frameworks) }
+            : null,
+        };
+      });
+    });
+  }
+
+  // The name shown for a stored tenant; an empty label removes it.
+  async setLabel(tenantId: string, label: string): Promise<void> {
+    const tenant = normalizeTenant(tenantId);
+    const clean = label.trim();
+    if (clean.length > MAX_TENANT_LABEL) throw new Error("The tenant name is too long.");
+    await this.serial(async () => {
+      const index = await this.open();
+      if (!index?.tenants[tenant]) throw new Error("This tenant has no history on this computer.");
+      const next = structuredClone(index);
+      if (clean) next.tenants[tenant]!.label = clean;
+      else delete next.tenants[tenant]!.label;
+      await this.writeIndex(next);
+    });
+  }
+
   async delete(tenantId: string, id: string): Promise<void> {
     const tenant = normalizeTenant(tenantId);
     if (!SNAPSHOT_ID_PATTERN.test(id)) throw new Error("Unknown snapshot.");
@@ -505,7 +549,8 @@ export class SnapshotStore {
       if (!index || !bucket?.snapshots.some((entry) => entry.id === id)) return;
       const next = structuredClone(index);
       next.tenants[tenant]!.snapshots = bucket.snapshots.filter((entry) => entry.id !== id);
-      if (!next.tenants[tenant]!.snapshots.length) delete next.tenants[tenant];
+      // A tenant label stays with the tenant until all its history is deleted.
+      if (!next.tenants[tenant]!.snapshots.length && !bucket.label) delete next.tenants[tenant];
       await this.writeIndex(next);
       await fs.rm(this.snapshotFile(tenant, id), { force: true });
     });

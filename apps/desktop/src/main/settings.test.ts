@@ -42,6 +42,7 @@ describe("settings", () => {
       autoUpdate: false,
       checkForUpdates: true,
       keepHistory: false,
+      scheduleHours: 0,
     });
   });
 
@@ -55,6 +56,7 @@ describe("settings", () => {
       autoUpdate: true,
       checkForUpdates: true,
       keepHistory: false,
+      scheduleHours: 0,
     });
   });
 
@@ -68,6 +70,7 @@ describe("settings", () => {
       autoUpdate: true,
       checkForUpdates: true,
       keepHistory: false,
+      scheduleHours: 0,
     });
   });
 
@@ -92,6 +95,7 @@ describe("settings", () => {
       autoUpdate: true,
       checkForUpdates: false,
       keepHistory: false,
+      scheduleHours: 0,
     });
   });
 
@@ -103,5 +107,21 @@ describe("settings", () => {
     await writeSettings({ clientId: "client", tenantId: "contoso.com" });
     await writeSettings({ autoUpdate: true });
     expect((await readSettings()).keepHistory).toBe(true);
+  });
+
+  it("keeps scheduled collection off by default and accepts only known intervals", async () => {
+    expect((await readSettings()).scheduleHours).toBe(0);
+    for (const value of [3, "6", -6, 6.5, null, true]) {
+      writeFileSync(file(), JSON.stringify({ clientId: "client", scheduleHours: value }));
+      expect((await readSettings()).scheduleHours).toBe(0);
+    }
+    for (const hours of [6, 12, 24] as const) {
+      await writeSettings({ scheduleHours: hours });
+      expect((await readSettings()).scheduleHours).toBe(hours);
+    }
+    await writeSettings({ clientId: "client", tenantId: "contoso.com" });
+    expect((await readSettings()).scheduleHours).toBe(24);
+    await writeSettings({ scheduleHours: 0 });
+    expect((await readSettings()).scheduleHours).toBe(0);
   });
 });

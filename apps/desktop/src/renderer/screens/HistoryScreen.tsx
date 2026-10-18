@@ -1,5 +1,10 @@
 import {
   ArrowRight,
+  CalendarClock,
+  CircleCheck,
+  CirclePause,
+  CircleX,
+  Clock,
   FileText,
   History,
   KeyRound,
@@ -8,6 +13,7 @@ import {
   Plus,
   RotateCw,
   ShieldCheck,
+  SkipForward,
   Trash2,
 } from "lucide-react";
 import {
@@ -27,6 +33,7 @@ import {
 import type {
   CapabilityChange,
   ControlStatusChange,
+  EvidenceRef,
   NotComparedFamily,
   PolicyChange,
   SettingChange,
@@ -35,6 +42,8 @@ import type {
   HistoryDiffView,
   HistoryEntry,
   HistoryStatus,
+  ScheduleHours,
+  ScheduleStatus,
 } from "../../shared/ipc-types";
 import { CollectButton } from "../components/collection/CollectButton";
 import { Header } from "../components/layout/Header";
@@ -268,6 +277,10 @@ function PolicyChanges({ diff }: { diff: HistoryDiffView }) {
         <Badge variant="info">{plural(totals.settingChanges, "setting change")}</Badge>
         <Badge variant="info">{plural(totals.assignmentChanges, "assignment change")}</Badge>
       </div>
+      <p className="text-petrol-600 px-1 text-xs leading-5">
+        Device configuration profiles keep only the properties the evidence checks read, so changes to their other
+        properties are not shown.
+      </p>
       {diff.notCompared.length > 0 && (
         <Alert tone="warning" title="Some families were not compared">
           <p>Their data was incomplete, so changes there are not shown.</p>
@@ -333,24 +346,55 @@ function statusText(status: string | null, labels: Record<string, string>): stri
   return status === null ? "Not mapped" : (labels[status] ?? status);
 }
 
+// "<policy>: <setting>: <value>" with the readable names main resolved from
+// the stored Settings Catalog definitions. The raw ids stay in the tooltip.
+function EvidenceLine({ evidence }: { evidence: EvidenceRef }) {
+  return (
+    <>
+      <span className="font-semibold">{evidence.policyName}</span>:{" "}
+      {evidence.settingName ? (
+        <span title={evidence.settingId}>{evidence.settingName}</span>
+      ) : (
+        <span className="font-mono text-[11px] break-all">{evidence.settingId}</span>
+      )}
+      :{" "}
+      {evidence.valueLabel ? (
+        <span className="text-petrol-950 font-medium" title={evidence.observedValue}>
+          {evidence.valueLabel}
+        </span>
+      ) : (
+        <span className="text-petrol-950 font-medium">{evidence.observedValue}</span>
+      )}
+    </>
+  );
+}
+
 function CauseBlock({ cause }: { cause: CapabilityChange }) {
   const rows: ReactNode[] = [
     ...cause.evidenceAdded.map((ref, index) => (
       <li key={`a${index}`} className="flex items-start gap-2">
         <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" aria-hidden="true" />
-        <span className="min-w-0 break-words">
+        <span className="selectable min-w-0 break-words">
           <span className="sr-only">Evidence added: </span>
-          {ref.policyName}: {ref.observedValue} ({ref.verdict === "enforced" ? "enforcing" : "not enforcing"},{" "}
-          {ref.assignment === "assigned" ? "assigned" : ref.assignment === "notAssigned" ? "not assigned" : "assignment unknown"})
+          <EvidenceLine evidence={ref} />{" "}
+          <span className="text-petrol-600">
+            ({ref.verdict === "enforced" ? "enforcing" : "not enforcing"},{" "}
+            {ref.assignment === "assigned"
+              ? "assigned"
+              : ref.assignment === "notAssigned"
+                ? "not assigned"
+                : "assignment unknown"}
+            )
+          </span>
         </span>
       </li>
     )),
     ...cause.evidenceRemoved.map((ref, index) => (
       <li key={`r${index}`} className="flex items-start gap-2">
         <Minus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" aria-hidden="true" />
-        <span className="min-w-0 break-words">
+        <span className="selectable min-w-0 break-words">
           <span className="sr-only">Evidence removed: </span>
-          {ref.policyName}: {ref.observedValue}
+          <EvidenceLine evidence={ref} />
         </span>
       </li>
     )),
@@ -773,8 +817,10 @@ function KeepHistoryCard({
           software that runs under your own account.
         </p>
         <p>
-          Script contents, app payloads and other details the comparison does not need are not kept. Up to 30
-          snapshots per tenant are kept for up to a year; the oldest are removed first.
+          Script contents, app payloads and other details the comparison does not need are not kept. Device
+          configuration profiles keep only the properties the evidence checks read, so changes to their other
+          properties are not shown. Up to 30 snapshots per tenant are kept for up to a year; the oldest are removed
+          first.
         </p>
       </div>
       {!status.available && (
@@ -803,6 +849,192 @@ function KeepHistoryCard({
   );
 }
 
+const SCHEDULE_OPTIONS: Array<{ hours: ScheduleHours; label: string }> = [
+  { hours: 0, label: "Off" },
+  { hours: 6, label: "Every 6 hours" },
+  { hours: 12, label: "Every 12 hours" },
+  { hours: 24, label: "Every 24 hours" },
+];
+
+function ScheduleState({ schedule }: { schedule: ScheduleStatus }) {
+  const row = "flex items-start gap-2 text-[13px] leading-5";
+  switch (schedule.state) {
+    case "off":
+      return (
+        <p className={`${row} text-petrol-700`}>
+          <Clock className="text-petrol-600 mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          Off. Collections run only when you start them.
+        </p>
+      );
+    case "waiting":
+      return (
+        <p className={`${row} text-petrol-900`}>
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+          <span className="min-w-0">
+            {schedule.nextRunAt ? (
+              <>
+                Next run <span className="font-semibold">{formatDate(schedule.nextRunAt)}</span>
+              </>
+            ) : (
+              "Next run soon"
+            )}
+          </span>
+        </p>
+      );
+    case "running":
+      return (
+        <p className={`${row} text-petrol-900 font-semibold`}>
+          <Spinner className="mt-0.5 h-4 w-4 shrink-0" />
+          Running now
+        </p>
+      );
+    case "paused":
+      return (
+        <p className={`${row} text-amber-900`}>
+          <CirclePause className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+          <span className="min-w-0 break-words">
+            <span className="font-semibold">Paused:</span> {schedule.reason ?? "Waiting until runs can start."}
+          </span>
+        </p>
+      );
+  }
+}
+
+function ScheduleCard({
+  history,
+  schedule,
+  loadError,
+  onRetry,
+  onChange,
+  busy,
+  error,
+}: {
+  history: HistoryStatus;
+  schedule: ScheduleStatus | null;
+  loadError: string | null;
+  onRetry: () => void;
+  onChange: (hours: ScheduleHours) => void;
+  busy: boolean;
+  error: string | null;
+}) {
+  const selectId = useId();
+  const hintId = useId();
+  // The chosen interval shows while it is saved; a refused change falls back.
+  const [pending, setPending] = useState<ScheduleHours | null>(null);
+  const historyOff = !history.enabled;
+  const saved = schedule?.hours ?? 0;
+  const hours = busy && pending !== null ? pending : saved;
+  // With history off only Off can be chosen, so a paused schedule can still be
+  // turned off. Saving does not disable it, so keyboard focus stays on it.
+  const disabled = !schedule || (historyOff && saved === 0);
+  return (
+    <Card aria-labelledby="schedule-title">
+      <CardHeader
+        icon={CalendarClock}
+        eyebrow="While the app is open"
+        title={<span id="schedule-title">Scheduled collection</span>}
+        description="Collect this tenant automatically on a fixed interval, so history keeps up without a manual collection."
+      />
+      <div className="mt-4 max-w-[54rem] space-y-4 sm:pl-15">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <div className="min-w-0 basis-56">
+            <label htmlFor={selectId} className="text-petrol-700 mb-1 block text-xs font-semibold">
+              Collect automatically
+            </label>
+            <select
+              id={selectId}
+              value={hours}
+              disabled={disabled}
+              aria-describedby={historyOff ? hintId : undefined}
+              onChange={(event) => {
+                if (busy) return;
+                const next = Number(event.target.value) as ScheduleHours;
+                setPending(next);
+                onChange(next);
+              }}
+              className="border-petrol-950/12 text-petrol-950 min-h-10 w-full cursor-pointer rounded-xl border bg-white px-3 text-[13px] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {SCHEDULE_OPTIONS.map((option) => (
+                <option
+                  key={option.hours}
+                  value={option.hours}
+                  disabled={historyOff && option.hours !== 0 && option.hours !== saved}
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {busy && (
+            <span className="text-petrol-600 inline-flex min-h-10 items-center gap-2 text-xs" role="status">
+              <Spinner className="h-3.5 w-3.5" /> Saving
+            </span>
+          )}
+        </div>
+        {historyOff && (
+          <p id={hintId} className="text-xs leading-5 text-amber-800">
+            Turn on Keep history first. Scheduled collections save snapshots, so they need history.
+          </p>
+        )}
+        {loadError ? (
+          <Alert
+            tone="danger"
+            title="The schedule could not be loaded"
+            action={
+              <Button variant="secondary" size="sm" icon={RotateCw} onClick={onRetry}>
+                Retry
+              </Button>
+            }
+          >
+            {loadError}
+          </Alert>
+        ) : !schedule ? (
+          <p className="text-petrol-600 flex items-center gap-2 text-[13px]" role="status">
+            <Spinner className="h-3.5 w-3.5" /> Loading the schedule
+          </p>
+        ) : (
+          <div className="space-y-1.5" aria-live="polite">
+            <ScheduleState schedule={schedule} />
+            {schedule.lastRunAt && (
+              <p className="flex items-start gap-2 text-[13px] leading-5">
+                {schedule.lastResult === "failed" ? (
+                  <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
+                ) : (
+                  <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
+                )}
+                <span
+                  className={`min-w-0 break-words ${schedule.lastResult === "failed" ? "text-red-800" : "text-petrol-700"}`}
+                >
+                  Last run {formatDate(schedule.lastRunAt)}:{" "}
+                  {schedule.lastResult === "failed"
+                    ? `failed: ${schedule.lastError ?? "unknown error"}`
+                    : "collected"}
+                </span>
+              </p>
+            )}
+            {schedule.lastSkippedAt && (
+              <p className="text-petrol-700 flex items-start gap-2 text-[13px] leading-5">
+                <SkipForward className="text-petrol-600 mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">
+                  Last skipped {formatDate(schedule.lastSkippedAt)}
+                  {schedule.lastSkippedReason ? `: ${schedule.lastSkippedReason}` : ""}
+                </span>
+              </p>
+            )}
+          </div>
+        )}
+        {error && <Alert tone="danger">{error}</Alert>}
+        <ul className="text-petrol-600 list-disc space-y-0.5 pl-4 text-xs leading-5">
+          <li>Runs only while the app is open and you are signed in.</li>
+          <li>Every run checks the license first.</li>
+          <li>If the computer was asleep when a run was due, it runs once after waking.</li>
+          <li>Each run saves a snapshot like a manual collection.</li>
+        </ul>
+      </div>
+    </Card>
+  );
+}
+
 type Confirm = { kind: "one"; entry: HistoryEntry } | { kind: "all" } | null;
 
 export function HistoryScreen() {
@@ -814,13 +1046,36 @@ export function HistoryScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const [schedule, setSchedule] = useState<ScheduleStatus | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const toggle = useAsyncAction();
   const remove = useAsyncAction();
+  const scheduleAction = useAsyncAction();
   const request = useRef(0);
+  // Every schedule update bumps this, so a slower read never overwrites a
+  // newer status pushed by main.
+  const scheduleSeq = useRef(0);
 
   const reload = useCallback(() => setAttempt((count) => count + 1), []);
   const cancelConfirm = useCallback(() => setConfirm(null), []);
   useEffect(() => ipc.onHistoryChanged(reload), [reload]);
+
+  const showSchedule = useCallback((next: ScheduleStatus) => {
+    scheduleSeq.current += 1;
+    setSchedule(next);
+    setScheduleError(null);
+  }, []);
+  const loadSchedule = useCallback(async () => {
+    const id = ++scheduleSeq.current;
+    setScheduleError(null);
+    try {
+      const next = await ipc.historyScheduleStatus();
+      if (id === scheduleSeq.current) setSchedule(next);
+    } catch (caught) {
+      if (id === scheduleSeq.current) setScheduleError(errorMessage(caught));
+    }
+  }, []);
+  useEffect(() => ipc.onScheduleStatus(showSchedule), [showSchedule]);
 
   useEffect(() => {
     const id = ++request.current;
@@ -833,18 +1088,24 @@ export function HistoryScreen() {
         if (id !== request.current) return;
         setStatus(next);
         setEntries(list);
+        if (next.available) void loadSchedule();
       } catch (caught) {
         if (id !== request.current) return;
         setLoadError(errorMessage(caught));
       }
     })();
-  }, [signedIn, entitled, attempt, state.auth?.tenantId]);
+  }, [signedIn, entitled, attempt, state.auth?.tenantId, loadSchedule]);
 
   const onToggle = (enabled: boolean) =>
     void toggle.run("toggle", async () => {
       const next = await ipc.historySetEnabled(enabled);
       setStatus(next);
+      // Turning history off pauses the schedule; on resumes it.
+      void loadSchedule();
     });
+
+  const onSchedule = (hours: ScheduleHours) =>
+    void scheduleAction.run("schedule", async () => showSchedule(await ipc.historySetSchedule(hours)));
 
   const onConfirm = () => {
     const target = confirm;
@@ -914,6 +1175,17 @@ export function HistoryScreen() {
           busy={toggle.busy !== null}
           error={toggle.error}
         />
+        {status.available && (
+          <ScheduleCard
+            history={status}
+            schedule={schedule}
+            loadError={scheduleError}
+            onRetry={() => void loadSchedule()}
+            onChange={onSchedule}
+            busy={scheduleAction.busy !== null}
+            error={scheduleAction.error}
+          />
+        )}
         {remove.error && <Alert tone="danger">{remove.error}</Alert>}
         {status.available && entries.length === 0 && (
           <EmptyState

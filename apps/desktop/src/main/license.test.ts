@@ -34,9 +34,8 @@ vi.mock("./config", () => ({
   LICENSE_PUBLIC_KEY: keys.publicPem,
 }));
 
-const { CLOCK_TOLERANCE_MS, LicenseService, entitlementCurrent } = await import(
-  "./license"
-);
+const { CLOCK_TOLERANCE_MS, LicenseService, MSP_PLAN_REQUIRED, entitlementCurrent } =
+  await import("./license");
 
 const TENANT = "11111111-2222-3333-4444-555555555555";
 const INSTALL = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
@@ -446,5 +445,48 @@ describe("LicenseService organization licenses", () => {
     await expect(license.requireEntitlement(TENANT)).rejects.toThrow(
       "maximum number of tenants",
     );
+  });
+});
+
+describe("LicenseService MSP plan", () => {
+  beforeEach(() => {
+    keys.dir.current = mkdtempSync(path.join(tmpdir(), "license-test-"));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0 + DAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    rmSync(keys.dir.current, { recursive: true, force: true });
+  });
+
+  it("accepts an MSP entitlement", async () => {
+    storeLicense(token({ plan: "msp", tenants: 25 }));
+    await expect(new LicenseService().requireMspPlan(TENANT)).resolves.toBeUndefined();
+  });
+
+  it("rejects a Pro entitlement", async () => {
+    storeLicense(token({ plan: "pro" }));
+    const license = new LicenseService();
+    await expect(license.requireEntitlement(TENANT)).resolves.toBeUndefined();
+    await expect(license.requireMspPlan(TENANT)).rejects.toThrow(MSP_PLAN_REQUIRED);
+  });
+
+  it("rejects without a signed in tenant", async () => {
+    storeLicense(token({ plan: "msp" }));
+    await expect(new LicenseService().requireMspPlan(null)).rejects.toThrow(
+      "Sign in before continuing.",
+    );
+  });
+
+  it("rejects an MSP token issued for another tenant", async () => {
+    storeLicense(token({ plan: "msp", tenantId: "99999999-2222-3333-4444-555555555555" }));
+    // No activation for the tenant: the service is unreachable in tests.
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 503 })));
+    try {
+      await expect(new LicenseService().requireMspPlan(TENANT)).rejects.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  powerMonitor,
   session,
   shell,
 } from "electron";
@@ -19,9 +20,9 @@ import { pathToFileURL } from "node:url";
 import type {
   AppInfo,
   ComplianceFrameworkId,
+  ComplianceReportProgress,
   ComplianceRequest,
   HelpKey,
-  HistoryStatus,
   MenuCommand,
   UpdateStatus,
 } from "../shared/ipc-types";
@@ -48,23 +49,22 @@ import {
   WEBSITE_URL,
 } from "./config";
 import {
+  complianceDeviceStatus,
+  complianceEvidencePack,
+  complianceFixPack,
+  complianceFixPackPreview,
   complianceRecord,
+  complianceRegister,
   complianceReport,
   complianceView,
   frameworkSourceUrl,
   parseComplianceRequest,
   parseFrameworkId,
+  parseRegisterFormat,
   snapshotInputs,
 } from "./compliance";
 import { estimateScopedExport, prepareExport } from "./export";
-import {
-  compareProjections,
-  historyDiffView,
-  parseHistoryDiffRequest,
-  parseSnapshotId,
-  pickPair,
-  type ComparedSnapshots,
-} from "./history";
+import { registerHistoryIpc } from "./history-ipc";
 import { LicenseService } from "./license";
 import {
   baselineExport,
@@ -78,10 +78,13 @@ import {
   managementReport,
   parseManagementLocale,
   portalLink,
+  setManagementChangeSource,
 } from "./management";
 import { errorText, log, tailLog } from "./logger";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
-import { HistoryUnavailableError, SnapshotStore } from "./snapshots";
+import { CollectionRunner } from "./collection-runner";
+import { CollectionScheduler } from "./scheduler";
+import { SnapshotStore } from "./snapshots";
 import {
   checkForUpdates,
   downloadUpdate,
@@ -101,7 +104,6 @@ import {
 let auth: AuthService | null = null;
 let authKey = "";
 let mainWindow: BrowserWindow | null = null;
-let activeCollection: AbortController | null = null;
 let preparingExports = 0;
 let writingReports = 0;
 let assessingCompliance = 0;
@@ -128,8 +130,22 @@ const isMac = process.platform === "darwin";
 const history = new SnapshotStore({
   dir: () => path.join(app.getPath("userData"), "snapshots"),
 });
-// The last comparison, so switching the framework does not decrypt again.
-let historyDiff: { key: string; compared: ComparedSnapshots } | null = null;
+// History, Compare and Portfolio handlers; set by registerIpc.
+let historyIpc: ReturnType<typeof registerHistoryIpc> | null = null;
+// Scheduled collection while the app is open, signed in and licensed.
+const scheduler = new CollectionScheduler({
+  settings: () => readSettings(),
+  blocker: () => collections.blocker(),
+  busy: runningWork,
+  lastCollectedAt: async () => {
+    const tenant = signedInTenant();
+    if (!tenant) return null;
+    const [latest] = await history.list(tenant);
+    return latest ? Date.parse(latest.collectedAt) : null;
+  },
+  run: () => collections.scheduled(),
+  onStatus: (status) => broadcast("history:schedule", status),
+});
 
 function rendererUrl(): string {
   return pathToFileURL(path.join(__dirname, "../renderer/index.html")).href;
@@ -190,6 +206,7 @@ async function getAuth(): Promise<AuthService> {
         log("info", "auth changed", { signedIn: status.signedIn });
         broadcast("auth:changed", status);
         pushLicense();
+        void scheduler.refresh();
       },
     );
     auth = service;
@@ -234,23 +251,29 @@ async function openAuthUrl(url: string): Promise<void> {
 
 // A sign-in could switch the account while work for the current one runs.
 function runningWork(): string | null {
-  if (activeCollection) return "a collection";
+  return collections.busy();
+}
+
+function otherWork(): string | null {
   if (preparingExports > 0) return "an export";
   if (writingReports > 0) return "an evidence report";
   if (assessingCompliance > 0) return "a compliance assessment";
   return null;
 }
 
-function cancelCollection(): void {
-  activeCollection?.abort();
-  activeCollection = null;
+function cancelCollection(
+  reason = "Stopped because the account or the settings changed.",
+): void {
+  collections.cancel(reason);
 }
 
 // An account change drops a snapshot that is still being prepared and the
 // comparison held in memory.
 function resetHistorySession(): void {
   history.invalidate();
-  historyDiff = null;
+  historyIpc?.reset();
+  scheduler.reset();
+  void scheduler.refresh();
 }
 
 async function requireOwner(): Promise<string> {
@@ -303,6 +326,8 @@ const SAVE_FORMATS = {
   json: "JSON",
   txt: "Text",
   csv: "CSV",
+  xlsx: "Excel workbook",
+  zip: "ZIP archive",
 } as const;
 type SaveFormat = keyof typeof SAVE_FORMATS;
 const KNOWN_DOCUMENT_EXTENSIONS = new Set<string>([
@@ -314,6 +339,7 @@ const KNOWN_DOCUMENT_EXTENSIONS = new Set<string>([
   "html",
   "csv",
   "xml",
+  "xls",
 ]);
 
 function saveFormatOf(fileName: string): SaveFormat | null {
@@ -465,6 +491,7 @@ async function exportDiagnostics(): Promise<string | null> {
     `Automatic updates: ${settings.autoUpdate ? "on" : "off"}`,
     `Automatic update checks: ${settings.checkForUpdates ? "on" : "off"}`,
     `Keep history: ${settings.keepHistory ? "on" : "off"}`,
+    `Scheduled collection: ${settings.scheduleHours ? `every ${settings.scheduleHours} hours` : "off"}`,
     "",
     `Last collection: ${collection ? collection.collectedAt : "none"}`,
     ...(collection
@@ -498,6 +525,7 @@ const LOCAL_DATA = [
 
 async function clearLocalData(): Promise<void> {
   log("info", "clearing local data");
+  scheduler.stop();
   cancelCollection();
   clearCollection();
   clearManagementState();
@@ -581,38 +609,60 @@ async function recordSnapshot(
       partial: entry.partial,
       bytes: entry.bytes,
     });
+    historyIpc?.invalidate();
     broadcast("history:changed", null);
+    void scheduler.refresh();
   } catch (error) {
     log("warn", "snapshot not saved", { message: errorText(error) });
   }
 }
 
-// Every history handler: signed in, licensed, and only the signed in
-// tenant's snapshots.
-async function historyTenant(): Promise<string> {
-  await requireOwner();
-  await requireLicense();
-  const tenant = signedInTenant()?.toLowerCase();
-  if (!tenant || !isGuid(tenant)) throw new Error("Sign in before continuing.");
-  return tenant;
-}
+type CollectProgress = Parameters<typeof collectAll>[1];
 
-async function historyStatus(tenantId: string): Promise<HistoryStatus> {
-  const settings = await readSettings();
-  let reason = history.unavailableReason();
-  let count = 0;
-  if (!reason) {
+// One collection at a time, manual or scheduled; after it, a snapshot is
+// saved when history is on. The rules live in collection-runner.ts.
+const collections = new CollectionRunner<
+  Awaited<ReturnType<typeof collectAll>>,
+  CollectProgress
+>({
+  requireOwner,
+  requireLicense,
+  otherWork,
+  historyBlocker: () => history.unavailableReason(),
+  signedIn: () => Boolean(signedInTenant()),
+  hasAccount: () => Boolean(auth?.getOwnerKey()),
+  collect: async (owner, signal, progress) => {
+    const started = Date.now();
+    log("info", "collection started", { scheduled: progress === null });
     try {
-      count = (await history.list(tenantId)).length;
+      const summary = await collectAll(tokenProvider, progress ?? (() => undefined), {
+        owner,
+        signal,
+        budgetMs: 30 * 60_000,
+      });
+      log("info", "collection finished", {
+        items: summary.totalConfigurations,
+        sections: summary.sectionCounts.length,
+        fetchErrors: summary.fetchErrors.length,
+        permissionErrors: summary.permissionErrors.length,
+        seconds: Math.round((Date.now() - started) / 1000),
+      });
+      return summary;
     } catch (error) {
-      reason =
-        error instanceof HistoryUnavailableError
-          ? error.message
-          : "History could not be read on this computer.";
+      log("warn", "collection failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      pushLicense();
     }
-  }
-  return { enabled: settings.keepHistory, available: !reason, reason, count };
-}
+  },
+  // Off the hot path: the summary returns first.
+  collected: (owner) => {
+    const tenant = signedInTenant();
+    if (!tenant) return;
+    const generation = history.begin();
+    setImmediate(() => void recordSnapshot(owner, tenant, generation));
+  },
+});
 
 function buildMenu(): void {
   const checkUpdates = () => sendMenuCommand("check-updates");
@@ -806,6 +856,7 @@ function registerIpc(): void {
       typeof options === "object" &&
       options !== null &&
       (options as { consent?: unknown }).consent === true;
+    const ownerBefore = auth?.getOwnerKey() ?? null;
     try {
       // Work may have started while the browser sign-in was open. It reads
       // tokens from the current account, so the account must not change now.
@@ -819,6 +870,8 @@ function registerIpc(): void {
         },
       });
       log("info", "signed in", { consent });
+      // Another account: history state of the previous one is dropped.
+      if (auth?.getOwnerKey() !== ownerBefore) resetHistorySession();
       await license.activateForTenant(result.tenantId);
       return result;
     } catch (error) {
@@ -856,54 +909,21 @@ function registerIpc(): void {
   handle("collect:all", async (event) => {
     const owner = await requireOwner();
     await requireLicense();
-    cancelCollection();
-    const controller = new AbortController();
-    activeCollection = controller;
-    const started = Date.now();
-    log("info", "collection started");
-    try {
-      const summary = await collectAll(
-        tokenProvider,
-        (progress, loaded) => {
-          if (event.sender.isDestroyed()) return;
-          event.sender.send("collect:progress", {
-            step: progress.step,
-            type: progress.type,
-            current: progress.current,
-            total: progress.total,
-            message: progress.message,
-            loaded,
-          });
-        },
-        { owner, signal: controller.signal, budgetMs: 30 * 60_000 },
-      );
-      log("info", "collection finished", {
-        items: summary.totalConfigurations,
-        sections: summary.sectionCounts.length,
-        fetchErrors: summary.fetchErrors.length,
-        permissionErrors: summary.permissionErrors.length,
-        seconds: Math.round((Date.now() - started) / 1000),
+    return collections.manual(owner, (progress, loaded) => {
+      if (event.sender.isDestroyed()) return;
+      event.sender.send("collect:progress", {
+        step: progress.step,
+        type: progress.type,
+        current: progress.current,
+        total: progress.total,
+        message: progress.message,
+        loaded,
       });
-      // Off the hot path: the summary returns first.
-      const tenant = signedInTenant();
-      if (tenant) {
-        const generation = history.begin();
-        setImmediate(() => void recordSnapshot(owner, tenant, generation));
-      }
-      return summary;
-    } catch (error) {
-      log("warn", "collection failed", { message: errorText(error) });
-      throw error;
-    } finally {
-      if (activeCollection === controller) {
-        activeCollection = null;
-      }
-      pushLicense();
-    }
+    });
   });
 
   handle("collect:cancel", () => {
-    cancelCollection();
+    cancelCollection("Cancelled in the app.");
     log("info", "collection cancelled");
     return true;
   });
@@ -1057,6 +1077,121 @@ function registerIpc(): void {
     } finally {
       writingReports -= 1;
     }
+  });
+
+  // Evidence register, Purview evidence pack and draft fix pack: paid desktop
+  // exports of the selected framework, licensed like the evidence report.
+  const sendProgress =
+    (event: IpcMainInvokeEvent) => (progress: ComplianceReportProgress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("compliance:progress", progress);
+      }
+    };
+
+  handle("compliance:saveRegister", async (event, input, rawFormat) => {
+    const request = parseFrameworkRequest(input);
+    const format = parseRegisterFormat(rawFormat);
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      log("info", "evidence register started", {
+        frameworkId: request.frameworkId,
+        format,
+      });
+      const register = await complianceRegister(
+        owner,
+        tokenProvider,
+        request,
+        format,
+        signedInTenant(),
+        sendProgress(event),
+      );
+      sendProgress(event)({ stage: "saving" });
+      return await saveWithDialog(register.fileName, register.bytes);
+    } catch (error) {
+      log("warn", "evidence register failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      writingReports -= 1;
+      pushLicense();
+    }
+  });
+
+  handle("compliance:saveEvidencePack", async (event, input) => {
+    const request = parseFrameworkRequest(input);
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      log("info", "evidence pack started", { frameworkId: request.frameworkId });
+      const pack = await complianceEvidencePack(
+        owner,
+        tokenProvider,
+        request,
+        signedInTenant(),
+        sendProgress(event),
+      );
+      sendProgress(event)({ stage: "saving" });
+      return await saveWithDialog(pack.fileName, pack.bytes);
+    } catch (error) {
+      log("warn", "evidence pack failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      writingReports -= 1;
+      pushLicense();
+    }
+  });
+
+  handle("compliance:previewFixPack", async (_event, input) => {
+    const request = parseFrameworkRequest(input);
+    assessingCompliance += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      return await complianceFixPackPreview(owner, tokenProvider, request);
+    } finally {
+      assessingCompliance -= 1;
+    }
+  });
+
+  // The renderer saves only after the user accepted the draft warnings.
+  handle("compliance:saveFixPack", async (event, input, confirmed) => {
+    const request = parseFrameworkRequest(input);
+    if (confirmed !== true) {
+      throw new Error("Confirm the fix pack warnings before saving.");
+    }
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      log("info", "fix pack started", { frameworkId: request.frameworkId });
+      const pack = await complianceFixPack(
+        owner,
+        tokenProvider,
+        request,
+        signedInTenant(),
+        sendProgress(event),
+      );
+      sendProgress(event)({ stage: "saving" });
+      return await saveWithDialog(pack.fileName, pack.bytes);
+    } catch (error) {
+      log("warn", "fix pack failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      writingReports -= 1;
+      pushLicense();
+    }
+  });
+
+  // Intune's per policy device status for the policy list of a section.
+  handle("compliance:policyDeviceStatus", async (_event, sectionKey) => {
+    if (typeof sectionKey !== "string" || sectionKey.length > 200) {
+      throw new Error("Unknown section.");
+    }
+    const owner = await requireOwner();
+    await requireLicense();
+    return complianceDeviceStatus(owner, sectionKey);
   });
 
   handle("compliance:openSource", async (_event, frameworkId) => {
@@ -1324,55 +1459,35 @@ function registerIpc(): void {
 
   handle("diagnostics:export", () => exportDiagnostics());
 
-  handle("history:status", async () => historyStatus(await historyTenant()));
-
-  // Writes the setting only; unlike settings:save it keeps the sign in and
-  // the collection.
-  handle("history:setEnabled", async (_event, enabled) => {
-    if (typeof enabled !== "boolean") {
-      throw new Error("Refused an unexpected history setting.");
-    }
-    const tenant = await historyTenant();
-    const reason = history.unavailableReason();
-    if (enabled && reason) throw new Error(reason);
-    await writeSettings({ keepHistory: enabled });
-    log("info", "history changed", { enabled });
-    return historyStatus(tenant);
+  // History, Compare and Portfolio: signed in, licensed and, for Portfolio
+  // and other tenants, the MSP plan; checked in history-ipc.ts.
+  historyIpc = registerHistoryIpc({
+    handle,
+    requireOwner,
+    signedInTenant,
+    license,
+    store: history,
+    readSettings,
+    writeSettings,
+    currentInputs: (owner) => snapshotInputs(owner, tokenProvider),
+    track: async (work) => {
+      assessingCompliance += 1;
+      try {
+        return await work();
+      } finally {
+        assessingCompliance -= 1;
+      }
+    },
+    saveFile: saveWithDialog,
+    pickJsonFile: () => chooseOpenPath("json"),
+    scheduler,
+    notifyHistoryChanged: () => broadcast("history:changed", null),
+    log,
   });
-
-  handle("history:list", async () => history.list(await historyTenant()));
-
-  // Decryption and diffing stay here; the renderer gets capped rows.
-  handle("history:diff", async (_event, input) => {
-    const request = parseHistoryDiffRequest(input);
-    const tenant = await historyTenant();
-    const { from, to } = pickPair(await history.list(tenant), request);
-    const key = `${tenant}|${from.id}|${to.id}`;
-    let compared = historyDiff?.key === key ? historyDiff.compared : null;
-    if (!compared) {
-      const before = await history.read(tenant, from.id);
-      const after = await history.read(tenant, to.id);
-      compared = compareProjections(before, after);
-      historyDiff = { key, compared };
-    }
-    return historyDiffView(from, to, compared, request.frameworkId);
-  });
-
-  handle("history:delete", async (_event, input) => {
-    const id = parseSnapshotId(input);
-    const tenant = await historyTenant();
-    await history.delete(tenant, id);
-    historyDiff = null;
-    log("info", "snapshot deleted");
-    return history.list(tenant);
-  });
-
-  handle("history:deleteAll", async () => {
-    const tenant = await historyTenant();
-    await history.deleteTenant(tenant);
-    historyDiff = null;
-    log("info", "history deleted");
-    return historyStatus(tenant);
+  const historyHandlers = historyIpc;
+  setManagementChangeSource(async (owner, tenantId, request) => {
+    const result = await historyHandlers.changesFor(owner, tenantId.toLowerCase(), request);
+    return result.state === "ready" ? result.changes : null;
   });
 
   handle("data:clear", async () => {
@@ -1422,6 +1537,9 @@ if (!app.requestSingleInstanceLock()) {
     );
     void refreshLicenses();
     setInterval(() => void refreshLicenses(), LICENSE_REFRESH_MS);
+    // A run that became due while the computer slept runs once after resume.
+    void scheduler.refresh();
+    powerMonitor.on("resume", () => void scheduler.refresh());
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();

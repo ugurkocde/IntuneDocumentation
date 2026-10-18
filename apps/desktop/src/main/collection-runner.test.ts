@@ -1,0 +1,163 @@
+import { describe, expect, it, vi } from "vitest";
+import { CollectionRunner, SCHEDULED_RUN_ACTIVE } from "./collection-runner";
+import { ScheduleSkip } from "./scheduler";
+
+type Progress = (step: string) => void;
+
+function setup() {
+  const env = {
+    owner: "owner-1" as string | null,
+    licensed: true,
+    otherWork: null as string | null,
+    historyBlocker: null as string | null,
+    signedIn: true,
+    hasAccount: true,
+    // Pending collections, resolved or rejected by the test.
+    pending: [] as Array<{
+      owner: string;
+      signal: AbortSignal;
+      progress: Progress | null;
+      resolve: (value: string) => void;
+      reject: (error: Error) => void;
+    }>,
+  };
+  const collected = vi.fn();
+  const runner = new CollectionRunner<string, Progress>({
+    requireOwner: async () => {
+      if (!env.owner) throw new Error("Sign in before continuing.");
+      return env.owner;
+    },
+    requireLicense: async () => {
+      if (!env.licensed) throw new Error("The license is not valid for this tenant.");
+    },
+    otherWork: () => env.otherWork,
+    historyBlocker: () => env.historyBlocker,
+    signedIn: () => env.signedIn,
+    hasAccount: () => env.hasAccount,
+    collect: (owner, signal, progress) =>
+      new Promise<string>((resolve, reject) => {
+        const entry = { owner, signal, progress, resolve, reject };
+        // The real collector rejects once its signal aborts.
+        signal.addEventListener("abort", () => reject(new Error("The operation was aborted.")));
+        env.pending.push(entry);
+      }),
+    collected,
+  });
+  return { env, runner, collected };
+}
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+describe("CollectionRunner", () => {
+  it("does not collect when the entitlement check fails, and reports a skip", async () => {
+    const { env, runner, collected } = setup();
+    env.licensed = false;
+    await expect(runner.scheduled()).rejects.toEqual(
+      new ScheduleSkip("The license is not valid for this tenant."),
+    );
+    expect(env.pending).toHaveLength(0);
+    expect(collected).not.toHaveBeenCalled();
+  });
+
+  it("does not collect when the sign-in cannot be refreshed", async () => {
+    const { env, runner } = setup();
+    env.owner = null;
+    await expect(runner.scheduled()).rejects.toBeInstanceOf(ScheduleSkip);
+    expect(env.pending).toHaveLength(0);
+  });
+
+  it("skips while an export runs and never cancels it", async () => {
+    const { env, runner } = setup();
+    env.otherWork = "an export";
+    await expect(runner.scheduled()).rejects.toEqual(new ScheduleSkip("An export started meanwhile."));
+    expect(env.pending).toHaveLength(0);
+    expect(runner.busy()).toBe("an export");
+  });
+
+  it("skips while a manual collection runs and leaves it running", async () => {
+    const { env, runner } = setup();
+    const manual = runner.manual("owner-1", () => undefined);
+    await flush();
+    await expect(runner.scheduled()).rejects.toEqual(new ScheduleSkip("A collection started meanwhile."));
+    expect(env.pending).toHaveLength(1);
+    expect(env.pending[0]!.signal.aborted).toBe(false);
+    env.pending[0]!.resolve("manual summary");
+    await expect(manual).resolves.toBe("manual summary");
+  });
+
+  it("refuses a manual collection during a scheduled run without failing either", async () => {
+    const { env, runner, collected } = setup();
+    const scheduled = runner.scheduled();
+    await flush();
+    expect(runner.current()).toBe("scheduled");
+    expect(runner.busy()).toBe("a scheduled collection");
+    await expect(runner.manual("owner-1", () => undefined)).rejects.toThrow(SCHEDULED_RUN_ACTIVE);
+    expect(env.pending).toHaveLength(1);
+    expect(env.pending[0]!.signal.aborted).toBe(false);
+    env.pending[0]!.resolve("scheduled summary");
+    await expect(scheduled).resolves.toBeUndefined();
+    expect(collected).toHaveBeenCalledWith("owner-1");
+    expect(runner.current()).toBeNull();
+    // Afterwards a manual collection works again.
+    const manual = runner.manual("owner-1", () => undefined);
+    await flush();
+    env.pending[1]!.resolve("next");
+    await expect(manual).resolves.toBe("next");
+  });
+
+  it("records a cancelled scheduled run as a skip with the reason", async () => {
+    const { env, runner, collected } = setup();
+    const scheduled = runner.scheduled();
+    await flush();
+    runner.cancel("Cancelled in the app.");
+    await expect(scheduled).rejects.toEqual(new ScheduleSkip("Cancelled in the app."));
+    expect(collected).not.toHaveBeenCalled();
+    expect(runner.current()).toBeNull();
+    expect(env.pending[0]!.signal.aborted).toBe(true);
+  });
+
+  it("lets a new manual collection replace an earlier one, as before", async () => {
+    const { env, runner, collected } = setup();
+    const first = runner.manual("owner-1", () => undefined);
+    await flush();
+    const second = runner.manual("owner-1", () => undefined);
+    await flush();
+    await expect(first).rejects.toThrow("aborted");
+    env.pending[1]!.resolve("second");
+    await expect(second).resolves.toBe("second");
+    expect(collected).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes progress for manual runs only", async () => {
+    const { env, runner } = setup();
+    const progress = vi.fn();
+    void runner.manual("owner-1", progress).catch(() => undefined);
+    await flush();
+    expect(env.pending[0]!.progress).toBe(progress);
+    runner.cancel();
+    void runner.scheduled().catch(() => undefined);
+    await flush();
+    expect(env.pending[1]!.progress).toBeNull();
+    runner.cancel();
+  });
+
+  it("explains why scheduled runs cannot happen", () => {
+    const { env, runner } = setup();
+    expect(runner.blocker()).toBeNull();
+    env.signedIn = false;
+    expect(runner.blocker()).toBe("The sign-in expired. Sign in again to resume scheduled collection.");
+    env.hasAccount = false;
+    expect(runner.blocker()).toBe("Sign in to run scheduled collections.");
+    env.historyBlocker = "Secure storage is not available on this computer.";
+    expect(runner.blocker()).toBe("Secure storage is not available on this computer.");
+  });
+
+  it("reports a failed scheduled collection as an error, not a skip", async () => {
+    const { env, runner } = setup();
+    const scheduled = runner.scheduled();
+    await flush();
+    env.pending[0]!.reject(new Error("Graph returned 503."));
+    await expect(scheduled).rejects.toThrow("Graph returned 503.");
+    await expect(scheduled).rejects.not.toBeInstanceOf(ScheduleSkip);
+  });
+});

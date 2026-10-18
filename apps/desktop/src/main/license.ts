@@ -83,6 +83,9 @@ const PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
 const LICENSE_REQUIRED =
   "A license is required to collect and export. Add your license key under License and account.";
 
+export const MSP_PLAN_REQUIRED =
+  "Portfolio and comparing tenants are part of the MSP plan. The license of the signed in tenant is a Pro license.";
+
 const REASONS: Record<string, string> = {
   invalid_key: "This license key is not valid for Intune Documentation.",
   not_found:
@@ -669,6 +672,16 @@ export class LicenseService {
           ? "Sign in to this tenant again to check your organization's license."
           : "The license is not valid for this tenant.",
       );
+    }
+  }
+
+  // Like requireEntitlement, and the entitlement of the signed in tenant
+  // must be the MSP plan. The plan comes from the signed token, never from
+  // the renderer.
+  async requireMspPlan(tenantId: string | null): Promise<void> {
+    await this.requireEntitlement(tenantId);
+    if (this.valid(tenantId)?.plan !== "msp") {
+      throw new Error(MSP_PLAN_REQUIRED);
     }
   }
 

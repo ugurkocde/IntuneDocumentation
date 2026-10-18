@@ -37,6 +37,45 @@ export interface ManagementReportControl {
   safeguards: readonly ManagementReportSafeguard[];
 }
 
+/**
+ * Changes since the previous history snapshot of the same tenant and scope.
+ * Counts, control ids and statuses only, like the rest of the report.
+ */
+export interface ManagementReportChanges {
+  /** Collection time of the earlier snapshot. */
+  since: string;
+  /** Collection time of the current data. */
+  until: string;
+  policies: {
+    added: number;
+    removed: number;
+    renamed: number;
+    changed: number;
+    settingChanges: number;
+    assignmentChanges: number;
+    /** Families not compared because their collection was incomplete. */
+    notComparedFamilies: number;
+    /** Policies not compared because their details were incomplete. */
+    notComparedItems: number;
+  };
+  /** Controls of this framework whose status changed, in control order. */
+  controls: readonly {
+    id: string;
+    /** Null when the control is mapped in one assessment only. */
+    before: ControlStatus | null;
+    after: ControlStatus | null;
+  }[];
+  /** Controls that gained configuration or partial evidence. */
+  improved: number;
+  /** Controls that lost configuration or partial evidence. */
+  regressed: number;
+  rulesetChanged: boolean;
+  fromRuleset: string;
+  toRuleset: string;
+  /** One of the two collections was partial. */
+  partial: boolean;
+}
+
 export interface ManagementReportInput {
   summary: ManagementSummary;
   controls: readonly ManagementReportControl[];
@@ -47,6 +86,8 @@ export interface ManagementReportInput {
   }[];
   /** Absent when no baseline was loaded. */
   delta?: BaselineDelta;
+  /** Absent when history has no earlier snapshot of this tenant and scope. */
+  changes?: ManagementReportChanges;
   crosswalkLoaded?: boolean;
   /** COMPLIANCE_DISCLAIMER (English); German comes from the strings file. */
   disclaimer: string;
@@ -62,6 +103,7 @@ type Target =
   | "overview"
   | "unassigned"
   | "change"
+  | "history"
   | "outsideScope"
   | `measure:${string}`;
 
@@ -113,6 +155,8 @@ const ALLOWED_LINK_HOSTS = new Set([
 const MAX_ACTIONS = 5;
 const MAX_PAGE1_MEASURES = 8;
 const MAX_LISTED_IDS = 8;
+/** Control status changes listed on the history page. */
+const MAX_HISTORY_CONTROLS = 40;
 /** Policies named per safeguard row; assigned ones come first. */
 const POLICIES_PER_SAFEGUARD = 8;
 
@@ -156,14 +200,20 @@ function localIsoDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function formatDate(value: string, strings: ManagementReportStrings): string {
+/** Long dates for text; numeric ones where space is tight, such as tiles. */
+function formatDate(
+  value: string,
+  strings: ManagementReportStrings,
+  form: "long" | "numeric" = "long",
+): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(strings.dateLocale, {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  return date.toLocaleDateString(
+    strings.dateLocale,
+    form === "long"
+      ? { day: "numeric", month: "long", year: "numeric" }
+      : { day: "2-digit", month: "2-digit", year: "numeric" },
+  );
 }
 
 function idList(
@@ -212,7 +262,7 @@ export async function generateManagementReportPDF(
   input: ManagementReportInput,
 ): Promise<Uint8Array> {
   const strings = MANAGEMENT_REPORT_STRINGS[input.locale];
-  const { summary, delta } = input;
+  const { summary, delta, changes } = input;
   const metrics = summary.metrics;
   const disclaimer = strings.disclaimer ?? input.disclaimer;
   // Unmapped measures that related settings could support, counted apart from
@@ -422,17 +472,40 @@ export async function generateManagementReportPDF(
     const gap = 3;
     const width = (contentWidth - gap * 3) / 4;
     const height = 30;
-    const change = (() => {
+    const change = ((): {
+      value: string;
+      detail: string;
+      target: Target;
+    } => {
+      // Without a baseline file, history snapshots kept on this computer
+      // stand in for the comparison.
+      if (!delta && changes)
+        return {
+          value:
+            changes.improved === 0 && changes.regressed === 0
+              ? strings.historyNoChange
+              : strings.historyValue(changes.improved, changes.regressed),
+          detail: strings.historyDetail(
+            formatDate(changes.since, strings, "numeric"),
+          ),
+          target: "history",
+        };
       if (!delta)
-        return { value: strings.noBaseline, detail: strings.noBaselineHint };
+        return {
+          value: strings.noBaseline,
+          detail: strings.noBaselineHint,
+          target: "change",
+        };
       if (delta.safeguardDeltaPoints === null)
         return {
           value: strings.deltaNotAvailable,
           detail: strings.oldBaselineDetail,
+          target: "change",
         };
       return {
         value: strings.deltaPoints(delta.safeguardDeltaPoints),
         detail: strings.deltaDetail(formatDate(delta.baselineDate, strings)),
+        target: "change",
       };
     })();
     const tiles: {
@@ -462,7 +535,7 @@ export async function generateManagementReportPDF(
         detail: strings.tileNotSwitchedOnDetail,
         target: "unassigned",
       },
-      { label: strings.tileChange, ...change, target: "change" },
+      { label: strings.tileChange, ...change },
     ];
     tiles.forEach((tile, index) => {
       const x = margin + index * (width + gap);
@@ -1227,6 +1300,88 @@ export async function generateManagementReportPDF(
   } else {
     startItPage("change", strings.noBaselineHeading);
     for (const step of strings.noBaselineSteps) paragraph(step, { after: 3 });
+  }
+
+  // Changes since the previous history snapshot
+  if (changes) {
+    const since = formatDate(changes.since, strings);
+    startItPage("history", strings.historyHeading(since));
+    paragraph(strings.historyIntro(since), { after: 4 });
+
+    subheading(strings.historyPoliciesHeading);
+    const policyRows = strings.historyPolicyRows;
+    table(
+      strings.historyPolicyHeaders,
+      [contentWidth - 38, 38],
+      (
+        [
+          "added",
+          "removed",
+          "renamed",
+          "changed",
+          "settingChanges",
+          "assignmentChanges",
+        ] as const
+      ).map((key) => ({
+        cells: [
+          [{ text: policyRows[key] }],
+          [{ text: String(changes.policies[key]), style: "bold" }],
+        ],
+      })),
+    );
+    const { notComparedFamilies, notComparedItems } = changes.policies;
+    if (notComparedFamilies > 0 || notComparedItems > 0)
+      paragraph(
+        strings.historyNotCompared(notComparedFamilies, notComparedItems),
+        { size: 8, style: "italic", color: WARNING },
+      );
+    if (changes.partial)
+      paragraph(strings.historyPartial, {
+        size: 8,
+        style: "italic",
+        color: WARNING,
+      });
+    y += 2;
+
+    subheading(strings.historyControlsHeading);
+    paragraph(strings.historyMovement(changes.improved, changes.regressed), {
+      after: 3,
+    });
+    const statusLabel = (status: ControlStatus | null) =>
+      status === null ? strings.notMapped : strings.controlStatuses[status];
+    if (changes.controls.length === 0)
+      paragraph(strings.historyNoControlChanges, {
+        style: "italic",
+        color: MUTED,
+      });
+    else {
+      table(
+        strings.historyControlHeaders,
+        [26, contentWidth - 26 - 47 * 2, 47, 47],
+        changes.controls.slice(0, MAX_HISTORY_CONTROLS).map((item) => ({
+          cells: [
+            [{ text: item.id, style: "bold" }],
+            [{ text: titleById.get(item.id) ?? "" }],
+            [{ text: statusLabel(item.before), color: MUTED }],
+            [{ text: statusLabel(item.after), style: "bold" }],
+          ],
+        })),
+      );
+      if (changes.controls.length > MAX_HISTORY_CONTROLS) {
+        y -= 0.5;
+        paragraph(
+          strings.moreItems(changes.controls.length - MAX_HISTORY_CONTROLS),
+          { size: 8, style: "italic", color: MUTED, indent: 1.6, after: 2 },
+        );
+      }
+    }
+    y += 2;
+    if (changes.rulesetChanged)
+      paragraph(
+        strings.historyRulesetChanged(changes.fromRuleset, changes.toRuleset),
+        { style: "italic", color: WARNING },
+      );
+    paragraph(strings.historyNote, { size: 8, color: MUTED });
   }
 
   // Measures outside Intune scope

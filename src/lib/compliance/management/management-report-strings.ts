@@ -1,4 +1,4 @@
-import type { CompliancePlatform } from "../types";
+import type { CompliancePlatform, ControlStatus } from "../types";
 import type { ManagementLocale, NextActionTier, SafeguardState } from "./types";
 
 // Text for the security summary PDF. Page 1 is read by management without IT
@@ -43,6 +43,9 @@ export interface ManagementReportStrings {
   oldBaselineDetail: string;
   noBaseline: string;
   noBaselineHint: string;
+  historyValue: (improved: number, regressed: number) => string;
+  historyNoChange: string;
+  historyDetail: (since: string) => string;
   measuresHeading: string;
   measuresCaption: string;
   moreMeasures: (count: number) => string;
@@ -121,6 +124,28 @@ export interface ManagementReportStrings {
   rulesetChanged: string;
   noBaselineHeading: string;
   noBaselineSteps: readonly string[];
+  historyHeading: (since: string) => string;
+  historyIntro: (since: string) => string;
+  historyPoliciesHeading: string;
+  historyPolicyHeaders: readonly [string, string];
+  historyPolicyRows: {
+    added: string;
+    removed: string;
+    renamed: string;
+    changed: string;
+    settingChanges: string;
+    assignmentChanges: string;
+  };
+  historyNotCompared: (families: number, items: number) => string;
+  historyPartial: string;
+  historyControlsHeading: string;
+  historyMovement: (improved: number, regressed: number) => string;
+  historyControlHeaders: readonly [string, string, string, string];
+  historyNoControlChanges: string;
+  controlStatuses: Record<ControlStatus, string>;
+  notMapped: string;
+  historyRulesetChanged: (fromRuleset: string, toRuleset: string) => string;
+  historyNote: string;
   outsideScopeHeading: string;
   outsideScopeIntro: string;
   outsideScopeHeaders: readonly [string, string];
@@ -168,6 +193,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     oldBaselineDetail: "not in the earlier report",
     noBaseline: "No earlier report loaded",
     noBaselineHint: "compare next month",
+    historyValue: (improved, regressed) =>
+      `+${improved} / -${regressed} measures`,
+    historyNoChange: "No change",
+    historyDetail: (since) => `since ${since} (history)`,
     measuresHeading: "Measures",
     measuresCaption: "Safeguards in place per measure",
     moreMeasures: (count) =>
@@ -347,6 +376,46 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       "2. Keep the file in a safe place.",
       "3. Next month, load the file before you create this report. Page 1 and this page then show what changed.",
     ],
+    historyHeading: (since) => `Changes since ${since}`,
+    historyIntro: (since) =>
+      `Compares the current collection with the history snapshot this computer kept on ${since}. History snapshots are stored locally on this computer.`,
+    historyPoliciesHeading: "Policy changes",
+    historyPolicyHeaders: ["Change", "Count"],
+    historyPolicyRows: {
+      added: "Policies added",
+      removed: "Policies removed",
+      renamed: "Policies renamed",
+      changed: "Policies changed",
+      settingChanges: "Setting changes",
+      assignmentChanges: "Assignment changes",
+    },
+    historyNotCompared: (families, items) =>
+      `Not compared because their collection was incomplete: ${[
+        families > 0 ? plural(families, "policy type", "policy types") : "",
+        items > 0 ? plural(items, "policy", "policies") : "",
+      ]
+        .filter(Boolean)
+        .join(", ")}.`,
+    historyPartial:
+      "One of the two collections was partial, so some changes may not be shown.",
+    historyControlsHeading: "Measures whose status changed",
+    historyMovement: (improved, regressed) =>
+      `${plural(improved, "measure", "measures")} gained configuration or partial evidence, ${regressed} lost it.`,
+    historyControlHeaders: ["Measure", "Title", "Before", "Now"],
+    historyNoControlChanges: "No measure changed its status.",
+    controlStatuses: {
+      evidenceFound: "Configuration evidence",
+      partialEvidence: "Supporting or partial evidence",
+      noEvidence: "No recognized evidence",
+      notApplicable: "Outside selected scope",
+      notAssessed: "Not assessed",
+      conflictingEvidence: "Mixed policy evidence",
+    },
+    notMapped: "Not mapped",
+    historyRulesetChanged: (fromRuleset, toRuleset) =>
+      `The evaluation rules changed between the two collections (${fromRuleset} to ${toRuleset}), so some status changes may come from mapping updates rather than from the tenant.`,
+    historyNote:
+      "These changes are evidence from the Intune configuration, not an audit result.",
     outsideScopeHeading: "Measures outside Intune scope",
     outsideScopeIntro:
       "These measures cannot be checked from the Intune configuration. They need a separate review, for example of processes, contracts or other systems.",
@@ -387,6 +456,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     oldBaselineDetail: "nicht im früheren Bericht",
     noBaseline: "Kein früherer Bericht geladen",
     noBaselineHint: "nächsten Monat vergleichen",
+    historyValue: (improved, regressed) =>
+      `+${improved} / -${regressed} Maßnahmen`,
+    historyNoChange: "Keine Veränderung",
+    historyDetail: (since) => `seit ${since} (Verlauf)`,
     measuresHeading: "Maßnahmen",
     measuresCaption: "Aktive Schutzfunktionen je Maßnahme",
     moreMeasures: (count) =>
@@ -570,6 +643,48 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       "2. Bewahren Sie die Datei sicher auf.",
       "3. Laden Sie die Datei nächsten Monat, bevor Sie diesen Bericht erstellen. Seite 1 und diese Seite zeigen dann die Veränderungen.",
     ],
+    historyHeading: (since) => `Änderungen seit ${since}`,
+    historyIntro: (since) =>
+      `Vergleicht die aktuelle Erfassung mit dem Verlaufsstand, den dieser Computer am ${since} gespeichert hat. Verlaufsstände werden nur lokal auf diesem Computer gespeichert.`,
+    historyPoliciesHeading: "Änderungen an Richtlinien",
+    historyPolicyHeaders: ["Änderung", "Anzahl"],
+    historyPolicyRows: {
+      added: "Hinzugefügte Richtlinien",
+      removed: "Entfernte Richtlinien",
+      renamed: "Umbenannte Richtlinien",
+      changed: "Geänderte Richtlinien",
+      settingChanges: "Geänderte Einstellungen",
+      assignmentChanges: "Geänderte Zuweisungen",
+    },
+    historyNotCompared: (families, items) =>
+      `Nicht verglichen, weil die Erfassung unvollständig war: ${[
+        families > 0
+          ? plural(families, "Richtlinienart", "Richtlinienarten")
+          : "",
+        items > 0 ? plural(items, "Richtlinie", "Richtlinien") : "",
+      ]
+        .filter(Boolean)
+        .join(", ")}.`,
+    historyPartial:
+      "Eine der beiden Erfassungen war unvollständig. Einige Änderungen fehlen daher möglicherweise.",
+    historyControlsHeading: "Maßnahmen mit geändertem Status",
+    historyMovement: (improved, regressed) =>
+      `${plural(improved, "Maßnahme hat", "Maßnahmen haben")} Konfigurationsnachweise oder teilweise Nachweise hinzugewonnen, ${plural(regressed, "hat", "haben")} sie verloren.`,
+    historyControlHeaders: ["Maßnahme", "Titel", "Vorher", "Jetzt"],
+    historyNoControlChanges: "Keine Maßnahme hat ihren Status geändert.",
+    controlStatuses: {
+      evidenceFound: "Konfigurationsnachweis",
+      partialEvidence: "Unterstützender oder teilweiser Nachweis",
+      noEvidence: "Kein erkannter Nachweis",
+      notApplicable: "Außerhalb des gewählten Umfangs",
+      notAssessed: "Nicht bewertet",
+      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
+    },
+    notMapped: "Nicht zugeordnet",
+    historyRulesetChanged: (fromRuleset, toRuleset) =>
+      `Die Bewertungsregeln haben sich zwischen den beiden Erfassungen geändert (${fromRuleset} auf ${toRuleset}). Ein Teil der Statusänderungen kann daher aus aktualisierten Zuordnungen statt aus dem Mandanten stammen.`,
+    historyNote:
+      "Diese Änderungen sind Nachweise aus der Intune-Konfiguration, kein Prüfergebnis.",
     outsideScopeHeading: "Maßnahmen außerhalb des Intune-Umfangs",
     outsideScopeIntro:
       "Diese Maßnahmen lassen sich nicht anhand der Intune-Konfiguration prüfen. Sie brauchen eine gesonderte Bewertung, zum Beispiel von Prozessen, Verträgen oder anderen Systemen.",

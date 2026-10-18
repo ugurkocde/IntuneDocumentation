@@ -64,6 +64,16 @@ const api: IntunedocApi = {
   complianceClearCrosswalk: () => invoke("compliance:clearCrosswalk"),
   complianceSaveCrosswalkTemplate: () =>
     invoke("compliance:saveCrosswalkTemplate"),
+  complianceSaveRegister: (request, format) =>
+    invoke("compliance:saveRegister", request, format),
+  complianceSaveEvidencePack: (request) =>
+    invoke("compliance:saveEvidencePack", request),
+  compliancePreviewFixPack: (request) =>
+    invoke("compliance:previewFixPack", request),
+  complianceSaveFixPack: (request, confirmed) =>
+    invoke("compliance:saveFixPack", request, confirmed),
+  compliancePolicyDeviceStatus: (sectionKey) =>
+    invoke("compliance:policyDeviceStatus", sectionKey),
   openPortalLink: (url) => invoke("system:openPortalLink", url),
   saveFile: (defaultName, bytes) => invoke("file:save", defaultName, bytes),
   openLastFile: (path) => invoke("file:openLast", path ?? null),
@@ -85,6 +95,20 @@ const api: IntunedocApi = {
   historyDiff: (request) => invoke("history:diff", request),
   historyDelete: (id) => invoke("history:delete", id),
   historyDeleteAll: () => invoke("history:deleteAll"),
+  historyChanges: (request) => invoke("history:changes", request),
+  historyScheduleStatus: () => invoke("history:scheduleStatus"),
+  historySetSchedule: (hours) => invoke("history:setSchedule", hours),
+  compareExportReference: () => invoke("compare:exportReference"),
+  compareLoadReference: () => invoke("compare:loadReference"),
+  compareClearReference: () => invoke("compare:clearReference"),
+  compareReferenceStatus: () => invoke("compare:referenceStatus"),
+  compareRun: (source) => invoke("compare:run", source),
+  compareTenants: () => invoke("compare:tenants"),
+  portfolioList: () => invoke("portfolio:list"),
+  portfolioSetLabel: (tenantId, label) =>
+    invoke("portfolio:setLabel", tenantId, label),
+  portfolioDeleteTenant: (tenantId) =>
+    invoke("portfolio:deleteTenant", tenantId),
   onCollectProgress: (callback) => subscribe("collect:progress", callback),
   onExportProgress: (callback) => subscribe("export:progress", callback),
   onComplianceProgress: (callback) =>
@@ -94,6 +118,7 @@ const api: IntunedocApi = {
   onUpdateStatus: (callback) => subscribe("update:status", callback),
   onMenuCommand: (callback) => subscribe("menu:command", callback),
   onHistoryChanged: (callback) => subscribe("history:changed", () => callback()),
+  onScheduleStatus: (callback) => subscribe("history:schedule", callback),
 };
 
 contextBridge.exposeInMainWorld("intunedoc", api);

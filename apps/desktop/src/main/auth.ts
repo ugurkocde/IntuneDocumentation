@@ -247,6 +247,7 @@ export class AuthService {
   // An interactive sign-in finishing after a sign-out is discarded. Another
   // interactive sign-in finishing first does not cancel it.
   private signOuts = 0;
+  // Cancels the interactive sign-in that waits for the browser, if any.
   private activeCancel: (() => void) | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
   private reported = "false||";
@@ -467,6 +468,10 @@ export class AuthService {
   // The redirect still lands on this app's own loopback listener.
   // blockedBy runs once the browser sign-in has finished. A non-null reason
   // refuses to switch to the new account and becomes the error message.
+  // One sign-in waits for the browser at a time: starting another one, for
+  // example after the browser tab was closed, cancels the waiting one. A
+  // sign-in whose browser step is done still finishes, unless a sign-out
+  // came meanwhile.
   async signInInteractive(
     openBrowser: (url: string) => Promise<void>,
     options: { consent?: boolean; blockedBy?: () => string | null } = {},
@@ -474,6 +479,9 @@ export class AuthService {
     const signOuts = this.signOuts;
     const state = base64Url(randomBytes(16));
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    this.activeCancel?.();
+    this.activeCancel = cancel;
     let port = 0;
     let resolveCode!: (code: string) => void;
     let rejectCode!: (error: Error) => void;
@@ -486,31 +494,35 @@ export class AuthService {
         { once: true },
       );
     });
-    const listener = await listenLoopback((request, response) => {
-      const outcome = readCallback(request, { state, port });
-      if (outcome.kind === "ignore") {
-        response.writeHead(outcome.status).end();
-        return;
-      }
-      const failed = outcome.kind === "error";
-      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      response.end(
-        callbackPage(
-          failed ? "Sign in did not finish" : "You are signed in",
-          failed
-            ? "Return to Intune Documentation to see what happened and try again."
-            : "Return to Intune Documentation. You can close this browser tab.",
-        ),
-      );
-      if (outcome.kind === "error") rejectCode(new Error(outcome.message));
-      else resolveCode(outcome.code);
-    });
-    port = listener.port;
-    const redirectUri = `http://localhost:${port}`;
-    const { verifier, challenge } = createPkcePair();
-    this.activeCancel = () => controller.abort();
+    // A cancel before the browser opens is reported below, not as an
+    // unhandled rejection.
+    codePromise.catch(() => undefined);
+    let closeListener: () => void = () => undefined;
 
     try {
+      const listener = await listenLoopback((request, response) => {
+        const outcome = readCallback(request, { state, port });
+        if (outcome.kind === "ignore") {
+          response.writeHead(outcome.status).end();
+          return;
+        }
+        const failed = outcome.kind === "error";
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.end(
+          callbackPage(
+            failed ? "Sign in did not finish" : "You are signed in",
+            failed
+              ? "Return to Intune Documentation to see what happened and try again."
+              : "Return to Intune Documentation. You can close this browser tab.",
+          ),
+        );
+        if (outcome.kind === "error") rejectCode(new Error(outcome.message));
+        else resolveCode(outcome.code);
+      });
+      closeListener = listener.close;
+      port = listener.port;
+      const redirectUri = `http://localhost:${port}`;
+      const { verifier, challenge } = createPkcePair();
       const urlRequest: AuthorizationUrlRequest = {
         scopes: this.scopes,
         redirectUri,
@@ -520,6 +532,8 @@ export class AuthService {
         ...(options.consent ? { prompt: "consent" } : {}),
       };
       const authUrl = await this.pca.getAuthCodeUrl(urlRequest);
+      // Cancelled meanwhile: no browser tab for a sign-in nobody waits for.
+      if (controller.signal.aborted) throw new Error("Sign-in was cancelled.");
       await openBrowser(authUrl);
       const code = await withTimeout(
         codePromise,
@@ -534,7 +548,9 @@ export class AuthService {
       };
       const result = await this.pca.acquireTokenByCode(codeRequest);
       if (signOuts !== this.signOuts) {
-        await this.disposeCache();
+        // Only what this exchange added: a newer session of the same
+        // account keeps its tokens.
+        await this.forget(result.account);
         throw new Error("Sign-in was cancelled.");
       }
       const blocked = options.blockedBy?.() ?? null;
@@ -547,8 +563,9 @@ export class AuthService {
       this.generation += 1;
       return this.accept(result);
     } finally {
-      this.activeCancel = null;
-      listener.close();
+      // A newer sign-in may have taken over: its cancel stays in place.
+      if (this.activeCancel === cancel) this.activeCancel = null;
+      closeListener();
     }
   }
 

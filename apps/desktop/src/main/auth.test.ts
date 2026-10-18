@@ -9,7 +9,8 @@ import {
 } from "./auth";
 
 // A stand-in for MSAL: records the authorization request and answers the
-// code exchange for whichever account the test chooses.
+// code exchange for whichever account the test chooses. Like MSAL, each
+// client caches the account of every code exchange until it is removed.
 const msal = vi.hoisted(() => ({
   lastUrlRequest: null as null | { redirectUri: string; state?: string },
   nextAccount: { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" },
@@ -31,6 +32,7 @@ const idTokenIssued = (ms: number) =>
 
 vi.mock("@azure/msal-node", () => ({
   PublicClientApplication: class {
+    cached = new Map<string, { homeAccountId: string }>();
     getAuthCodeUrl(request: { redirectUri: string; state?: string }) {
       msal.lastUrlRequest = request;
       return Promise.resolve("https://login.microsoftonline.com/authorize");
@@ -38,6 +40,7 @@ vi.mock("@azure/msal-node", () => ({
     async acquireTokenByCode() {
       const account = { ...msal.nextAccount };
       if (msal.codeGate) await msal.codeGate;
+      this.cached.set(account.homeAccountId, account);
       return {
         accessToken: `token-${account.homeAccountId}`,
         account,
@@ -63,9 +66,10 @@ vi.mock("@azure/msal-node", () => ({
     }
     getTokenCache() {
       return {
-        getAllAccounts: () => Promise.resolve([]),
+        getAllAccounts: () => Promise.resolve([...this.cached.values()]),
         removeAccount: (account: { homeAccountId: string }) => {
           msal.removed.push(account.homeAccountId);
+          this.cached.delete(account.homeAccountId);
           return Promise.resolve();
         },
       };
@@ -343,6 +347,76 @@ describe("AuthService overlapping sign-ins", () => {
     } finally {
       msal.codeGate = null;
       await service.signOut();
+    }
+  });
+
+  it.each([
+    ["the same account", a],
+    ["another account", b],
+  ])(
+    "keeps a newer sign-in as %s when an exchange that straddled a sign-out finishes later",
+    async (_name, newer) => {
+      const service = new AuthService(config);
+      let release!: () => void;
+      msal.codeGate = new Promise<void>((resolve) => (release = resolve));
+      try {
+        const stale = await start(service, a);
+        await stale.redirect();
+        await service.signOut();
+        msal.codeGate = null;
+        msal.removed = [];
+        const fresh = await start(service, newer);
+        await fresh.redirect();
+        await expect(fresh.done).resolves.toMatchObject({ account: newer.username });
+        release();
+        await expect(stale.done).rejects.toThrow("Sign-in was cancelled.");
+        // Only the stale exchange's own account goes, never the newer one.
+        expect(msal.removed).toEqual(newer === a ? [] : [a.homeAccountId]);
+        expect(service.getStatus()).toMatchObject({ signedIn: true, account: newer.username });
+        expect(await service.getAccessToken()).toBe(`token-${newer.homeAccountId}`);
+      } finally {
+        msal.codeGate = null;
+        await service.signOut();
+      }
+    },
+  );
+
+  it("cancels a sign-in waiting for the browser when another one starts", async () => {
+    const service = new AuthService(config);
+    const opened: string[] = [];
+    // The first is replaced before its browser opens, so it opens none.
+    const first = service.signInInteractive(async () => {
+      opened.push("first");
+    });
+    const second = service.signInInteractive(async () => {
+      opened.push("second");
+    });
+    await expect(first).rejects.toThrow("Sign-in was cancelled.");
+    await vi.waitFor(() => expect(opened).toEqual(["second"]));
+    const replaced = expect(second).rejects.toThrow("Sign-in was cancelled.");
+    const third = await start(service, b);
+    await replaced;
+    await third.redirect();
+    await expect(third.done).resolves.toMatchObject({ account: b.username });
+    expect(opened).toEqual(["second"]);
+    await service.signOut();
+  });
+
+  it("lets sign-out cancel a waiting sign-in after an earlier one finished", async () => {
+    const service = new AuthService(config);
+    let release!: () => void;
+    msal.codeGate = new Promise<void>((resolve) => (release = resolve));
+    try {
+      const first = await start(service, a);
+      await first.redirect();
+      const second = await start(service, b);
+      release();
+      await expect(first.done).resolves.toMatchObject({ account: a.username });
+      await service.signOut();
+      await expect(second.done).rejects.toThrow("Sign-in was cancelled.");
+      expect(service.getStatus().signedIn).toBe(false);
+    } finally {
+      msal.codeGate = null;
     }
   });
 });

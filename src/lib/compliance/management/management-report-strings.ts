@@ -44,6 +44,8 @@ export interface ManagementReportStrings {
   noBaseline: string;
   noBaselineHint: string;
   historyValue: (improved: number, regressed: number) => string;
+  // No measure gained or lost evidence; policies or Entra settings may
+  // still have changed, so the words name measures.
   historyNoChange: string;
   historyDetail: (since: string) => string;
   measuresHeading: string;
@@ -199,7 +201,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     noBaselineHint: "compare next month",
     historyValue: (improved, regressed) =>
       `+${improved} / -${regressed} measures`,
-    historyNoChange: "No change",
+    historyNoChange: "No change in measures",
     historyDetail: (since) => `since ${since} (history)`,
     measuresHeading: "Measures",
     measuresCaption: "Safeguards in place per measure",
@@ -472,7 +474,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     noBaselineHint: "nächsten Monat vergleichen",
     historyValue: (improved, regressed) =>
       `+${improved} / -${regressed} Maßnahmen`,
-    historyNoChange: "Keine Veränderung",
+    historyNoChange: "Maßnahmen unverändert",
     historyDetail: (since) => `seit ${since} (Verlauf)`,
     measuresHeading: "Maßnahmen",
     measuresCaption: "Aktive Schutzfunktionen je Maßnahme",

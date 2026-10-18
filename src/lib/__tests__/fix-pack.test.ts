@@ -624,6 +624,14 @@ describe("fix pack generator", () => {
   });
 
   it("keeps every description within the length bound with the warning intact", () => {
+    // Every point the save dialog promises is in each description.
+    for (const point of [
+      "unassigned",
+      "Group Policy, security baselines or other profiles",
+      "do not import it blindly",
+      "pilot group",
+    ])
+      expect(FIX_PACK_WARNING).toContain(point);
     for (const [assessment, collection] of [
       [contoso, CONTOSO_TENANT],
       [empty, EMPTY],

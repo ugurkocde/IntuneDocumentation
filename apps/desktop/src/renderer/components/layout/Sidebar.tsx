@@ -266,13 +266,15 @@ export function Sidebar() {
 
   // A scheduled collection runs in main; once one finishes, the store picks
   // it up. The status at mount is the baseline, so only a later run counts.
+  // A failed run counts too: the collection may have succeeded before the
+  // snapshot could not be saved, and syncing an unchanged one does nothing.
   const lastRun = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     let active = true;
     const seen = (status: ScheduleStatus) => {
       const previous = lastRun.current;
       lastRun.current = status.lastRunAt;
-      return previous !== undefined && status.lastResult === "collected" && status.lastRunAt !== previous;
+      return previous !== undefined && status.lastRunAt !== null && status.lastRunAt !== previous;
     };
     void ipc
       .historyScheduleStatus()

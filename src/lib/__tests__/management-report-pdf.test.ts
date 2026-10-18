@@ -966,6 +966,29 @@ describe.each(["en", "de"] as const)(
       expect(text).toContain(strings.historyNoControlChanges);
       expect(text).not.toContain(strings.historyControlHeaders[3]);
     });
+
+    it("scopes the page 1 no change wording to measures when only policies and Entra settings changed", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            delta: undefined,
+            changes: createChanges({
+              controls: [],
+              improved: 0,
+              regressed: 0,
+              identity: { compared: 2, changes: 1, notCompared: 0 },
+            }),
+          }),
+        ),
+      );
+      expect(strings.historyNoChange).toBe(
+        locale === "en" ? "No change in measures" : "Maßnahmen unverändert",
+      );
+      expect(pages[0]?.text).toContain(strings.historyNoChange);
+      const text = pages[historyPage(pages) - 1]?.text ?? "";
+      expect(text).toContain(strings.historyPoliciesHeading);
+      expect(text).toContain(strings.historyIdentityHeading);
+    });
   },
 );
 

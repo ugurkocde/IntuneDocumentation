@@ -5,6 +5,7 @@ import { compareControlIds } from "../../../../../src/lib/compliance/engine";
 import type { AssessmentScope } from "../../../../../src/lib/compliance/types";
 import type { ComplianceFrameworkId, ComplianceView } from "../../shared/ipc-types";
 import { ControlRow, CONTROL_STATUS_ORDER } from "../components/compliance/ControlRow";
+import { ExportsPanel } from "../components/compliance/ExportsPanel";
 import { FrameworkMenu } from "../components/compliance/FrameworkMenu";
 import {
   CONTROL_FILTER_LABELS,
@@ -135,6 +136,7 @@ export function ComplianceScreen() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [recordPath, setRecordPath] = useState<string | null>(null);
   const [requestedFilter, setFilter] = useState<ControlFilter>("all");
+  const [exporting, setExporting] = useState(false);
   const record = useAsyncAction();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const focusTrigger = useRef(false);
@@ -219,6 +221,16 @@ export function ComplianceScreen() {
   const setScope = (next: AssessmentScope) => dispatch({ type: "complianceScope", scope: next });
 
   const reportBlocker =
+    blocker ??
+    (report.phase === "running"
+      ? "A report is already being created."
+      : exporting
+        ? "Available when the export finishes."
+        : loading
+          ? "Available when the assessment is up to date."
+          : null);
+  // The exports panel shows its own running export, so only other work blocks it.
+  const exportsBlocker =
     blocker ??
     (report.phase === "running"
       ? "A report is already being created."
@@ -431,6 +443,14 @@ export function ComplianceScreen() {
               void runComplianceReport(dispatch, frameworkId, scope, () => void actions.refreshLicense())
             }
             onReset={() => dispatch({ type: "complianceReport", patch: initialComplianceReport })}
+          />
+
+          <ExportsPanel
+            request={{ frameworkId, scope }}
+            frameworkLabel={label}
+            ready={!loading}
+            blocker={exportsBlocker}
+            onBusyChange={setExporting}
           />
 
           {(selected.framework.note || selected.framework.source) && (

@@ -1,7 +1,12 @@
 import JSZip from "jszip";
 import verified from "./verified-technical-settings.json";
 import additionalVerified from "./additional-verified-settings.json";
-import { COMPLIANCE_DISCLAIMER } from "./engine";
+import { collectConfigurations } from "./coverage";
+import {
+  collectCatalogValues,
+  COMPLIANCE_DISCLAIMER,
+  type ComplianceExportData,
+} from "./engine";
 import type {
   CapabilityResult,
   CapabilityStatus,
@@ -67,6 +72,12 @@ export interface FixPack {
 export interface FixPackOptions {
   /** Restrict the pack to capabilities mapped to this framework's controls. */
   frameworkId?: string;
+  /**
+   * The collection the assessment was made from. A policy that sets the
+   * parent of a missing child setting to another option leaves no check in
+   * the assessment, so only the collection shows that deliberate choice.
+   */
+  collection?: ComplianceExportData;
 }
 
 export const FIX_PACK_POLICY_PREFIX = "Intune Documentation fix pack: ";
@@ -133,6 +144,8 @@ function unsupportedReason(signal: DetectionSignal): string {
       return "Detected through a security baseline, which the fix pack does not generate.";
     case "omaUri":
       return "Detected through a custom OMA-URI setting, which the fix pack does not generate.";
+    case "tenantPolicy":
+      return "Entra setting, change it in the Entra admin center.";
     default:
       return "The setting has no verified Settings Catalog choice value.";
   }
@@ -210,6 +223,70 @@ function resolveSignal(signal: DetectionSignal): Resolution {
   return { ok: true, path: { entries } };
 }
 
+/** Why a path leaves out child settings its options need, if it does. */
+function missingChildren(
+  path: SettingPath,
+  present: ReadonlySet<string>,
+): string | undefined {
+  for (const entry of path.entries) {
+    const definition = definitionById.get(entry.id);
+    const option = definition?.options.find((row) => row.id === entry.value);
+    const missing = (option?.children ?? []).filter((id) => !present.has(id));
+    if (definition && missing.length)
+      return `${definition.name} needs ${missing.length} dependent ${missing.length === 1 ? "setting" : "settings"} with no verified value in this build, and a draft never sends it without ${missing.length === 1 ? "it" : "them"}. Configure it manually.`;
+  }
+  return undefined;
+}
+
+function optionLabel(id: string, value: unknown): string {
+  const option = definitionById
+    .get(id)
+    ?.options.find((row) => row.id === String(value));
+  return option ? `"${option.label}"` : JSON.stringify(value);
+}
+
+type ConfiguredValues = Map<
+  string,
+  Array<{ policyName: string; values: unknown[] }>
+>;
+
+/** Every Settings Catalog value the collected policies configure. */
+function configuredValues(collection?: ComplianceExportData): ConfiguredValues {
+  const configured: ConfiguredValues = new Map();
+  if (!collection) return configured;
+  for (const config of collectConfigurations(collection)) {
+    const policyName = String(
+      config.displayName || config.name || "Unnamed policy",
+    );
+    for (const [id, values] of collectCatalogValues(config.settings)) {
+      const rows = configured.get(id) ?? [];
+      rows.push({ policyName, values });
+      configured.set(id, rows);
+    }
+  }
+  return configured;
+}
+
+/**
+ * A collected policy that sets a setting of the draft, typically the parent
+ * of the missing child, to another option made a deliberate choice. The
+ * assessment holds no check for a child under a disabled parent.
+ */
+function deliberateChoice(
+  paths: readonly SettingPath[],
+  configured: ConfiguredValues,
+): string | undefined {
+  for (const path of paths)
+    for (const entry of path.entries)
+      for (const row of configured.get(entry.id) ?? []) {
+        const other = row.values.find((value) => String(value) !== entry.value);
+        if (row.values.length && other === undefined) continue;
+        const name = definitionById.get(entry.id)?.name ?? entry.id;
+        return `The policy "${row.policyName}" sets ${name} to ${other === undefined ? "a value that could not be read" : optionLabel(entry.id, other)}, so the setting is deliberately configured differently. Change that policy instead of importing a draft.`;
+      }
+  return undefined;
+}
+
 function buildSettings(
   paths: readonly SettingPath[],
 ): FixPackPolicyDocument["settings"] {
@@ -285,10 +362,30 @@ function selectSettings(
     paths.push(candidate);
   }
 
-  const omitted = [...owners].map(
-    ([owner, count]) =>
-      `${count} alternative ${count === 1 ? "setting is" : "settings are"} left out because the ${owner} policy in this pack sets ${count === 1 ? "it" : "them"} to a different value.`,
-  );
+  // An option whose definition lists child settings is only sent with all of
+  // them, never with children: [], so a path is dropped until every option
+  // left in the policy has its children in the policy too.
+  const incomplete = new Set<string>();
+  for (;;) {
+    const present = new Set(
+      paths.flatMap(({ path }) => path.entries.map((entry) => entry.id)),
+    );
+    const reasons = paths.map(({ path }) => missingChildren(path, present));
+    if (!reasons.some(Boolean)) break;
+    for (let index = paths.length - 1; index >= 0; index -= 1)
+      if (reasons[index]) {
+        incomplete.add(reasons[index]!);
+        paths.splice(index, 1);
+      }
+  }
+
+  const omitted = [
+    ...[...owners].map(
+      ([owner, count]) =>
+        `${count} alternative ${count === 1 ? "setting is" : "settings are"} left out because the ${owner} policy in this pack sets ${count === 1 ? "it" : "them"} to a different value.`,
+    ),
+    ...incomplete,
+  ];
   const missingGroups = groups.filter(
     (group) => !paths.some(({ signal }) => signal.requirementGroup === group),
   );
@@ -348,28 +445,40 @@ export function generateFixPack(
         .map((control) => `${row.framework.id}:${control.control.id}`),
     );
   const chosen = new Map<string, { value: string; capability: string }>();
-  const policies: FixPackPolicy[] = [];
+  const configured = configuredValues(options.collection);
+  const drafts: Array<{
+    result: CapabilityResult;
+    controls: string[];
+    paths: SettingPath[];
+    notes: string[];
+  }> = [];
   const notGeneratable: FixPackGap[] = [];
+  const gapFor = (result: CapabilityResult, reason: string) =>
+    notGeneratable.push({
+      capabilityId: result.capability.id,
+      name: result.capability.name,
+      reason,
+    });
 
   for (const result of assessment.capabilities) {
     const { capability, status } = result;
     const controls = controlIds(capability.id);
     if (options.frameworkId && !controls.length) continue;
     if (SKIPPED_STATUSES.has(status)) continue;
-    const gap = (reason: string) =>
-      notGeneratable.push({
-        capabilityId: capability.id,
-        name: capability.name,
-        reason,
-      });
+    const gap = (reason: string) => gapFor(result, reason);
     const blocked = blocker(result);
     if (blocked) {
       gap(blocked);
       continue;
     }
     if (capability.platform !== "windows") {
+      const entra = capability.signals.find(
+        (signal) => signal.source === "tenantPolicy",
+      );
       gap(
-        `The fix pack covers Windows Settings Catalog settings only. Configure this ${PLATFORM_LABELS[capability.platform]} capability manually.`,
+        entra
+          ? unsupportedReason(entra)
+          : `The fix pack covers Windows Settings Catalog settings only. Configure this ${PLATFORM_LABELS[capability.platform]} capability manually.`,
       );
       continue;
     }
@@ -378,30 +487,90 @@ export function generateFixPack(
       gap(selection.reason);
       continue;
     }
+    const deliberate = deliberateChoice(selection.paths, configured);
+    if (deliberate) {
+      gap(deliberate);
+      continue;
+    }
     for (const path of selection.paths)
       for (const entry of path.entries)
         chosen.set(entry.id, { value: entry.value, capability: capability.id });
-    policies.push({
-      fileName: `${String(policies.length + 1).padStart(2, "0")}-${capability.id}.json`,
-      capabilityId: capability.id,
-      controlIds: controls,
-      json: {
-        name: `${FIX_PACK_POLICY_PREFIX}${capability.name} (draft, unassigned)`,
-        description: [
-          FIX_PACK_WARNING,
-          `Generated ${assessment.generatedAt} with ruleset ${assessment.provenance.rulesetVersion}.`,
-          `Capability: ${capability.id}.`,
-          `Controls: ${controls.length ? controls.join(", ") : "none mapped"}.`,
-        ].join(" "),
-        platforms: "windows10",
-        technologies: "mdm",
-        roleScopeTagIds: ["0"],
-        templateReference: { templateId: "", templateFamily: "none" },
-        settings: buildSettings(selection.paths),
-      },
+    drafts.push({
+      result,
+      controls,
+      paths: selection.paths,
       notes: selection.omitted,
     });
   }
+
+  // Umbrella capabilities reuse the settings of their component capabilities.
+  // Smaller drafts claim their settings first; a draft whose settings are all
+  // claimed is left out, and otherwise only shares settings when it needs
+  // them together for its required groups.
+  const leaf = (path: SettingPath) => path.entries.at(-1)!.id;
+  const owner = new Map<string, string>();
+  const kept = new Set<(typeof drafts)[number]>();
+  for (const draft of [...drafts].sort(
+    (left, right) => left.paths.length - right.paths.length,
+  )) {
+    const covered = draft.paths.filter((path) => owner.has(leaf(path)));
+    const owners = [...new Set(covered.map((path) => owner.get(leaf(path))!))];
+    const drafted = `${owners.length === 1 ? "draft" : "drafts"} for ${owners.join(", ")} in this pack`;
+    if (covered.length === draft.paths.length) {
+      gapFor(
+        draft.result,
+        `Every setting of this capability is already in the ${drafted}, so it gets no separate draft.`,
+      );
+      continue;
+    }
+    const rest = draft.paths.filter((path) => !covered.includes(path));
+    const present = new Set(
+      rest.flatMap((path) => path.entries.map((entry) => entry.id)),
+    );
+    // Stripping must not leave an option without the children it needs.
+    if (
+      covered.length &&
+      !draft.result.capability.requiredGroups?.length &&
+      !rest.some((path) => missingChildren(path, present))
+    ) {
+      draft.paths = rest;
+      draft.notes.push(
+        `${covered.length} ${covered.length === 1 ? "setting is" : "settings are"} left out because the ${drafted} already ${covered.length === 1 ? "contains it" : "contain them"}.`,
+      );
+    }
+    for (const path of draft.paths)
+      if (!owner.has(leaf(path)))
+        owner.set(leaf(path), draft.result.capability.id);
+    kept.add(draft);
+  }
+
+  const policies = drafts
+    .filter((draft) => kept.has(draft))
+    .map(
+      (
+        { result: { capability }, controls, paths, notes },
+        index,
+      ): FixPackPolicy => ({
+        fileName: `${String(index + 1).padStart(2, "0")}-${capability.id}.json`,
+        capabilityId: capability.id,
+        controlIds: controls,
+        json: {
+          name: `${FIX_PACK_POLICY_PREFIX}${capability.name} (draft, unassigned)`,
+          description: [
+            FIX_PACK_WARNING,
+            `Generated ${assessment.generatedAt} with ruleset ${assessment.provenance.rulesetVersion}.`,
+            `Capability: ${capability.id}.`,
+            `Controls: ${controls.length ? controls.join(", ") : "none mapped"}.`,
+          ].join(" "),
+          platforms: "windows10",
+          technologies: "mdm",
+          roleScopeTagIds: ["0"],
+          templateReference: { templateId: "", templateFamily: "none" },
+          settings: buildSettings(paths),
+        },
+        notes,
+      }),
+    );
   return {
     policies,
     notGeneratable,

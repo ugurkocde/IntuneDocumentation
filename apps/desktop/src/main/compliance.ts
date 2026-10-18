@@ -35,18 +35,43 @@ import type {
   OutsideScopeMeasure,
 } from "../../../../src/lib/compliance/management/types";
 import { frameworkCoverageLabel } from "../../../../src/lib/compliance/presentation";
+import {
+  deviceStatusAnnexRows,
+  hasPolicyDeviceStatus,
+  policyStatusSourceFor,
+} from "../../../../src/lib/compliance/device-status-annex";
+import {
+  buildEvidencePack,
+  buildEvidenceRegister,
+  controlEvidence,
+  registerToCsv,
+  registerToXlsx,
+  safeFileName,
+  type PolicyStatusRow,
+} from "../../../../src/lib/compliance/export";
+import {
+  buildFixPackZip,
+  generateFixPack,
+  type FixPack,
+} from "../../../../src/lib/compliance/fix-pack";
+import { getStableItemId } from "../../../../src/lib/configuration-sections";
 import type {
   AssessmentScope,
   ComplianceAssessment,
   CompliancePlatform,
   FrameworkDefinition,
+  PolicyDeviceStatus,
+  PolicyStatusSource,
 } from "../../../../src/lib/compliance/types";
 import type {
   ComplianceFrameworkId,
+  ComplianceRegisterFormat,
   ComplianceReportProgress,
   ComplianceRequest,
   ComplianceView,
+  FixPackPreview,
   ManagementUnassignedConfig,
+  PolicyDeviceStatusView,
 } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
 import { getCollectionOwner, getLastCollection } from "./collect";
@@ -502,21 +527,341 @@ export async function complianceReport(
 }
 
 // The machine readable evidence record the website offers next to the PDF.
-export async function complianceRecord(
+async function complianceRecordData(
   owner: string,
   token: TokenProvider,
   request: ComplianceRequest,
-): Promise<{ fileName: string; bytes: Uint8Array }> {
+) {
   const collection = requireCollection(owner);
   const { names: groupNames } = await groupNamesFor(collection, token);
   const manifest = await createEvidenceManifest(
     assessmentData(collection, groupNames, request.scope),
     request.scope,
   );
+  return { fileName: `compliance-evidence-${localDateStamp()}.json`, manifest };
+}
+
+export async function complianceRecord(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const { fileName, manifest } = await complianceRecordData(
+    owner,
+    token,
+    request,
+  );
   return {
-    fileName: `compliance-evidence-${localDateStamp()}.json`,
+    fileName,
     bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
   };
+}
+
+// ---------------------------------------------------------------- Exports
+// The evidence register, the Purview evidence pack and the draft fix pack are
+// paid desktop features built from the cached assessment of the scope.
+
+const POLICY_STATUS_SOURCE_LABELS: Record<PolicyStatusSource, string> = {
+  configurationPolicies: "Configuration report",
+  compliancePolicies: "Compliance report",
+  deviceConfigurations: "Profile status overview",
+};
+
+export function parseRegisterFormat(value: unknown): ComplianceRegisterFormat {
+  if (value !== "csv" && value !== "xlsx") {
+    throw new Error("Choose CSV or Excel for the evidence register.");
+  }
+  return value;
+}
+
+// The PDF report name with another prefix and extension, so every file of a
+// framework and tenant sorts together.
+function exportFileName(
+  reportFileName: string,
+  prefix: string,
+  extension: string,
+) {
+  return reportFileName
+    .replace(/^Compliance-Report-/, `${prefix}-`)
+    .replace(/\.pdf$/i, `.${extension}`);
+}
+
+async function reportFileNameFor(
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  tenantId: string | null,
+): Promise<string> {
+  const { complianceReportFileName } = await import(
+    "../../../../src/lib/compliance/report-pdf"
+  );
+  return complianceReportFileName(
+    request.frameworkId,
+    tenantLabelOf(tenantId),
+    request.scope.essentialEightMaturityLevel ?? 1,
+  );
+}
+
+// Device status counts for the policies the framework's controls cite, as
+// the register's Policy status sheet. Never an input to any status.
+export function registerPolicyStatus(
+  assessment: ComplianceAssessment,
+  frameworkId: ComplianceFrameworkId,
+  status: PolicyDeviceStatus | undefined,
+): PolicyStatusRow[] | undefined {
+  if (!hasPolicyDeviceStatus(status)) return undefined;
+  const framework = assessment.frameworks.find(
+    (item) => item.framework.id === frameworkId,
+  );
+  const capabilities = new Map(
+    assessment.capabilities.map((result) => [result.capability.id, result]),
+  );
+  const evidence = (framework?.controls ?? []).flatMap((control) =>
+    controlEvidence(control, capabilities),
+  );
+  return deviceStatusAnnexRows(evidence, status).map((row) => ({
+    policyId: row.policyId,
+    policyName: row.policyName,
+    source:
+      row.state === "notCollected"
+        ? `${POLICY_STATUS_SOURCE_LABELS[row.source]}, not collected`
+        : POLICY_STATUS_SOURCE_LABELS[row.source],
+    collectedAt: status.collectedAt,
+    succeeded: row.counts?.succeeded ?? null,
+    error: row.counts?.error ?? null,
+    conflict: row.counts?.conflict ?? null,
+    notApplicable: row.counts?.notApplicable ?? null,
+    pending: row.counts?.pending ?? null,
+    noStatusReported: row.state === "noStatusReported",
+  }));
+}
+
+export async function registerFile(
+  assessment: ComplianceAssessment,
+  frameworkId: ComplianceFrameworkId,
+  format: ComplianceRegisterFormat,
+  meta: {
+    reportFileName: string;
+    tenantLabel?: string;
+    policyDeviceStatus?: PolicyDeviceStatus;
+  },
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const register = buildEvidenceRegister(assessment, { frameworkId });
+  const fileName = exportFileName(
+    meta.reportFileName,
+    "Evidence-Register",
+    format,
+  );
+  if (format === "csv") {
+    return {
+      fileName,
+      bytes: new TextEncoder().encode(registerToCsv(register)),
+    };
+  }
+  const framework = assessment.frameworks.find(
+    (item) => item.framework.id === frameworkId,
+  )?.framework;
+  const bytes = await registerToXlsx(register, {
+    tenant: meta.tenantLabel,
+    collectedAt: assessment.provenance.collectedAt,
+    rulesetVersion: assessment.provenance.rulesetVersion,
+    framework: framework ? `${framework.name} ${framework.version}` : undefined,
+    generatedAt: new Date().toISOString(),
+    policyStatus: registerPolicyStatus(
+      assessment,
+      frameworkId,
+      meta.policyDeviceStatus,
+    ),
+  });
+  return { fileName, bytes };
+}
+
+export async function complianceRegister(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  format: ComplianceRegisterFormat,
+  tenantId: string | null,
+  onProgress: (progress: ComplianceReportProgress) => void,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const collection = requireCollection(owner);
+  onProgress({ stage: "groups" });
+  const groupNames = await groupNamesFor(collection, token);
+  onProgress({ stage: "generating" });
+  await yieldToEventLoop();
+  return registerFile(
+    assess(collection, groupNames, request.scope),
+    request.frameworkId,
+    format,
+    {
+      reportFileName: await reportFileNameFor(request, tenantId),
+      tenantLabel: tenantLabelOf(tenantId),
+      policyDeviceStatus: (collection as unknown as DetailedExportData)
+        .policyDeviceStatus,
+    },
+  );
+}
+
+// The framework PDF and the JSON evidence record, the same files the report
+// and record handlers save, packed for Purview Compliance Manager.
+export async function complianceEvidencePack(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  tenantId: string | null,
+  onProgress: (progress: ComplianceReportProgress) => void,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const collection = requireCollection(owner);
+  const report = await complianceReport(
+    owner,
+    token,
+    request,
+    tenantId,
+    onProgress,
+  );
+  const record = await complianceRecordData(owner, token, request);
+  // The PDF and the record must describe the same collection.
+  if (requireCollection(owner) !== collection) {
+    throw new Error(
+      "The tenant was collected again while the pack was created. Create the pack again.",
+    );
+  }
+  const bytes = await buildEvidencePack(
+    record.manifest.assessment,
+    record.manifest,
+    request.frameworkId,
+    {
+      reportPdf: report.bytes,
+      reportFileName: report.fileName,
+      recordFileName: record.fileName,
+      tenant: tenantLabelOf(tenantId),
+    },
+  );
+  return {
+    fileName: safeFileName(
+      exportFileName(report.fileName, "Purview-Evidence-Pack", "zip"),
+      "Purview-Evidence-Pack.zip",
+    ),
+    bytes,
+  };
+}
+
+export function fixPackPreviewOf(pack: FixPack): FixPackPreview {
+  return {
+    summary: pack.summary,
+    policies: pack.policies.map((policy) => ({
+      fileName: policy.fileName,
+      name: policy.json.name,
+      capabilityId: policy.capabilityId,
+    })),
+    notGeneratable: pack.notGeneratable,
+  };
+}
+
+async function fixPackFor(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+) {
+  const collection = requireCollection(owner);
+  const groupNames = await groupNamesFor(collection, token);
+  const assessment = assess(collection, groupNames, request.scope);
+  return {
+    assessment,
+    // The collection shows parent settings configured to another option,
+    // which leave no check in the assessment.
+    pack: generateFixPack(assessment, {
+      frameworkId: request.frameworkId,
+      collection: assessmentData(collection, groupNames.names, request.scope),
+    }),
+  };
+}
+
+export async function complianceFixPackPreview(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+): Promise<FixPackPreview> {
+  return fixPackPreviewOf((await fixPackFor(owner, token, request)).pack);
+}
+
+export async function complianceFixPack(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  tenantId: string | null,
+  onProgress: (progress: ComplianceReportProgress) => void,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  onProgress({ stage: "groups" });
+  const { assessment, pack } = await fixPackFor(owner, token, request);
+  onProgress({ stage: "generating" });
+  await yieldToEventLoop();
+  return {
+    fileName: exportFileName(
+      await reportFileNameFor(request, tenantId),
+      "Draft-Fix-Pack",
+      "zip",
+    ),
+    bytes: await buildFixPackZip(pack, assessment),
+  };
+}
+
+// Device status counts of one collected section, keyed like the section
+// items, or null when Intune reports no device status for its family.
+export function policyDeviceStatusOf(
+  collection: Pick<Collection, "sections"> & {
+    policyDeviceStatus?: PolicyDeviceStatus;
+  },
+  sectionKey: string,
+): PolicyDeviceStatusView | null {
+  const section = collection.sections.find((entry) => entry.key === sectionKey);
+  if (!section)
+    throw new Error("This section is not part of the last collection.");
+  const source = policyStatusSourceFor(section.familyKey);
+  if (!source) return null;
+  const status = collection.policyDeviceStatus;
+  const state = status?.sources[source] ?? "skipped";
+  const rows: PolicyDeviceStatusView["rows"] = {};
+  if (status && state === "collected") {
+    const reported = new Map(
+      status.rows
+        .filter((row) => row.source === source)
+        .map((row) => [row.policyId, row]),
+    );
+    section.items.forEach((item, index) => {
+      const policyId = (item as { id?: unknown }).id;
+      const row =
+        typeof policyId === "string" ? reported.get(policyId) : undefined;
+      if (!row) return;
+      rows[getStableItemId(section, item as Record<string, unknown>, index)] = {
+        succeeded: row.succeeded,
+        error: row.error,
+        conflict: row.conflict,
+        notApplicable: row.notApplicable,
+        pending: row.pending,
+      };
+    });
+  }
+  return {
+    source,
+    sourceLabel: POLICY_STATUS_SOURCE_LABELS[source],
+    state,
+    error: status
+      ? (status.errors?.[source] ?? null)
+      : "Device status was not part of this collection.",
+    collectedAt: status?.collectedAt ?? null,
+    rows,
+  };
+}
+
+export function complianceDeviceStatus(
+  owner: string,
+  sectionKey: string,
+): PolicyDeviceStatusView | null {
+  return policyDeviceStatusOf(
+    requireCollection(owner) as unknown as Parameters<
+      typeof policyDeviceStatusOf
+    >[0],
+    sectionKey,
+  );
 }
 
 export function frameworkSourceUrl(frameworkId: unknown): string {

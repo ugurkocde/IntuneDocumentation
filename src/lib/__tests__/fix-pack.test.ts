@@ -76,8 +76,14 @@ describe("fix pack generator", () => {
         );
         expect(option, instance.choiceSettingValue.value).toBeDefined();
         expect(option!.label).not.toMatch(/\bwith UEFI lock\b/i);
-        for (const child of instance.choiceSettingValue.children)
-          expect(option!.children).toContain(child.settingDefinitionId);
+        const children = instance.choiceSettingValue.children.map(
+          (child) => child.settingDefinitionId,
+        );
+        // Never a parent option with children: [] when its definition lists
+        // children: every listed child is sent, and nothing else.
+        expect(children.sort(), instance.settingDefinitionId).toEqual(
+          [...option!.children].sort(),
+        );
       }
     }
   });
@@ -224,15 +230,8 @@ describe("fix pack generator", () => {
     );
   });
 
-  it("prefers device scope and keeps values consistent across the pack", () => {
+  it("keeps values consistent across the pack", () => {
     const pack = generateFixPack(empty);
-    const ids = policyFor(
-      pack,
-      "windows-powershell-scriptblock-logging",
-    )!.json.settings.map((row) => row.settingInstance.settingDefinitionId);
-    expect(ids).toHaveLength(1);
-    expect(ids[0]).toMatch(/^device_/);
-
     const values = new Map<string, string>();
     for (const instance of allInstances(pack)) {
       const previous = values.get(instance.settingDefinitionId);
@@ -371,5 +370,222 @@ describe("fix pack generator", () => {
     );
     for (const row of pack.notGeneratable) expect(readme).toContain(row.reason);
     expect(readme).not.toMatch(/[\u2013\u2014]| - /);
+  });
+
+  it("lists options whose dependent settings have no verified value", () => {
+    const pack = generateFixPack(empty);
+    for (const id of [
+      "windows-powershell-scriptblock-logging",
+      "windows-powershell-transcription",
+      "windows-password-required",
+      "windows-laps-management",
+      "windows-credential-theft-protection",
+      "windows-office-macro-win32-block",
+      "windows-office-child-process-block",
+      "windows-office-executable-block",
+      "windows-office-injection-block",
+      "windows-adobe-child-process-block",
+    ]) {
+      expect(policyFor(pack, id), id).toBeUndefined();
+      expect(gapFor(pack, id)?.reason, id).toMatch(
+        /needs \d+ dependent settings? with no verified value in this build/,
+      );
+    }
+    // The device scope variant replaces the user scope one before the check,
+    // so the reason is given once.
+    expect(
+      gapFor(pack, "windows-powershell-scriptblock-logging")?.reason.match(
+        /dependent/g,
+      ),
+    ).toHaveLength(1);
+    // An alternative with complete children still gets a draft.
+    const ie = policyFor(pack, "windows-ie-disabled")!;
+    expect(
+      ie.json.settings.map((row) => row.settingInstance.settingDefinitionId),
+    ).toEqual([
+      "device_vendor_msft_policy_config_internetexplorer_disableinternetexplorerapp",
+    ]);
+    expect(ie.notes.join(" ")).toMatch(/1 dependent setting/);
+  });
+
+  it("does not generate a setting that a collected policy configures differently", () => {
+    const parent =
+      "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration";
+    const collection = emptyCollection();
+    collection.settingsCatalog = [
+      {
+        id: "policy-1",
+        name: "Remote admin =cmd",
+        platforms: "windows10",
+        technologies: "mdm",
+        settings: [
+          {
+            settingInstance: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
+              settingDefinitionId: parent,
+              choiceSettingValue: { value: `${parent}_0`, children: [] },
+            },
+          },
+        ],
+        assignments: [
+          {
+            target: {
+              "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
+            },
+          },
+        ],
+      },
+    ] as unknown as DetailedExportData["settingsCatalog"];
+    const assessment = assessCompliance(collection);
+    const id = "windows-remote-credential-guard";
+    // The child under a disabled parent leaves no check in the assessment.
+    const result = assessment.capabilities.find(
+      (row) => row.capability.id === id,
+    )!;
+    expect(result.status).toBe("noEvidence");
+    expect(result.checks.every((check) => check.result === "missing")).toBe(
+      true,
+    );
+    expect(policyFor(generateFixPack(assessment), id)).toBeDefined();
+
+    const pack = generateFixPack(assessment, { collection });
+    expect(policyFor(pack, id)).toBeUndefined();
+    expect(gapFor(pack, id)?.reason).toBe(
+      'The policy "Remote admin =cmd" sets Restrict delegation of credentials to remote servers to "Disabled", so the setting is deliberately configured differently. Change that policy instead of importing a draft.',
+    );
+    // Other capabilities are unaffected.
+    expect(policyFor(pack, "windows-lsa-protection")).toBeDefined();
+  });
+
+  it("leaves out umbrella capabilities covered by their components", () => {
+    const pack = generateFixPack(empty);
+    for (const [umbrella, components] of [
+      [
+        "windows-office-macro-settings-managed",
+        "windows-office-macros-disabled, windows-office-internet-macros-blocked",
+      ],
+      [
+        "windows-browser-security-settings-managed",
+        "windows-browser-java-blocked, windows-browser-intrusive-ads-blocked",
+      ],
+    ] as const) {
+      expect(policyFor(pack, umbrella), umbrella).toBeUndefined();
+      expect(gapFor(pack, umbrella)?.reason).toBe(
+        `Every setting of this capability is already in the drafts for ${components} in this pack, so it gets no separate draft.`,
+      );
+    }
+    const roots = pack.policies.flatMap((policy) =>
+      policy.json.settings.map(
+        (row) => row.settingInstance.settingDefinitionId,
+      ),
+    );
+    expect(new Set(roots).size).toBe(roots.length);
+    expect(pack.policies.map((row) => row.fileName.slice(0, 3))).toEqual(
+      pack.policies.map((_, index) => `${String(index + 1).padStart(2, "0")}-`),
+    );
+  });
+
+  it("strips settings a smaller draft already holds", () => {
+    const remote = empty.capabilities.find(
+      (row) => row.capability.id === "windows-remote-credential-guard",
+    )!;
+    const v3 =
+      "user_vendor_msft_policy_config_office16v8~policy~l_microsoftofficesystem~l_securitysettings~l_trustcenter241_l_onlytrustvbasignaturev3";
+    const lsa =
+      "device_vendor_msft_policy_config_localsecurityauthority_configurelsaprotectedprocess";
+    const signal = (id: string, value: string) => ({
+      source: "settingsCatalog" as const,
+      settingDefinitionId: id,
+      enforcedWhen: { kind: "equals" as const, value },
+    });
+    const result = (id: string, signals: ComplianceCapability["signals"]) => ({
+      ...remote,
+      capability: { ...remote.capability, id, signals },
+    });
+    const pack = generateFixPack({
+      ...empty,
+      frameworks: [],
+      capabilities: [
+        result("umbrella", [signal(v3, `${v3}_1`), signal(lsa, `${lsa}_2`)]),
+        result("component", [signal(v3, `${v3}_1`)]),
+      ],
+    });
+    expect(pack.policies.map((row) => row.capabilityId)).toEqual([
+      "umbrella",
+      "component",
+    ]);
+    const umbrella = policyFor(pack, "umbrella")!;
+    expect(
+      umbrella.json.settings.map(
+        (row) => row.settingInstance.settingDefinitionId,
+      ),
+    ).toEqual([lsa]);
+    expect(umbrella.notes).toEqual([
+      "1 setting is left out because the draft for component in this pack already contains it.",
+    ]);
+  });
+
+  it("keeps shared settings when stripping would orphan a parent option", () => {
+    const remote = empty.capabilities.find(
+      (row) => row.capability.id === "windows-remote-credential-guard",
+    )!;
+    const parent =
+      "device_vendor_msft_policy_config_admx_credssp_restrictedremoteadministration";
+    const result = (id: string, signals: ComplianceCapability["signals"]) => ({
+      ...remote,
+      capability: { ...remote.capability, id, signals },
+    });
+    const pack = generateFixPack({
+      ...empty,
+      frameworks: [],
+      capabilities: [
+        result("umbrella", [
+          {
+            source: "settingsCatalog",
+            settingDefinitionId: parent,
+            enforcedWhen: { kind: "equals", value: `${parent}_1` },
+          },
+          ...remote.capability.signals,
+        ]),
+        result("component", remote.capability.signals),
+      ],
+    });
+    const umbrella = policyFor(pack, "umbrella")!;
+    expect(umbrella.notes).toEqual([]);
+    expect(
+      umbrella.json.settings[0]!.settingInstance.choiceSettingValue.children,
+    ).toHaveLength(1);
+  });
+
+  it("points Entra tenant settings to the Entra admin center", () => {
+    const remote = empty.capabilities.find(
+      (row) => row.capability.id === "windows-remote-credential-guard",
+    )!;
+    const pack = generateFixPack({
+      ...empty,
+      frameworks: [],
+      capabilities: [
+        {
+          ...remote,
+          capability: {
+            ...remote.capability,
+            id: "tenant-test",
+            platform: "tenant",
+            signals: [
+              {
+                source: "tenantPolicy",
+                policy: "securityDefaults",
+                check: "securityDefaultsEnabled",
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(pack.policies).toEqual([]);
+    expect(pack.notGeneratable[0]?.reason).toBe(
+      "Entra setting, change it in the Entra admin center.",
+    );
   });
 });

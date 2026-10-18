@@ -6,7 +6,7 @@ import { DOCS_URL } from "~/lib/docs";
 // stay in one place. The legal pages state the same limits in fixed text.
 
 export const DESKTOP_APP_NAME = "Intune Documentation Desktop";
-export const DESKTOP_APP_VERSION = "0.3.3";
+export const DESKTOP_APP_VERSION = "0.4.0";
 export const DESKTOP_CURRENCY = "EUR";
 // Refund window for the first payment of a new subscription. The terms page
 // states the same guarantee in fixed text.

@@ -152,6 +152,10 @@ Each item shows:
 - how it is assigned, for example "Assigned to 1 group", "All users", "All devices" or "Not assigned"
 - a <Ui>Microsoft default</Ui> label for items Microsoft created
 
+Where Intune reports device status for a section, each policy row also shows a <Ui>Device status</Ui> line with Intune's counts for that policy: succeeded, error, conflict, not applicable and pending. A line above the section names the Intune report the counts come from and when they were read. A policy Intune reports nothing for shows <Ui>Device status: No status reported</Ui>, never zero devices. When the counts could not be collected, the line says so and why.
+
+These counts describe rollout on devices. They are reported by Intune and are not used for evidence status: they never change a control result in [Compliance evidence](/desktop/compliance-evidence). The same counts appear in the evidence report annex and on the Policy status sheet of the [evidence register](/desktop/evidence-register-and-purview-pack#register).
+
 Use the search field at the top right to filter the family by name, description, type or platform. The search resets when you open another family.
 
 Want to see the settings inside a policy? Search for the policy name in [Search settings](/desktop/search-settings). It lists every setting the policy configures, with its value.

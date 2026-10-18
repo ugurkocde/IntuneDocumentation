@@ -1,0 +1,52 @@
+---
+title: "Portfolio"
+description: "On the MSP plan, see every tenant with history on this computer side by side: snapshot count and age, ruleset, and evidence coverage per framework."
+---
+
+<Ui>Portfolio</Ui> is the multi tenant view of [local history](/desktop/history). For every tenant with history on this computer, it shows how many snapshots exist, how old the latest one is, which ruleset assessed it, and the evidence coverage stored with it, so you can spot the tenant that needs attention or a fresh collection.
+
+Portfolio is part of the MSP plan. Select <Ui>Portfolio</Ui> in the sidebar, under <Ui>Workspace</Ui>. It is marked <Ui>MSP</Ui> on other plans, and the screen then says <Ui>Portfolio is part of the MSP plan</Ui>. The plan check runs in the app itself, not only on this screen. Sign in to any tenant with an MSP license to open it. Portfolio lists every tenant with history on this computer, not only the signed in one.
+
+<Screenshot src="/images/desktop/portfolio.png" alt="The Portfolio screen with five fictional tenants: Contoso signed in with 1 snapshot from 4 hours ago and 15% coverage, Fabrikam with 6 snapshots and a partial latest snapshot, a tenant shown by its short id, Northwind Traders with 16 snapshots, and Tailspin Toys with no snapshot, with Coverage for set to NIS2 Directive" caption="Five fictional tenants with history on one computer, with coverage for the NIS2 Directive." width={1440} height={900} />
+
+## What Portfolio shows [#what-it-shows]
+
+Under <Ui>Tenants on this computer</Ui>, each tenant has one row:
+
+| Column | What it means |
+| --- | --- |
+| Tenant | Your label for the tenant, or its short id. The signed in tenant is marked <Ui>Signed in</Ui>. |
+| Snapshots | How many snapshots of this tenant are kept on this computer. |
+| Latest snapshot | How long ago the newest snapshot was collected, marked <Ui>Partial</Ui> when that collection was incomplete, or <Ui>No snapshot</Ui>. |
+| Ruleset | The ruleset version that assessed the latest snapshot. |
+| Coverage | For the framework chosen under <Ui>Coverage for</Ui>: how many of its applicable controls have configuration evidence or partial evidence, as a count and a bar, for example 17 of 26 controls with 12 with evidence, 5 partial. A tenant that was not assessed for that framework shows <Ui>Not assessed</Ui>. |
+
+Use <Ui>Coverage for</Ui> to switch the framework. The coverage counts come from the assessment stored at collection time.
+
+When the latest snapshots use different rulesets, a note lists them: coverage from different rulesets is not fully comparable. Collect again in a tenant to assess it with the current rules.
+
+<Note>
+  The figures come from the encrypted index on this computer. No snapshot is opened to show them, and the tenant data itself is not read. Coverage is evidence of configuration, not an audit result.
+</Note>
+
+## Get a tenant to appear [#appear]
+
+A tenant appears once it has history on this computer. Sign in to each tenant you manage, turn on history and collect. See [History and scheduled collection](/desktop/history) and [Work with multiple tenants](/desktop/multiple-tenants). Until then, the screen says <Ui>No tenant history on this computer yet</Ui>.
+
+## Name your tenants [#labels]
+
+Tenants are shown by a short id until you name them. Select <Ui>Rename</Ui> on a tenant, enter its name and select <Ui>Save</Ui>. Leave the field empty to show the short id again.
+
+The name is stored in the encrypted index on this computer only. It names the tenant here and as the source tenant of its reference files and snapshots. It changes nothing in the tenant itself.
+
+## Delete a tenant's history [#delete]
+
+Select the delete button on a tenant row. The app asks <Ui>Delete all history of</Ui> that tenant: every snapshot of this tenant on this computer is removed, and it cannot be undone. Confirm with <Ui>Delete history</Ui>. Deleting the signed in tenant's history is allowed and the dialog says when that is the case.
+
+Deleting history here removes local snapshots only. It does not release the tenant from your license. For that, see [Work with multiple tenants](/desktop/multiple-tenants).
+
+## Next steps
+
+- [Compare with a reference](/desktop/compare): compare two tenants setting by setting (MSP plan).
+- [Work with multiple tenants](/desktop/multiple-tenants): app registrations, switching and tenant counts.
+- [History and scheduled collection](/desktop/history): what snapshots store and how long they are kept.

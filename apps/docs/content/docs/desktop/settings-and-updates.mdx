@@ -99,7 +99,9 @@ The app asks <Ui>Clear all local data?</Ui> Select <Ui>Clear and restart</Ui>.
 </Step>
 </Steps>
 
-The app deactivates the license on this computer when possible, signs you out, removes the app registration settings and setup progress, and restarts with the setup wizard.
+The app deactivates the license on this computer when possible, signs you out, removes the app registration settings and setup progress, and restarts with the setup wizard. It also removes the snapshot history: every snapshot, the history index and its encryption key. See [History and scheduled collection](/desktop/history).
+
+The <Ui>Collect automatically</Ui> setting for scheduled collection is not on this screen. It lives on the [History](/desktop/history#scheduled) screen, next to the <Ui>Keep history on this computer</Ui> switch it depends on.
 
 <Callout type="warn" title="If the deactivation is not confirmed">
   When the licensing service does not confirm the deactivation, the app tells you so, because this computer may still use one of your license's installations. Select <Ui>Open customer portal</Ui> to release it there. See [Plans and billing](/account/plans-and-billing#manage-your-subscription-in-the-customer-portal).
@@ -116,6 +118,7 @@ Your tenant configuration and your Microsoft tokens are only held in memory whil
 | `install-id` | The random installation ID used for license checks |
 | `window-state.json` | Window size and position |
 | `logs` | Recent app log lines, used for diagnostics |
+| `snapshots` | Only when history is on: the encrypted snapshots, the encrypted history index and its key, protected by the operating system keychain |
 
 The app data folder is the standard per-user location for an app named Intune Documentation, usually `~/Library/Application Support/Intune Documentation` on macOS and `%APPDATA%\Intune Documentation` on Windows. <Ui>Clear data</Ui> removes the files listed above. The folder also holds small files kept by the browser engine built into the app and by the updater, which are not listed here.
 

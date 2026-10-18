@@ -105,6 +105,23 @@ Select <Ui>Export management report</Ui>. The report now includes the change. Sa
 
 If a baseline is rejected, the message tells you what to do. See [Baseline file is rejected](/help/troubleshooting#baseline-file-is-rejected).
 
+## Changes since the previous collection [#changes-since]
+
+With [local history](/desktop/history) on, the management summary also shows what changed in the tenant itself, not only how the numbers moved. Under the tiles, <Ui>Changes since</Ui> compares the current collection with the previous snapshot of this tenant on this computer:
+
+- **Policy changes.** Counts for policies added, removed, renamed and changed, plus the number of setting changes and assignment changes behind them.
+- **Control changes.** How many measures gained evidence and how many lost it, with the first control status changes listed and their status before and after.
+
+The same section is included in the exported management report, in English and German. The full detail behind every count is in [History](/desktop/history#compare).
+
+Three conditions apply:
+
+- **It needs an earlier snapshot.** Without one, the panel explains how to turn on <Ui>Keep history on this computer</Ui> in History and offers <Ui>Open History</Ui>. After the next collection, the panel and the report show what changed since the previous one.
+- **Full scope only.** Changes are shown for the full scope: all platforms, Essential Eight maturity level 1 and no Def Stan risk level, because snapshots store that scope. With a narrower scope selected, the panel says so instead of comparing.
+- **Partial collections are marked.** When one of the two collections is partial, the families and policies that could not be compared are counted separately and changes there are not counted. If the evidence rules changed since the previous snapshot, the panel says so, because some status changes may come from mapping updates rather than the tenant.
+
+The baseline above and this section answer different questions: the baseline compares safeguard counts between two reports you saved as files, while Changes since reads the encrypted history on this computer and lists the policy and control changes themselves.
+
 ## Add CIS Controls through your own crosswalk [#cis-crosswalk]
 
 Many organisations report against CIS Controls as well. The app ships no CIS Controls content, but you can add your own mapping, so CIS Controls safeguards appear next to your ISO/IEC 27001 and NIS2 controls.

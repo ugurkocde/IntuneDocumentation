@@ -1,0 +1,91 @@
+---
+title: "Compare with a reference"
+description: "Export a settings only reference file from a tenant, load it later or elsewhere, and compare settings value by value, or compare two tenants directly on the MSP plan."
+---
+
+<Ui>Compare</Ui> checks the settings of this tenant against a standard: a reference file saved earlier or from another tenant, or, on the MSP plan, another tenant on this computer. It compares setting by setting, whichever policies carry them, so you can hold a golden baseline against any tenant and see exactly where it differs.
+
+Select <Ui>Compare</Ui> in the sidebar. A comparison reads the settings of this tenant's current collection, so collect first. Nothing is changed in the tenant. Compare needs an active license.
+
+<Screenshot src="/images/desktop/compare.png" alt="The Compare screen with Reference file selected: Export a reference from this tenant, Reference to compare with showing source tenant, created date, ruleset, 1,234 settings and 2 families not covered, the checksum and assignment notes, Run comparison, and Results with 3 different, 2 missing, 2 extra, 1 not comparable and 41 matching" caption="Compare against a loaded reference file in the fictional Contoso tenant." width={1440} height={900} />
+
+## Export a reference from this tenant [#export]
+
+Under <Ui>Export a reference from this tenant</Ui>, select <Ui>Export reference</Ui> and choose where to save the file. It saves the settings of this tenant's current collection as a file. Load it later, or in another tenant, to compare against it.
+
+### What a reference file contains
+
+- the configured settings only: for each setting, its platform, family, setting id and value, with the policy name kept as a hint for reading the result
+- the source tenant as a shortened label, when it was created, and the ruleset version
+- which families were incomplete when the file was saved, so a gap never reads as a missing setting later
+- a checksum over the file contents
+
+Assignments are not in the file, and secret values such as passwords and keys are never stored in a reference. Device configuration profiles only keep the properties the evidence engine reads.
+
+<Callout type="info" title="The checksum detects damage, not authorship">
+  The checksum in the file detects damage to it, not who made it. Anyone can create a file that loads. Treat a reference file like any other file someone hands you: only rely on it when you trust where it came from.
+</Callout>
+
+## Load a reference and run the comparison [#run]
+
+<Steps>
+<Step>
+
+### Load the reference
+
+Under <Ui>Reference to compare with</Ui>, select <Ui>Load reference</Ui> and choose the file. The card then shows its <Ui>Source tenant</Ui>, <Ui>Created</Ui> date, <Ui>Ruleset</Ui>, <Ui>Settings</Ui> count and what is <Ui>Not covered</Ui>. Select <Ui>Clear</Ui> to unload it, or <Ui>Load another reference</Ui> to replace it.
+
+A file that is damaged, edited, too large or not a reference file is rejected, and <Ui>The reference could not be loaded</Ui> says why.
+
+</Step>
+<Step>
+
+### Run the comparison
+
+Select <Ui>Run comparison</Ui>. The <Ui>Results</Ui> section names both sides and their dates, with a count per status.
+
+</Step>
+<Step>
+
+### Read the results
+
+Use the <Ui>Show settings</Ui> filter to move between <Ui>All differences</Ui> and each status. Every row shows the setting, its values in <Ui>This tenant</Ui> and in the <Ui>Reference</Ui>, and the policies behind them. Select <Ui>Show full value</Ui> for long values.
+
+</Step>
+</Steps>
+
+If the collection changes after a comparison, the screen says <Ui>The collection changed after this comparison</Ui>. Run it again to refresh the result. If the reference was saved with different evidence rules, a warning under <Ui>The evidence rules differ</Ui> names both rulesets, because device configuration profiles keep only the properties a ruleset reads.
+
+## Compare with another tenant (MSP plan) [#another-tenant]
+
+On the MSP plan, <Ui>Compare this tenant with</Ui> offers a second source: <Ui>Another tenant</Ui>, the latest snapshot of another tenant with history on this computer. Choose a tenant and select <Ui>Run comparison</Ui>. The result reads the same way, with the other side labelled <Ui>Other tenant</Ui>.
+
+Without the MSP plan, the option is marked <Ui>MSP</Ui> and says that comparing tenants is part of the MSP plan. The plan check runs in the app itself, not only on this screen.
+
+For the other tenant to appear, sign in to it once on this computer, turn on history and collect there. See [History and scheduled collection](/desktop/history). When none qualifies, the screen says <Ui>No other tenant has history on this computer</Ui> and explains the same steps.
+
+## The statuses [#statuses]
+
+Each compared setting gets one status, counted per platform in the results:
+
+| Status | Meaning |
+| --- | --- |
+| Different | Set in this tenant and in the reference or other tenant, with different values. |
+| Missing | Set in the reference or other tenant, not in this tenant. |
+| Extra | Set in this tenant, not in the reference or other tenant. |
+| Not comparable | A value is secret or not kept, so it cannot be compared. |
+| Matching | The same values in both, whichever policies set them. |
+
+<Ui>All differences</Ui> collects everything except Matching. <Ui>No differences</Ui> means every compared setting matches.
+
+What the comparison does not cover:
+
+- **Assignments are not compared, only the configured settings.** Two tenants can match here and still assign the policies to different people.
+- Families that were incomplete on either side are left out and reported as not covered, so their settings never show as missing or extra.
+- Device configuration profiles only keep the properties the evidence engine reads, so their other properties are not compared.
+
+## Next steps
+
+- [History and scheduled collection](/desktop/history): what changed in one tenant between two collections.
+- [Portfolio](/desktop/portfolio): coverage and snapshot age for every tenant on this computer (MSP plan).
+- [Search settings](/desktop/search-settings): find every policy that sets a value the comparison flags as different.

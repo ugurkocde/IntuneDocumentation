@@ -1,0 +1,91 @@
+---
+title: "Draft fix pack"
+description: "Generate draft, unassigned Windows Settings Catalog policies for settings with no evidence, review them, and import the ones you want in the Intune admin center."
+---
+
+When a safeguard has no evidence at all, the setting behind it is simply not configured in any collected policy. The <Ui>Draft fix pack</Ui> turns those gaps into a starting point: draft Windows Settings Catalog policies with the expected values, saved as JSON files on your computer.
+
+Intune Documentation never writes to your tenant. The app saves files only. You review them, import the ones you want in the Intune admin center, and assign them yourself.
+
+You find the fix pack on a framework screen in <Ui>Compliance Evidence</Ui>, under <Ui>Exports</Ui>. The card shows how many drafts can be generated for the selected framework and scope, for example <Ui>1 draft policy, 19 not generatable</Ui>.
+
+## What the pack generates [#generates]
+
+The pack is a ZIP file with one JSON file per draft policy and a README.txt. Each JSON file is a Windows Settings Catalog policy. Its settings carry the values the evidence rules expect, and its name and description mark it as a draft that is unassigned.
+
+A draft is only generated when all of these hold:
+
+- The safeguard has no evidence at all. Settings that are configured with a different value, that conflict, or that are disabled never get a draft. Change the existing policy instead.
+- Every check behind the safeguard reports the setting as missing, so a complete collection established that it is really absent.
+- Every setting and value in the draft, including dependent settings, is verified. A setting whose dependent settings have no verified value is left out completely, never sent half configured.
+- The safeguard is not already covered by a smaller draft in the same pack, so the pack does not duplicate its own settings.
+
+Two cases get guidance instead of a draft:
+
+- **Configured but not assigned.** When a policy already sets the value but is assigned to nobody, the item is listed as not generatable with the reason. Assign the existing policy instead of importing a second one.
+- **Configured differently.** When a collected policy sets the setting, or its parent setting, to another value, the reason names that policy. The setting looks deliberately configured that way, so change that policy instead of importing a draft.
+
+Open <Ui>Not generatable</Ui> under the fix pack row to read the reason for every safeguard that got no draft. The README in the ZIP repeats the same list, so the reasons stay with the files.
+
+<Note>
+  Settings that set a UEFI lock are never generated, because that lock cannot be removed remotely.
+</Note>
+
+## What the fix pack never does [#never]
+
+- It never writes to your tenant. No policy is created, changed or assigned by the app.
+- It never assigns a policy. Every draft is unassigned and has no effect on any device or user until you assign it.
+- It never generates a policy for a setting that is set differently, conflicting or disabled. Those need a decision on the existing policy, not a second one.
+- It never invents a value. When no verified value exists, the safeguard is listed as not generatable.
+
+## Read the warnings before you save [#warnings]
+
+Select <Ui>Fix pack (.zip)</Ui> and the app asks <Ui>Save the draft fix pack?</Ui> with four points to read before you select <Ui>Save fix pack</Ui>:
+
+- Every policy is a draft and unassigned. It has no effect on any device or user until you assign it.
+- A setting can be missing from the evidence and still be delivered by Group Policy, a security baseline or another profile. A duplicate can cause conflicts.
+- Review every setting before you import a policy, and do not import blindly. The values follow the evidence rules, not your exceptions or change process.
+- Assign each policy to a pilot group first and widen the assignment after testing.
+
+The README in the ZIP and every policy description repeat these points, along with a reminder to check for overlap with existing policies, because two policies that set the same setting to different values conflict on devices.
+
+## Import a draft in the Intune admin center [#import]
+
+<Steps>
+<Step>
+
+### Sign in to the Intune admin center
+
+Sign in at intune.microsoft.com.
+
+</Step>
+<Step>
+
+### Open Configuration
+
+Go to <Ui>Devices</Ui>, then <Ui>Manage devices</Ui>, then <Ui>Configuration</Ui>.
+
+</Step>
+<Step>
+
+### Import one JSON file
+
+Select <Ui>Create</Ui>, then <Ui>Import policy</Ui>. Select one JSON file from the pack, enter a name for the new policy and select <Ui>Save</Ui>.
+
+</Step>
+<Step>
+
+### Review, then assign to a pilot group
+
+Open the new policy and review its settings. Assign it to a pilot group first, test it, and widen the assignment after testing.
+
+</Step>
+</Steps>
+
+Repeat the import for each file you want to use. Files you do not import have no effect anywhere. After assigning, collect again and recheck the framework: the safeguard now counts once the setting is configured in an assigned policy.
+
+## Next steps
+
+- [Evidence register and Purview evidence pack](/desktop/evidence-register-and-purview-pack): the assessment as tables, and the pack for Compliance Manager.
+- [Compliance evidence](/desktop/compliance-evidence): what missing, different and not assigned mean for a safeguard.
+- [Search settings](/desktop/search-settings): check whether a setting is already configured somewhere before you import a draft.

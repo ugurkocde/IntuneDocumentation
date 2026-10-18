@@ -16,12 +16,20 @@ import type {
   ManagementLocale,
   ManagementSummary,
 } from "../../../../src/lib/compliance/management/types";
+import type {
+  ControlStatusChange,
+  NotComparedFamily,
+  NotComparedItem,
+  PolicyChange,
+  SnapshotDiffTotals,
+} from "../../../../src/lib/snapshots/diff";
 
 export interface AppSettings {
   clientId: string;
   tenantId: string;
   autoUpdate: boolean;
   checkForUpdates: boolean;
+  keepHistory: boolean;
 }
 
 // The app registration fields Settings and the setup wizard save together.
@@ -224,6 +232,7 @@ export type ComplianceFrameworkId =
   | "nist-800-171-r2"
   | "nist-800-171-r3"
   | "nis2-2022-2555"
+  | "dora-2022-2554"
   | "hipaa-security-rule";
 
 export interface ComplianceRequest {
@@ -302,6 +311,55 @@ export type CrosswalkImportResult =
 
 export interface ComplianceReportProgress {
   stage: "groups" | "generating" | "saving";
+}
+
+// One stored snapshot of the signed in tenant.
+export interface HistoryEntry {
+  id: string;
+  collectedAt: string;
+  items: number;
+  // Some family, policy or permission could not be collected.
+  partial: boolean;
+  rulesetVersion: string;
+  bytes: number;
+}
+
+export interface HistoryStatus {
+  // The "Keep history on this computer" setting.
+  enabled: boolean;
+  // False when snapshots cannot be stored or read securely; reason says why.
+  available: boolean;
+  reason: string | null;
+  // Snapshots of the signed in tenant.
+  count: number;
+}
+
+export interface HistoryDiffRequest {
+  // Both default to the two latest snapshots: previous and latest.
+  fromId?: string;
+  toId?: string;
+  // Framework of the control changes; defaults to the first with changes.
+  frameworkId?: string;
+}
+
+// Diff rows are capped in main; totals count everything.
+export interface HistoryDiffView {
+  from: HistoryEntry;
+  to: HistoryEntry;
+  policies: PolicyChange[];
+  totals: SnapshotDiffTotals;
+  notCompared: NotComparedFamily[];
+  notComparedItems: NotComparedItem[];
+  controls: {
+    fromRuleset: string;
+    toRuleset: string;
+    rulesetChanged: boolean;
+    frameworks: Array<{ id: string; name: string; changed: number }>;
+    frameworkId: string | null;
+    changes: ControlStatusChange[];
+    // Changes of the selected framework before capping.
+    total: number;
+  };
 }
 
 export type LicenseIssueCause =
@@ -445,6 +503,14 @@ export interface IntunedocApi {
   updateStatus(): Promise<UpdateStatus>;
   exportDiagnostics(): Promise<string | null>;
   clearLocalData(): Promise<boolean>;
+  // Local history of the signed in tenant. Snapshots never leave main; the
+  // diff arrives as capped rows.
+  historyStatus(): Promise<HistoryStatus>;
+  historySetEnabled(enabled: boolean): Promise<HistoryStatus>;
+  historyList(): Promise<HistoryEntry[]>;
+  historyDiff(request: HistoryDiffRequest): Promise<HistoryDiffView>;
+  historyDelete(id: string): Promise<HistoryEntry[]>;
+  historyDeleteAll(): Promise<HistoryStatus>;
   onCollectProgress(callback: (progress: CollectProgress) => void): () => void;
   onExportProgress(callback: (progress: ExportProgress) => void): () => void;
   onComplianceProgress(
@@ -456,4 +522,6 @@ export interface IntunedocApi {
   onAuthChanged(callback: (status: AuthStatus) => void): () => void;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   onMenuCommand(callback: (command: MenuCommand) => void): () => void;
+  // Sent after a snapshot was saved or history was cleared.
+  onHistoryChanged(callback: () => void): () => void;
 }

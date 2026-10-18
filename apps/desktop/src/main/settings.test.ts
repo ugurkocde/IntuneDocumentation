@@ -41,6 +41,7 @@ describe("settings", () => {
       tenantId: "contoso.com",
       autoUpdate: false,
       checkForUpdates: true,
+      keepHistory: false,
     });
   });
 
@@ -53,6 +54,7 @@ describe("settings", () => {
       tenantId: "organizations",
       autoUpdate: true,
       checkForUpdates: true,
+      keepHistory: false,
     });
   });
 
@@ -65,6 +67,7 @@ describe("settings", () => {
       tenantId: "contoso.com",
       autoUpdate: true,
       checkForUpdates: true,
+      keepHistory: false,
     });
   });
 
@@ -88,6 +91,17 @@ describe("settings", () => {
       tenantId: "contoso.com",
       autoUpdate: true,
       checkForUpdates: false,
+      keepHistory: false,
     });
+  });
+
+  it("keeps history off by default and keeps it when other settings change", async () => {
+    expect((await readSettings()).keepHistory).toBe(false);
+    writeFileSync(file(), JSON.stringify({ clientId: "client", keepHistory: "yes" }));
+    expect((await readSettings()).keepHistory).toBe(false);
+    await writeSettings({ keepHistory: true });
+    await writeSettings({ clientId: "client", tenantId: "contoso.com" });
+    await writeSettings({ autoUpdate: true });
+    expect((await readSettings()).keepHistory).toBe(true);
   });
 });

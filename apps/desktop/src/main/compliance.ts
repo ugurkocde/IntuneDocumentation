@@ -7,6 +7,8 @@ import {
   createEvidenceManifest,
   CYBER_ESSENTIALS,
   DEF_STAN_05_138,
+  DORA,
+  DORA_OUTSIDE_INTUNE_SCOPE,
   essentialEightFramework,
   HIPAA_OUTSIDE_INTUNE_SCOPE,
   HIPAA_SECURITY_RULE,
@@ -57,11 +59,12 @@ const OUTSIDE_SCOPE: Partial<
   Record<ComplianceFrameworkId, readonly OutsideScopeMeasure[]>
 > = {
   "nis2-2022-2555": NIS2_OUTSIDE_INTUNE_SCOPE,
+  "dora-2022-2554": DORA_OUTSIDE_INTUNE_SCOPE,
   "hipaa-security-rule": HIPAA_OUTSIDE_INTUNE_SCOPE,
 };
 
 // Order of view.frameworks. The picker order comes from the renderer's
-// FRAMEWORK_OPTIONS, which places NIS2 after ISO 27001.
+// FRAMEWORK_OPTIONS, which places NIS2 and DORA after ISO 27001.
 const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "essential-eight": () => essentialEightFramework(1),
   "iso-27001-2022": () => ISO_27001,
@@ -74,6 +77,7 @@ const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "nist-800-171-r2": () => NIST_800_171,
   "nist-800-171-r3": () => NIST_800_171_R3,
   "nis2-2022-2555": () => NIS2,
+  "dora-2022-2554": () => DORA,
   "hipaa-security-rule": () => HIPAA_SECURITY_RULE,
 };
 const FRAMEWORK_IDS = Object.keys(FRAMEWORKS) as ComplianceFrameworkId[];
@@ -524,4 +528,16 @@ export function frameworkSourceUrl(frameworkId: unknown): string {
     throw new Error("This framework has no publisher reference.");
   }
   return url;
+}
+
+// The collection, its full scope assessment and the resolved group names a
+// history snapshot stores.
+export async function snapshotInputs(owner: string, token: TokenProvider) {
+  const collection = requireCollection(owner);
+  const groupNames = await groupNamesFor(collection, token);
+  return {
+    collection,
+    assessment: assess(collection, groupNames, {}),
+    groupNames: groupNames.names,
+  };
 }

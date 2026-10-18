@@ -2,6 +2,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  History,
   KeyRound,
   LayoutGrid,
   LogIn,
@@ -318,6 +319,13 @@ export function Sidebar() {
               icon={Search}
               label="Search settings"
               onClick={() => actions.navigate("searchSettings")}
+            />
+            <NavButton
+              isOpen={isOpen}
+              active={screen === "history"}
+              icon={History}
+              label="History"
+              onClick={() => actions.navigate("history")}
             />
             <NavButton
               isOpen={isOpen}

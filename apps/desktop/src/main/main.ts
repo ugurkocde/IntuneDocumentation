@@ -21,6 +21,7 @@ import type {
   ComplianceFrameworkId,
   ComplianceRequest,
   HelpKey,
+  HistoryStatus,
   MenuCommand,
   UpdateStatus,
 } from "../shared/ipc-types";
@@ -28,6 +29,7 @@ import { SEARCH_NEEDS_COLLECTION } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
 import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
+import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
 import { AuthService } from "./auth";
 import {
   clearCollection,
@@ -52,8 +54,17 @@ import {
   frameworkSourceUrl,
   parseComplianceRequest,
   parseFrameworkId,
+  snapshotInputs,
 } from "./compliance";
 import { estimateScopedExport, prepareExport } from "./export";
+import {
+  compareProjections,
+  historyDiffView,
+  parseHistoryDiffRequest,
+  parseSnapshotId,
+  pickPair,
+  type ComparedSnapshots,
+} from "./history";
 import { LicenseService } from "./license";
 import {
   baselineExport,
@@ -70,6 +81,7 @@ import {
 } from "./management";
 import { errorText, log, tailLog } from "./logger";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
+import { HistoryUnavailableError, SnapshotStore } from "./snapshots";
 import {
   checkForUpdates,
   downloadUpdate,
@@ -113,6 +125,11 @@ const license = new LicenseService(
       : null,
 );
 const isMac = process.platform === "darwin";
+const history = new SnapshotStore({
+  dir: () => path.join(app.getPath("userData"), "snapshots"),
+});
+// The last comparison, so switching the framework does not decrypt again.
+let historyDiff: { key: string; compared: ComparedSnapshots } | null = null;
 
 function rendererUrl(): string {
   return pathToFileURL(path.join(__dirname, "../renderer/index.html")).href;
@@ -227,6 +244,13 @@ function runningWork(): string | null {
 function cancelCollection(): void {
   activeCollection?.abort();
   activeCollection = null;
+}
+
+// An account change drops a snapshot that is still being prepared and the
+// comparison held in memory.
+function resetHistorySession(): void {
+  history.invalidate();
+  historyDiff = null;
 }
 
 async function requireOwner(): Promise<string> {
@@ -440,6 +464,7 @@ async function exportDiagnostics(): Promise<string | null> {
     `Update status: ${update.state}${update.version ? ` ${update.version}` : ""}`,
     `Automatic updates: ${settings.autoUpdate ? "on" : "off"}`,
     `Automatic update checks: ${settings.checkForUpdates ? "on" : "off"}`,
+    `Keep history: ${settings.keepHistory ? "on" : "off"}`,
     "",
     `Last collection: ${collection ? collection.collectedAt : "none"}`,
     ...(collection
@@ -468,6 +493,7 @@ const LOCAL_DATA = [
   "install-id",
   "window-state.json",
   "logs",
+  "snapshots",
 ];
 
 async function clearLocalData(): Promise<void> {
@@ -475,6 +501,11 @@ async function clearLocalData(): Promise<void> {
   cancelCollection();
   clearCollection();
   clearManagementState();
+  resetHistorySession();
+  // Waits for a snapshot write, then removes snapshots, key and index.
+  await history.clear().catch((error: unknown) =>
+    log("warn", "history clear failed", { message: errorText(error) }),
+  );
   const released = await license.deactivate().then(
     () => true,
     (error: unknown) => {
@@ -517,6 +548,70 @@ async function explainUnreleasedActivation(): Promise<void> {
   if (answer.response === 0 && new URL(LICENSE_PORTAL_URL).protocol === "https:") {
     await shell.openExternal(LICENSE_PORTAL_URL).catch(() => undefined);
   }
+}
+
+// Saves a snapshot of the collection just finished when history is on. The
+// collecting account must still be signed in when it is written.
+async function recordSnapshot(
+  owner: string,
+  tenantId: string,
+  generation: number,
+): Promise<void> {
+  try {
+    const settings = await readSettings();
+    if (!settings.keepHistory || history.unavailableReason()) return;
+    const tenant = tenantId.toLowerCase();
+    const isCurrent = () =>
+      auth?.getOwnerKey() === owner &&
+      signedInTenant()?.toLowerCase() === tenant;
+    if (!isCurrent()) return;
+    const inputs = await snapshotInputs(owner, tokenProvider);
+    const projection = projectSnapshot(
+      inputs.collection,
+      inputs.assessment,
+      inputs.groupNames,
+    );
+    const entry = await history.save(tenant, projection, {
+      generation,
+      isCurrent,
+    });
+    if (!entry) return;
+    log("info", "snapshot saved", {
+      items: entry.items,
+      partial: entry.partial,
+      bytes: entry.bytes,
+    });
+    broadcast("history:changed", null);
+  } catch (error) {
+    log("warn", "snapshot not saved", { message: errorText(error) });
+  }
+}
+
+// Every history handler: signed in, licensed, and only the signed in
+// tenant's snapshots.
+async function historyTenant(): Promise<string> {
+  await requireOwner();
+  await requireLicense();
+  const tenant = signedInTenant()?.toLowerCase();
+  if (!tenant || !isGuid(tenant)) throw new Error("Sign in before continuing.");
+  return tenant;
+}
+
+async function historyStatus(tenantId: string): Promise<HistoryStatus> {
+  const settings = await readSettings();
+  let reason = history.unavailableReason();
+  let count = 0;
+  if (!reason) {
+    try {
+      count = (await history.list(tenantId)).length;
+    } catch (error) {
+      reason =
+        error instanceof HistoryUnavailableError
+          ? error.message
+          : "History could not be read on this computer.";
+    }
+  }
+  return { enabled: settings.keepHistory, available: !reason, reason, count };
 }
 
 function buildMenu(): void {
@@ -682,6 +777,7 @@ function registerIpc(): void {
     cancelCollection();
     clearCollection();
     clearManagementState();
+    resetHistorySession();
     if (auth) {
       await auth.signOut();
     }
@@ -738,6 +834,7 @@ function registerIpc(): void {
     cancelCollection();
     clearCollection();
     clearManagementState();
+    resetHistorySession();
     await service.signOut();
     log("info", "signed out");
     pushLicense();
@@ -787,6 +884,12 @@ function registerIpc(): void {
         permissionErrors: summary.permissionErrors.length,
         seconds: Math.round((Date.now() - started) / 1000),
       });
+      // Off the hot path: the summary returns first.
+      const tenant = signedInTenant();
+      if (tenant) {
+        const generation = history.begin();
+        setImmediate(() => void recordSnapshot(owner, tenant, generation));
+      }
       return summary;
     } catch (error) {
       log("warn", "collection failed", { message: errorText(error) });
@@ -1220,6 +1323,57 @@ function registerIpc(): void {
   });
 
   handle("diagnostics:export", () => exportDiagnostics());
+
+  handle("history:status", async () => historyStatus(await historyTenant()));
+
+  // Writes the setting only; unlike settings:save it keeps the sign in and
+  // the collection.
+  handle("history:setEnabled", async (_event, enabled) => {
+    if (typeof enabled !== "boolean") {
+      throw new Error("Refused an unexpected history setting.");
+    }
+    const tenant = await historyTenant();
+    const reason = history.unavailableReason();
+    if (enabled && reason) throw new Error(reason);
+    await writeSettings({ keepHistory: enabled });
+    log("info", "history changed", { enabled });
+    return historyStatus(tenant);
+  });
+
+  handle("history:list", async () => history.list(await historyTenant()));
+
+  // Decryption and diffing stay here; the renderer gets capped rows.
+  handle("history:diff", async (_event, input) => {
+    const request = parseHistoryDiffRequest(input);
+    const tenant = await historyTenant();
+    const { from, to } = pickPair(await history.list(tenant), request);
+    const key = `${tenant}|${from.id}|${to.id}`;
+    let compared = historyDiff?.key === key ? historyDiff.compared : null;
+    if (!compared) {
+      const before = await history.read(tenant, from.id);
+      const after = await history.read(tenant, to.id);
+      compared = compareProjections(before, after);
+      historyDiff = { key, compared };
+    }
+    return historyDiffView(from, to, compared, request.frameworkId);
+  });
+
+  handle("history:delete", async (_event, input) => {
+    const id = parseSnapshotId(input);
+    const tenant = await historyTenant();
+    await history.delete(tenant, id);
+    historyDiff = null;
+    log("info", "snapshot deleted");
+    return history.list(tenant);
+  });
+
+  handle("history:deleteAll", async () => {
+    const tenant = await historyTenant();
+    await history.deleteTenant(tenant);
+    historyDiff = null;
+    log("info", "history deleted");
+    return historyStatus(tenant);
+  });
 
   handle("data:clear", async () => {
     await clearLocalData();

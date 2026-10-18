@@ -1,0 +1,544 @@
+import { safeStorage } from "electron";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+} from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
+import { gunzip, gzip } from "node:zlib";
+import {
+  SNAPSHOT_FORMAT,
+  type SnapshotProjection,
+} from "../../../../src/lib/snapshots/projection";
+import type { HistoryEntry } from "../shared/ipc-types";
+import { isGuid } from "../shared/validators";
+import { SNAPSHOT_ID_PATTERN } from "./history";
+import { log } from "./logger";
+
+// Local history of collections. Threat model: protects tenant data at rest
+// against a copied disk or userData folder and against other OS users. It
+// does not protect against software running as the same OS user, since
+// safeStorage unwraps the key for any process of that user.
+//
+// Layout under userData/snapshots:
+//   key.bin              random 256 bit master key, wrapped with safeStorage
+//   index.bin            encrypted index of every snapshot
+//   <tenant tag>/<id>.snap  one encrypted snapshot
+// Every encrypted file is gzip, then AES-256-GCM with a random 96 bit nonce
+// and the format, tenant id and snapshot id as additional authenticated data,
+// so a file moved to another tenant or renamed does not decrypt.
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+
+const MAGIC = Buffer.from("IDS1", "ascii");
+const NONCE_BYTES = 12;
+const TAG_BYTES = 16;
+const INDEX_FORMAT = "intunedoc.snapshot-index/1";
+const DAY_MS = 24 * 60 * 60_000;
+
+export interface RetentionLimits {
+  perTenant: number;
+  maxAgeDays: number;
+  maxBytes: number;
+}
+
+export const DEFAULT_RETENTION: RetentionLimits = {
+  perTenant: 30,
+  maxAgeDays: 365,
+  maxBytes: 500 * 1024 * 1024,
+};
+
+interface IndexEntry extends HistoryEntry {
+  savedAt: string;
+  // Per framework coverage from the stored assessment, for summaries that
+  // must not decrypt every snapshot.
+  frameworks: Array<{
+    id: string;
+    name: string;
+    totalControls: number;
+    withEvidence: number;
+    partial: number;
+    applicableControls: number;
+  }>;
+}
+
+interface StoredIndex {
+  format: typeof INDEX_FORMAT;
+  tenants: Record<string, { label?: string; snapshots: IndexEntry[] }>;
+}
+
+export class HistoryUnavailableError extends Error {}
+
+export const UNAVAILABLE_REASONS = {
+  encryption:
+    "Secure storage is not available on this computer, so history is off. Snapshots are never stored without encryption.",
+  key: "The history key on this computer could not be unlocked. Delete all history to start again.",
+  index:
+    "The history index could not be read. Delete all history to start again.",
+} as const;
+
+function emptyIndex(): StoredIndex {
+  return { format: INDEX_FORMAT, tenants: {} };
+}
+
+function aad(...parts: string[]): Buffer {
+  return Buffer.from(parts.join("\n"), "utf8");
+}
+
+export function seal(key: Buffer, additional: Buffer, plain: Buffer): Buffer {
+  const nonce = randomBytes(NONCE_BYTES);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  cipher.setAAD(additional);
+  const body = Buffer.concat([cipher.update(plain), cipher.final()]);
+  return Buffer.concat([MAGIC, nonce, cipher.getAuthTag(), body]);
+}
+
+// Throws on any change to the file, a wrong key or other authenticated data.
+export function unseal(key: Buffer, additional: Buffer, sealed: Buffer): Buffer {
+  const header = MAGIC.length + NONCE_BYTES + TAG_BYTES;
+  if (sealed.length < header || !sealed.subarray(0, MAGIC.length).equals(MAGIC)) {
+    throw new Error("Not a history file.");
+  }
+  const nonce = sealed.subarray(MAGIC.length, MAGIC.length + NONCE_BYTES);
+  const tag = sealed.subarray(MAGIC.length + NONCE_BYTES, header);
+  const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+  decipher.setAAD(additional);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(sealed.subarray(header)), decipher.final()]);
+}
+
+// Temp file then rename, so a reader never sees a partial file. Temp names
+// never match a snapshot id and are swept on the next start.
+async function writeAtomic(file: string, bytes: Buffer): Promise<void> {
+  const temp = `${file}.${randomBytes(6).toString("hex")}.tmp`;
+  await fs.writeFile(temp, bytes, { mode: 0o600 });
+  try {
+    await fs.rename(temp, file);
+  } catch (error) {
+    await fs.rm(temp, { force: true });
+    throw error;
+  }
+}
+
+function newSnapshotId(now: number): string {
+  const stamp = new Date(now)
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
+  return `${stamp}-${randomBytes(4).toString("hex")}`;
+}
+
+function normalizeTenant(tenantId: string): string {
+  const tenant = tenantId.trim().toLowerCase();
+  if (!isGuid(tenant)) throw new Error("Unknown tenant.");
+  return tenant;
+}
+
+function isEntry(value: unknown): value is IndexEntry {
+  const entry = value as Partial<IndexEntry> | null;
+  return Boolean(
+    entry &&
+      typeof entry.id === "string" &&
+      SNAPSHOT_ID_PATTERN.test(entry.id) &&
+      typeof entry.collectedAt === "string" &&
+      typeof entry.savedAt === "string" &&
+      typeof entry.bytes === "number" &&
+      typeof entry.items === "number" &&
+      typeof entry.partial === "boolean" &&
+      typeof entry.rulesetVersion === "string" &&
+      Array.isArray(entry.frameworks),
+  );
+}
+
+function parseIndex(text: string): StoredIndex {
+  const parsed = JSON.parse(text) as Partial<StoredIndex> | null;
+  if (!parsed || parsed.format !== INDEX_FORMAT || typeof parsed.tenants !== "object") {
+    throw new Error("Unknown index format.");
+  }
+  const index = emptyIndex();
+  for (const [tenant, value] of Object.entries(parsed.tenants ?? {})) {
+    if (!isGuid(tenant) || tenant !== tenant.toLowerCase() || !value) continue;
+    index.tenants[tenant] = {
+      ...(typeof value.label === "string" ? { label: value.label.slice(0, 100) } : {}),
+      snapshots: (Array.isArray(value.snapshots) ? value.snapshots : []).filter(isEntry),
+    };
+  }
+  return index;
+}
+
+function publicEntry(entry: IndexEntry): HistoryEntry {
+  return {
+    id: entry.id,
+    collectedAt: entry.collectedAt,
+    items: entry.items,
+    partial: entry.partial,
+    rulesetVersion: entry.rulesetVersion,
+    bytes: entry.bytes,
+  };
+}
+
+const byCollected = (a: IndexEntry, b: IndexEntry) =>
+  a.collectedAt < b.collectedAt ? -1 : a.collectedAt > b.collectedAt ? 1 : a.id < b.id ? -1 : 1;
+
+export interface SnapshotStoreOptions {
+  dir: () => string;
+  limits?: Partial<RetentionLimits>;
+  now?: () => number;
+}
+
+export interface SaveGuard {
+  // From begin(); a later invalidate() makes the save a no-op.
+  generation: number;
+  // Still the account that collected, checked again right before writing.
+  isCurrent: () => boolean;
+}
+
+export class SnapshotStore {
+  private readonly dir: () => string;
+  private readonly limits: RetentionLimits;
+  private readonly now: () => number;
+  private key: Buffer | null = null;
+  private index: StoredIndex | null = null;
+  private damaged: keyof typeof UNAVAILABLE_REASONS | null = null;
+  private swept = false;
+  private queue: Promise<unknown> = Promise.resolve();
+  private generation = 0;
+
+  constructor(options: SnapshotStoreOptions) {
+    this.dir = options.dir;
+    this.limits = { ...DEFAULT_RETENTION, ...options.limits };
+    this.now = options.now ?? Date.now;
+  }
+
+  // Why history cannot be used right now, or null.
+  unavailableReason(): string | null {
+    if (!safeStorage.isEncryptionAvailable()) return UNAVAILABLE_REASONS.encryption;
+    // Linux without a keyring falls back to a fixed password: not encryption.
+    if (
+      process.platform === "linux" &&
+      safeStorage.getSelectedStorageBackend?.() === "basic_text"
+    ) {
+      return UNAVAILABLE_REASONS.encryption;
+    }
+    return this.damaged ? UNAVAILABLE_REASONS[this.damaged] : null;
+  }
+
+  // Captured before slow work such as the assessment that feeds a save.
+  begin(): number {
+    return this.generation;
+  }
+
+  // Sign out, settings changes and resets: a save that started before is
+  // dropped.
+  invalidate(): void {
+    this.generation += 1;
+  }
+
+  private serial<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(task, task);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private file(name: string): string {
+    return path.join(this.dir(), name);
+  }
+
+  private tenantDir(tenant: string): string {
+    // An opaque tag keeps tenant ids out of folder names.
+    const tag = createHmac("sha256", this.key!)
+      .update(`tenant:${tenant}`)
+      .digest("hex")
+      .slice(0, 32);
+    return path.join(this.dir(), tag);
+  }
+
+  private snapshotFile(tenant: string, id: string): string {
+    if (!SNAPSHOT_ID_PATTERN.test(id)) throw new Error("Unknown snapshot.");
+    return path.join(this.tenantDir(tenant), `${id}.snap`);
+  }
+
+  private requireAvailable(): void {
+    const reason = this.unavailableReason();
+    if (reason) throw new HistoryUnavailableError(reason);
+  }
+
+  // Loads or, when create is set, makes the master key. Only the reason of a
+  // failure is logged, never content.
+  private async loadKey(create: boolean): Promise<boolean> {
+    if (this.key) return true;
+    let wrapped: Buffer;
+    try {
+      wrapped = await fs.readFile(this.file("key.bin"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        log("warn", "history key ignored", {
+          reason: "unreadable",
+          code: (error as NodeJS.ErrnoException).code,
+        });
+        this.damaged = "key";
+        throw new HistoryUnavailableError(UNAVAILABLE_REASONS.key);
+      }
+      if (!create) return false;
+      const key = randomBytes(32);
+      await fs.mkdir(this.dir(), { recursive: true, mode: 0o700 });
+      await writeAtomic(
+        this.file("key.bin"),
+        safeStorage.encryptString(key.toString("base64")),
+      );
+      this.key = key;
+      return true;
+    }
+    try {
+      const key = Buffer.from(safeStorage.decryptString(wrapped), "base64");
+      if (key.length !== 32) throw new Error("Invalid key length.");
+      this.key = key;
+      return true;
+    } catch {
+      log("warn", "history key ignored", { reason: "decrypt_failed" });
+      this.damaged = "key";
+      throw new HistoryUnavailableError(UNAVAILABLE_REASONS.key);
+    }
+  }
+
+  private async loadIndex(): Promise<StoredIndex> {
+    if (this.index) return this.index;
+    let sealed: Buffer;
+    try {
+      sealed = await fs.readFile(this.file("index.bin"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      this.index = emptyIndex();
+      await this.sweep(this.index);
+      return this.index;
+    }
+    try {
+      const plain = await gunzipAsync(unseal(this.key!, aad(INDEX_FORMAT, "", "index"), sealed));
+      this.index = parseIndex(plain.toString("utf8"));
+    } catch {
+      log("warn", "history index ignored", { reason: "decrypt_failed" });
+      this.damaged = "index";
+      throw new HistoryUnavailableError(UNAVAILABLE_REASONS.index);
+    }
+    await this.sweep(this.index);
+    return this.index;
+  }
+
+  private async writeIndex(index: StoredIndex): Promise<void> {
+    const plain = await gzipAsync(Buffer.from(JSON.stringify(index), "utf8"));
+    await writeAtomic(this.file("index.bin"), seal(this.key!, aad(INDEX_FORMAT, "", "index"), plain));
+    this.index = index;
+  }
+
+  // Removes temp files left by an interrupted write and snapshot files the
+  // index does not list. Once per process.
+  private async sweep(index: StoredIndex): Promise<void> {
+    if (this.swept) return;
+    this.swept = true;
+    const known = new Map<string, Set<string>>();
+    for (const [tenant, value] of Object.entries(index.tenants)) {
+      known.set(
+        path.basename(this.tenantDir(tenant)),
+        new Set(value.snapshots.map((entry) => `${entry.id}.snap`)),
+      );
+    }
+    const root = await fs.readdir(this.dir(), { withFileTypes: true }).catch(() => []);
+    for (const entry of root) {
+      const full = path.join(this.dir(), entry.name);
+      if (entry.isFile() && entry.name.endsWith(".tmp")) {
+        await fs.rm(full, { force: true });
+      } else if (entry.isDirectory() && /^[0-9a-f]{32}$/.test(entry.name)) {
+        const files = known.get(entry.name);
+        for (const name of await fs.readdir(full).catch(() => [] as string[])) {
+          if (!files?.has(name)) await fs.rm(path.join(full, name), { force: true });
+        }
+        if (!files?.size) await fs.rm(full, { recursive: true, force: true });
+      }
+    }
+  }
+
+  // Index and key, or nothing when no history was ever saved.
+  private async open(): Promise<StoredIndex | null> {
+    this.requireAvailable();
+    if (!(await this.loadKey(false))) return null;
+    return this.loadIndex();
+  }
+
+  async list(tenantId: string): Promise<HistoryEntry[]> {
+    const tenant = normalizeTenant(tenantId);
+    return this.serial(async () => {
+      const index = await this.open();
+      return [...(index?.tenants[tenant]?.snapshots ?? [])]
+        .sort(byCollected)
+        .reverse()
+        .map(publicEntry);
+    });
+  }
+
+  // Snapshots are read for the signed in tenant only: the index is
+  // partitioned by tenant and the tenant id is authenticated with the data.
+  async read(tenantId: string, id: string): Promise<SnapshotProjection> {
+    const tenant = normalizeTenant(tenantId);
+    if (!SNAPSHOT_ID_PATTERN.test(id)) throw new Error("Unknown snapshot.");
+    return this.serial(async () => {
+      const index = await this.open();
+      if (!index?.tenants[tenant]?.snapshots.some((entry) => entry.id === id)) {
+        throw new Error("This snapshot is not in the history of the signed in tenant.");
+      }
+      let projection: SnapshotProjection;
+      try {
+        const sealed = await fs.readFile(this.snapshotFile(tenant, id));
+        const plain = await gunzipAsync(unseal(this.key!, aad(SNAPSHOT_FORMAT, tenant, id), sealed));
+        projection = JSON.parse(plain.toString("utf8")) as SnapshotProjection;
+      } catch {
+        log("warn", "snapshot unreadable", { reason: "decrypt_failed" });
+        throw new Error("This snapshot could not be read. Delete it and collect again.");
+      }
+      if (projection?.format !== SNAPSHOT_FORMAT) {
+        throw new Error("This snapshot has an unknown format.");
+      }
+      return projection;
+    });
+  }
+
+  // Null when the guard says the account changed or a reset happened.
+  async save(
+    tenantId: string,
+    projection: SnapshotProjection,
+    guard: SaveGuard,
+  ): Promise<HistoryEntry | null> {
+    const tenant = normalizeTenant(tenantId);
+    const current = () => guard.generation === this.generation && guard.isCurrent();
+    return this.serial(async () => {
+      if (!current()) return null;
+      this.requireAvailable();
+      await this.loadKey(true);
+      const index = structuredClone(await this.loadIndex());
+      const now = this.now();
+      const id = newSnapshotId(now);
+      const plain = await gzipAsync(Buffer.from(JSON.stringify(projection), "utf8"));
+      const sealed = seal(this.key!, aad(SNAPSHOT_FORMAT, tenant, id), plain);
+      const file = this.snapshotFile(tenant, id);
+      await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+      await writeAtomic(file, sealed);
+      if (!current()) {
+        await fs.rm(file, { force: true });
+        return null;
+      }
+      const entry: IndexEntry = {
+        id,
+        collectedAt: projection.collectedAt,
+        savedAt: new Date(now).toISOString(),
+        items: projection.sections.reduce((sum, section) => sum + section.items.length, 0),
+        partial: projection.partial,
+        rulesetVersion: projection.rulesetVersion,
+        bytes: sealed.length,
+        frameworks: projection.assessment.frameworks.map((framework) => ({
+          id: framework.id,
+          name: framework.name,
+          totalControls: framework.summary.totalControls,
+          withEvidence: framework.summary.withEvidence,
+          partial: framework.summary.partial,
+          applicableControls: framework.summary.applicableControls,
+        })),
+      };
+      const bucket = (index.tenants[tenant] ??= { snapshots: [] });
+      bucket.snapshots.push(entry);
+      const removed = this.applyRetention(index, now, entry.id);
+      await this.writeIndex(index);
+      for (const old of removed) {
+        await fs.rm(this.snapshotFile(old.tenant, old.id), { force: true });
+      }
+      return publicEntry(entry);
+    });
+  }
+
+  // Oldest first: over the per tenant count, older than the age limit, then
+  // over the total size. The snapshot just saved always stays.
+  private applyRetention(
+    index: StoredIndex,
+    now: number,
+    keep: string,
+  ): Array<{ tenant: string; id: string }> {
+    const removed: Array<{ tenant: string; id: string }> = [];
+    const drop = (tenant: string, id: string) => {
+      const bucket = index.tenants[tenant]!;
+      bucket.snapshots = bucket.snapshots.filter((entry) => entry.id !== id);
+      removed.push({ tenant, id });
+    };
+    const cutoff = now - this.limits.maxAgeDays * DAY_MS;
+    for (const [tenant, bucket] of Object.entries(index.tenants)) {
+      const sorted = [...bucket.snapshots].sort(byCollected);
+      for (const entry of sorted) {
+        if (entry.id === keep) continue;
+        const tooMany = bucket.snapshots.length > this.limits.perTenant;
+        if (tooMany || Date.parse(entry.collectedAt) < cutoff) drop(tenant, entry.id);
+      }
+    }
+    const all = () =>
+      Object.entries(index.tenants).flatMap(([tenant, bucket]) =>
+        bucket.snapshots.map((entry) => ({ tenant, entry })),
+      );
+    let total = all().reduce((sum, { entry }) => sum + entry.bytes, 0);
+    for (const { tenant, entry } of all().sort((a, b) => byCollected(a.entry, b.entry))) {
+      if (total <= this.limits.maxBytes) break;
+      if (entry.id === keep) continue;
+      drop(tenant, entry.id);
+      total -= entry.bytes;
+    }
+    for (const [tenant, bucket] of Object.entries(index.tenants)) {
+      if (!bucket.snapshots.length && !bucket.label) delete index.tenants[tenant];
+    }
+    return removed;
+  }
+
+  async delete(tenantId: string, id: string): Promise<void> {
+    const tenant = normalizeTenant(tenantId);
+    if (!SNAPSHOT_ID_PATTERN.test(id)) throw new Error("Unknown snapshot.");
+    await this.serial(async () => {
+      const index = await this.open();
+      const bucket = index?.tenants[tenant];
+      if (!index || !bucket?.snapshots.some((entry) => entry.id === id)) return;
+      const next = structuredClone(index);
+      next.tenants[tenant]!.snapshots = bucket.snapshots.filter((entry) => entry.id !== id);
+      if (!next.tenants[tenant]!.snapshots.length) delete next.tenants[tenant];
+      await this.writeIndex(next);
+      await fs.rm(this.snapshotFile(tenant, id), { force: true });
+    });
+  }
+
+  // Every snapshot of one tenant. When the key or index cannot be read,
+  // nothing is readable for any tenant, so the whole history is reset.
+  async deleteTenant(tenantId: string): Promise<void> {
+    const tenant = normalizeTenant(tenantId);
+    if (this.damaged) {
+      await this.clear();
+      return;
+    }
+    await this.serial(async () => {
+      const index = await this.open();
+      if (!index?.tenants[tenant]) return;
+      const next = structuredClone(index);
+      delete next.tenants[tenant];
+      await this.writeIndex(next);
+      await fs.rm(this.tenantDir(tenant), { recursive: true, force: true });
+    });
+  }
+
+  // Removes snapshots, the wrapped key and the index. Waits for a running
+  // write first, so nothing is written after it.
+  async clear(): Promise<void> {
+    this.invalidate();
+    await this.serial(async () => {
+      await fs.rm(this.dir(), { recursive: true, force: true });
+      this.key = null;
+      this.index = null;
+      this.damaged = null;
+      this.swept = false;
+    });
+  }
+}

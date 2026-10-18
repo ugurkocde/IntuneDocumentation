@@ -12,6 +12,8 @@ export interface AppSettings {
   // On unless the user turns it off, including installs from before the
   // setting existed. Off means no background update requests.
   checkForUpdates: boolean;
+  // "Keep history on this computer". Off unless the user turns it on.
+  keepHistory: boolean;
 }
 
 function settingsPath(): string {
@@ -30,6 +32,7 @@ function normalize(input: Partial<AppSettings>): AppSettings {
     tenantId,
     autoUpdate: input.autoUpdate === true,
     checkForUpdates: input.checkForUpdates !== false,
+    keepHistory: input.keepHistory === true,
   };
 }
 

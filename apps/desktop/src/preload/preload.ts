@@ -79,6 +79,12 @@ const api: IntunedocApi = {
   updateStatus: () => invoke("update:status"),
   exportDiagnostics: () => invoke("diagnostics:export"),
   clearLocalData: () => invoke("data:clear"),
+  historyStatus: () => invoke("history:status"),
+  historySetEnabled: (enabled) => invoke("history:setEnabled", enabled),
+  historyList: () => invoke("history:list"),
+  historyDiff: (request) => invoke("history:diff", request),
+  historyDelete: (id) => invoke("history:delete", id),
+  historyDeleteAll: () => invoke("history:deleteAll"),
   onCollectProgress: (callback) => subscribe("collect:progress", callback),
   onExportProgress: (callback) => subscribe("export:progress", callback),
   onComplianceProgress: (callback) =>
@@ -87,6 +93,7 @@ const api: IntunedocApi = {
   onAuthChanged: (callback) => subscribe("auth:changed", callback),
   onUpdateStatus: (callback) => subscribe("update:status", callback),
   onMenuCommand: (callback) => subscribe("menu:command", callback),
+  onHistoryChanged: (callback) => subscribe("history:changed", () => callback()),
 };
 
 contextBridge.exposeInMainWorld("intunedoc", api);

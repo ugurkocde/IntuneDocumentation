@@ -16,6 +16,7 @@ import type { CollectionStep } from "../lib/collection-steps";
 export type Screen =
   | "overview"
   | "searchSettings"
+  | "history"
   | "section"
   | "compliance"
   | "export"

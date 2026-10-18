@@ -1,0 +1,958 @@
+// History snapshots: an allowlist projection of a collection, never the raw
+// Graph data. Only what the compliance engine reads and what a change report
+// compares is kept; script bodies, app payloads and every property not named
+// here are dropped. Desktop only (Node).
+import { createHash } from "node:crypto";
+import {
+  getItemLabel,
+  getStableItemId,
+  type ConfigurationSectionData,
+} from "../configuration-sections";
+import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
+import { normalizeOdataType } from "../compliance/engine";
+import { canonicalOmaUri } from "../compliance/oma-uri";
+import { frameworkCoverageLabel } from "../compliance/presentation";
+import type {
+  AssessmentScope,
+  CapabilityStatus,
+  ComplianceAssessment,
+  ControlStatus,
+  FrameworkAssessment,
+  TechnicalCheck,
+} from "../compliance/types";
+
+export const SNAPSHOT_FORMAT = "intunedoc.snapshot/1";
+
+export type SnapshotSectionStatus = "complete" | "failed" | "skipped";
+
+export interface SnapshotItem {
+  // getStableItemId of the item in its section.
+  id: string;
+  // Allowlisted Graph properties in the shape the engine reads.
+  data: Record<string, unknown>;
+  // Details or assignments were not fully collected.
+  incomplete?: true;
+  // Short SHA-256 of content that is never stored, such as script bodies.
+  fingerprints?: Record<string, string>;
+}
+
+export interface SnapshotSection {
+  key: string;
+  familyKey: string;
+  label: string;
+  status: SnapshotSectionStatus;
+  error?: string;
+  items: SnapshotItem[];
+}
+
+export interface SnapshotFetchError {
+  policyId: string;
+  policyName: string;
+  policyType: string;
+  familyKey?: string;
+  error: string;
+  statusCode?: number;
+  endpoint?: string;
+  partial?: boolean;
+}
+
+export interface SnapshotPermissionError {
+  resource: string;
+  message: string;
+  requiredPermission: string;
+}
+
+export interface StoredEvidence {
+  policyId: string;
+  policyName: string;
+  settingId: string;
+  observedValue: string;
+  verdict: "enforced" | "disabled";
+  assignment: "assigned" | "notAssigned" | "unknown";
+}
+
+export interface StoredCheck {
+  settingId: string;
+  policyId?: string;
+  policyName?: string;
+  assessmentStatus: TechnicalCheck["assessmentStatus"];
+  result: TechnicalCheck["result"];
+  actualValue: string | null;
+}
+
+export interface StoredCapability {
+  id: string;
+  name: string;
+  platform: string;
+  status: CapabilityStatus;
+  evidence: StoredEvidence[];
+  checks: StoredCheck[];
+}
+
+export interface StoredControl {
+  id: string;
+  title: string;
+  status: ControlStatus;
+  capabilityIds: string[];
+}
+
+export interface StoredFramework {
+  id: string;
+  name: string;
+  version: string;
+  totalRequirements?: number;
+  coverageLabel?: string;
+  summary: FrameworkAssessment["summary"];
+  controls: StoredControl[];
+}
+
+// The assessment made at collection time, so history never depends on a
+// later ruleset.
+export interface StoredAssessment {
+  rulesetVersion: string;
+  generatedAt: string;
+  scope: AssessmentScope;
+  capabilities: StoredCapability[];
+  frameworks: StoredFramework[];
+}
+
+type CollectionStatus = "collected" | "permissionDenied" | "failed" | "skipped";
+
+export interface SnapshotTenantIdentityPolicies {
+  authenticationMethods?: Record<string, unknown>;
+  securityDefaults?: Record<string, unknown>;
+  authorization?: Record<string, unknown>;
+  status: Record<string, CollectionStatus>;
+  errors?: Record<string, string>;
+}
+
+export interface SnapshotPolicyDeviceStatus {
+  collectedAt: string;
+  sources: Record<string, CollectionStatus>;
+  errors?: Record<string, string>;
+  rows: Array<{
+    policyId: string;
+    policyName: string;
+    source: string;
+    succeeded: number | null;
+    error: number | null;
+    conflict: number | null;
+    notApplicable: number | null;
+    pending: number | null;
+  }>;
+}
+
+export interface SnapshotProjection {
+  format: typeof SNAPSHOT_FORMAT;
+  collectedAt: string;
+  collectionStartedAt?: string;
+  rulesetVersion: string;
+  // Some family, policy or permission could not be collected.
+  partial: boolean;
+  collectionSkippedFamilies: string[];
+  fetchErrors: SnapshotFetchError[];
+  permissionErrors: SnapshotPermissionError[];
+  sections: SnapshotSection[];
+  groupNames: Record<string, string>;
+  tenantIdentityPolicies?: SnapshotTenantIdentityPolicies;
+  policyDeviceStatus?: SnapshotPolicyDeviceStatus;
+  assessment: StoredAssessment;
+}
+
+// What projectSnapshot reads from a collection.
+export interface SnapshotSource {
+  collectedAt?: string;
+  collectionStartedAt?: string;
+  collectionSkippedFamilies?: string[];
+  sections?: ConfigurationSectionData[];
+  fetchErrors?: Array<{
+    policyId: string;
+    policyName: string;
+    policyType: string;
+    familyKey?: string;
+    error: string;
+    statusCode?: number;
+    endpoint?: string;
+    partial?: boolean;
+  }>;
+  permissionErrors?: SnapshotPermissionError[];
+  tenantIdentityPolicies?: unknown;
+  policyDeviceStatus?: unknown;
+}
+
+type Json = Record<string, unknown>;
+type Primitive = string | number | boolean;
+
+const MAX_TEXT = 1000;
+const MAX_CHECK_VALUE = 500;
+
+// Item metadata kept for every family: identity, type, timing and the
+// collection state the engine and the change report read.
+const ITEM_KEYS = [
+  "id",
+  "policyId",
+  "templateId",
+  "displayName",
+  "name",
+  "@odata.type",
+  "platforms",
+  "platformType",
+  "technologies",
+  "lastModifiedDateTime",
+  "version",
+  "configType",
+  "priority",
+  "settingCount",
+  "hasFetchError",
+  // Script settings, never the script body.
+  "fileName",
+  "runAsAccount",
+  "runAs32Bit",
+  "enforceSignatureCheck",
+  "executionFrequency",
+  "retryCount",
+  "blockExecutionNotifications",
+] as const;
+
+// Content compared by fingerprint only.
+export const FINGERPRINT_LABELS: Readonly<Record<string, string>> = {
+  scriptContent: "Script content",
+  detectionScriptContent: "Detection script",
+  remediationScriptContent: "Remediation script",
+};
+
+// Fields the compound policy checks read, by normalized @odata.type.
+const POLICY_CHECK_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  windows10generalconfiguration: [
+    "defenderSystemScanSchedule",
+    "defenderScheduledScanDay",
+    "defenderScanType",
+    "defenderScheduledScanTime",
+  ],
+  windows10endpointprotectionconfiguration: [
+    "defenderSystemScanSchedule",
+    "defenderScheduledScanDay",
+    "defenderScanType",
+    "defenderScheduledScanTime",
+  ],
+  windowsupdateforbusinessconfiguration: [
+    "qualityUpdatesDeferralPeriodInDays",
+    "deadlineForQualityUpdatesInDays",
+    "deadlineGracePeriodInDays",
+    "qualityUpdatesPaused",
+    "automaticUpdateMode",
+  ],
+};
+
+const APPLOCKER_NODE =
+  /^\.\/Vendor\/MSFT\/AppLocker\/ApplicationLaunchRestrictions\/[^/]+\/(EXE|DLL|MSI|Script)\/(Policy|EnforcementMode)$/;
+
+// Built from the capability definitions, so new detectors are kept without
+// touching this file.
+let engineSignals:
+  | { paths: Map<string, Set<string>>; omaUris: Set<string> }
+  | undefined;
+
+function signals() {
+  if (engineSignals) return engineSignals;
+  const paths = new Map<string, Set<string>>();
+  const omaUris = new Set<string>();
+  for (const capability of COMPLIANCE_CAPABILITIES) {
+    for (const signal of capability.signals) {
+      if (signal.source === "graphProperty") {
+        for (const type of signal.odataTypes) {
+          const key = type.toLowerCase();
+          const set = paths.get(key) ?? new Set<string>();
+          set.add(signal.propertyPath);
+          paths.set(key, set);
+        }
+      } else if (signal.source === "omaUri") {
+        const uri = canonicalOmaUri(signal.settingId);
+        if (uri) omaUris.add(uri);
+      }
+    }
+  }
+  engineSignals = { paths, omaUris };
+  return engineSignals;
+}
+
+function isRecord(value: unknown): value is Json {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPrimitive(value: unknown): value is Primitive {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function text(value: unknown, max = MAX_TEXT): string | undefined {
+  return typeof value === "string" ? value.slice(0, max) : undefined;
+}
+
+// A primitive or a list of primitives; anything else is dropped.
+function plainValue(
+  value: unknown,
+): Primitive | Primitive[] | null | undefined {
+  if (value === null) return null;
+  if (isPrimitive(value)) return value;
+  if (Array.isArray(value) && value.every(isPrimitive)) return [...value];
+  return undefined;
+}
+
+// A JSON copy of structured values such as Conditional Access conditions:
+// objects, lists and primitives only.
+function jsonCopy(value: unknown, depth = 0): unknown {
+  if (depth > 8) return undefined;
+  if (value === null || isPrimitive(value)) return value;
+  if (Array.isArray(value))
+    return value
+      .map((entry) => jsonCopy(entry, depth + 1))
+      .filter((entry) => entry !== undefined);
+  if (isRecord(value)) {
+    const out: Json = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (key.startsWith("@odata.") && key !== "@odata.type") continue;
+      const copied = jsonCopy(entry, depth + 1);
+      if (copied !== undefined) out[key] = copied;
+    }
+    return out;
+  }
+  return undefined;
+}
+
+function pick(source: Json, keys: readonly string[]): Json {
+  const out: Json = {};
+  for (const key of keys) {
+    const value = plainValue(source[key]);
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+function setPath(target: Json, path: string, value: unknown): void {
+  const segments = path.split(".");
+  let current = target;
+  segments.slice(0, -1).forEach((segment) => {
+    if (!isRecord(current[segment])) current[segment] = {};
+    current = current[segment] as Json;
+  });
+  current[segments[segments.length - 1]!] = value;
+}
+
+function getPath(source: unknown, path: string): unknown {
+  let current = source;
+  for (const segment of path.split(".")) {
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function projectAssignments(value: unknown): Json[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter(isRecord).map((assignment) => {
+    const target = isRecord(assignment.target) ? assignment.target : {};
+    return {
+      ...pick(assignment, ["intent"]),
+      target: pick(target, [
+        "@odata.type",
+        "groupId",
+        "groupName",
+        "deviceAndAppManagementAssignmentFilterId",
+        "deviceAndAppManagementAssignmentFilterType",
+      ]),
+    };
+  });
+}
+
+function projectCollectionStatus(value: unknown): Json | undefined {
+  if (!isRecord(value)) return undefined;
+  return Object.fromEntries(
+    Object.entries(value).filter(([, status]) => typeof status === "string"),
+  );
+}
+
+// --- Settings Catalog ---------------------------------------------------------
+
+function projectSimpleValue(value: unknown): Json | undefined {
+  if (!isRecord(value)) return undefined;
+  const type = text(value["@odata.type"]);
+  // Secret values are never stored, also when Graph returned one.
+  const secret = Boolean(type && /secretsettingvalue$/i.test(type));
+  return {
+    ...(type ? { "@odata.type": type } : {}),
+    ...(!secret && isPrimitive(value.value) ? { value: value.value } : {}),
+  };
+}
+
+function projectInstance(instance: unknown, depth = 0): Json | undefined {
+  if (!isRecord(instance) || depth > 16) return undefined;
+  const children = (list: unknown) =>
+    Array.isArray(list)
+      ? list
+          .map((child) => projectInstance(child, depth + 1))
+          .filter((child): child is Json => Boolean(child))
+      : undefined;
+  const choice = (value: unknown) =>
+    isRecord(value)
+      ? {
+          ...(typeof value.value === "string" ? { value: value.value } : {}),
+          ...(Array.isArray(value.children)
+            ? { children: children(value.children) }
+            : {}),
+        }
+      : undefined;
+  const out: Json = pick(instance, ["@odata.type", "settingDefinitionId"]);
+  const simple = projectSimpleValue(instance.simpleSettingValue);
+  if (simple) out.simpleSettingValue = simple;
+  if (Array.isArray(instance.simpleSettingCollectionValue))
+    out.simpleSettingCollectionValue = instance.simpleSettingCollectionValue
+      .map(projectSimpleValue)
+      .filter(Boolean);
+  const single = choice(instance.choiceSettingValue);
+  if (single) out.choiceSettingValue = single;
+  if (Array.isArray(instance.choiceSettingCollectionValue))
+    out.choiceSettingCollectionValue = instance.choiceSettingCollectionValue
+      .map(choice)
+      .filter(Boolean);
+  if (isRecord(instance.groupSettingValue))
+    out.groupSettingValue = {
+      children: children(instance.groupSettingValue.children) ?? [],
+    };
+  if (Array.isArray(instance.groupSettingCollectionValue))
+    out.groupSettingCollectionValue = instance.groupSettingCollectionValue
+      .filter(isRecord)
+      .map((group) => ({ children: children(group.children) ?? [] }));
+  return out;
+}
+
+// Names only, so the change report can show readable setting names.
+function projectDefinitions(value: unknown): Json[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter(isRecord).map((definition) => ({
+    ...pick(definition, ["id", "displayName"]),
+    ...(Array.isArray(definition.options)
+      ? {
+          options: definition.options
+            .filter(isRecord)
+            .map((option) => pick(option, ["itemId", "name", "displayName"])),
+        }
+      : {}),
+  }));
+}
+
+function projectSettings(value: unknown): Json[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const records = value.filter(isRecord);
+  if (records.some((setting) => "settingInstance" in setting)) {
+    return records.map((setting) => {
+      const definitions = projectDefinitions(setting.settingDefinitions);
+      return {
+        ...pick(setting, ["id"]),
+        settingInstance: projectInstance(setting.settingInstance) ?? {},
+        ...(definitions ? { settingDefinitions: definitions } : {}),
+      };
+    });
+  }
+  // Security baseline and endpoint security intents. Other layouts, such as
+  // app configuration keys and values, are not kept.
+  const intents = records.filter(
+    (setting) => typeof setting.definitionId === "string",
+  );
+  return intents.length
+    ? intents.map((setting) =>
+        pick(setting, ["@odata.type", "definitionId", "value", "valueJson"]),
+      )
+    : undefined;
+}
+
+// --- Other setting layouts ----------------------------------------------------
+
+function projectDefinitionValues(value: unknown): Json[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter(isRecord).map((row) => {
+    const definition = isRecord(row.definition) ? row.definition : {};
+    return {
+      ...pick(row, ["enabled", "presentationFetchError"]),
+      definition: pick(definition, [
+        "id",
+        "displayName",
+        "categoryPath",
+        "classType",
+      ]),
+      presentationValues: (Array.isArray(row.presentationValues)
+        ? row.presentationValues
+        : []
+      )
+        .filter(isRecord)
+        .map((presentationValue) => {
+          const presentation = isRecord(presentationValue.presentation)
+            ? presentationValue.presentation
+            : {};
+          return {
+            ...pick(presentationValue, ["@odata.type", "value", "values"]),
+            presentation: pick(presentation, ["@odata.type", "id", "label"]),
+          };
+        }),
+    };
+  });
+}
+
+// Custom OMA-URI values are kept for the URIs the engine reads (including
+// AppLocker); other strings may be free-form secrets and are dropped.
+function projectOmaSettings(value: unknown): Json[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const { omaUris } = signals();
+  return value.filter(isRecord).map((setting) => {
+    const uri = canonicalOmaUri(setting.omaUri) ?? "";
+    const read = omaUris.has(uri) || APPLOCKER_NODE.test(uri);
+    const keep =
+      setting.isEncrypted !== true &&
+      (read ||
+        typeof setting.value === "number" ||
+        typeof setting.value === "boolean");
+    return {
+      ...pick(setting, ["@odata.type", "omaUri", "displayName", "isEncrypted"]),
+      ...(keep && isPrimitive(setting.value) ? { value: setting.value } : {}),
+    };
+  });
+}
+
+function projectScheduledActions(value: unknown): Json[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter(isRecord).map((rule) => ({
+    ...pick(rule, ["ruleName"]),
+    scheduledActionConfigurations: (Array.isArray(
+      rule.scheduledActionConfigurations,
+    )
+      ? rule.scheduledActionConfigurations
+      : []
+    )
+      .filter(isRecord)
+      .map((action) => pick(action, ["actionType", "gracePeriodHours"])),
+  }));
+}
+
+function fingerprint(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
+}
+
+function projectItem(
+  section: ConfigurationSectionData,
+  raw: Json,
+  index: number,
+  itemErrors: ReadonlySet<string>,
+): SnapshotItem {
+  const id = getStableItemId(section, raw, index);
+  const data: Json = pick(raw, ITEM_KEYS);
+  const odataType = normalizeOdataType(raw["@odata.type"]);
+  const message = text(raw.fetchErrorMessage);
+  if (message) data.fetchErrorMessage = message;
+  if (isRecord(raw.templateReference))
+    data.templateReference = pick(raw.templateReference, [
+      "templateId",
+      "templateFamily",
+      "templateDisplayName",
+      "templateDisplayVersion",
+    ]);
+  const collectionStatus = projectCollectionStatus(raw.collectionStatus);
+  if (collectionStatus) data.collectionStatus = collectionStatus;
+  const assignments = projectAssignments(raw.assignments);
+  if (assignments) data.assignments = assignments;
+
+  if (section.familyKey === "conditionalAccessPolicies") {
+    for (const key of ["state", "conditions", "grantControls"]) {
+      const value = jsonCopy(raw[key]);
+      if (value !== undefined) data[key] = value;
+    }
+  }
+  const settings = projectSettings(raw.settings);
+  if (settings) data.settings = settings;
+  if (Array.isArray(raw.categories))
+    data.categories = raw.categories.filter(isRecord).map((category) => ({
+      ...pick(category, ["id", "displayName"]),
+      settings: projectSettings(category.settings) ?? [],
+    }));
+  const definitionValues = projectDefinitionValues(raw.definitionValues);
+  if (definitionValues) data.definitionValues = definitionValues;
+  const omaSettings = projectOmaSettings(raw.omaSettings);
+  if (omaSettings) data.omaSettings = omaSettings;
+  const scheduled = projectScheduledActions(raw.scheduledActionsForRule);
+  if (scheduled) data.scheduledActionsForRule = scheduled;
+  for (const key of POLICY_CHECK_FIELDS[odataType] ?? []) {
+    const value = plainValue(raw[key]);
+    if (value !== undefined) data[key] = value;
+  }
+  for (const path of signals().paths.get(odataType) ?? []) {
+    const value = plainValue(getPath(raw, path));
+    if (value !== undefined) setPath(data, path, value);
+  }
+
+  const fingerprints: Record<string, string> = {};
+  for (const key of Object.keys(FINGERPRINT_LABELS)) {
+    const content = raw[key];
+    if (typeof content === "string" && content) {
+      fingerprints[key] = fingerprint(content);
+    }
+  }
+  const incomplete =
+    raw.hasFetchError === true ||
+    Object.values(collectionStatus ?? {}).includes("incomplete") ||
+    itemErrors.has(id);
+  return {
+    id,
+    data,
+    ...(incomplete ? { incomplete: true as const } : {}),
+    ...(Object.keys(fingerprints).length ? { fingerprints } : {}),
+  };
+}
+
+// A family failed when the list itself could not be read: the top level
+// fetch rejected ("N/A"), a list request failed ("collection-..."), or a
+// registry section reported an error.
+function familyFailed(
+  section: ConfigurationSectionData,
+  errors: NonNullable<SnapshotSource["fetchErrors"]>,
+): boolean {
+  if (section.error) return true;
+  return errors.some(
+    (error) =>
+      error.policyId === section.key ||
+      (error.familyKey === section.familyKey &&
+        (error.policyId === "N/A" || error.policyId.startsWith("collection-"))),
+  );
+}
+
+function statusRecord(value: unknown, known: readonly string[]) {
+  const out: Record<string, CollectionStatus> = {};
+  if (!isRecord(value)) return out;
+  for (const [key, status] of Object.entries(value)) {
+    if (
+      typeof status === "string" &&
+      ["collected", "permissionDenied", "failed", "skipped"].includes(status) &&
+      (known.length === 0 || known.includes(key))
+    )
+      out[key] = status as CollectionStatus;
+  }
+  return out;
+}
+
+function errorRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value)
+    .filter(([, message]) => typeof message === "string")
+    .map(([key, message]) => [key, (message as string).slice(0, 300)]);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+const IDENTITY_POLICIES = [
+  "authenticationMethods",
+  "securityDefaults",
+  "authorization",
+] as const;
+
+// Fields verified against Graph beta in the lab tenant (2026-10-18).
+function projectIdentity(
+  value: unknown,
+): SnapshotTenantIdentityPolicies | undefined {
+  if (!isRecord(value)) return undefined;
+  const out: SnapshotTenantIdentityPolicies = {
+    status: statusRecord(value.status, IDENTITY_POLICIES),
+  };
+  const errors = errorRecord(value.errors);
+  if (errors) out.errors = errors;
+  const methods = value.authenticationMethods;
+  if (isRecord(methods)) {
+    const targets = (list: unknown) =>
+      Array.isArray(list)
+        ? list
+            .filter(isRecord)
+            .map((target) => pick(target, ["targetType", "id"]))
+        : [];
+    out.authenticationMethods = {
+      ...pick(methods, ["policyMigrationState"]),
+      authenticationMethodConfigurations: (Array.isArray(
+        methods.authenticationMethodConfigurations,
+      )
+        ? methods.authenticationMethodConfigurations
+        : []
+      )
+        .filter(isRecord)
+        .map((configuration) => ({
+          ...pick(configuration, ["@odata.type", "id", "state"]),
+          includeTargets: targets(configuration.includeTargets),
+          excludeTargets: targets(configuration.excludeTargets),
+        })),
+    };
+  }
+  if (isRecord(value.securityDefaults))
+    out.securityDefaults = pick(value.securityDefaults, ["isEnabled"]);
+  const authorization = value.authorization;
+  if (isRecord(authorization)) {
+    out.authorization = {
+      ...pick(authorization, [
+        "allowInvitesFrom",
+        "allowedToSignUpEmailBasedSubscriptions",
+        "allowedToUseSSPR",
+        "allowEmailVerifiedUsersToJoinOrganization",
+        "allowUserConsentForRiskyApps",
+        "blockMsolPowerShell",
+        "guestUserRoleId",
+        "permissionGrantPolicyIdsAssignedToDefaultUserRole",
+      ]),
+      ...(isRecord(authorization.defaultUserRolePermissions)
+        ? {
+            defaultUserRolePermissions: pick(
+              authorization.defaultUserRolePermissions,
+              [
+                "allowedToCreateApps",
+                "allowedToCreateSecurityGroups",
+                "allowedToCreateTenants",
+                "allowedToReadBitlockerKeysForOwnedDevice",
+                "allowedToReadOtherUsers",
+              ],
+            ),
+          }
+        : {}),
+    };
+  }
+  return out;
+}
+
+function count(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function projectDeviceStatus(
+  value: unknown,
+): SnapshotPolicyDeviceStatus | undefined {
+  if (!isRecord(value) || typeof value.collectedAt !== "string")
+    return undefined;
+  const errors = errorRecord(value.errors);
+  return {
+    collectedAt: value.collectedAt,
+    sources: statusRecord(value.sources, []),
+    ...(errors ? { errors } : {}),
+    rows: (Array.isArray(value.rows) ? value.rows : [])
+      .filter(isRecord)
+      .filter((row) => typeof row.policyId === "string")
+      .map((row) => ({
+        policyId: row.policyId as string,
+        policyName: text(row.policyName, 300) ?? "",
+        source: text(row.source, 100) ?? "",
+        succeeded: count(row.succeeded),
+        error: count(row.error),
+        conflict: count(row.conflict),
+        notApplicable: count(row.notApplicable),
+        pending: count(row.pending),
+      })),
+  };
+}
+
+// The stored assessment keeps statuses, evidence and check results, not the
+// capability or control definitions.
+export function compactAssessment(
+  assessment: ComplianceAssessment,
+): StoredAssessment {
+  return {
+    rulesetVersion: assessment.provenance.rulesetVersion,
+    generatedAt: assessment.generatedAt,
+    scope: assessment.scope,
+    capabilities: assessment.capabilities.map((result) => ({
+      id: result.capability.id,
+      name: result.capability.name,
+      platform: result.capability.platform,
+      status: result.status,
+      evidence: result.evidence.map((evidence) => ({
+        policyId: evidence.policyId,
+        policyName: evidence.policyName,
+        settingId: evidence.settingId,
+        observedValue: evidence.observedValue.slice(0, MAX_CHECK_VALUE),
+        verdict: evidence.verdict,
+        assignment: evidence.assignment.state,
+      })),
+      checks: result.checks.map((check) => ({
+        settingId: check.settingId,
+        ...(check.policyId ? { policyId: check.policyId } : {}),
+        ...(check.policyName ? { policyName: check.policyName } : {}),
+        assessmentStatus: check.assessmentStatus,
+        result: check.result,
+        actualValue: check.actualValue?.slice(0, MAX_CHECK_VALUE) ?? null,
+      })),
+    })),
+    frameworks: assessment.frameworks.map((framework) => {
+      const coverageLabel = frameworkCoverageLabel(framework);
+      return {
+        id: framework.framework.id,
+        name: framework.framework.name,
+        version: framework.framework.version,
+        ...(framework.framework.totalRequirements !== undefined
+          ? { totalRequirements: framework.framework.totalRequirements }
+          : {}),
+        ...(coverageLabel ? { coverageLabel } : {}),
+        summary: framework.summary,
+        controls: framework.controls.map((control) => ({
+          id: control.control.id,
+          title: control.control.title,
+          status: control.status,
+          capabilityIds: [...control.capabilityIds],
+        })),
+      };
+    }),
+  };
+}
+
+export function projectSnapshot(
+  collection: SnapshotSource,
+  assessment: ComplianceAssessment,
+  groupNames: ReadonlyMap<string, string> | Readonly<Record<string, string>>,
+): SnapshotProjection {
+  const fetchErrors = collection.fetchErrors ?? [];
+  const skipped = collection.collectionSkippedFamilies ?? [];
+  const sections: SnapshotSection[] = (collection.sections ?? []).map(
+    (section) => {
+      const itemErrors = new Set(
+        fetchErrors
+          .filter(
+            (error) =>
+              !error.familyKey || error.familyKey === section.familyKey,
+          )
+          .map((error) => error.policyId),
+      );
+      const status: SnapshotSectionStatus = familyFailed(section, fetchErrors)
+        ? "failed"
+        : skipped.includes(section.familyKey)
+          ? "skipped"
+          : "complete";
+      const error = text(section.error?.message);
+      return {
+        key: section.key,
+        familyKey: section.familyKey,
+        label: section.label,
+        status,
+        ...(error ? { error } : {}),
+        items: section.items
+          .map((item, index) =>
+            isRecord(item)
+              ? projectItem(section, item, index, itemErrors)
+              : null,
+          )
+          .filter((item): item is SnapshotItem => item !== null),
+      };
+    },
+  );
+  const names =
+    groupNames instanceof Map
+      ? Object.fromEntries(groupNames)
+      : { ...(groupNames as Record<string, string>) };
+  const identity = projectIdentity(collection.tenantIdentityPolicies);
+  const deviceStatus = projectDeviceStatus(collection.policyDeviceStatus);
+  const permissionErrors = (collection.permissionErrors ?? []).map((error) => ({
+    resource: text(error.resource, 200) ?? "",
+    message: text(error.message) ?? "",
+    requiredPermission: text(error.requiredPermission, 200) ?? "",
+  }));
+  return {
+    format: SNAPSHOT_FORMAT,
+    collectedAt: collection.collectedAt ?? assessment.generatedAt,
+    ...(collection.collectionStartedAt
+      ? { collectionStartedAt: collection.collectionStartedAt }
+      : {}),
+    rulesetVersion: assessment.provenance.rulesetVersion,
+    partial:
+      fetchErrors.length > 0 ||
+      permissionErrors.length > 0 ||
+      sections.some((section) => section.status === "failed"),
+    collectionSkippedFamilies: [...skipped],
+    fetchErrors: fetchErrors.map((error) => ({
+      policyId: error.policyId,
+      policyName: text(error.policyName, 300) ?? "",
+      policyType: text(error.policyType, 200) ?? "",
+      ...(error.familyKey ? { familyKey: error.familyKey } : {}),
+      error: text(error.error) ?? "",
+      ...(typeof error.statusCode === "number"
+        ? { statusCode: error.statusCode }
+        : {}),
+      ...(error.endpoint ? { endpoint: text(error.endpoint, 500) } : {}),
+      ...(error.partial ? { partial: true } : {}),
+    })),
+    permissionErrors,
+    sections,
+    groupNames: Object.fromEntries(
+      Object.entries(names).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    ),
+    ...(identity ? { tenantIdentityPolicies: identity } : {}),
+    ...(deviceStatus ? { policyDeviceStatus: deviceStatus } : {}),
+    assessment: compactAssessment(assessment),
+  };
+}
+
+// Legacy per type arrays the engine falls back to, by section key.
+const LEGACY_ARRAYS = [
+  "settingsCatalog",
+  "deviceConfigurations",
+  "administrativeTemplates",
+  "securityBaselines",
+  "compliancePolicies",
+  "appProtectionPolicies",
+  "appConfigurations",
+  "windowsUpdatePolicies",
+  "enrollmentConfigurations",
+  "conditionalAccessPolicies",
+] as const;
+
+// A collection shaped like DetailedExportData from a stored snapshot, for the
+// engine and the change report. Script bodies and dropped properties stay
+// absent.
+export function restoreCollection(projection: SnapshotProjection) {
+  const sections: ConfigurationSectionData[] = projection.sections.map(
+    (section) => ({
+      key: section.key,
+      familyKey: section.familyKey,
+      label: section.label,
+      selectionPrefix: section.key,
+      items: section.items.map((item) => ({ ...item.data })),
+      ...(section.error ? { error: { message: section.error } } : {}),
+    }),
+  );
+  const itemsOf = (key: string) =>
+    sections.find((section) => section.key === key)?.items ?? [];
+  const legacy = Object.fromEntries(
+    LEGACY_ARRAYS.map((key) => [key, itemsOf(key)]),
+  ) as Record<(typeof LEGACY_ARRAYS)[number], unknown[]>;
+  return {
+    collectedAt: projection.collectedAt,
+    collectionStartedAt: projection.collectionStartedAt,
+    collectionSkippedFamilies: [...projection.collectionSkippedFamilies],
+    ...legacy,
+    scripts: {
+      windows: itemsOf("windowsScripts"),
+      macOS: itemsOf("macOSScripts"),
+    },
+    sections,
+    fetchErrors: projection.fetchErrors.map((error) => ({ ...error })),
+    permissionErrors: projection.permissionErrors.map((error) => ({
+      ...error,
+    })),
+    groupNames: new Map(Object.entries(projection.groupNames)),
+    ...(projection.tenantIdentityPolicies
+      ? { tenantIdentityPolicies: projection.tenantIdentityPolicies }
+      : {}),
+    ...(projection.policyDeviceStatus
+      ? { policyDeviceStatus: projection.policyDeviceStatus }
+      : {}),
+  };
+}
+
+// Display name of a stored item, as the documentation shows it.
+export function snapshotItemLabel(
+  section: Pick<SnapshotSection, "label">,
+  item: SnapshotItem,
+): string {
+  return getItemLabel(section, item.data);
+}

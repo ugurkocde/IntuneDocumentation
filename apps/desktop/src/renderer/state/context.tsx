@@ -179,6 +179,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           tenantId: "organizations",
           autoUpdate: false,
           checkForUpdates: true,
+          keepHistory: false,
         }));
       const [auth, license, appInfo, update] = await Promise.all([
         settings.clientId ? ipc.authStatus().catch(() => null) : null,

@@ -4,6 +4,7 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { isMac } from "./lib/ipc";
 import { ComplianceScreen } from "./screens/ComplianceScreen";
 import { ExportScreen } from "./screens/ExportScreen";
+import { HistoryScreen } from "./screens/HistoryScreen";
 import { LicenseScreen } from "./screens/LicenseScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
 import { SearchSettingsScreen } from "./screens/SearchSettingsScreen";
@@ -32,6 +33,7 @@ export function DashboardShell() {
           <div key={`${screen}-${activeFamilyKey ?? ""}`} className="animate-fade-in-up">
             {screen === "overview" && <OverviewScreen />}
             {screen === "searchSettings" && <SearchSettingsScreen />}
+            {screen === "history" && <HistoryScreen />}
             {screen === "section" && <SectionDetailScreen />}
             {screen === "compliance" && <ComplianceScreen />}
             {screen === "export" && <ExportScreen />}

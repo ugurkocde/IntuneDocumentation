@@ -30,7 +30,12 @@ export interface ControlRegisterRow {
   controlTitle: string;
   controlStatus: string;
   capabilityCount: number;
-  evidenceCount: number;
+  /** Enforcing values on assigned policies. */
+  assignedEvidence: number;
+  /** Non-enforcing values, assigned or not. */
+  counterEvidence: number;
+  /** Enforcing values on unassigned policies or with unknown assignment. */
+  unassignedEvidence: number;
   unassessedAspects: string;
 }
 
@@ -84,7 +89,9 @@ export const CONTROL_COLUMNS: Columns<ControlRegisterRow> = [
   ["controlTitle", "Control title"],
   ["controlStatus", "Control status"],
   ["capabilityCount", "Capabilities"],
-  ["evidenceCount", "Evidence items"],
+  ["assignedEvidence", "Assigned evidence"],
+  ["counterEvidence", "Counter-evidence"],
+  ["unassignedEvidence", "Evidence not assigned or unknown"],
   ["unassessedAspects", "Not established by this evidence"],
 ];
 
@@ -153,6 +160,32 @@ export function controlEvidence(
   return evidence;
 }
 
+export interface ControlEvidenceCounts {
+  assigned: number;
+  counter: number;
+  unassigned: number;
+}
+
+/**
+ * The cited evidence of a control split by meaning, so counter-evidence and
+ * unassigned configurations never read as support.
+ */
+export function controlEvidenceCounts(
+  control: ControlAssessment,
+  capabilities: ReadonlyMap<string, CapabilityResult>,
+): ControlEvidenceCounts {
+  const counts: ControlEvidenceCounts = {
+    assigned: 0,
+    counter: 0,
+    unassigned: 0,
+  };
+  for (const item of controlEvidence(control, capabilities))
+    if (item.verdict === "disabled") counts.counter += 1;
+    else if (item.assignment.state === "assigned") counts.assigned += 1;
+    else counts.unassigned += 1;
+  return counts;
+}
+
 function checkRow(
   frameworkId: string,
   controlId: string,
@@ -207,6 +240,7 @@ export function buildEvidenceRegister(
     const frameworkId = framework.framework.id;
     for (const control of framework.controls) {
       const controlId = control.control.id;
+      const counts = controlEvidenceCounts(control, capabilities);
       register.controls.push({
         frameworkId,
         frameworkName: framework.framework.name,
@@ -214,7 +248,9 @@ export function buildEvidenceRegister(
         controlTitle: control.control.title,
         controlStatus: CONTROL_STATUS_LABELS[control.status],
         capabilityCount: control.capabilityIds.length,
-        evidenceCount: controlEvidence(control, capabilities).length,
+        assignedEvidence: counts.assigned,
+        counterEvidence: counts.counter,
+        unassignedEvidence: counts.unassigned,
         unassessedAspects: control.unassessedAspects.join(" "),
       });
       const before = register.checks.length;
@@ -337,6 +373,10 @@ const CHECK_DEFINITIONS: ReadonlyArray<readonly [string, string]> = [
     CHECK_RESULT_LABELS.different,
     "The setting is configured with a value other than the expected value.",
   ],
+  [
+    "Empty check result",
+    "Compared or read without a result, for example a value that is not a gap because an alternative is configured; the note gives the reason.",
+  ],
   [ASSESSMENT_LABELS.checked, "The configuration was compared."],
   [
     ASSESSMENT_LABELS.unableToCheck,
@@ -423,7 +463,7 @@ export function registerToXlsx(
     {
       name: "Controls",
       rows: table(CONTROL_COLUMNS, register.controls),
-      columnWidths: [18, 26, 14, 40, 26, 12, 14, 80],
+      columnWidths: [18, 26, 14, 40, 26, 12, 14, 14, 18, 80],
     },
     {
       name: "Checks",

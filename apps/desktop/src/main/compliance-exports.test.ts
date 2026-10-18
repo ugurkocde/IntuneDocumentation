@@ -176,6 +176,19 @@ describe("policy device status of a section", () => {
     });
   });
 
+  it("matches report rows to policies regardless of id case", () => {
+    const upper = {
+      sections,
+      policyDeviceStatus: {
+        ...deviceStatus,
+        rows: deviceStatus.rows.map((row) => ({ ...row, policyId: row.policyId.toUpperCase() })),
+      },
+    } as unknown as Parameters<typeof policyDeviceStatusOf>[0];
+    expect(policyDeviceStatusOf(upper, "configurationPolicies")?.rows).toEqual({
+      a: { succeeded: 4, error: 1, conflict: 0, notApplicable: 2, pending: null },
+    });
+  });
+
   it("reports a source that was not collected with its reason", () => {
     expect(policyDeviceStatusOf(collection, "deviceConfigurations")).toMatchObject({
       state: "failed",

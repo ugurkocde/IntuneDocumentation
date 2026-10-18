@@ -444,12 +444,14 @@ export class DetailedIntuneService {
           )
         : await collectPolicyDeviceStatus(
             this.client,
-            (request) => this.retryWithBackoff(request, 2),
+            (request, signal) =>
+              this.retryWithBackoff(request, 2, 1000, signal),
             {
               deadline:
                 this.deadline === undefined
                   ? undefined
                   : this.deadline - POLICY_STATUS_RESERVE_MS,
+              signal: this.signal,
             },
           );
     const failed = Object.values(result.sources).some(
@@ -899,11 +901,12 @@ export class DetailedIntuneService {
     fn: () => Promise<T>,
     maxRetries: number = 5,
     initialDelay: number = 1000,
+    signal: AbortSignal = this.signal,
   ): Promise<T> {
     return retryGraphRequest(fn, {
       maxAttempts: maxRetries,
       initialDelay,
-      signal: this.signal,
+      signal,
     });
   }
 

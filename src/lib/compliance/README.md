@@ -528,9 +528,9 @@ users.
 
 | Capability | Evidence | Counter-evidence | Not counter-evidence |
 | --- | --- | --- | --- |
-| `tenant-phishing-resistant-method-enabled` | `Fido2` enabled, or `X509Certificate` enabled with default mode `x509CertificateMultiFactor` | none | both disabled: Windows Hello for Business is phishing resistant and not part of this policy; single-factor certificate mode does not count |
+| `tenant-phishing-resistant-method-enabled` | `Fido2` enabled, or `X509Certificate` enabled with default mode `x509CertificateMultiFactor` | none | both disabled: Windows Hello for Business is phishing resistant and not part of this policy; single-factor certificate mode does not count. One enabled method is enough: the other method's check then has no result ("Not required"), never "different" |
 | `tenant-weak-methods-disabled` | `Sms`, `Voice` and `Email` all readable and none enabled | any of them enabled | legacy per-user MFA and SSPR settings are not read |
-| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: expected when Conditional Access provides MFA (the two cannot be combined) |
+| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: never counter-evidence; not a gap at all while Conditional Access is in use (see Alternative capabilities below) |
 
 Mappings: NIST SP 800-53 IA-2 (phishing-resistant method, security defaults)
 and IA-5 (weak methods), ISO/IEC 27001 8.5, SP 800-171 3.5.3 and 03.05.03,
@@ -555,9 +555,14 @@ are read by column name from `Schema`, paged with `top` 1000 and `skip` up to
 `TotalRowCount`. Errors are `NumberOfNonCompliantOrErrorDevices` for reports
 and `errorCount + failedCount` for the overview; reports have no pending
 column, so pending is `null`. The website skips the annex with a recorded
-reason when less than 20 seconds of its 105 second budget remain, and stops
-paging 10 seconds before the budget ends. A partial retry keeps the previous
-annex.
+reason when less than 20 seconds of its 105 second budget remain, and the
+annex ends 10 seconds before the budget does: the remaining time is an abort
+signal on every request, page and retry wait, and a source cut off by it is
+`skipped` with the time budget reason (a disconnect stays `failed`). Without
+`TotalRowCount`, a report is paged while its pages are full; a report that
+returns fewer rows than its `TotalRowCount` is `failed` and contributes no
+rows. Policy ids are matched without regard to case. A partial retry keeps
+the previous annex.
 
 The result is `policyDeviceStatus` on the collection. It is not a field on
 `CapabilityEvidence` and never an input to any status; a test asserts that
@@ -568,3 +573,79 @@ was collected (evidence record schema version 2). The framework PDF adds an
 annex (English and German) listing the cited device policies; a policy without
 a row in the Intune summary shows "No status reported", never zero.
 
+## Alternative capabilities and review corrections (ruleset 2026.10.5)
+
+### Alternative capabilities
+
+`ComplianceCapability.alternativeTo` lists capabilities that deliver the same
+safeguard another way. It applies only to a capability with status
+`noEvidence` whose own value was read and compared (a `different` or
+`missing` check). The engine then judges each listed alternative on the
+unchanged first pass:
+
+- **in use**: the alternative has evidence (any verdict and assignment state,
+  so report-only and unassigned policies count) or a check that compared a
+  collected policy;
+- **unknown**: otherwise, when the alternative is `collectionIncomplete` or
+  every check of it is `unableToCheck`;
+- otherwise the capability stays an ordinary gap.
+
+For in use and unknown, `CapabilityResult.alternative` records the state and
+the alternative ids. The status stays `noEvidence` and the observed value
+stays visible, but its `different` and `missing` checks carry no result (and
+become `unableToCheck` when unknown), with the reason in the check and the
+limitations. As a result the capability is in no "Different value" tally and
+no red PDF row, `rankNextActions` never proposes it, the management summary
+leaves it out of every safeguard count, the fix pack neither drafts nor
+lists it, and `safeguardState` reports
+`alternativeInUse` ("Not needed, an alternative is set up") or `dataMissing`.
+Counter-evidence and unassigned configurations of the capability itself are
+never hidden.
+
+`tenant-security-defaults-enabled` lists the four Conditional Access
+capabilities (`tenant-mfa-required`, `tenant-mfa-all-apps`,
+`tenant-phishing-resistant-mfa`, `tenant-compliant-device-required`).
+Creating Conditional Access policies prevents enabling security defaults
+([Microsoft Learn, Plan a Conditional Access deployment](https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access)),
+so the product never recommends security defaults while Conditional Access
+MFA or compliant-device evidence exists or Conditional Access could not be
+read. A tenant without any such policy still sees security defaults as a gap
+next to the Conditional Access MFA capabilities. Conditional Access does not
+list security defaults as its alternative: baseline MFA does not replace a
+configurable policy.
+
+A tenant-wide Entra setting holding the non-enforcing value, such as SMS
+enabled in the authentication methods policy, is `tenantSettingDiffers`
+("Tenant-wide Entra setting differs"), not "Switched off by a policy in use".
+
+### Exports
+
+Register Controls rows and the evidence pack index split the cited evidence
+into assigned evidence (enforcing values on assigned policies),
+counter-evidence (non-enforcing values) and evidence on unassigned policies or
+with unknown assignment, so counter-evidence never reads as support. The index
+note says "No policy evidence found" only for `noEvidence` and "Not assessed,
+see the PDF for the reason." for `notAssessed`. A framework without Purview
+template data throws instead of reading as "No Purview template". XLSX cells
+with formula-like text keep their value under a `quotePrefix` cell style;
+CSV keeps the leading apostrophe. The fix pack requires the collection the
+assessment was made from, and keeps descriptions within 1000 characters:
+Microsoft documents no maximum, the warning is never shortened and the
+README lists every control.
+
+### Lab verification (18 October 2026, GET only)
+
+- Compliance policies in the lab return `null`, not `0`, for unset
+  inactivity limits: `windows10CompliancePolicy`
+  `passwordMinutesOfInactivityBeforeLock` (`15` where set), five
+  `macOSCompliancePolicy` policies, and `iosCompliancePolicy`
+  `passcodeMinutesOfInactivityBeforeScreenTimeout` and
+  `passcodeMinutesOfInactivityBeforeLock`. The lab has no Android compliance
+  policy; the three Android types declare the property as `Int32` like the
+  others, which is not observed behaviour.
+- The default Email OTP configuration reads `state: "enabled"` with
+  `includeTargets: []`, which the engine treats as not enabled for users.
+- The device status report endpoints are POST requests, so this GET-only
+  round did not call them again (their shape was verified earlier the same
+  day, see Policy device status annex) and did not compare their policy id
+  casing with Graph ids; matching ignores case.

@@ -161,6 +161,21 @@ export interface ComplianceCapability {
   /** All groups must be present on the same assigned policy. Signals within a group are alternatives. */
   requiredGroups?: readonly string[];
   documentationUrl?: string;
+  /**
+   * Capabilities that deliver this safeguard another way. While one of them
+   * is in use, or cannot be read, this capability without evidence is not a
+   * gap (see CapabilityResult.alternative and README "Alternative capabilities").
+   */
+  alternativeTo?: readonly string[];
+}
+
+/**
+ * Why a capability without evidence is not a gap. `inUse`: an alternative has
+ * evidence or a compared policy. `unknown`: an alternative could not be read.
+ */
+export interface CapabilityAlternative {
+  state: "inUse" | "unknown";
+  capabilityIds: string[];
 }
 
 export interface AssignmentSummary {
@@ -208,6 +223,12 @@ export interface CapabilityResult {
   evidence: CapabilityEvidence[];
   limitations: string[];
   checks: TechnicalCheck[];
+  /**
+   * Set only on a `noEvidence` capability with `alternativeTo`. It is then no
+   * next action, not counted as a safeguard and has no different or missing
+   * check result.
+   */
+  alternative?: CapabilityAlternative;
 }
 
 /** Configuration comparisons are independent of assignment and audit coverage. */

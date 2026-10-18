@@ -18,7 +18,7 @@ The register is the same assessment as rows and columns, for review, tracking or
 | Sheet | What it holds |
 | --- | --- |
 | About | What the file is, when the data was collected, the scope, the ruleset version, the disclaimer and the definition of every status used in the workbook. |
-| Controls | One row per control: framework, control id and title, control status, how many safeguards and evidence items it has, and what the evidence does not establish. |
+| Controls | One row per control: framework, control id and title, control status, how many safeguards it has, its evidence split into assigned evidence, counter-evidence and evidence on unassigned policies, and what the evidence does not establish. |
 | Checks | One row per technical check for each control it supports: safeguard, check result, policy, setting id, expected value, actual value and assignment. A control without any check gets one row with the reason, so no control is silently missing. |
 | Policy status | Intune's device status counts per policy: succeeded, error, conflict, not applicable and pending. A policy Intune reports nothing for is marked as no status reported, never as zero. These counts describe rollout only. They never change a control status. |
 
@@ -38,7 +38,7 @@ Select <Ui>Evidence pack (.zip)</Ui> and choose where to save the file. The ZIP 
 | --- | --- |
 | The framework evidence PDF | The [evidence report](/desktop/compliance-evidence#download) for every assessed control, with checks, evidence and limitations. |
 | The JSON evidence record | The machine readable assessment, with the snapshot and ruleset fingerprints of the result. |
-| index.csv | One row per assessed control: framework, the matching Purview template name, control id and title, status, evidence count, and where to find the control in the PDF. |
+| index.csv | One row per assessed control: framework, the matching Purview template name, control id and title, status, the same three evidence counts as the register, where to find the control in the PDF, and a note when the control has no evidence or was not assessed. |
 | README.txt | What the pack is, when the data was collected, the scope and ruleset, the upload steps below, and the disclaimer. |
 
 There is no separate PDF per control. The index points each control at its section of the one framework PDF.

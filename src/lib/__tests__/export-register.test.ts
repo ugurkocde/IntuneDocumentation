@@ -9,13 +9,20 @@ import {
   buildEvidenceRegister,
   CHECK_COLUMNS,
   controlEvidence,
+  controlEvidenceCounts,
   registerControlsToCsv,
   registerToCsv,
   registerToXlsx,
   type PolicyStatusRow,
 } from "../compliance/export";
 import type { ComplianceAssessment } from "../compliance/types";
-import { parseCsv, parseXml, sheetCells } from "./helpers/export-sheet";
+import {
+  parseCsv,
+  parseXml,
+  quotePrefixStyles,
+  sheetCellStyles,
+  sheetCells,
+} from "./helpers/export-sheet";
 import { extractZipEntry } from "./helpers/zip";
 
 const assessment = assessCompliance(CONTOSO_TENANT);
@@ -94,9 +101,20 @@ describe("buildEvidenceRegister", () => {
     framework.controls.forEach((control, index) => {
       const row = register.controls[index]!;
       expect(row.capabilityCount).toBe(control.capabilityIds.length);
-      expect(row.evidenceCount).toBe(
-        controlEvidence(control, capabilities).length,
+      const evidence = controlEvidence(control, capabilities);
+      // Counter-evidence and unassigned items never count as support.
+      expect(row.assignedEvidence).toBe(
+        evidence.filter(
+          (item) =>
+            item.verdict === "enforced" && item.assignment.state === "assigned",
+        ).length,
       );
+      expect(row.counterEvidence).toBe(
+        evidence.filter((item) => item.verdict === "disabled").length,
+      );
+      expect(
+        row.assignedEvidence + row.counterEvidence + row.unassignedEvidence,
+      ).toBe(evidence.length);
       expect(row.unassessedAspects).toBe(control.unassessedAspects.join(" "));
     });
     expect(new Set(register.checks.map((row) => row.frameworkId))).toEqual(
@@ -218,14 +236,67 @@ describe("register exports", () => {
     );
     const lastRow = register.checks.length + 1;
     expect(checks[`A${lastRow}`]).toBe(register.checks.at(-1)!.frameworkId);
-    expect(Object.values(checks)).toContain(`'${check.policyName}`);
+    expect(Object.values(checks)).toContain(check.policyName);
+    expect(Object.values(checks)).not.toContain(`'${check.policyName}`);
 
     const status = sheetCells(
       extractZipEntry(bytes, "xl/worksheets/sheet4.xml"),
     );
-    expect(status.B2).toBe("'@Windows baseline");
+    expect(status.B2).toBe("@Windows baseline");
+    const quoted = quotePrefixStyles(extractZipEntry(bytes, "xl/styles.xml"));
+    const styles = sheetCellStyles(
+      extractZipEntry(bytes, "xl/worksheets/sheet4.xml"),
+    );
+    expect(quoted[Number(styles.B2)]).toBe(true);
     expect(status.E2).toBe("12");
     expect(status.E3).toBeUndefined();
     expect(status.J3).toBe("No status reported");
+  });
+});
+
+describe("controlEvidenceCounts", () => {
+  it("never counts counter-evidence or unassigned items as support", () => {
+    const evidence = (
+      policyId: string,
+      verdict: "enforced" | "disabled",
+      state: "assigned" | "notAssigned" | "unknown",
+    ) => ({
+      capabilityId: "cap",
+      policyId,
+      policyName: policyId,
+      policyType: "Settings Catalog",
+      source: "settingsCatalog" as const,
+      settingId: "setting",
+      observedValue: "x",
+      verdict,
+      kind: "configuration" as const,
+      assignment: {
+        state,
+        targets: [],
+        exclusions: [],
+        filters: [],
+        coverage: "unverified" as const,
+      },
+    });
+    const result = {
+      ...assessment.capabilities[0]!,
+      capability: { ...assessment.capabilities[0]!.capability, id: "cap" },
+      evidence: [
+        evidence("a", "enforced", "assigned"),
+        evidence("b", "disabled", "assigned"),
+        evidence("c", "disabled", "notAssigned"),
+        evidence("d", "enforced", "notAssigned"),
+        evidence("e", "enforced", "unknown"),
+      ],
+    };
+    const control = {
+      ...assessment.frameworks[0]!.controls[0]!,
+      capabilityIds: ["cap"],
+    };
+    expect(controlEvidenceCounts(control, new Map([["cap", result]]))).toEqual({
+      assigned: 1,
+      counter: 2,
+      unassigned: 2,
+    });
   });
 });

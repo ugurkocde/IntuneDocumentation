@@ -1,10 +1,14 @@
 import JSZip from "jszip";
 import type { createEvidenceManifest } from "../manifest";
 import { CONTROL_STATUS_LABELS } from "../presentation";
-import type { AssessmentScope, ComplianceAssessment } from "../types";
+import type {
+  AssessmentScope,
+  ComplianceAssessment,
+  ControlStatus,
+} from "../types";
 import { toCsv } from "./csv";
 import { purviewTemplateFor } from "./purview-templates";
-import { controlEvidence } from "./register";
+import { controlEvidenceCounts } from "./register";
 
 export const NO_PURVIEW_TEMPLATE = "No Purview template";
 
@@ -57,6 +61,13 @@ export function safeFileName(name: string, fallback = "file"): string {
   return `${WINDOWS_RESERVED.test(safe) ? `_${safe}` : safe}${extension}`;
 }
 
+/** Index note per control status; the PDF gives the full reason. */
+const STATUS_NOTES: Partial<Record<ControlStatus, string>> = {
+  notApplicable: "Outside the selected scope.",
+  notAssessed: "Not assessed, see the PDF for the reason.",
+  noEvidence: "No policy evidence found for the mapped capabilities.",
+};
+
 function scopeText(assessment: ComplianceAssessment, frameworkId: string) {
   const scope: AssessmentScope = assessment.scope;
   const parts = [
@@ -96,6 +107,11 @@ export async function buildEvidencePack(
     meta.generatedAt ?? assessment.generatedAt,
   ).toISOString();
   const template = purviewTemplateFor(frameworkId, assessment.scope);
+  // Undefined is a framework missing from the template data, never "no template".
+  if (template === undefined)
+    throw new Error(
+      `No Purview template mapping for framework: ${frameworkId}`,
+    );
   const frameworkLabel = `${framework.framework.name} ${framework.framework.version}`;
   // The forced extensions keep both names distinct from README.txt and index.csv.
   const pdfName = safeFileName(meta.reportFileName, "evidence-report").replace(
@@ -114,20 +130,15 @@ export async function buildEvidencePack(
       "Control ID",
       "Control title",
       "Status",
-      "Evidence count",
+      "Assigned evidence",
+      "Counter-evidence",
+      "Evidence not assigned or unknown",
       "Where to find it",
       "Note",
     ],
     ...framework.controls.map((control) => {
-      const evidenceCount = controlEvidence(control, capabilities).length;
-      const note = [
-        control.status === "notApplicable"
-          ? "Outside the selected scope."
-          : evidenceCount
-            ? undefined
-            : "No policy evidence found for the mapped capabilities.",
-        template?.note,
-      ]
+      const counts = controlEvidenceCounts(control, capabilities);
+      const note = [STATUS_NOTES[control.status], template?.note]
         .filter(Boolean)
         .join(" ");
       return [
@@ -136,7 +147,9 @@ export async function buildEvidencePack(
         control.control.id,
         control.control.title,
         CONTROL_STATUS_LABELS[control.status],
-        evidenceCount,
+        counts.assigned,
+        counts.counter,
+        counts.unassigned,
         `${pdfName}, section for control ${control.control.id}`,
         note,
       ];
@@ -156,7 +169,7 @@ export async function buildEvidencePack(
     "Files in this pack:",
     `- ${pdfName}: the evidence report for every control, with checks, evidence and limitations.`,
     `- ${recordName}: the machine readable evidence record with snapshot and ruleset fingerprints.`,
-    "- index.csv: every control with its status, evidence count and where to find it in the PDF.",
+    "- index.csv: every control with its status, its evidence split into assigned evidence, counter-evidence and evidence on unassigned policies, and where to find it in the PDF.",
     "- README.txt: this file.",
     "",
     "This is evidence, not a compliance verdict. Whether a control is met is decided in your assessment.",

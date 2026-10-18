@@ -1,9 +1,10 @@
 import JSZip from "jszip";
-import { neutraliseFormula, type CellValue } from "./csv";
+import { isFormulaLike, type CellValue } from "./csv";
 
 // Minimal SpreadsheetML (ECMA-376) writer: inline strings, one bold header
-// style and one wrapping body style. No shared strings, formulas or dates,
-// so the output never depends on the host locale.
+// style and one wrapping body style, each with a quote prefix variant. No
+// shared strings, formulas or dates, so the output never depends on the host
+// locale.
 
 export interface XlsxSheet {
   name: string;
@@ -64,6 +65,9 @@ function sheetNames(sheets: readonly XlsxSheet[]): string[] {
   });
 }
 
+/** Style index of the quote prefix variant of a header or body style. */
+const QUOTE_PREFIX_OFFSET = 2;
+
 function cellXml(value: CellValue, ref: string, style: number): string {
   if (value === null || value === undefined || value === "") return "";
   if (typeof value === "number")
@@ -72,10 +76,12 @@ function cellXml(value: CellValue, ref: string, style: number): string {
       : "";
   if (typeof value === "boolean")
     return `<c r="${ref}" s="${style}" t="b"><v>${value ? 1 : 0}</v></c>`;
-  const text = escapeXml(
-    neutraliseFormula(stripIllegalXml(value)).slice(0, MAX_CELL_LENGTH),
-  );
-  return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${text}</t></is></c>`;
+  const plain = stripIllegalXml(value).slice(0, MAX_CELL_LENGTH);
+  // Formula-like text keeps its value and gets the quote prefix style, the
+  // cell form of a leading apostrophe: Excel shows it literally and keeps it
+  // text when the cell is edited. CSV has no styles and keeps the apostrophe.
+  const cellStyle = isFormulaLike(plain) ? style + QUOTE_PREFIX_OFFSET : style;
+  return `<c r="${ref}" s="${cellStyle}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(plain)}</t></is></c>`;
 }
 
 function widths(sheet: XlsxSheet, columns: number): number[] {
@@ -146,10 +152,12 @@ const STYLES_XML =
   `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
   `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
   `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-  `<cellXfs count="3">` +
+  `<cellXfs count="5">` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
   `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
+  `<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1" quotePrefix="1"><alignment vertical="top" wrapText="1"/></xf>` +
+  `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1" quotePrefix="1"><alignment vertical="top" wrapText="1"/></xf>` +
   `</cellXfs>` +
   `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
   `</styleSheet>`;

@@ -103,6 +103,8 @@ const OTHER_STATES: SafeguardState[] = [
   "partial",
   "conflicting",
   "dataMissing",
+  "tenantSettingDiffers",
+  "alternativeInUse",
 ];
 
 /** inPlace safeguards first in the input order is not assumed by the renderer. */

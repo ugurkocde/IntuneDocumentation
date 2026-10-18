@@ -162,6 +162,13 @@ export function useExportHandler({
                 selectedConfigs.has(`ca-${c.id}`),
               ) ?? [])
             : [],
+        // Entra tenant policies are read with the Conditional Access token, so
+        // they follow its inclusion; the device status annex always applies.
+        tenantIdentityPolicies:
+          includeCA && caConsentStatus === "included"
+            ? configurations?.tenantIdentityPolicies
+            : undefined,
+        policyDeviceStatus: configurations?.policyDeviceStatus,
         branding: brandingOptions,
         includeComplianceEvidence: options?.includeComplianceEvidence ?? true,
       };

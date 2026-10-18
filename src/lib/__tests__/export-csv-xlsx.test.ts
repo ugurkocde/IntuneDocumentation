@@ -7,7 +7,13 @@ import {
   stripIllegalXml,
   toCsv,
 } from "../compliance/export";
-import { parseCsv, parseXml, sheetCells } from "./helpers/export-sheet";
+import {
+  parseCsv,
+  parseXml,
+  quotePrefixStyles,
+  sheetCellStyles,
+  sheetCells,
+} from "./helpers/export-sheet";
 import { extractZipEntry } from "./helpers/zip";
 
 describe("neutraliseFormula", () => {
@@ -112,13 +118,19 @@ describe("buildXlsx", () => {
         ],
       },
     ]);
-    const cells = sheetCells(
-      extractZipEntry(bytes, "xl/worksheets/sheet1.xml"),
-    );
+    const xml = extractZipEntry(bytes, "xl/worksheets/sheet1.xml");
+    const cells = sheetCells(xml);
     expect(cells.A1).toBe("Text");
     expect(cells.A2).toBe(tricky[0]);
     expect(cells.A3).toBe("line one\nline two");
-    expect(cells.A4).toBe("'=1+1");
+    // Formula-like text keeps its value under a quote prefix style, not a
+    // visible apostrophe; plain text keeps the ordinary body style.
+    expect(cells.A4).toBe("=1+1");
+    const quoted = quotePrefixStyles(extractZipEntry(bytes, "xl/styles.xml"));
+    const styles = sheetCellStyles(xml);
+    expect(quoted[Number(styles.A4)]).toBe(true);
+    expect(quoted[Number(styles.A2)]).toBe(false);
+    expect(quoted[Number(styles.A1)]).toBe(false);
     expect(cells.A5).toBe("badcontrol");
     expect(cells.A6).toBe("emoji \uD83D\uDE00 kept");
     expect(cells.A7).toBe("lone  surrogate");

@@ -38,6 +38,7 @@ import { frameworkCoverageLabel } from "../../../../src/lib/compliance/presentat
 import {
   deviceStatusAnnexRows,
   hasPolicyDeviceStatus,
+  policyKey,
   policyStatusSourceFor,
 } from "../../../../src/lib/compliance/device-status-annex";
 import {
@@ -824,12 +825,14 @@ export function policyDeviceStatusOf(
     const reported = new Map(
       status.rows
         .filter((row) => row.source === source)
-        .map((row) => [row.policyId, row]),
+        .map((row) => [policyKey(row.policyId), row]),
     );
     section.items.forEach((item, index) => {
       const policyId = (item as { id?: unknown }).id;
       const row =
-        typeof policyId === "string" ? reported.get(policyId) : undefined;
+        typeof policyId === "string"
+          ? reported.get(policyKey(policyId))
+          : undefined;
       if (!row) return;
       rows[getStableItemId(section, item as Record<string, unknown>, index)] = {
         succeeded: row.succeeded,

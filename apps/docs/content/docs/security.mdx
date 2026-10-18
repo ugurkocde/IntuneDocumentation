@@ -96,7 +96,7 @@ The desktop app removes the server hop. It signs in through an app registration 
 
 ### What stays on your computer
 
-- Your Intune configuration and your Microsoft tokens are held in memory on your computer during collection.
+- Your Intune configuration and your Microsoft tokens are held in memory on your computer during collection. With [local history](#optional-local-history) turned on, each collection is also kept as an encrypted snapshot.
 - PDF and Word documents, evidence reports, registers and evidence packs are generated locally and saved to a folder you choose each time.
 - Your license key, if you entered one, and the signed license token are encrypted with the operating system keychain (Keychain on macOS, Windows' built-in credential encryption on Windows).
 - The app sends no telemetry.

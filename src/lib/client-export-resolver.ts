@@ -3,6 +3,10 @@ import { createGraphClient } from "./graph-client";
 import { GroupResolver } from "./group-resolver";
 import { collectAllPages } from "./graph-paging";
 import type { ConfigurationSectionData } from "./configuration-sections";
+import type {
+  PolicyDeviceStatus,
+  TenantIdentityPolicies,
+} from "./compliance/types";
 
 export interface ExportResolverProgress {
   stage: "groups" | "devices";
@@ -33,6 +37,8 @@ interface SelectedData {
   windowsUpdatePolicies: any[];
   enrollmentConfigurations: any[];
   conditionalAccessPolicies: any[];
+  tenantIdentityPolicies?: TenantIdentityPolicies;
+  policyDeviceStatus?: PolicyDeviceStatus;
   branding?: any;
   includeComplianceEvidence?: boolean;
 }

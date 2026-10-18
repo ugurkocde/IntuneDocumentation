@@ -140,6 +140,49 @@ describe("policy device status annex", () => {
     ]);
   });
 
+  it("matches report policy ids without regard to case", () => {
+    const upper = {
+      ...status,
+      rows: status.rows.map((row) => ({
+        ...row,
+        policyId: row.policyId.toUpperCase(),
+      })),
+    };
+    const [row] = deviceStatusAnnexRows(
+      [
+        {
+          policyId: "catalog-1",
+          policyName: "Catalog one",
+          familyKey: "settingsCatalog",
+        },
+        {
+          policyId: "CATALOG-1",
+          policyName: "Catalog one",
+          familyKey: "settingsCatalog",
+        },
+      ],
+      upper,
+    );
+    expect(row).toMatchObject({ policyId: "catalog-1", state: "reported" });
+    expect(
+      deviceStatusAnnexRows(
+        [
+          {
+            policyId: "catalog-1",
+            policyName: "Catalog one",
+            familyKey: "settingsCatalog",
+          },
+          {
+            policyId: "CATALOG-1",
+            policyName: "Catalog one",
+            familyKey: "settingsCatalog",
+          },
+        ],
+        upper,
+      ),
+    ).toHaveLength(1);
+  });
+
   it("adds the annex to the framework PDF in English and German only when data exists", async () => {
     const english = extractPdfStreamText(
       await generateComplianceReportPDF(CONTOSO_TENANT, {

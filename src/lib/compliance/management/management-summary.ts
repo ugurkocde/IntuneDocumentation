@@ -60,11 +60,24 @@ function inPlaceCapabilityIds(
   );
 }
 
+/**
+ * Capabilities without evidence whose alternative is in use or unreadable.
+ * They are not gaps, so they are neither safeguards to count nor next actions.
+ */
+function alternativeIds(capabilities: readonly CapabilityResult[]): Set<string> {
+  return new Set(
+    capabilities
+      .filter((result) => result.alternative)
+      .map((result) => result.capability.id),
+  );
+}
+
 function safeguardCount(
   capabilityIds: Iterable<string>,
   inPlace: ReadonlySet<string>,
+  excluded: ReadonlySet<string>,
 ): SafeguardCount {
-  const ids = new Set(capabilityIds);
+  const ids = new Set([...capabilityIds].filter((id) => !excluded.has(id)));
   return {
     inPlace: [...ids].filter((id) => inPlace.has(id)).length,
     total: ids.size,
@@ -99,7 +112,11 @@ export function computeMetrics(
         .map((result) => result.capability.id),
     ).size;
 
-  const safeguards = safeguardCount(mapped, inPlaceCapabilityIds(capabilities));
+  const safeguards = safeguardCount(
+    mapped,
+    inPlaceCapabilityIds(capabilities),
+    alternativeIds(capabilities),
+  );
 
   return {
     assessable,
@@ -153,6 +170,16 @@ function switchesOffAssigned(result: CapabilityResult): boolean {
 
 /** Plain-language state of one safeguard for the management report. */
 export function safeguardState(result: CapabilityResult): SafeguardState {
+  if (result.alternative)
+    return result.alternative.state === "inUse"
+      ? "alternativeInUse"
+      : "dataMissing";
+  // Tenant-wide Entra settings are not policies that switch something off.
+  if (
+    result.status === "disabledByPolicy" &&
+    result.capability.signals.some((signal) => signal.source === "tenantPolicy")
+  )
+    return "tenantSettingDiffers";
   switch (result.status) {
     case "enforced":
     case "requirementAssigned":
@@ -212,6 +239,9 @@ export function rankNextActions(
   const candidates: Omit<NextAction, "rank">[] = [];
   for (const id of mappedCapabilityIds(fa)) {
     const result = resultById.get(id);
+    // Never recommend a safeguard whose alternative is in use or unreadable,
+    // such as security defaults in a Conditional Access tenant.
+    if (result?.alternative) continue;
     // A non-enforcing value only switches a protection off where the policy
     // is assigned; in an unassigned policy the protection is simply missing.
     const tier =
@@ -292,6 +322,7 @@ export function buildManagementSummary(
   if (!fa)
     throw new Error(`Framework ${frameworkId} is not in this assessment.`);
   const inPlace = inPlaceCapabilityIds(assessment.capabilities);
+  const excluded = alternativeIds(assessment.capabilities);
   return {
     frameworkId,
     frameworkName: fa.framework.name,
@@ -313,7 +344,7 @@ export function buildManagementSummary(
     safeguards: Object.fromEntries(
       fa.controls.map((control) => [
         control.control.id,
-        safeguardCount(control.capabilityIds, inPlace),
+        safeguardCount(control.capabilityIds, inPlace, excluded),
       ]),
     ),
     outsideScope: [...(options.outsideScope ?? [])],

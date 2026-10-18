@@ -1,9 +1,6 @@
 import type { AssessmentScope } from "../types";
 
-/**
- * Framework ids this export layer knows. DORA is listed ahead of its
- * framework definition so the mapping is ready when the engine assesses it.
- */
+/** Framework ids this export layer knows. */
 export type ExportFrameworkId =
   | "nist-800-53-r5"
   | "nist-csf-2"
@@ -43,7 +40,9 @@ const NIST_171_NOTE =
 /**
  * Purview Compliance Manager regulation per framework, or null where Purview
  * has no template. Compliance Manager has no API for templates, so this is
- * data checked by hand against the Microsoft Learn list.
+ * data checked by hand against the Microsoft Learn list. Names are copied
+ * exactly; the spaced hyphens in names such as "UK - Cyber Security for
+ * Defence Suppliers" are Microsoft's, so they must not be rewritten.
  */
 export const PURVIEW_TEMPLATES: Readonly<
   Record<ExportFrameworkId, PurviewTemplateEntry | null>

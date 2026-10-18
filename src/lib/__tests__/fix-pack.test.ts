@@ -10,6 +10,7 @@ import type { DetailedExportData } from "../configuration-analyzer";
 import { CONTOSO_TENANT } from "../compliance/demo/contoso-tenant";
 import {
   buildFixPackZip,
+  FIX_PACK_DESCRIPTION_MAX,
   FIX_PACK_POLICY_PREFIX,
   FIX_PACK_WARNING,
   generateFixPack,
@@ -38,7 +39,8 @@ function emptyCollection(): DetailedExportData {
 }
 
 const contoso = assessCompliance(CONTOSO_TENANT);
-const empty = assessCompliance(emptyCollection());
+const EMPTY = emptyCollection();
+const empty = assessCompliance(EMPTY);
 
 function instances(
   rows: readonly FixPackChoiceSettingInstance[],
@@ -63,8 +65,11 @@ const gapFor = (
 
 describe("fix pack generator", () => {
   it("emits only verified setting definitions and option ids", () => {
-    for (const assessment of [contoso, empty]) {
-      const emitted = allInstances(generateFixPack(assessment));
+    for (const [assessment, collection] of [
+      [contoso, CONTOSO_TENANT],
+      [empty, EMPTY],
+    ] as const) {
+      const emitted = allInstances(generateFixPack(assessment, { collection }));
       expect(emitted.length).toBeGreaterThan(0);
       for (const instance of emitted) {
         const definition = definitions.find(
@@ -90,7 +95,7 @@ describe("fix pack generator", () => {
 
   it("nests a child setting under its enabled parent option", () => {
     const policy = policyFor(
-      generateFixPack(contoso),
+      generateFixPack(contoso, { collection: CONTOSO_TENANT }),
       "windows-remote-credential-guard",
     )!;
     const parent =
@@ -118,7 +123,7 @@ describe("fix pack generator", () => {
   });
 
   it("produces unassigned drafts with the lab-verified document shape", () => {
-    const pack = generateFixPack(contoso);
+    const pack = generateFixPack(contoso, { collection: CONTOSO_TENANT });
     for (const policy of pack.policies) {
       expect(Object.keys(policy.json).sort()).toEqual([
         "description",
@@ -154,7 +159,7 @@ describe("fix pack generator", () => {
   });
 
   it("generates only settings detected as missing on a complete collection", () => {
-    const pack = generateFixPack(contoso);
+    const pack = generateFixPack(contoso, { collection: CONTOSO_TENANT });
     const generated = new Set(pack.policies.map((row) => row.capabilityId));
     for (const result of contoso.capabilities)
       if (generated.has(result.capability.id)) {
@@ -182,7 +187,9 @@ describe("fix pack generator", () => {
   it("generates nothing when collection completeness is unknown", () => {
     const snapshot = emptyCollection();
     delete snapshot.collectedAt;
-    const pack = generateFixPack(assessCompliance(snapshot));
+    const pack = generateFixPack(assessCompliance(snapshot), {
+      collection: snapshot,
+    });
     expect(pack.policies).toEqual([]);
     expect(gapFor(pack, "windows-remote-credential-guard")?.reason).toMatch(
       /could not establish that the setting is missing/,
@@ -190,7 +197,7 @@ describe("fix pack generator", () => {
   });
 
   it("lists signals that are not Settings Catalog choices", () => {
-    const pack = generateFixPack(contoso);
+    const pack = generateFixPack(contoso, { collection: CONTOSO_TENANT });
     expect(gapFor(pack, "windows-secure-boot")?.reason).toMatch(
       /template or compliance policy property/,
     );
@@ -210,7 +217,7 @@ describe("fix pack generator", () => {
   });
 
   it("emits every required group together and avoids UEFI locks", () => {
-    const pack = generateFixPack(empty);
+    const pack = generateFixPack(empty, { collection: EMPTY });
     const logging = policyFor(pack, "windows-process-creation-logging")!;
     expect(
       logging.json.settings.map(
@@ -231,7 +238,7 @@ describe("fix pack generator", () => {
   });
 
   it("keeps values consistent across the pack", () => {
-    const pack = generateFixPack(empty);
+    const pack = generateFixPack(empty, { collection: EMPTY });
     const values = new Map<string, string>();
     for (const instance of allInstances(pack)) {
       const previous = values.get(instance.settingDefinitionId);
@@ -265,7 +272,9 @@ describe("fix pack generator", () => {
       collectionIncomplete: /Policy collection was incomplete/,
     };
     for (const [status, reason] of Object.entries(reasons)) {
-      const pack = generateFixPack(withStatus(status as CapabilityStatus));
+      const pack = generateFixPack(withStatus(status as CapabilityStatus), {
+        collection: EMPTY,
+      });
       expect(policyFor(pack, id), status).toBeUndefined();
       expect(gapFor(pack, id)?.reason, status).toMatch(reason);
     }
@@ -274,7 +283,7 @@ describe("fix pack generator", () => {
       "requirementAssigned",
       "notApplicable",
     ] as const) {
-      const pack = generateFixPack(withStatus(status));
+      const pack = generateFixPack(withStatus(status), { collection: EMPTY });
       expect(policyFor(pack, id), status).toBeUndefined();
       expect(gapFor(pack, id), status).toBeUndefined();
     }
@@ -317,6 +326,7 @@ describe("fix pack generator", () => {
         ],
         ["catalog", "template"],
       ),
+      { collection: EMPTY },
     );
     expect(halfGroups.policies).toEqual([]);
     expect(halfGroups.notGeneratable[0]?.reason).toMatch(
@@ -330,13 +340,17 @@ describe("fix pack generator", () => {
           enforcedWhen: { kind: "equals", value: `${lsa}_1` },
         },
       ]),
+      { collection: EMPTY },
     );
     expect(locked.policies).toEqual([]);
     expect(locked.notGeneratable[0]?.reason).toMatch(/UEFI lock/);
   });
 
   it("filters by framework", () => {
-    const pack = generateFixPack(empty, { frameworkId: "hipaa-security-rule" });
+    const pack = generateFixPack(empty, {
+      frameworkId: "hipaa-security-rule",
+      collection: EMPTY,
+    });
     expect(pack.policies.length).toBeGreaterThan(0);
     for (const policy of pack.policies) {
       expect(policy.controlIds.length).toBeGreaterThan(0);
@@ -346,12 +360,17 @@ describe("fix pack generator", () => {
   });
 
   it("is deterministic and packs README plus one JSON per policy", async () => {
-    expect(generateFixPack(contoso)).toEqual(generateFixPack(contoso));
-    const pack = generateFixPack(contoso);
-    const bytes = await buildFixPackZip(pack, contoso);
-    expect(await buildFixPackZip(generateFixPack(contoso), contoso)).toEqual(
-      bytes,
+    expect(generateFixPack(contoso, { collection: CONTOSO_TENANT })).toEqual(
+      generateFixPack(contoso, { collection: CONTOSO_TENANT }),
     );
+    const pack = generateFixPack(contoso, { collection: CONTOSO_TENANT });
+    const bytes = await buildFixPackZip(pack, contoso);
+    expect(
+      await buildFixPackZip(
+        generateFixPack(contoso, { collection: CONTOSO_TENANT }),
+        contoso,
+      ),
+    ).toEqual(bytes);
     const zip = await JSZip.loadAsync(bytes);
     expect(Object.keys(zip.files).sort()).toEqual(
       ["README.txt", ...pack.policies.map((row) => row.fileName)].sort(),
@@ -373,7 +392,7 @@ describe("fix pack generator", () => {
   });
 
   it("lists options whose dependent settings have no verified value", () => {
-    const pack = generateFixPack(empty);
+    const pack = generateFixPack(empty, { collection: EMPTY });
     for (const id of [
       "windows-powershell-scriptblock-logging",
       "windows-powershell-transcription",
@@ -447,8 +466,14 @@ describe("fix pack generator", () => {
     expect(result.checks.every((check) => check.result === "missing")).toBe(
       true,
     );
-    expect(policyFor(generateFixPack(assessment), id)).toBeDefined();
-
+    // Without the collection the deliberate choice is invisible, so the
+    // collection is required.
+    expect(() => generateFixPack(assessment, undefined as never)).toThrow(
+      "needs the collection",
+    );
+    expect(() => generateFixPack(assessment, {} as never)).toThrow(
+      "needs the collection",
+    );
     const pack = generateFixPack(assessment, { collection });
     expect(policyFor(pack, id)).toBeUndefined();
     expect(gapFor(pack, id)?.reason).toBe(
@@ -459,7 +484,7 @@ describe("fix pack generator", () => {
   });
 
   it("leaves out umbrella capabilities covered by their components", () => {
-    const pack = generateFixPack(empty);
+    const pack = generateFixPack(empty, { collection: EMPTY });
     for (const [umbrella, components] of [
       [
         "windows-office-macro-settings-managed",
@@ -503,14 +528,17 @@ describe("fix pack generator", () => {
       ...remote,
       capability: { ...remote.capability, id, signals },
     });
-    const pack = generateFixPack({
-      ...empty,
-      frameworks: [],
-      capabilities: [
-        result("umbrella", [signal(v3, `${v3}_1`), signal(lsa, `${lsa}_2`)]),
-        result("component", [signal(v3, `${v3}_1`)]),
-      ],
-    });
+    const pack = generateFixPack(
+      {
+        ...empty,
+        frameworks: [],
+        capabilities: [
+          result("umbrella", [signal(v3, `${v3}_1`), signal(lsa, `${lsa}_2`)]),
+          result("component", [signal(v3, `${v3}_1`)]),
+        ],
+      },
+      { collection: EMPTY },
+    );
     expect(pack.policies.map((row) => row.capabilityId)).toEqual([
       "umbrella",
       "component",
@@ -536,21 +564,24 @@ describe("fix pack generator", () => {
       ...remote,
       capability: { ...remote.capability, id, signals },
     });
-    const pack = generateFixPack({
-      ...empty,
-      frameworks: [],
-      capabilities: [
-        result("umbrella", [
-          {
-            source: "settingsCatalog",
-            settingDefinitionId: parent,
-            enforcedWhen: { kind: "equals", value: `${parent}_1` },
-          },
-          ...remote.capability.signals,
-        ]),
-        result("component", remote.capability.signals),
-      ],
-    });
+    const pack = generateFixPack(
+      {
+        ...empty,
+        frameworks: [],
+        capabilities: [
+          result("umbrella", [
+            {
+              source: "settingsCatalog",
+              settingDefinitionId: parent,
+              enforcedWhen: { kind: "equals", value: `${parent}_1` },
+            },
+            ...remote.capability.signals,
+          ]),
+          result("component", remote.capability.signals),
+        ],
+      },
+      { collection: EMPTY },
+    );
     const umbrella = policyFor(pack, "umbrella")!;
     expect(umbrella.notes).toEqual([]);
     expect(
@@ -562,30 +593,115 @@ describe("fix pack generator", () => {
     const remote = empty.capabilities.find(
       (row) => row.capability.id === "windows-remote-credential-guard",
     )!;
-    const pack = generateFixPack({
-      ...empty,
-      frameworks: [],
-      capabilities: [
-        {
-          ...remote,
-          capability: {
-            ...remote.capability,
-            id: "tenant-test",
-            platform: "tenant",
-            signals: [
-              {
-                source: "tenantPolicy",
-                policy: "securityDefaults",
-                check: "securityDefaultsEnabled",
-              },
-            ],
+    const pack = generateFixPack(
+      {
+        ...empty,
+        frameworks: [],
+        capabilities: [
+          {
+            ...remote,
+            capability: {
+              ...remote.capability,
+              id: "tenant-test",
+              platform: "tenant",
+              signals: [
+                {
+                  source: "tenantPolicy",
+                  policy: "securityDefaults",
+                  check: "securityDefaultsEnabled",
+                },
+              ],
+            },
           },
-        },
-      ],
-    });
+        ],
+      },
+      { collection: EMPTY },
+    );
     expect(pack.policies).toEqual([]);
     expect(pack.notGeneratable[0]?.reason).toBe(
       "Entra setting, change it in the Entra admin center.",
     );
+  });
+
+  it("keeps every description within the length bound with the warning intact", () => {
+    for (const [assessment, collection] of [
+      [contoso, CONTOSO_TENANT],
+      [empty, EMPTY],
+    ] as const) {
+      const pack = generateFixPack(assessment, { collection });
+      expect(pack.policies.length).toBeGreaterThan(0);
+      for (const policy of pack.policies) {
+        const { description } = policy.json;
+        expect(description.length).toBeLessThanOrEqual(
+          FIX_PACK_DESCRIPTION_MAX,
+        );
+        expect(description.startsWith(FIX_PACK_WARNING)).toBe(true);
+        // Shortened lists point to the README, which lists every control.
+        const shown = description.split("Controls: ")[1]!;
+        for (const id of policy.controlIds.slice(0, 1))
+          expect(shown).toContain(id);
+        if (!policy.controlIds.every((id) => shown.includes(`${id}`)))
+          expect(shown).toMatch(/more in README\.txt\.$/);
+      }
+    }
+    // Many mapped controls are shortened, never the warning.
+    const id = "windows-remote-credential-guard";
+    const [framework] = empty.frameworks;
+    const many: ComplianceAssessment = {
+      ...empty,
+      frameworks: [
+        {
+          ...framework!,
+          controls: Array.from({ length: 80 }, (_, index) => ({
+            ...framework!.controls[0]!,
+            control: {
+              ...framework!.controls[0]!.control,
+              id: `CTRL-${index}`,
+            },
+            capabilityIds: [id],
+          })),
+        },
+      ],
+    };
+    const long = generateFixPack(many, { collection: EMPTY }).policies.find(
+      (policy) => policy.capabilityId === id,
+    )!;
+    expect(long.controlIds).toHaveLength(80);
+    expect(long.json.description.length).toBeLessThanOrEqual(
+      FIX_PACK_DESCRIPTION_MAX,
+    );
+    expect(long.json.description.startsWith(FIX_PACK_WARNING)).toBe(true);
+    expect(long.json.description).toMatch(/, and \d+ more in README\.txt\.$/);
+  });
+
+  it("does not list security defaults when Conditional Access is in use", () => {
+    const collection: DetailedExportData = {
+      ...emptyCollection(),
+      tenantIdentityPolicies: {
+        securityDefaults: { isEnabled: false },
+        status: { securityDefaults: "collected" },
+      },
+      conditionalAccessPolicies: [
+        {
+          id: "ca-1",
+          displayName: "Require MFA",
+          state: "enabled",
+          conditions: {
+            users: { includeUsers: ["All"] },
+            applications: { includeApplications: ["All"] },
+          },
+          grantControls: { operator: "AND", builtInControls: ["mfa"] },
+        },
+      ] as unknown as DetailedExportData["conditionalAccessPolicies"],
+    };
+    const assessment = assessCompliance(collection);
+    const defaults = "tenant-security-defaults-enabled";
+    expect(
+      assessment.capabilities.find((row) => row.capability.id === defaults)
+        ?.alternative?.state,
+    ).toBe("inUse");
+    const pack = generateFixPack(assessment, { collection });
+    expect(policyFor(pack, defaults)).toBeUndefined();
+    expect(gapFor(pack, defaults)).toBeUndefined();
   });
 });

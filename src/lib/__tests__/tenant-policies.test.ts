@@ -9,7 +9,15 @@ import {
   PORTAL_AREAS,
   portalAreaFor,
 } from "../compliance/management/portal-links";
-import { TENANT_POLICY_CAPABILITIES } from "../compliance/tenant-policies";
+import {
+  buildManagementSummary,
+  rankNextActions,
+  safeguardState,
+} from "../compliance/management/management-summary";
+import {
+  CONDITIONAL_ACCESS_ALTERNATIVES,
+  TENANT_POLICY_CAPABILITIES,
+} from "../compliance/tenant-policies";
 import type {
   TenantIdentityPolicies,
   TenantIdentityPolicyName,
@@ -117,8 +125,11 @@ describe("Entra tenant policy signals", () => {
       result.checks.map((check) => [check.settingId, check.result]),
     ).toEqual([
       ["authenticationMethodsPolicy/Fido2", "matches"],
-      ["authenticationMethodsPolicy/X509Certificate", "different"],
+      // One phishing-resistant method is enough; the other is no deviation.
+      ["authenticationMethodsPolicy/X509Certificate", null],
     ]);
+    expect(result.checks[1]).toMatchObject({ assessmentStatus: "checked" });
+    expect(result.checks[1]?.reason).toContain("Not required: Fido2");
   });
 
   it("does not count disabled or untargeted methods, nor single-factor certificates", () => {
@@ -321,5 +332,198 @@ describe("Entra tenant policy signals", () => {
     expect(new URL(PORTAL_AREAS.entraSecurityDefaults.url).host).toBe(
       "entra.microsoft.com",
     );
+  });
+});
+
+function caPolicy(
+  state: string,
+  grantControls: Record<string, unknown> = {
+    operator: "AND",
+    builtInControls: ["mfa"],
+  },
+) {
+  return {
+    id: `ca-${state}`,
+    displayName: `CA ${state}`,
+    state,
+    conditions: {
+      users: { includeUsers: ["All"] },
+      applications: { includeApplications: ["All"] },
+    },
+    grantControls,
+  };
+}
+
+function withCa(
+  ca: Record<string, unknown>[],
+  extra: Partial<DetailedExportData> = {},
+): DetailedExportData {
+  return { ...data(policies()), conditionalAccessPolicies: ca, ...extra };
+}
+
+describe("security defaults as an alternative to Conditional Access", () => {
+  const frameworks = [
+    "nist-800-53-r5",
+    "iso-27001-2022",
+    "nist-800-171-r2",
+    "nist-800-171-r3",
+    "cyber-essentials-v3",
+    "nis2-2022-2555",
+    "dora-2022-2554",
+  ];
+
+  it("lists every Conditional Access capability as the alternative", () => {
+    const defaults = TENANT_POLICY_CAPABILITIES.find(
+      (item) => item.id === DEFAULTS,
+    )!;
+    expect(defaults.alternativeTo).toEqual(CONDITIONAL_ACCESS_ALTERNATIVES);
+    const ids = new Set(
+      assessCompliance(data(policies())).capabilities.map(
+        (result) => result.capability.id,
+      ),
+    );
+    for (const id of CONDITIONAL_ACCESS_ALTERNATIVES)
+      expect(ids.has(id), id).toBe(true);
+  });
+
+  it.each([
+    ["enabled", "enabled"],
+    ["report-only", "enabledForReportingButNotEnforced"],
+  ])(
+    "never recommends security defaults with a %s Conditional Access MFA policy",
+    (_label, state) => {
+      const assessment = assessCompliance(withCa([caPolicy(state)]));
+      const defaults = assessment.capabilities.find(
+        (result) => result.capability.id === DEFAULTS,
+      )!;
+      expect(defaults.status).toBe("noEvidence");
+      expect(defaults.alternative).toMatchObject({ state: "inUse" });
+      expect(defaults.alternative?.capabilityIds).toContain(
+        "tenant-mfa-required",
+      );
+      // The value stays visible, but it is not a different value.
+      expect(defaults.checks).toEqual([
+        expect.objectContaining({
+          assessmentStatus: "checked",
+          result: null,
+          actualValue: "false",
+        }),
+      ]);
+      expect(defaults.checks[0]?.reason).toContain("Not a gap");
+      expect(safeguardState(defaults)).toBe("alternativeInUse");
+      for (const id of frameworks) {
+        const fa = assessment.frameworks.find(
+          (item) => item.framework.id === id,
+        )!;
+        expect(
+          rankNextActions(fa, assessment.capabilities, 50).map(
+            (action) => action.capabilityId,
+          ),
+          id,
+        ).not.toContain(DEFAULTS);
+        const summary = buildManagementSummary(assessment, id, { limit: 50 });
+        expect(
+          summary.nextActions.map((action) => action.capabilityId),
+        ).not.toContain(DEFAULTS);
+        const mapped = new Set(fa.controls.flatMap((c) => c.capabilityIds));
+        expect(mapped.has(DEFAULTS), id).toBe(true);
+        // Security defaults are not a safeguard to count in this tenant.
+        expect(summary.metrics.safeguardsTotal, id).toBe(mapped.size - 1);
+        for (const control of fa.controls)
+          expect(summary.safeguards[control.control.id]?.total).toBe(
+            new Set(control.capabilityIds.filter((c) => c !== DEFAULTS)).size,
+          );
+      }
+    },
+  );
+
+  it("also rules out security defaults for a compliant-device policy", () => {
+    const assessment = assessCompliance(
+      withCa([
+        caPolicy("enabled", {
+          operator: "AND",
+          builtInControls: ["compliantDevice"],
+        }),
+      ]),
+    );
+    const defaults = assessment.capabilities.find(
+      (result) => result.capability.id === DEFAULTS,
+    )!;
+    expect(defaults.alternative).toEqual({
+      state: "inUse",
+      capabilityIds: ["tenant-compliant-device-required"],
+    });
+  });
+
+  it("keeps security defaults a gap when no Conditional Access policy exists", () => {
+    const assessment = assessCompliance(withCa([]));
+    const defaults = assessment.capabilities.find(
+      (result) => result.capability.id === DEFAULTS,
+    )!;
+    expect(defaults.alternative).toBeUndefined();
+    expect(defaults.checks[0]).toMatchObject({ result: "different" });
+    expect(safeguardState(defaults)).toBe("notConfigured");
+    const summary = buildManagementSummary(assessment, "nist-800-53-r5", {
+      limit: 50,
+    });
+    expect(summary.nextActions.map((action) => action.capabilityId)).toContain(
+      DEFAULTS,
+    );
+  });
+
+  it("does not recommend security defaults while Conditional Access is unreadable", () => {
+    const assessment = assessCompliance(
+      withCa([], { collectionSkippedFamilies: ["conditionalAccessPolicies"] }),
+    );
+    const defaults = assessment.capabilities.find(
+      (result) => result.capability.id === DEFAULTS,
+    )!;
+    expect(defaults.alternative?.state).toBe("unknown");
+    expect(defaults.checks[0]).toMatchObject({
+      assessmentStatus: "unableToCheck",
+      result: null,
+    });
+    expect(safeguardState(defaults)).toBe("dataMissing");
+    const summary = buildManagementSummary(assessment, "nist-800-53-r5", {
+      limit: 50,
+    });
+    expect(
+      summary.nextActions.map((action) => action.capabilityId),
+    ).not.toContain(DEFAULTS);
+  });
+
+  it("leaves security defaults that are on and unreadable unchanged", () => {
+    const on = assessCompliance(
+      withCa([caPolicy("enabled")], {
+        tenantIdentityPolicies: policies({
+          securityDefaults: { isEnabled: true },
+        }),
+      }),
+    ).capabilities.find((result) => result.capability.id === DEFAULTS)!;
+    expect(on.status).toBe("enforced");
+    expect(on.alternative).toBeUndefined();
+    const unread = assessCompliance(
+      withCa([caPolicy("enabled")], {
+        tenantIdentityPolicies: policies({
+          status: { ...policies().status, securityDefaults: "failed" },
+          securityDefaults: undefined,
+        }),
+      }),
+    ).capabilities.find((result) => result.capability.id === DEFAULTS)!;
+    expect(unread.status).toBe("collectionIncomplete");
+    expect(unread.alternative).toBeUndefined();
+  });
+
+  it("words enabled weak methods as a tenant setting, not a switched-off policy", () => {
+    const sms = capability(
+      data(
+        policies({
+          authenticationMethods: methods({ id: "Sms", state: "enabled" }),
+        }),
+      ),
+      WEAK,
+    );
+    expect(sms.status).toBe("disabledByPolicy");
+    expect(safeguardState(sms)).toBe("tenantSettingDiffers");
   });
 });

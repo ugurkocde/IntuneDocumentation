@@ -56,7 +56,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.4";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.5";
 
 const TENANT_POLICY_FAMILY_KEYS = new Set(
   Object.values(TENANT_POLICY_FAMILIES),
@@ -593,7 +593,7 @@ export function assessCapabilities(
     ]);
   }
 
-  return capabilities.map((capability) => {
+  const results = capabilities.map((capability) => {
     const evidence = evidenceByCapability.get(capability.id) ?? [];
     const collectionGaps = capabilityCollectionGaps(data, capability);
     const incomplete = collectionGaps.length > 0;
@@ -709,6 +709,95 @@ export function assessCapabilities(
           : []),
         ...(capability.caveat ? [capability.caveat.en] : []),
       ],
+    };
+  });
+  return applyAlternatives(results);
+}
+
+/**
+ * State of the alternatives of a capability without evidence. An alternative
+ * is in use when it has evidence or compared a collected policy (a check with
+ * a policy), and unknown when it could not be read. Outside scope and plainly
+ * absent alternatives leave the capability a regular gap.
+ */
+function alternativeOf(
+  result: CapabilityResult,
+  byId: ReadonlyMap<string, CapabilityResult>,
+): CapabilityResult["alternative"] {
+  // Only a value that was read and compared counts; an unreadable capability
+  // stays a data question of its own.
+  if (
+    result.status !== "noEvidence" ||
+    !result.capability.alternativeTo ||
+    !result.checks.some(
+      (check) =>
+        check.assessmentStatus === "checked" &&
+        (check.result === "different" || check.result === "missing"),
+    )
+  )
+    return undefined;
+  const alternatives = result.capability.alternativeTo
+    .map((id) => byId.get(id))
+    .filter((item): item is CapabilityResult => Boolean(item))
+    .filter((item) => item.status !== "notApplicable");
+  const inUse = alternatives.filter(
+    (item) =>
+      item.evidence.length > 0 || item.checks.some((check) => check.policyId),
+  );
+  if (inUse.length)
+    return {
+      state: "inUse",
+      capabilityIds: inUse.map((item) => item.capability.id),
+    };
+  const unknown = alternatives.filter(
+    (item) =>
+      item.status === "collectionIncomplete" ||
+      (item.checks.length > 0 &&
+        item.checks.every(
+          (check) => check.assessmentStatus === "unableToCheck",
+        )),
+  );
+  return unknown.length
+    ? {
+        state: "unknown",
+        capabilityIds: unknown.map((item) => item.capability.id),
+      }
+    : undefined;
+}
+
+// A capability whose alternative is in use is not a gap: its different and
+// missing comparisons keep their values but carry no result, so no tally,
+// next action or safeguard count treats it as missing (README "Alternative
+// capabilities"). Alternatives are judged on the unchanged first pass.
+function applyAlternatives(results: CapabilityResult[]): CapabilityResult[] {
+  const byId = new Map(results.map((result) => [result.capability.id, result]));
+  return results.map((result) => {
+    const alternative = alternativeOf(result, byId);
+    if (!alternative) return result;
+    const names = alternative.capabilityIds
+      .map((id) => byId.get(id)!.capability.name)
+      .join(", ");
+    const reason =
+      alternative.state === "inUse"
+        ? `Not a gap: an alternative is configured in this tenant (${names}).`
+        : `Not compared: whether this is needed depends on ${names}, which could not be read completely. Refresh the policies before acting on this value.`;
+    return {
+      ...result,
+      alternative,
+      checks: result.checks.map((check) =>
+        check.result === "different" || check.result === "missing"
+          ? {
+              ...check,
+              assessmentStatus:
+                alternative.state === "inUse"
+                  ? check.assessmentStatus
+                  : ("unableToCheck" as const),
+              result: null,
+              reason: check.reason ? `${reason} ${check.reason}` : reason,
+            }
+          : check,
+      ),
+      limitations: [...result.limitations, reason],
     };
   });
 }

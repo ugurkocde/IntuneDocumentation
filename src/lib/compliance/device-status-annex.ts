@@ -37,6 +37,15 @@ export interface DeviceStatusAnnexRow {
   >;
 }
 
+/**
+ * Policy ids are GUIDs, which compare without regard to case. The report
+ * endpoints are POST requests, so their id casing was not compared against
+ * Graph in the lab; matching ignores case either way.
+ */
+export function policyKey(policyId: string): string {
+  return policyId.toLowerCase();
+}
+
 /** True when at least one status source was collected. */
 export function hasPolicyDeviceStatus(
   status: PolicyDeviceStatus | undefined,
@@ -61,7 +70,7 @@ export function deviceStatusAnnexRows(
   for (const item of evidence) {
     const source = policyStatusSourceFor(item.familyKey);
     if (!source || !item.policyId) continue;
-    const key = `${source}:${item.policyId}`;
+    const key = `${source}:${policyKey(item.policyId)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const base = {
@@ -74,7 +83,9 @@ export function deviceStatusAnnexRows(
       continue;
     }
     const reported = status.rows.find(
-      (row) => row.source === source && row.policyId === item.policyId,
+      (row) =>
+        row.source === source &&
+        policyKey(row.policyId) === policyKey(item.policyId),
     );
     rows.push(
       reported

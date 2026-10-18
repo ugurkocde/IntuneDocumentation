@@ -1354,10 +1354,10 @@ export function ComplianceView({
                         (check) => check.assessmentStatus === "unableToCheck",
                       ).length
                     }{" "}
-                    unable to check. Only Intune and Conditional Access policy
-                    checks are shown. Counts describe setting comparisons, not
-                    passed framework requirements. Assignment is shown
-                    separately.
+                    unable to check. Only Intune, Conditional Access and Entra
+                    tenant policy checks are shown. Counts describe setting
+                    comparisons, not passed framework requirements. Assignment
+                    is shown separately.
                   </p>
                   {selectedFramework.framework.totalRequirements !==
                     undefined && (

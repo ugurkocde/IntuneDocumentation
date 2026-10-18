@@ -26,6 +26,10 @@ function client(
         select: () => request,
         expand: () => request,
         responseType: () => request,
+        option: (key: string, value: unknown) => {
+          request.options = { ...request.options, [key]: value };
+          return request;
+        },
         get: async () => {
           calls.push({ path });
           const handler = handlers[path];
@@ -280,6 +284,162 @@ describe("policy device status collection", () => {
       deviceConfigurations: "collected",
     });
     expect(result.rows).toEqual([]);
+  });
+
+  const configuration =
+    "/deviceManagement/reports/getConfigurationPolicyNonComplianceSummaryReport";
+  const compliance =
+    "/deviceManagement/reports/getCompliancePolicyNonComplianceSummaryReport";
+  const fullPage = (prefix: string, length: number) =>
+    Array.from({ length }, (_, index) => [`${prefix}-${index}`, "Policy", 1]);
+  const withoutTotal = (rows: unknown[][]) => {
+    const body: Record<string, unknown> = page(rows, 0);
+    delete body.TotalRowCount;
+    return body;
+  };
+
+  it("keeps paging full pages when TotalRowCount is missing", async () => {
+    const calls: Array<{ path: string; body?: any }> = [];
+    const result = await collectPolicyDeviceStatus(
+      client(
+        {
+          [configuration]: (body) =>
+            withoutTotal(
+              body.skip === 0 ? fullPage("cfg", 1000) : fullPage("more", 3),
+            ),
+          [compliance]: () => withoutTotal(fullPage("cmp", 2)),
+          "/deviceManagement/deviceConfigurations": () => ({ value: [] }),
+        },
+        calls,
+      ),
+      passThrough,
+    );
+    expect(
+      calls
+        .filter((call) => call.path === configuration)
+        .map((call) => call.body.skip),
+    ).toEqual([0, 1000]);
+    expect(result.sources.configurationPolicies).toBe("collected");
+    expect(
+      result.rows.filter((row) => row.source === "configurationPolicies"),
+    ).toHaveLength(1003);
+    expect(result.sources.compliancePolicies).toBe("collected");
+  });
+
+  it("marks a report failed when it returns fewer rows than its total", async () => {
+    const result = await collectPolicyDeviceStatus(
+      client({
+        [configuration]: (body) =>
+          page(body.skip === 0 ? fullPage("cfg", 1000) : [], 1500),
+        [compliance]: (body) =>
+          page(body.skip === 0 ? fullPage("cmp", 2) : [], 5),
+        "/deviceManagement/deviceConfigurations": () => ({ value: [] }),
+      }),
+      passThrough,
+    );
+    expect(result.sources.configurationPolicies).toBe("failed");
+    expect(result.errors?.configurationPolicies).toContain("1000 of 1500");
+    expect(result.sources.compliancePolicies).toBe("failed");
+    expect(result.errors?.compliancePolicies).toContain("2 of 5");
+    // A partial source contributes no rows.
+    expect(result.rows).toEqual([]);
+  });
+
+  it("stops a hanging source at the deadline and records it as skipped", async () => {
+    const signals: Array<AbortSignal | undefined> = [];
+    const options: unknown[] = [];
+    const hanging = () => new Promise<never>(() => undefined);
+    const stub = client({
+      [configuration]: hanging,
+      [compliance]: () => page(fullPage("cmp", 1), 1),
+      "/deviceManagement/deviceConfigurations": hanging,
+    });
+    const api = stub.api;
+    stub.api = (path: string) => {
+      const request = api(path);
+      const post = request.post;
+      const get = request.get;
+      request.post = (body: unknown) => {
+        options.push(request.options?.signal);
+        return post(body);
+      };
+      request.get = () => {
+        options.push(request.options?.signal);
+        return get();
+      };
+      return request;
+    };
+    const started = Date.now();
+    const result = await collectPolicyDeviceStatus(
+      stub,
+      (request, signal) => {
+        signals.push(signal);
+        return request();
+      },
+      { deadline: Date.now() + 50 },
+    );
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(result.sources).toEqual({
+      configurationPolicies: "skipped",
+      compliancePolicies: "collected",
+      deviceConfigurations: "skipped",
+    });
+    expect(result.errors?.configurationPolicies).toContain("time budget");
+    expect(result.errors?.deviceConfigurations).toContain("time budget");
+    // Requests and retries receive the deadline signal.
+    expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
+    expect(options.every((signal) => signal === signals[0])).toBe(true);
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it("leaves no unhandled rejection when a retry honours an aborted signal", async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    try {
+      const controller = new AbortController();
+      controller.abort(new Error("client disconnected"));
+      const result = await collectPolicyDeviceStatus(
+        client({
+          [configuration]: () => page([], 0),
+          [compliance]: () => page([], 0),
+          "/deviceManagement/deviceConfigurations": () => ({ value: [] }),
+        }),
+        async (request, signal) => {
+          signal?.throwIfAborted();
+          return request();
+        },
+        { deadline: Date.now() + 60_000, signal: controller.signal },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(Object.values(result.sources)).toEqual([
+        "failed",
+        "failed",
+        "failed",
+      ]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+  });
+
+  it("reports a disconnect as a failure, not a budget skip", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("client disconnected"));
+    const result = await collectPolicyDeviceStatus(
+      client({
+        [configuration]: () => page([], 0),
+        [compliance]: () => page([], 0),
+        "/deviceManagement/deviceConfigurations": () => ({ value: [] }),
+      }),
+      passThrough,
+      { deadline: Date.now() + 60_000, signal: controller.signal },
+    );
+    expect(Object.values(result.sources)).toEqual([
+      "failed",
+      "failed",
+      "failed",
+    ]);
   });
 
   it("skips every source with a reason when the deadline has passed", async () => {

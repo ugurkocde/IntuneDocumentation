@@ -18,7 +18,8 @@ import type {
 // the lab tenant on 18 October 2026.
 
 type GraphClient = Pick<Client, "api">;
-type Retry = <T>(request: () => Promise<T>) => Promise<T>;
+/** Retries a request; `signal` also bounds the waits between attempts. */
+type Retry = <T>(request: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
 
 const IDENTITY_ENDPOINTS: Record<TenantIdentityPolicyName, string> = {
   authenticationMethods: "/policies/authenticationMethodsPolicy",
@@ -119,6 +120,28 @@ const REPORT_COLUMNS = [
 ];
 
 const REPORT_PAGE_SIZE = 1000;
+/** 100 000 policies; a report that never ends is a failure, not a loop. */
+const MAX_REPORT_PAGES = 100;
+
+/** Settles with the promise, or rejects as soon as the signal aborts. */
+function untilAborted<T>(promise: Promise<T>, signal?: AbortSignal) {
+  if (!signal) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const abort = () =>
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("Graph collection cancelled"),
+      );
+    // Observe the promise first, so a request rejected after an abort is
+    // never an unhandled rejection.
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
 
 export interface ReportPage {
   totalRowCount: number | null;
@@ -228,11 +251,31 @@ export function skippedPolicyDeviceStatus(reason: string): PolicyDeviceStatus {
 export async function collectPolicyDeviceStatus(
   client: GraphClient,
   retry: Retry,
-  options: { deadline?: number; now?: () => number } = {},
+  options: {
+    deadline?: number;
+    now?: () => number;
+    /** Cancels the whole annex, for example on disconnect. */
+    signal?: AbortSignal;
+  } = {},
 ): Promise<PolicyDeviceStatus> {
   const now = options.now ?? Date.now;
   const outOfTime = () =>
     options.deadline !== undefined && now() >= options.deadline;
+  // The remaining budget as a signal: it aborts requests, paging and the
+  // waits between retries, so no source runs past the deadline.
+  const deadline = new AbortController();
+  const timer =
+    options.deadline === undefined
+      ? undefined
+      : setTimeout(
+          () => deadline.abort(new Error("collection time budget reached")),
+          Math.max(0, options.deadline - now()),
+        );
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, deadline.signal])
+    : deadline.signal;
+  const bounded = <T>(request: () => Promise<T>) =>
+    untilAborted(retry(request, signal), signal);
   const result: PolicyDeviceStatus = {
     collectedAt: new Date(now()).toISOString(),
     sources: {
@@ -243,27 +286,41 @@ export async function collectPolicyDeviceStatus(
     errors: {},
     rows: [],
   };
+  const budget = "Skipped to stay within the collection time budget.";
   const fail = (source: PolicyStatusSource, error: unknown) => {
+    // A deadline abort is a skip for time, never a Graph failure.
+    if (deadline.signal.aborted && !options.signal?.aborted) {
+      result.sources[source] = "skipped";
+      result.errors![source] = budget;
+      return;
+    }
     const { status, reason } = failure(error);
     result.sources[source] = status;
     result.errors![source] = reason;
   };
-  const budget = "Skipped to stay within the collection time budget.";
 
   await Promise.all([
     ...REPORTS.map(async ({ source, endpoint }) => {
       const rows: PolicyDeviceStatusRow[] = [];
       try {
-        for (let skip = 0; ; skip += REPORT_PAGE_SIZE) {
+        let received = 0;
+        let total: number | null = null;
+        for (let pageIndex = 0; ; pageIndex++) {
           if (outOfTime()) {
             result.errors![source] = budget;
             return;
           }
-          const body = await retry(() =>
+          if (pageIndex >= MAX_REPORT_PAGES)
+            throw new Error(
+              `The report did not end after ${MAX_REPORT_PAGES} pages`,
+            );
+          const skip = pageIndex * REPORT_PAGE_SIZE;
+          const body = await bounded(() =>
             client
               .api(endpoint)
               .version("beta")
               .responseType(ResponseType.TEXT)
+              .option("signal", signal)
               .post({ select: REPORT_COLUMNS, top: REPORT_PAGE_SIZE, skip }),
           );
           const page = parseReportPage(body);
@@ -271,9 +328,19 @@ export async function collectPolicyDeviceStatus(
             const status = reportRowToStatus(row, source);
             if (status) rows.push(status);
           }
-          const total = page.totalRowCount ?? 0;
-          if (!page.rows.length || skip + REPORT_PAGE_SIZE >= total) break;
+          received += page.rows.length;
+          total = page.totalRowCount ?? total;
+          // Without TotalRowCount, a full page means more rows may follow.
+          const done =
+            !page.rows.length ||
+            (total === null
+              ? page.rows.length < REPORT_PAGE_SIZE
+              : received >= total);
+          if (done) break;
         }
+        // Fewer rows than the report announced is a partial read.
+        if (total !== null && received < total)
+          throw new Error(`The report returned ${received} of ${total} rows`);
         result.rows.push(...rows);
         result.sources[source] = "collected";
       } catch (error) {
@@ -286,17 +353,21 @@ export async function collectPolicyDeviceStatus(
         return;
       }
       try {
-        const first = await retry(() =>
+        const first = await bounded(() =>
           client
             .api("/deviceManagement/deviceConfigurations")
             .version("beta")
             .select("id,displayName")
             .expand("deviceStatusOverview")
+            .option("signal", signal)
             .get(),
         );
-        const pages = await collectAllPagesWithStatus<any>(
-          client as unknown as Client,
-          first,
+        const pages = await untilAborted(
+          collectAllPagesWithStatus<any>(client as unknown as Client, first, {
+            maxRetries: 2,
+            signal,
+          }),
+          signal,
         );
         if (!pages.complete) throw pages.error;
         for (const item of pages.items) {
@@ -309,6 +380,7 @@ export async function collectPolicyDeviceStatus(
       }
     })(),
   ]);
+  clearTimeout(timer);
   result.rows.sort(
     (left, right) =>
       left.source.localeCompare(right.source) ||

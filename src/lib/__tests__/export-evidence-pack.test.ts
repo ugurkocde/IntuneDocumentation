@@ -86,7 +86,9 @@ describe("buildEvidencePack", () => {
       "Control ID",
       "Control title",
       "Status",
-      "Evidence count",
+      "Assigned evidence",
+      "Counter-evidence",
+      "Evidence not assigned or unknown",
       "Where to find it",
       "Note",
     ]);
@@ -96,8 +98,9 @@ describe("buildEvidencePack", () => {
     );
     for (const row of index.slice(1)) {
       expect(row[1]).toBe("ISO/IEC 27001:2022");
-      expect(Number.isInteger(Number(row[5]))).toBe(true);
-      expect(row[6]).toBe(`${pdfName}, section for control ${row[2]}`);
+      for (const cell of row.slice(5, 8))
+        expect(Number.isInteger(Number(cell))).toBe(true);
+      expect(row[8]).toBe(`${pdfName}, section for control ${row[2]}`);
     }
 
     const readme = await zip.file("README.txt")!.async("string");
@@ -139,5 +142,55 @@ describe("buildEvidencePack", () => {
         reportFileName: "x.pdf",
       }),
     ).rejects.toThrow("Unknown compliance framework");
+  });
+
+  it("throws for an assessed framework without Purview template data", async () => {
+    const manifest = await createEvidenceManifest(CONTOSO_TENANT);
+    const assessment = structuredClone(manifest.assessment);
+    assessment.frameworks[0]!.framework.id = "custom-framework";
+    await expect(
+      buildEvidencePack(assessment, manifest, "custom-framework", {
+        reportPdf,
+        reportFileName: "x.pdf",
+      }),
+    ).rejects.toThrow("No Purview template mapping");
+  });
+
+  it("notes not assessed controls apart from controls without evidence", async () => {
+    const incomplete = {
+      ...CONTOSO_TENANT,
+      collectionSkippedFamilies: ["settingsCatalog", "compliancePolicies"],
+    };
+    const statuses = new Set<string>();
+    for (const [frameworkId, data] of [
+      ["nis2-2022-2555", CONTOSO_TENANT],
+      ["dora-2022-2554", CONTOSO_TENANT],
+      ["essential-eight", CONTOSO_TENANT],
+      ["iso-27001-2022", incomplete],
+      ["nis2-2022-2555", incomplete],
+    ] as const) {
+      const manifest = await createEvidenceManifest(data);
+      const zip = await JSZip.loadAsync(
+        await buildEvidencePack(manifest.assessment, manifest, frameworkId, {
+          reportPdf,
+          reportFileName: "report.pdf",
+        }),
+      );
+      const framework = manifest.assessment.frameworks.find(
+        (item) => item.framework.id === frameworkId,
+      )!;
+      const rows = parseCsv(await zip.file("index.csv")!.async("string"));
+      framework.controls.forEach((control, index) => {
+        statuses.add(control.status);
+        const note = rows[index + 1]![9]!;
+        if (control.status === "notAssessed")
+          expect(note).toContain("Not assessed, see the PDF for the reason.");
+        if (control.status === "noEvidence")
+          expect(note).toContain("No policy evidence found");
+        else expect(note, frameworkId).not.toContain("No policy evidence");
+      });
+    }
+    expect(statuses).toContain("notAssessed");
+    expect(statuses).toContain("noEvidence");
   });
 });

@@ -130,10 +130,12 @@ const SHARE_FULL: RgbColor = [31, 133, 83];
 const STATE_COLORS: Record<SafeguardState, RgbColor> = {
   inPlace: [31, 133, 83],
   switchedOff: [185, 28, 28],
+  tenantSettingDiffers: [185, 28, 28],
   conflicting: [185, 28, 28],
   partial: [196, 113, 31],
   notAssigned: [171, 95, 0],
   notConfigured: [100, 116, 139],
+  alternativeInUse: [100, 116, 139],
   dataMissing: [196, 113, 31],
 };
 
@@ -141,11 +143,13 @@ const STATE_COLORS: Record<SafeguardState, RgbColor> = {
 const STATE_ORDER: readonly SafeguardState[] = [
   "inPlace",
   "switchedOff",
+  "tenantSettingDiffers",
   "conflicting",
   "partial",
   "notAssigned",
   "notConfigured",
   "dataMissing",
+  "alternativeInUse",
 ];
 
 const ALLOWED_LINK_HOSTS = new Set([

@@ -47,6 +47,14 @@ const CAVEAT = {
   de: "Mandantenweite Einstellung einer Entra ID-Richtlinie. Sie zeigt, was der Mandant zulässt, nicht welche Methoden Benutzer registriert haben oder bei Anmeldungen verwendet wurden.",
 };
 
+/** Conditional Access capabilities that replace security defaults. */
+export const CONDITIONAL_ACCESS_ALTERNATIVES = [
+  "tenant-mfa-required",
+  "tenant-mfa-all-apps",
+  "tenant-phishing-resistant-mfa",
+  "tenant-compliant-device-required",
+] as const;
+
 const methodsDocs =
   "https://learn.microsoft.com/en-us/graph/api/resources/authenticationmethodspolicy?view=graph-rest-beta";
 
@@ -92,6 +100,10 @@ export const TENANT_POLICY_CAPABILITIES: readonly ComplianceCapability[] = [
     caveat: CAVEAT,
     documentationUrl:
       "https://learn.microsoft.com/en-us/graph/api/resources/identitysecuritydefaultsenforcementpolicy?view=graph-rest-beta",
+    // Creating Conditional Access policies prevents enabling security defaults
+    // (Microsoft Learn, Plan a Conditional Access deployment), so any
+    // Conditional Access MFA or compliant-device evidence rules them out.
+    alternativeTo: CONDITIONAL_ACCESS_ALTERNATIVES,
     signals: [
       {
         source: "tenantPolicy",
@@ -292,7 +304,7 @@ export function evaluateTenantPolicySignals(
         actualValue: JSON.stringify(enabled),
         reason: enabled
           ? "Baseline MFA for all users. This is not phishing-resistant authentication."
-          : "Security defaults are off. This is expected when Conditional Access policies provide MFA, so it is not counter-evidence; see the Conditional Access checks.",
+          : "Security defaults are off. They are only needed when no Conditional Access policy is used, because the two cannot be combined; off is not counter-evidence.",
       });
       // Off is not counter-evidence: Conditional Access replaces security defaults.
       if (enabled) push("enforced", "Security defaults enabled");
@@ -323,14 +335,19 @@ export function evaluateTenantPolicySignals(
           state.enabledForUsers = state.mode === "x509CertificateMultiFactor";
         return state;
       });
+      const enabled = states.filter((state) => state.enabledForUsers);
       for (const state of states)
         checks.push({
           ...base,
           assessmentStatus: state.readable ? "checked" : "unableToCheck",
+          // One phishing-resistant method is enough: the other is an
+          // alternative, not a different value.
           result: state.readable
             ? state.enabledForUsers
               ? "matches"
-              : "different"
+              : enabled.length
+                ? null
+                : "different"
             : null,
           settingId: `${family}/${state.id}`,
           expectedValue:
@@ -338,11 +355,12 @@ export function evaluateTenantPolicySignals(
               ? "Enabled for at least one user group"
               : "Enabled for at least one user group with multifactor default mode",
           actualValue: state.actual,
-          reason: state.readable
-            ? undefined
-            : "Graph did not return a readable state and include targets for this method.",
+          reason: !state.readable
+            ? "Graph did not return a readable state and include targets for this method."
+            : !state.enabledForUsers && enabled.length
+              ? `Not required: ${enabled.map((item) => item.id).join(" and ")} is enabled, and one phishing-resistant method is enough.`
+              : undefined,
         });
-      const enabled = states.filter((state) => state.enabledForUsers);
       // Disabled methods are not counter-evidence: Windows Hello for Business
       // is phishing resistant and is not part of this policy.
       if (enabled.length)

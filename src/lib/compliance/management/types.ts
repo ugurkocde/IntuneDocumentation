@@ -50,7 +50,10 @@ export interface ManagementMetrics {
   outsideIntuneScope: number | null;
   /** Mapped capabilities whose evidence could not be read (re-collect). */
   dataGaps: number;
-  /** Distinct safeguards (capabilities) mapped to the assessed controls. */
+  /**
+   * Distinct safeguards (capabilities) mapped to the assessed controls,
+   * without capabilities whose alternative is in use or unreadable.
+   */
   safeguardsTotal: number;
   /** Safeguards configured and assigned (enforced or requirementAssigned). */
   safeguardsInPlace: number;
@@ -81,8 +84,12 @@ export type SafeguardState =
   | "partial"
   | "notAssigned"
   | "switchedOff"
+  /** A tenant-wide Entra setting holds the non-enforcing value. */
+  | "tenantSettingDiffers"
   | "conflicting"
   | "notConfigured"
+  /** Not needed: an alternative capability is in use (CapabilityResult.alternative). */
+  | "alternativeInUse"
   | "dataMissing";
 
 export interface NextAction {

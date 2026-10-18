@@ -21,6 +21,27 @@ export function sheetCells(xml: string): Record<string, string> {
   return cells;
 }
 
+/** Style index (the s attribute) of every cell by reference. */
+export function sheetCellStyles(xml: string): Record<string, string> {
+  const styles: Record<string, string> = {};
+  const nodes = parseXml(xml).getElementsByTagNameNS(SHEET_NS, "c");
+  for (let index = 0; index < nodes.length; index += 1) {
+    const cell = nodes.item(index)!;
+    styles[cell.getAttribute("r")!] = cell.getAttribute("s") ?? "";
+  }
+  return styles;
+}
+
+/** Cell formats (cellXfs) of styles.xml, with their quotePrefix flag. */
+export function quotePrefixStyles(xml: string): boolean[] {
+  const cellXfs = parseXml(xml).getElementsByTagNameNS(SHEET_NS, "cellXfs");
+  const formats = cellXfs.item(0)!.getElementsByTagNameNS(SHEET_NS, "xf");
+  return Array.from(
+    { length: formats.length },
+    (_, index) => formats.item(index)!.getAttribute("quotePrefix") === "1",
+  );
+}
+
 /** Minimal RFC 4180 reader for assertions. */
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];

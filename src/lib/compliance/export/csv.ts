@@ -10,9 +10,12 @@ const FORMULA_PREFIX = /^[=+\-@|%]/;
  * leading single quote that keeps them literal.
  */
 export function neutraliseFormula(value: string): string {
-  return CONTROL_PREFIX.test(value) || FORMULA_PREFIX.test(value.trimStart())
-    ? `'${value}`
-    : value;
+  return isFormulaLike(value) ? `'${value}` : value;
+}
+
+/** Text a spreadsheet would read as a formula or command. */
+export function isFormulaLike(value: string): boolean {
+  return CONTROL_PREFIX.test(value) || FORMULA_PREFIX.test(value.trimStart());
 }
 
 /** Text form of a cell. Only strings are neutralised; numbers stay numeric. */

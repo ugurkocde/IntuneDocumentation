@@ -220,7 +220,7 @@ function ChangeCount({ value, label }: { value: number; label: string }) {
 }
 
 function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
-  const { policies, controls } = changes;
+  const { policies, controls, identity } = changes;
   const counts = [
     { label: "Policies added", value: policies.added },
     { label: "Policies removed", value: policies.removed },
@@ -229,8 +229,11 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
     { label: "Setting changes", value: policies.settingChanges },
     { label: "Assignment changes", value: policies.assignmentChanges },
   ];
+  // Entra identity settings are tenant-wide, so they are counted on their
+  // own, and only claimed unchanged when both collections read them.
   const nothing =
     counts.every((count) => count.value === 0) &&
+    identity.changes === 0 &&
     controls.length === 0 &&
     changes.improved === 0 &&
     changes.regressed === 0;
@@ -246,7 +249,9 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
       {nothing ? (
         <p className="text-petrol-700 mt-3 flex items-start gap-1.5 text-xs leading-5">
           <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-teal-700" aria-hidden="true" />
-          No policy, setting, assignment or control status changed since then.
+          {identity.compared > 0
+            ? "No policy, setting, assignment, Entra identity setting or control status changed since then."
+            : "No policy, setting, assignment or control status changed since then."}
         </p>
       ) : (
         <>
@@ -255,6 +260,11 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
               <ChangeCount key={count.label} {...count} />
             ))}
           </dl>
+          {identity.compared > 0 && (
+            <dl className="mt-2 grid grid-cols-2 gap-2 @xl:grid-cols-3 @5xl:grid-cols-6" aria-label="Entra identity changes">
+              <ChangeCount label="Entra identity setting changes" value={identity.changes} />
+            </dl>
+          )}
           <p className="text-petrol-800 mt-3 text-xs leading-5 font-medium">
             {measures(changes.improved)} gained evidence, {changes.regressed.toLocaleString()} lost it.
           </p>
@@ -292,7 +302,7 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
           </span>
         </p>
       )}
-      {(changes.partial || notCompared > 0) && (
+      {(changes.partial || notCompared > 0 || identity.notCompared > 0) && (
         <p className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-amber-800">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0">
@@ -301,6 +311,8 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
               `${policies.notComparedFamilies.toLocaleString()} ${policies.notComparedFamilies === 1 ? "family was" : "families were"} not compared. `}
             {policies.notComparedItems > 0 &&
               `${policies.notComparedItems.toLocaleString()} ${policies.notComparedItems === 1 ? "policy was" : "policies were"} not compared. `}
+            {identity.notCompared > 0 &&
+              `${identity.notCompared.toLocaleString()} Entra identity ${identity.notCompared === 1 ? "policy was" : "policies were"} not compared. `}
             Changes there are not counted.
           </span>
         </p>

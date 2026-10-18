@@ -703,6 +703,7 @@ function createChanges(
       notComparedFamilies: 1,
       notComparedItems: 2,
     },
+    identity: { compared: 2, changes: 3, notCompared: 0 },
     controls: [
       { id: "21.2.b", before: null, after: "partialEvidence" },
       { id: "21.2.e", before: "noEvidence", after: "evidenceFound" },
@@ -766,6 +767,9 @@ describe.each(["en", "de"] as const)(
       expect(text).toContain(`${rows.assignmentChanges} 4`);
       expect(text).toContain(strings.historyNotCompared(1, 2));
       expect(text).toContain(strings.historyPartial);
+      expect(text).toContain(strings.historyIdentityIntro);
+      expect(text).toContain(`${strings.historyIdentityRow} 3`);
+      expect(text).not.toContain(strings.historyIdentityNotCompared(0));
       expect(text).toContain(strings.historyMovement(2, 1));
       const status = strings.controlStatuses;
       expect(text).toContain(
@@ -830,6 +834,61 @@ describe.each(["en", "de"] as const)(
       );
       expect(text).not.toContain(strings.historyPartial);
       expect(text).not.toContain(strings.historyNotCompared(0, 0));
+    });
+
+    it("reports Entra identity changes apart from the policies", async () => {
+      const only = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            changes: createChanges({
+              policies: {
+                added: 0,
+                removed: 0,
+                renamed: 0,
+                changed: 0,
+                settingChanges: 0,
+                assignmentChanges: 0,
+                notComparedFamilies: 0,
+                notComparedItems: 0,
+              },
+              identity: { compared: 1, changes: 1, notCompared: 1 },
+            }),
+          }),
+        ),
+      );
+      const text = only[historyPage(only) - 1]?.text ?? "";
+      expect(text).toContain(`${strings.historyPolicyRows.settingChanges} 0`);
+      expect(text).toContain(`${strings.historyIdentityRow} 1`);
+      expect(text).toContain(strings.historyIdentityNotCompared(1));
+      expect(text).not.toMatch(BANNED);
+
+      // Neither collection read them: nothing is claimed about them.
+      const without = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            changes: createChanges({
+              identity: { compared: 0, changes: 0, notCompared: 0 },
+            }),
+          }),
+        ),
+      );
+      const plain = without[historyPage(without) - 1]?.text ?? "";
+      expect(plain).not.toContain(strings.historyIdentityIntro);
+      expect(plain).not.toContain(strings.historyIdentityRow);
+
+      // Read by one collection only: not compared, and no count.
+      const one = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            changes: createChanges({
+              identity: { compared: 0, changes: 0, notCompared: 2 },
+            }),
+          }),
+        ),
+      );
+      const partly = one[historyPage(one) - 1]?.text ?? "";
+      expect(partly).toContain(strings.historyIdentityNotCompared(2));
+      expect(partly).not.toContain(strings.historyIdentityRow);
     });
 
     it("caps the control table with a more line", async () => {

@@ -59,9 +59,11 @@ const INTERACTIVE_TIMEOUT_MS = 5 * 60_000;
 
 // MSAL network failures, the Node errors beneath them, and Entra saying it
 // cannot issue tokens right now. MSAL reports a 5xx JSON answer as a
-// ServerError "server_error" without its HTTP status, and an answer that is
-// not JSON, such as a proxy error page, as "token_parsing_error". Anything
-// else, such as a revoked session, needs a new sign-in.
+// ServerError "server_error" without its HTTP status. "token_parsing_error"
+// is an answer MSAL could not read: a body that is not JSON, such as a proxy
+// error page, or an HTTP 200 answer whose ID token is not a well formed JWT.
+// Neither is a verdict on the session. Anything else, such as a revoked
+// session, needs a new sign-in.
 const UNREACHABLE_CODES = new Set([
   "network_error",
   "temporarily_unavailable",
@@ -81,23 +83,28 @@ const UNREACHABLE_CODES = new Set([
 // After a 429 or 5xx answer MSAL throttles the request until its
 // Retry-After time, 60 seconds by default, and meanwhile throws a ServerError
 // carrying only the numeric error codes of that answer, or none, without
-// asking Entra again.
+// asking Entra again. That replay has no errorNo. An answer Entra actually
+// gave without an error field also has an empty code, but keeps its first
+// error code as errorNo (70008 for an expired grant), so it stays a verdict.
+// An answer with neither an error field nor error codes cannot be told
+// apart from a replay without codes and is treated as one.
 const THROTTLED_CODES = /^[\d ]*$/;
 
-// A 5xx HTTP status, where MSAL keeps one (ServerError status, NetworkError
-// httpStatus), is an outage, not a verdict on the session.
+// MSAL keeps no HTTP status on the errors a public client refresh throws
+// (msal-node 6.0.1), so the error code is all there is to go by.
 function isUnreachable(error: unknown): boolean {
-  const { name, errorCode, code, status, httpStatus } = (error ?? {}) as {
+  const { name, errorCode, errorNo, code } = (error ?? {}) as {
     name?: unknown;
     errorCode?: unknown;
+    errorNo?: unknown;
     code?: unknown;
-    status?: unknown;
-    httpStatus?: unknown;
   };
-  if ([status, httpStatus].some((value) => typeof value === "number" && value >= 500)) {
-    return true;
-  }
-  if (name === "ServerError" && typeof errorCode === "string" && THROTTLED_CODES.test(errorCode)) {
+  if (
+    name === "ServerError" &&
+    errorNo === undefined &&
+    typeof errorCode === "string" &&
+    THROTTLED_CODES.test(errorCode)
+  ) {
     return true;
   }
   return [errorCode, code].some(
@@ -234,7 +241,12 @@ export class AuthService {
   private unreachable = false;
   // Delay of the last retry while unreachable, 0 when none is due.
   private retryDelay = 0;
+  // Advanced by every sign-out and interactive sign-in: a silent result
+  // only counts for the session it was asked for.
   private generation = 0;
+  // An interactive sign-in finishing after a sign-out is discarded. Another
+  // interactive sign-in finishing first does not cancel it.
+  private signOuts = 0;
   private activeCancel: (() => void) | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
   private reported = "false||";
@@ -354,7 +366,7 @@ export class AuthService {
   }
 
   // A silent result or failure only counts for the session it was asked
-  // for: a sign-out, or an interactive sign-in as another account, may have
+  // for: a sign-out or an interactive sign-in, as any account, may have
   // finished while it was in flight.
   private isCurrent(generation: number, account: AccountInfo): boolean {
     return (
@@ -459,7 +471,7 @@ export class AuthService {
     openBrowser: (url: string) => Promise<void>,
     options: { consent?: boolean; blockedBy?: () => string | null } = {},
   ): Promise<SignInResult> {
-    const generation = this.generation;
+    const signOuts = this.signOuts;
     const state = base64Url(randomBytes(16));
     const controller = new AbortController();
     let port = 0;
@@ -521,7 +533,7 @@ export class AuthService {
         codeVerifier: verifier,
       };
       const result = await this.pca.acquireTokenByCode(codeRequest);
-      if (generation !== this.generation) {
+      if (signOuts !== this.signOuts) {
         await this.disposeCache();
         throw new Error("Sign-in was cancelled.");
       }
@@ -530,6 +542,9 @@ export class AuthService {
         await this.forget(result.account);
         throw new Error(blocked);
       }
+      // A new session, also for the same account: a silent refresh still in
+      // flight belongs to the one before and must neither replace nor end it.
+      this.generation += 1;
       return this.accept(result);
     } finally {
       this.activeCancel = null;
@@ -561,6 +576,7 @@ export class AuthService {
 
   async signOut(): Promise<void> {
     this.generation += 1;
+    this.signOuts += 1;
     this.activeCancel?.();
     this.activeCancel = null;
     this.clearExpiryTimer();

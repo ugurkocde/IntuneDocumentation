@@ -138,6 +138,10 @@ export interface ManagementReportStrings {
   };
   historyNotCompared: (families: number, items: number) => string;
   historyPartial: string;
+  historyIdentityHeading: string;
+  historyIdentityIntro: string;
+  historyIdentityRow: string;
+  historyIdentityNotCompared: (policies: number) => string;
   historyControlsHeading: string;
   historyMovement: (improved: number, regressed: number) => string;
   historyControlHeaders: readonly [string, string, string, string];
@@ -402,6 +406,12 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         .join(", ")}.`,
     historyPartial:
       "One of the two collections was partial, so some changes may not be shown.",
+    historyIdentityHeading: "Entra identity settings",
+    historyIdentityIntro:
+      "Tenant-wide settings of the authentication methods policy and security defaults, counted apart from the policies above.",
+    historyIdentityRow: "Entra identity setting changes",
+    historyIdentityNotCompared: (policies) =>
+      `Not compared because one of the two collections did not read them: ${plural(policies, "Entra identity policy", "Entra identity policies")}.`,
     historyControlsHeading: "Measures whose status changed",
     historyMovement: (improved, regressed) =>
       `${plural(improved, "measure", "measures")} gained configuration or partial evidence, ${regressed} lost it.`,
@@ -419,7 +429,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyRulesetChanged: (fromRuleset, toRuleset) =>
       `The evaluation rules changed between the two collections (${fromRuleset} to ${toRuleset}), so some status changes may come from mapping updates rather than from the tenant.`,
     historyNote:
-      "These changes are evidence from the Intune configuration, not an audit result.",
+      "These changes are evidence from the Intune configuration and the Entra identity settings, not an audit result.",
     outsideScopeHeading: "Measures outside Intune scope",
     outsideScopeIntro:
       "These measures cannot be checked from the Intune configuration. They need a separate review, for example of processes, contracts or other systems.",
@@ -675,6 +685,12 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         .join(", ")}.`,
     historyPartial:
       "Eine der beiden Erfassungen war unvollständig. Einige Änderungen fehlen daher möglicherweise.",
+    historyIdentityHeading: "Entra-Identitätseinstellungen",
+    historyIdentityIntro:
+      "Mandantenweite Einstellungen der Richtlinie für Authentifizierungsmethoden und der Sicherheitsstandards, getrennt von den Richtlinien oben gezählt.",
+    historyIdentityRow: "Geänderte Entra-Identitätseinstellungen",
+    historyIdentityNotCompared: (policies) =>
+      `Nicht verglichen, weil eine der beiden Erfassungen sie nicht gelesen hat: ${plural(policies, "Entra-Identitätsrichtlinie", "Entra-Identitätsrichtlinien")}.`,
     historyControlsHeading: "Maßnahmen mit geändertem Status",
     historyMovement: (improved, regressed) =>
       `${plural(improved, "Maßnahme hat", "Maßnahmen haben")} Konfigurationsnachweise oder teilweise Nachweise hinzugewonnen, ${plural(regressed, "hat", "haben")} sie verloren.`,
@@ -692,7 +708,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyRulesetChanged: (fromRuleset, toRuleset) =>
       `Die Bewertungsregeln haben sich zwischen den beiden Erfassungen geändert (${fromRuleset} auf ${toRuleset}). Ein Teil der Statusänderungen kann daher aus aktualisierten Zuordnungen statt aus dem Mandanten stammen.`,
     historyNote:
-      "Diese Änderungen sind Nachweise aus der Intune-Konfiguration, kein Prüfergebnis.",
+      "Diese Änderungen sind Nachweise aus der Intune-Konfiguration und den Entra-Identitätseinstellungen, kein Prüfergebnis.",
     outsideScopeHeading: "Maßnahmen außerhalb des Intune-Umfangs",
     outsideScopeIntro:
       "Diese Maßnahmen lassen sich nicht anhand der Intune-Konfiguration prüfen. Sie brauchen eine gesonderte Bewertung, zum Beispiel von Prozessen, Verträgen oder anderen Systemen.",

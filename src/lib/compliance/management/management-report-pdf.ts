@@ -58,6 +58,18 @@ export interface ManagementReportChanges {
     /** Policies not compared because their details were incomplete. */
     notComparedItems: number;
   };
+  /**
+   * Entra tenant identity settings (authentication methods policy, security
+   * defaults). Tenant-wide settings, so counted apart from the policies.
+   */
+  identity: {
+    /** Identity policies read in both collections. */
+    compared: number;
+    /** Identity settings added, removed or changed in those policies. */
+    changes: number;
+    /** Identity policies not read in one or both collections. */
+    notCompared: number;
+  };
   /** Controls of this framework whose status changed, in control order. */
   controls: readonly {
     id: string;
@@ -1348,6 +1360,33 @@ export async function generateManagementReportPDF(
         color: WARNING,
       });
     y += 2;
+
+    // Entra identity settings, when either collection read them.
+    const { identity } = changes;
+    if (identity.compared > 0 || identity.notCompared > 0) {
+      subheading(strings.historyIdentityHeading);
+      paragraph(strings.historyIdentityIntro, { after: 3 });
+      if (identity.compared > 0)
+        table(
+          strings.historyPolicyHeaders,
+          [contentWidth - 38, 38],
+          [
+            {
+              cells: [
+                [{ text: strings.historyIdentityRow }],
+                [{ text: String(identity.changes), style: "bold" }],
+              ],
+            },
+          ],
+        );
+      if (identity.notCompared > 0)
+        paragraph(strings.historyIdentityNotCompared(identity.notCompared), {
+          size: 8,
+          style: "italic",
+          color: WARNING,
+        });
+      y += 2;
+    }
 
     subheading(strings.historyControlsHeading);
     paragraph(strings.historyMovement(changes.improved, changes.regressed), {

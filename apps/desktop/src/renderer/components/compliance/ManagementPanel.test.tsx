@@ -92,6 +92,7 @@ function changes(overrides: Partial<ManagementReportChanges> = {}): ManagementRe
       notComparedFamilies: 0,
       notComparedItems: 0,
     },
+    identity: { compared: 2, changes: 0, notCompared: 0 },
     controls: [
       { id: "SC-28", before: "evidenceFound", after: "partialEvidence" },
       { id: "CM-7(5)", before: null, after: "noEvidence" },
@@ -233,8 +234,63 @@ describe("ManagementPanel changes since the previous collection", () => {
     await renderPanel();
     await settle();
     const region = block();
-    expect(within(region).getByText(/No policy, setting, assignment or control status changed/)).toBeTruthy();
+    expect(
+      within(region).getByText(/No policy, setting, assignment, Entra identity setting or control status changed/),
+    ).toBeTruthy();
     expect(within(region).queryByRole("list")).toBeNull();
+  });
+
+  const unchanged = {
+    added: 0,
+    removed: 0,
+    renamed: 0,
+    changed: 0,
+    settingChanges: 0,
+    assignmentChanges: 0,
+    notComparedFamilies: 0,
+    notComparedItems: 0,
+  };
+
+  it("shows an Entra identity change even when no policy or control changed", async () => {
+    mocks.changes.mockResolvedValue({
+      state: "ready",
+      changes: changes({
+        policies: unchanged,
+        identity: { compared: 2, changes: 1, notCompared: 0 },
+        controls: [],
+        improved: 0,
+        regressed: 0,
+      }),
+    });
+    await renderPanel();
+    await settle();
+    const region = block();
+    expect(within(region).queryByText(/changed since then/)).toBeNull();
+    expect(within(region).getByLabelText("Configuration changes").textContent).toContain("Setting changes0");
+    expect(within(region).getByLabelText("Entra identity changes").textContent).toBe(
+      "Entra identity setting changes1",
+    );
+  });
+
+  it("claims nothing about Entra identity settings the collections did not read", async () => {
+    mocks.changes.mockResolvedValue({
+      state: "ready",
+      changes: changes({
+        policies: unchanged,
+        identity: { compared: 0, changes: 0, notCompared: 1 },
+        controls: [],
+        improved: 0,
+        regressed: 0,
+      }),
+    });
+    await renderPanel();
+    await settle();
+    const region = block();
+    expect(within(region).getByText(/No policy, setting, assignment or control status changed/)).toBeTruthy();
+    expect(within(region).queryByText(/Entra identity setting or/)).toBeNull();
+    expect(within(region).getByText(/Entra identity policy was not compared/).textContent).toBe(
+      "1 Entra identity policy was not compared. Changes there are not counted.",
+    );
   });
 
   it("points to History when there is no earlier snapshot", async () => {

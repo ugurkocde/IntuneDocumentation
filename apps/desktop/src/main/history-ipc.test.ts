@@ -467,6 +467,32 @@ describe("management change section", () => {
     expect(JSON.stringify(result.changes)).not.toContain(CONTOSO_TENANT.compliancePolicies[0]!.displayName);
   });
 
+  it("counts an Entra identity change when no policy changed", async () => {
+    const h = harness("pro");
+    // Only the passkey (FIDO2) include group differs.
+    const earlier = contoso("2026-10-10T10:00:00Z", (data) => {
+      const fido2 = data.tenantIdentityPolicies!.authenticationMethods!.authenticationMethodConfigurations!.find(
+        (method) => (method as { id?: string }).id === "Fido2",
+      ) as { includeTargets: unknown[] };
+      fido2.includeTargets = [{ targetType: "group", id: "all_users" }];
+    });
+    await h.store.save(TENANT, projectionOf(earlier), h.guard());
+    const result = await h.invoke<ManagementChangesResult>("history:changes", request);
+    expect(result.state).toBe("ready");
+    if (result.state !== "ready") return;
+    expect(result.changes.policies).toEqual({
+      added: 0,
+      removed: 0,
+      renamed: 0,
+      changed: 0,
+      settingChanges: 0,
+      assignmentChanges: 0,
+      notComparedFamilies: 0,
+      notComparedItems: 0,
+    });
+    expect(result.changes.identity).toEqual({ compared: 2, changes: 1, notCompared: 0 });
+  });
+
   it("compares values that are not stored with the stored snapshot's fingerprints", async () => {
     // A custom OMA-URI string the snapshot keeps only as a fingerprint.
     const withToken = (collectedAt: string, value: string) =>

@@ -1,5 +1,4 @@
 import { createServer, request } from "node:http";
-import { AuthError, NetworkError } from "@azure/msal-common";
 import { describe, expect, it, vi } from "vitest";
 import {
   AuthService,
@@ -23,6 +22,8 @@ const msal = vi.hoisted(() => ({
   silentError: null as null | Record<string, unknown>,
   // Holds the next silent request until the test settles it.
   silentGate: null as null | Promise<void>,
+  // Holds the code exchange of an interactive sign-in.
+  codeGate: null as null | Promise<void>,
 }));
 
 const idTokenIssued = (ms: number) =>
@@ -34,12 +35,14 @@ vi.mock("@azure/msal-node", () => ({
       msal.lastUrlRequest = request;
       return Promise.resolve("https://login.microsoftonline.com/authorize");
     }
-    acquireTokenByCode() {
-      return Promise.resolve({
-        accessToken: `token-${msal.nextAccount.homeAccountId}`,
-        account: { ...msal.nextAccount },
+    async acquireTokenByCode() {
+      const account = { ...msal.nextAccount };
+      if (msal.codeGate) await msal.codeGate;
+      return {
+        accessToken: `token-${account.homeAccountId}`,
+        account,
         expiresOn: new Date(Date.now() + msal.tokenLifetime),
-      });
+      };
     }
     async acquireTokenSilent(request: {
       forceRefresh?: boolean;
@@ -79,6 +82,8 @@ const answer = (status: number, body: unknown) =>
     headers: { "content-type": typeof body === "string" ? "text/html" : "application/json" },
   });
 
+type RefreshError = { name: string; errorCode: string; errorNo?: unknown };
+
 async function realRefreshErrors(steps: Array<"fresh" | (() => Response)>) {
   const { PublicClientApplication } = await vi.importActual<typeof import("@azure/msal-node")>(
     "@azure/msal-node",
@@ -108,7 +113,7 @@ async function realRefreshErrors(steps: Array<"fresh" | (() => Response)>) {
       ],
     });
   });
-  const errors: Array<{ name: string; errorCode: string }> = [];
+  const errors: RefreshError[] = [];
   try {
     let clients = 0;
     const create = () => new PublicClientApplication({ auth: { clientId: `client-${clients++}`, authority: login } });
@@ -123,7 +128,7 @@ async function realRefreshErrors(steps: Array<"fresh" | (() => Response)>) {
         .acquireTokenByRefreshToken({ refreshToken: "refresh-token", scopes: ["User.Read"] })
         .then(
           () => null,
-          (thrown: { name: string; errorCode: string }) => thrown,
+          (thrown: RefreshError) => thrown,
         );
       if (!error) throw new Error("The refresh was expected to fail.");
       errors.push(error);
@@ -282,6 +287,66 @@ describe("AuthService.signInInteractive", () => {
   });
 });
 
+describe("AuthService overlapping sign-ins", () => {
+  const config = { clientId: "c", tenantId: "organizations", scopes: ["User.Read"] };
+  const a = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+  const b = { homeAccountId: "b", username: "b@fabrikam.com", tenantId: "t-b" };
+
+  // Starts an interactive sign-in as account and returns it with a function
+  // that sends the browser redirect once the test wants the code exchange.
+  async function start(service: AuthService, account: typeof a) {
+    let target: { redirectUri: string; state?: string } | null = null;
+    const done = service.signInInteractive(async () => {
+      target = msal.lastUrlRequest;
+    });
+    await vi.waitFor(() => expect(target).not.toBeNull());
+    const redirect = async () => {
+      msal.nextAccount = { ...account };
+      const { redirectUri, state } = target!;
+      expect(await get("127.0.0.1", Number(new URL(redirectUri).port), `/?code=real&state=${state}`)).toBe(200);
+    };
+    return { done, redirect };
+  }
+
+  it("discards a sign-in whose code exchange finishes after a sign-out", async () => {
+    const service = new AuthService(config);
+    let release!: () => void;
+    msal.codeGate = new Promise<void>((resolve) => (release = resolve));
+    try {
+      const pending = await start(service, a);
+      await pending.redirect();
+      await service.signOut();
+      release();
+      await expect(pending.done).rejects.toThrow("Sign-in was cancelled.");
+      expect(service.getStatus().signedIn).toBe(false);
+    } finally {
+      msal.codeGate = null;
+    }
+  });
+
+  it("applies a sign-in that finishes after another one", async () => {
+    const service = new AuthService(config);
+    let release!: () => void;
+    msal.codeGate = new Promise<void>((resolve) => (release = resolve));
+    msal.removed = [];
+    try {
+      const first = await start(service, a);
+      await first.redirect();
+      msal.codeGate = null;
+      const second = await start(service, b);
+      await second.redirect();
+      await expect(second.done).resolves.toMatchObject({ account: b.username });
+      release();
+      await expect(first.done).resolves.toMatchObject({ account: a.username });
+      expect(service.getStatus()).toMatchObject({ signedIn: true, account: a.username });
+      expect(msal.removed).toEqual([]);
+    } finally {
+      msal.codeGate = null;
+      await service.signOut();
+    }
+  });
+});
+
 describe("AuthService.getAccessToken", () => {
   const config = { clientId: "c", tenantId: "organizations", scopes: ["User.Read"] };
 
@@ -424,7 +489,24 @@ describe("AuthService unreachable sign-in", () => {
     ]);
     // MSAL keeps no HTTP status on these.
     expect(outage.every((error) => (error as { status?: number }).status === undefined)).toBe(true);
+    // A direct answer keeps its first error code as errorNo; the throttle
+    // replays keep none.
+    expect(outage.map((error) => error.errorNo)).toEqual([
+      90033,
+      undefined,
+      undefined,
+      undefined,
+      50001,
+      50196,
+      undefined,
+      undefined,
+      undefined,
+    ]);
     const verdicts = await realRefreshErrors([
+      // A verdict without an error field: the code is empty as in a replay,
+      // but errorNo keeps the error code.
+      () => answer(400, { error_description: "AADSTS70008: The refresh token has expired.", error_codes: [70008] }),
+      "fresh",
       () => answer(400, { error: "invalid_grant", error_description: "AADSTS70008", error_codes: [70008] }),
       "fresh",
       () =>
@@ -440,11 +522,13 @@ describe("AuthService unreachable sign-in", () => {
       () => answer(400, { error: "invalid_client", error_description: "AADSTS7000218", error_codes: [7000218] }),
     ]);
     expect(verdicts.map((error) => [error.name, error.errorCode])).toEqual([
+      ["ServerError", ""],
       ["ServerError", "invalid_grant"],
       ["InteractionRequiredAuthError", "invalid_grant"],
       ["InteractionRequiredAuthError", "interaction_required"],
       ["ServerError", "invalid_client"],
     ]);
+    expect(verdicts[0]!.errorNo).toBe(70008);
 
     const service = new AuthService(config);
     msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
@@ -465,26 +549,6 @@ describe("AuthService unreachable sign-in", () => {
         expect(service.signInUnreachable()).toBe(false);
         expect(service.getStatus().signedIn).toBe(false);
       }
-    } finally {
-      msal.tokenLifetime = 3600_000;
-      msal.silentError = null;
-      await service.signOut();
-    }
-  });
-
-  it("keeps the session when a NetworkError carries a 5xx status", async () => {
-    const service = new AuthService(config);
-    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
-    msal.tokenLifetime = 30_000;
-    try {
-      await signIn(service);
-      msal.silentError = new NetworkError(
-        new AuthError("some_failure", "", "failed"),
-        503,
-      ) as unknown as Record<string, unknown>;
-      expect(await service.getAccessToken()).toBeNull();
-      expect(service.signInUnreachable()).toBe(true);
-      expect(service.getStatus().signedIn).toBe(true);
     } finally {
       msal.tokenLifetime = 3600_000;
       msal.silentError = null;
@@ -520,9 +584,13 @@ describe("AuthService account switch during a silent refresh", () => {
   const a = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
   const b = { homeAccountId: "b", username: "b@fabrikam.com", tenantId: "t-b" };
 
+  // Holds a silent refresh of A while signing in interactively as each of
+  // next in turn, then lets the refresh finish. A refreshed token would
+  // last two hours, the interactive ones one hour.
   async function switchDuringRefresh(
     refresh: (service: AuthService) => Promise<string | null>,
     error: Record<string, unknown> | null = null,
+    next: Array<typeof a> = [b],
   ) {
     const statuses: Array<string | null> = [];
     const service = new AuthService(config, (status) => statuses.push(status.account));
@@ -537,11 +605,22 @@ describe("AuthService account switch during a silent refresh", () => {
     msal.silentGate = null;
     msal.silentError = null;
     msal.tokenLifetime = 3600_000;
-    msal.nextAccount = { ...b };
-    await signIn(service);
+    for (const account of next) {
+      msal.nextAccount = { ...account };
+      await signIn(service);
+    }
+    msal.tokenLifetime = 2 * 3600_000;
     release();
-    return { service, statuses, result: await pending };
+    try {
+      return { service, statuses, result: await pending };
+    } finally {
+      msal.tokenLifetime = 3600_000;
+    }
   }
+
+  // The session of the last interactive sign-in, not the refreshed one.
+  const interactiveExpiry = (service: AuthService) =>
+    Date.parse(service.getStatus().expiresOn ?? "") - Date.now();
 
   it("ignores a refreshed token of the previous account", async () => {
     const { service, statuses, result } = await switchDuringRefresh((service) => service.getAccessToken());
@@ -566,6 +645,49 @@ describe("AuthService account switch during a silent refresh", () => {
       expect(service.signInUnreachable()).toBe(false);
       expect(service.getStatus()).toMatchObject({ signedIn: true, account: b.username });
       expect(await service.getAccessToken()).toBe("token-b");
+    } finally {
+      await service.signOut();
+    }
+  });
+
+  it("ignores a refreshed token after a new interactive sign-in as the same account", async () => {
+    const { service, result } = await switchDuringRefresh((service) => service.getAccessToken(), null, [a]);
+    try {
+      expect(result).toBeNull();
+      expect(service.getStatus()).toMatchObject({ signedIn: true, account: a.username });
+      expect(interactiveExpiry(service)).toBeLessThanOrEqual(3600_000);
+    } finally {
+      await service.signOut();
+    }
+  });
+
+  it("does not end a new session of the same account when the earlier refresh is refused", async () => {
+    const { service, result } = await switchDuringRefresh(
+      (service) => service.getAccessToken(),
+      { name: "InteractionRequiredAuthError", errorCode: "invalid_grant" },
+      [a],
+    );
+    try {
+      expect(result).toBeNull();
+      expect(service.signInUnreachable()).toBe(false);
+      expect(service.getStatus()).toMatchObject({ signedIn: true, account: a.username });
+      expect(await service.getAccessToken()).toBe("token-a");
+    } finally {
+      await service.signOut();
+    }
+  });
+
+  it("ignores a refresh of A that outlasts a sign-in as B and back to A", async () => {
+    const { service, statuses, result } = await switchDuringRefresh(
+      (service) => service.getAccessToken(),
+      null,
+      [b, a],
+    );
+    try {
+      expect(result).toBeNull();
+      expect(service.getStatus()).toMatchObject({ signedIn: true, account: a.username });
+      expect(interactiveExpiry(service)).toBeLessThanOrEqual(3600_000);
+      expect(statuses.slice(-2)).toEqual([b.username, a.username]);
     } finally {
       await service.signOut();
     }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { SnapshotProjection } from "../../../../src/lib/snapshots/projection";
 import type { HistoryEntry } from "../shared/ipc-types";
 import {
   historyDiffView,
@@ -173,6 +174,11 @@ describe("managementChanges", () => {
         notComparedFamilies: 1,
         notComparedItems: 2,
       },
+      identity: {
+        changes: [],
+        notCompared: [{ policy: "securityDefaults", label: "Security defaults", side: "from" }],
+        total: 4,
+      },
     },
     assessments: {
       fromRuleset: "1",
@@ -195,9 +201,12 @@ describe("managementChanges", () => {
   };
 
   it("summarizes counts and the selected framework's control changes", () => {
+    const read = (securityDefaults: "collected" | "failed") => ({
+      status: { authenticationMethods: "collected", securityDefaults },
+    }) as SnapshotProjection["tenantIdentityPolicies"];
     const result = managementChanges(
-      { collectedAt: "2026-10-10T10:00:00Z", partial: false },
-      { collectedAt: "2026-10-18T10:00:00Z", partial: true },
+      { collectedAt: "2026-10-10T10:00:00Z", partial: false, tenantIdentityPolicies: read("failed") },
+      { collectedAt: "2026-10-18T10:00:00Z", partial: true, tenantIdentityPolicies: read("collected") },
       compared,
       "nis2",
     );
@@ -214,6 +223,8 @@ describe("managementChanges", () => {
         notComparedFamilies: 1,
         notComparedItems: 2,
       },
+      // Counted before capping; only the methods policy was read on both sides.
+      identity: { compared: 1, changes: 4, notCompared: 1 },
       controls: [
         { id: "21.2.a", before: "noEvidence", after: "evidenceFound" },
         { id: "21.2.b", before: "evidenceFound", after: "partialEvidence" },

@@ -454,6 +454,46 @@ describe("settings inside repeated groups", () => {
     expect(elapsed).toBeLessThan(3000);
   }, 30_000);
 
+  it("pairs many changed rules made of shared values approximately but sensibly", () => {
+    // 1,500 distinct rules per side, each value shared by dozens of rules:
+    // 37 names times 41 ports. Every action flips, so no rule matches
+    // exactly and the 2.25 million candidate pairs exceed the full pairing
+    // bound.
+    const COUNT = 1500;
+    const rules = (flip: boolean): SettingSet => ({
+      rulesetVersion: "test",
+      families: [{ key: "settingsCatalog", label: "Settings Catalog" }],
+      notCompared: [],
+      settings: Array.from({ length: COUNT }, (_, index) => {
+        const name = `Rule ${index % 37}`;
+        const port = String(1000 + (Math.floor(index / 37) % 41));
+        const action = (index % 2 === 0) !== flip ? "allow" : "block";
+        const path = [RULES, String(index)];
+        const group = `${name}|${port}|${action}`;
+        const base = { platform: "Windows", family: "settingsCatalog", path, group, policy: "WIN - Firewall rules" };
+        return [
+          { ...base, setting: `${RULES}_name`, name: "Name", value: name },
+          { ...base, setting: `${RULES}_port`, name: "Port", value: port },
+          { ...base, setting: `${RULES}_action_type`, name: "Action", value: action },
+        ];
+      }).flat(),
+    });
+    const started = performance.now();
+    const same = compareSettings(rules(false), rules(false));
+    const flipped = compareSettings(rules(false), rules(true));
+    const elapsed = performance.now() - started;
+    expect(same.totals).toMatchObject({ different: 0, missing: 0, extra: 0, matching: 3 });
+    // Only the action changed: each rule still finds its counterpart among
+    // the few candidates sharing its rarest values, so names and ports stay
+    // matching as parts of changed rules, never missing or extra.
+    expect(flipped.totals).toEqual({ different: 1, missing: 0, extra: 0, notComparable: 0, matching: 2 });
+    const rows = rowsOf(flipped);
+    expect(rows.find((row) => row.setting === `${RULES}_action_type`)?.status).toBe("different");
+    for (const setting of [`${RULES}_name`, `${RULES}_port`])
+      expect(rows.find((row) => row.setting === setting)).toMatchObject({ status: "matching", instanceChanged: true });
+    expect(elapsed).toBeLessThan(3000);
+  }, 30_000);
+
   it("reads ten thousand rules of one policy in bounded time", () => {
     const projection = snap(firewall(Array.from({ length: 10_000 }, (_, index): Rule => [`Rule ${index}`, "allow"])));
     const started = performance.now();

@@ -83,6 +83,7 @@ What the comparison does not cover:
 - **Assignments are not compared, only the configured settings.** Two tenants can match here and still assign the policies to different people.
 - Families that were incomplete on either side are left out and reported as not covered, so their settings never show as missing or extra.
 - Device configuration profiles only keep the properties the evidence engine reads, so their other properties are not compared.
+- Very large rule sets are compared approximately. When hundreds of rules of one kind, such as firewall rules, changed on both sides, each rule is only paired with a few similar rules, so a setting inside those rules can show as different although it did not change.
 
 ## Next steps
 

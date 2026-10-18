@@ -10,6 +10,7 @@ import {
   type DefinitionLabels,
   type SnapshotDiff,
 } from "../../../../src/lib/snapshots/diff";
+import { identityCompleteness } from "../../../../src/lib/snapshots/identity";
 import type { SnapshotProjection } from "../../../../src/lib/snapshots/projection";
 import type {
   HistoryDiffRequest,
@@ -149,15 +150,18 @@ const HAS_EVIDENCE: ReadonlySet<ControlStatus | null> = new Set<ControlStatus | 
   "partialEvidence",
 ]);
 
+type ChangeSide = Pick<SnapshotProjection, "collectedAt" | "partial" | "tenantIdentityPolicies">;
+
 // Counts and control status changes of one framework for the management
 // panel and report. No policy names or values, like the rest of the report.
+// Entra identity settings are tenant-wide, so they are counted on their own.
 export function managementChanges(
-  from: Pick<SnapshotProjection, "collectedAt" | "partial">,
-  to: Pick<SnapshotProjection, "collectedAt" | "partial">,
+  from: ChangeSide,
+  to: ChangeSide,
   compared: ComparedSnapshots,
   frameworkId: string,
 ): ManagementReportChanges {
-  const { totals } = compared.snapshots;
+  const { totals, identity } = compared.snapshots;
   const framework = compared.assessments.frameworks.find(
     (entry) => entry.id === frameworkId,
   );
@@ -178,6 +182,11 @@ export function managementChanges(
       assignmentChanges: totals.assignmentChanges,
       notComparedFamilies: totals.notComparedFamilies,
       notComparedItems: totals.notComparedItems,
+    },
+    identity: {
+      compared: identityCompleteness(from.tenantIdentityPolicies, to.tenantIdentityPolicies).compared.length,
+      changes: identity.total,
+      notCompared: identity.notCompared.length,
     },
     controls,
     improved: controls.filter(

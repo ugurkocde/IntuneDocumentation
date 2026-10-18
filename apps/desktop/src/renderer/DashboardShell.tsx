@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { CollectionStatusToast } from "./components/collection/CollectionStatusToast";
+import { SnapshotNotSavedNotice } from "./components/collection/SnapshotNotSavedNotice";
 import { Sidebar } from "./components/layout/Sidebar";
 import { isMac } from "./lib/ipc";
 import { CompareScreen } from "./screens/CompareScreen";
@@ -47,6 +48,7 @@ export function DashboardShell() {
         </div>
       </main>
       <CollectionStatusToast />
+      <SnapshotNotSavedNotice />
     </div>
   );
 }

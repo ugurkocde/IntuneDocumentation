@@ -86,10 +86,12 @@ export async function runExport(
           }
         : {}),
     };
+    // The desktop keeps every framework, NIS2 and DORA included, in the
+    // compliance preview.
     const result =
       format === "docx"
-        ? await generateDetailedDOCX(exportData)
-        : await generateDetailedPDF(exportData);
+        ? await generateDetailedDOCX(exportData, { audience: "desktop" })
+        : await generateDetailedPDF(exportData, { audience: "desktop" });
     stage(dispatch, 4);
     const saved = await ipc.saveFile(targetFileName(target, format), result.buffer);
     if (!saved) {

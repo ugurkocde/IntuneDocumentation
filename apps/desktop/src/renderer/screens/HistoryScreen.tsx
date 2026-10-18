@@ -160,11 +160,17 @@ function SettingRow({ setting }: { setting: SettingChange }) {
       </div>
       {setting.notStored ? (
         <p className="text-petrol-700 text-[13px] leading-5 md:col-span-2">
-          {setting.change === "changed"
-            ? "Content changed. Script bodies are not kept in history."
-            : setting.change === "added"
-              ? "Content added. Script bodies are not kept in history."
-              : "Content removed. Script bodies are not kept in history."}
+          {setting.valueNotStored
+            ? setting.change === "changed"
+              ? "Value changed, not stored. History keeps only a fingerprint of this value."
+              : setting.change === "added"
+                ? "Value added, not stored. History keeps only a fingerprint of this value."
+                : "Value removed, not stored. History keeps only a fingerprint of this value."
+            : setting.change === "changed"
+              ? "Content changed. Script bodies are not kept in history."
+              : setting.change === "added"
+                ? "Content added. Script bodies are not kept in history."
+                : "Content removed. Script bodies are not kept in history."}
         </p>
       ) : (
         <>
@@ -794,11 +800,13 @@ function SnapshotList({
 function KeepHistoryCard({
   status,
   onToggle,
+  onDeleteAll,
   busy,
   error,
 }: {
   status: HistoryStatus;
   onToggle: (enabled: boolean) => void;
+  onDeleteAll: () => void;
   busy: boolean;
   error: string | null;
 }) {
@@ -824,7 +832,18 @@ function KeepHistoryCard({
         </p>
       </div>
       {!status.available && (
-        <Alert tone="warning" title="History is not available on this computer" className="mt-4 sm:ml-15">
+        <Alert
+          tone="warning"
+          title="History is not available on this computer"
+          className="mt-4 sm:ml-15"
+          action={
+            status.unreadableData && (
+              <Button variant="dangerOutline" size="sm" icon={Trash2} disabled={busy} onClick={onDeleteAll}>
+                Delete all history
+              </Button>
+            )
+          }
+        >
           {status.reason}
         </Alert>
       )}
@@ -1037,7 +1056,14 @@ function ScheduleCard({
 
 type Confirm = { kind: "one"; entry: HistoryEntry } | { kind: "all" } | null;
 
+// Keyed by the signed in account and tenant, so nothing of the previous
+// account, such as its history or a pending request, survives a switch.
 export function HistoryScreen() {
+  const { state } = useApp();
+  return <HistoryBody key={`${state.auth?.account ?? ""}|${state.auth?.tenantId ?? ""}`} />;
+}
+
+function HistoryBody() {
   const { state, actions } = useApp();
   const signedIn = Boolean(state.auth?.signedIn);
   const entitled = Boolean(state.license?.entitled);
@@ -1172,7 +1198,8 @@ export function HistoryScreen() {
         <KeepHistoryCard
           status={status}
           onToggle={onToggle}
-          busy={toggle.busy !== null}
+          onDeleteAll={() => setConfirm({ kind: "all" })}
+          busy={toggle.busy !== null || remove.busy !== null}
           error={toggle.error}
         />
         {status.available && (
@@ -1229,11 +1256,19 @@ export function HistoryScreen() {
       <ConfirmDialog
         open={confirm !== null}
         tone="danger"
-        title={confirm?.kind === "all" ? "Delete all snapshots of this tenant?" : "Delete this snapshot?"}
+        title={
+          confirm?.kind === "one"
+            ? "Delete this snapshot?"
+            : status && !status.available
+              ? "Delete all history on this computer?"
+              : "Delete all snapshots of this tenant?"
+        }
         description={
           confirm?.kind === "one"
             ? `The snapshot of ${formatDate(confirm.entry.collectedAt)} is removed from this computer. This cannot be undone.`
-            : "Every snapshot of the signed in tenant is removed from this computer. This cannot be undone."
+            : status && !status.available
+              ? "The history cannot be read, so it cannot be deleted per tenant. Every snapshot of every tenant, the history key and the index are removed from this computer. This cannot be undone."
+              : "Every snapshot of the signed in tenant is removed from this computer. This cannot be undone."
         }
         confirmLabel={confirm?.kind === "all" ? "Delete all" : "Delete snapshot"}
         busy={remove.busy !== null}

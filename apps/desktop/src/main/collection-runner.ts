@@ -22,8 +22,10 @@ export interface CollectionRunnerDeps<Summary, Progress> {
     signal: AbortSignal,
     progress: Progress | null,
   ): Promise<Summary>;
-  // After a collection finished, for example to save a snapshot.
-  collected(owner: string): void;
+  // After a collection finished, for example to save a snapshot. A
+  // scheduled run waits for it and fails when it rejects; a manual run does
+  // not wait.
+  collected(owner: string, scheduled: boolean): Promise<void>;
   // Why history cannot be used, or null.
   historyBlocker(): string | null;
   signedIn(): boolean;
@@ -104,7 +106,17 @@ export class CollectionRunner<Summary, Progress> {
     this.active = entry;
     try {
       const summary = await this.deps.collect(owner, entry.controller.signal, progress);
-      if (!entry.controller.signal.aborted) this.deps.collected(owner);
+      if (!entry.controller.signal.aborted) {
+        const saved = this.deps.collected(owner, scheduled);
+        if (scheduled) {
+          await saved.catch((error: unknown) => {
+            throw new Error(`Snapshot not saved. ${message(error)}`);
+          });
+        } else {
+          // Reported by the callback itself.
+          void saved.catch(() => undefined);
+        }
+      }
       return summary;
     } catch (error) {
       if (scheduled && entry.controller.signal.aborted) {

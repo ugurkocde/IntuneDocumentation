@@ -26,6 +26,8 @@ import { log } from "./logger";
 // Layout under userData/snapshots:
 //   key.bin              random 256 bit master key, wrapped with safeStorage
 //   index.bin            encrypted index of every snapshot
+//   index.bin.bak        the index before its last write, read when
+//                        index.bin cannot be
 //   <tenant tag>/<id>.snap  one encrypted snapshot
 // Every encrypted file is gzip, then AES-256-GCM with a random 96 bit nonce
 // and the format, tenant id and snapshot id as additional authenticated data,
@@ -91,6 +93,11 @@ export const UNAVAILABLE_REASONS = {
     "The history index could not be read. Delete all history to start again.",
 } as const;
 
+// Secure storage refused to unwrap the key, for example while the keychain is
+// locked. Not latched: the next read tries again.
+export const KEY_LOCKED =
+  "The history key could not be unlocked right now. Make sure your keychain or credential store is unlocked, then try again.";
+
 function emptyIndex(): StoredIndex {
   return { format: INDEX_FORMAT, tenants: {} };
 }
@@ -121,18 +128,28 @@ export function unseal(key: Buffer, additional: Buffer, sealed: Buffer): Buffer 
   return Buffer.concat([decipher.update(sealed.subarray(header)), decipher.final()]);
 }
 
-// Temp file then rename, so a reader never sees a partial file. Temp names
-// never match a snapshot id and are swept on the next start.
+// Temp file, flushed to disk, then rename, so a reader never sees a partial
+// file, also after a power loss. Temp names never match a snapshot id and are
+// swept on the next start.
 async function writeAtomic(file: string, bytes: Buffer): Promise<void> {
   const temp = `${file}.${randomBytes(6).toString("hex")}.tmp`;
-  await fs.writeFile(temp, bytes, { mode: 0o600 });
   try {
+    const handle = await fs.open(temp, "w", 0o600);
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await fs.rename(temp, file);
   } catch (error) {
     await fs.rm(temp, { force: true });
     throw error;
   }
 }
+
+// Removal of a folder that Windows may still hold open for a moment.
+export const RM_RETRY = { maxRetries: 5, retryDelay: 200 } as const;
 
 function newSnapshotId(now: number): string {
   const stamp = new Date(now)
@@ -303,43 +320,68 @@ export class SnapshotStore {
       this.key = key;
       return true;
     }
+    let unwrapped: string;
     try {
-      const key = Buffer.from(safeStorage.decryptString(wrapped), "base64");
-      if (key.length !== 32) throw new Error("Invalid key length.");
-      this.key = key;
-      return true;
+      unwrapped = safeStorage.decryptString(wrapped);
     } catch {
-      log("warn", "history key ignored", { reason: "decrypt_failed" });
+      log("warn", "history key not unlocked", { reason: "decrypt_failed" });
+      throw new HistoryUnavailableError(KEY_LOCKED);
+    }
+    const key = Buffer.from(unwrapped, "base64");
+    if (key.length !== 32) {
+      log("warn", "history key ignored", { reason: "invalid_length" });
       this.damaged = "key";
       throw new HistoryUnavailableError(UNAVAILABLE_REASONS.key);
     }
+    this.key = key;
+    return true;
   }
 
+  // The index, or its backup when the index itself cannot be read. Only when
+  // neither can is the history damaged.
   private async loadIndex(): Promise<StoredIndex> {
     if (this.index) return this.index;
-    let sealed: Buffer;
-    try {
-      sealed = await fs.readFile(this.file("index.bin"));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      this.index = emptyIndex();
-      await this.sweep(this.index);
-      return this.index;
+    let found = false;
+    for (const name of ["index.bin", "index.bin.bak"]) {
+      let sealed: Buffer;
+      try {
+        sealed = await fs.readFile(this.file(name));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        continue;
+      }
+      found = true;
+      try {
+        const plain = await gunzipAsync(unseal(this.key!, aad(INDEX_FORMAT, "", "index"), sealed));
+        this.index = parseIndex(plain.toString("utf8"));
+      } catch {
+        log("warn", "history index ignored", { reason: "decrypt_failed", file: name });
+        continue;
+      }
+      if (name !== "index.bin") {
+        // The good copy replaces the unreadable index, so the next write
+        // keeps it as the backup.
+        log("warn", "history index restored from backup");
+        await writeAtomic(this.file("index.bin"), sealed);
+      }
+      break;
     }
-    try {
-      const plain = await gunzipAsync(unseal(this.key!, aad(INDEX_FORMAT, "", "index"), sealed));
-      this.index = parseIndex(plain.toString("utf8"));
-    } catch {
-      log("warn", "history index ignored", { reason: "decrypt_failed" });
-      this.damaged = "index";
-      throw new HistoryUnavailableError(UNAVAILABLE_REASONS.index);
+    if (!this.index) {
+      if (found) {
+        this.damaged = "index";
+        throw new HistoryUnavailableError(UNAVAILABLE_REASONS.index);
+      }
+      this.index = emptyIndex();
     }
     await this.sweep(this.index);
     return this.index;
   }
 
+  // The index being replaced is kept as index.bin.bak first.
   private async writeIndex(index: StoredIndex): Promise<void> {
     const plain = await gzipAsync(Buffer.from(JSON.stringify(index), "utf8"));
+    const previous = await fs.readFile(this.file("index.bin")).catch(() => null);
+    if (previous) await writeAtomic(this.file("index.bin.bak"), previous);
     await writeAtomic(this.file("index.bin"), seal(this.key!, aad(INDEX_FORMAT, "", "index"), plain));
     this.index = index;
   }
@@ -371,11 +413,21 @@ export class SnapshotStore {
     }
   }
 
-  // Index and key, or nothing when no history was ever saved.
+  // Index and key, or nothing when no history was ever saved. Snapshots
+  // past the age limit are removed first, also while no new snapshot is
+  // saved; the count and size limits only change with a save.
   private async open(): Promise<StoredIndex | null> {
     this.requireAvailable();
     if (!(await this.loadKey(false))) return null;
-    return this.loadIndex();
+    const index = await this.loadIndex();
+    const next = structuredClone(index);
+    const removed = this.expire(next, this.now());
+    if (!removed.length) return index;
+    await this.writeIndex(next);
+    for (const old of removed) {
+      await fs.rm(this.snapshotFile(old.tenant, old.id), { force: true });
+    }
+    return next;
   }
 
   async list(tenantId: string): Promise<HistoryEntry[]> {
@@ -427,7 +479,8 @@ export class SnapshotStore {
       if (!current()) return null;
       this.requireAvailable();
       await this.loadKey(true);
-      const index = structuredClone(await this.loadIndex());
+      const before = await this.loadIndex();
+      const index = structuredClone(before);
       const now = this.now();
       const id = newSnapshotId(now);
       const plain = await gzipAsync(Buffer.from(JSON.stringify(projection), "utf8"));
@@ -460,11 +513,33 @@ export class SnapshotStore {
       bucket.snapshots.push(entry);
       const removed = this.applyRetention(index, now, entry.id);
       await this.writeIndex(index);
+      // A sign out or reset during the index write: the save is undone.
+      if (!current()) {
+        await this.writeIndex(before);
+        await fs.rm(file, { force: true });
+        return null;
+      }
       for (const old of removed) {
         await fs.rm(this.snapshotFile(old.tenant, old.id), { force: true });
       }
       return publicEntry(entry);
     });
+  }
+
+  // Snapshots older than the age limit, removed from the index.
+  private expire(index: StoredIndex, now: number): Array<{ tenant: string; id: string }> {
+    const cutoff = now - this.limits.maxAgeDays * DAY_MS;
+    const removed: Array<{ tenant: string; id: string }> = [];
+    for (const [tenant, bucket] of Object.entries(index.tenants)) {
+      const kept = bucket.snapshots.filter((entry) => Date.parse(entry.collectedAt) >= cutoff);
+      if (kept.length === bucket.snapshots.length) continue;
+      for (const entry of bucket.snapshots) {
+        if (!kept.includes(entry)) removed.push({ tenant, id: entry.id });
+      }
+      bucket.snapshots = kept;
+      if (!kept.length && !bucket.label) delete index.tenants[tenant];
+    }
+    return removed;
   }
 
   // Oldest first: over the per tenant count, older than the age limit, then
@@ -574,12 +649,18 @@ export class SnapshotStore {
     });
   }
 
+  // Whether any history is stored, without decrypting it.
+  async hasData(): Promise<boolean> {
+    const names = await fs.readdir(this.dir()).catch(() => [] as string[]);
+    return names.length > 0;
+  }
+
   // Removes snapshots, the wrapped key and the index. Waits for a running
   // write first, so nothing is written after it.
   async clear(): Promise<void> {
     this.invalidate();
     await this.serial(async () => {
-      await fs.rm(this.dir(), { recursive: true, force: true });
+      await fs.rm(this.dir(), { recursive: true, force: true, ...RM_RETRY });
       this.key = null;
       this.index = null;
       this.damaged = null;

@@ -373,6 +373,9 @@ export interface HistoryStatus {
   reason: string | null;
   // Snapshots of the signed in tenant.
   count: number;
+  // History that cannot be read is still on this computer and can be
+  // deleted as a whole. Only set when available is false.
+  unreadableData?: boolean;
 }
 
 export interface HistoryDiffRequest {
@@ -700,5 +703,8 @@ export interface IntunedocApi {
   onMenuCommand(callback: (command: MenuCommand) => void): () => void;
   // Sent after a snapshot was saved or history was cleared.
   onHistoryChanged(callback: () => void): () => void;
+  // Sent when the snapshot of a manual collection could not be saved, with
+  // the reason.
+  onSnapshotNotSaved(callback: (message: string) => void): () => void;
   onScheduleStatus(callback: (status: ScheduleStatus) => void): () => void;
 }

@@ -6,7 +6,9 @@ import type { ScheduleHours, ScheduleStatus } from "../shared/ipc-types";
 // that is overdue, for example after the computer slept, runs once soon and
 // then the interval starts again; missed runs are never caught up one by one.
 // A run due while other work runs is skipped, recorded, and tried again a
-// little later.
+// little later. A failed run, for example without network right after wake,
+// is tried again soon as well, waiting twice as long after each further
+// failure and never longer than the interval.
 
 const HOUR_MS = 60 * 60_000;
 
@@ -66,8 +68,10 @@ export class CollectionScheduler {
   // When the current interval was turned on, for a tenant without snapshots.
   private enabledAt: number | null = null;
   private lastAttemptAt: number | null = null;
-  // Set after a skipped run: when to try again.
+  // Set after a skipped or failed run: when to try again.
   private retryAt: number | null = null;
+  // Failed runs in a row, for the growing retry delay.
+  private failures = 0;
   private lastRunAt: number | null = null;
   private lastResult: ScheduleStatus["lastResult"] = null;
   private lastError: string | null = null;
@@ -112,6 +116,7 @@ export class CollectionScheduler {
     this.enabledAt = null;
     this.lastAttemptAt = null;
     this.retryAt = null;
+    this.failures = 0;
     this.lastRunAt = null;
     this.lastResult = null;
     this.lastError = null;
@@ -207,6 +212,7 @@ export class CollectionScheduler {
     }
     this.running = true;
     this.publish();
+    let failed = false;
     try {
       await this.deps.run();
       this.lastResult = "collected";
@@ -222,12 +228,23 @@ export class CollectionScheduler {
       }
       this.lastResult = "failed";
       this.lastError = error instanceof Error ? error.message : String(error);
+      failed = true;
     } finally {
       this.running = false;
     }
     this.lastRunAt = this.now();
-    this.lastAttemptAt = this.lastRunAt;
-    this.retryAt = null;
+    if (failed) {
+      // The interval is not restarted, so the run stays overdue and runs
+      // again at retryAt.
+      this.failures += 1;
+      this.retryAt =
+        this.lastRunAt +
+        Math.min(SKIP_RETRY_MS * 2 ** (this.failures - 1), this.hours * HOUR_MS);
+    } else {
+      this.failures = 0;
+      this.lastAttemptAt = this.lastRunAt;
+      this.retryAt = null;
+    }
     await this.refresh();
   }
 }

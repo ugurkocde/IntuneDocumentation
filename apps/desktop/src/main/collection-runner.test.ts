@@ -21,7 +21,7 @@ function setup() {
       reject: (error: Error) => void;
     }>,
   };
-  const collected = vi.fn();
+  const collected = vi.fn(async (_owner: string, _scheduled: boolean) => undefined);
   const runner = new CollectionRunner<string, Progress>({
     requireOwner: async () => {
       if (!env.owner) throw new Error("Sign in before continuing.");
@@ -96,7 +96,7 @@ describe("CollectionRunner", () => {
     expect(env.pending[0]!.signal.aborted).toBe(false);
     env.pending[0]!.resolve("scheduled summary");
     await expect(scheduled).resolves.toBeUndefined();
-    expect(collected).toHaveBeenCalledWith("owner-1");
+    expect(collected).toHaveBeenCalledWith("owner-1", true);
     expect(runner.current()).toBeNull();
     // Afterwards a manual collection works again.
     const manual = runner.manual("owner-1", () => undefined);
@@ -120,9 +120,12 @@ describe("CollectionRunner", () => {
     const { env, runner, collected } = setup();
     const first = runner.manual("owner-1", () => undefined);
     await flush();
+    // Attached before the second run aborts the first, so the rejection is
+    // never unhandled.
+    const firstAborted = expect(first).rejects.toThrow("aborted");
     const second = runner.manual("owner-1", () => undefined);
     await flush();
-    await expect(first).rejects.toThrow("aborted");
+    await firstAborted;
     env.pending[1]!.resolve("second");
     await expect(second).resolves.toBe("second");
     expect(collected).toHaveBeenCalledTimes(1);
@@ -150,6 +153,38 @@ describe("CollectionRunner", () => {
     expect(runner.blocker()).toBe("Sign in to run scheduled collections.");
     env.historyBlocker = "Secure storage is not available on this computer.";
     expect(runner.blocker()).toBe("Secure storage is not available on this computer.");
+  });
+
+  it("waits for the snapshot of a scheduled run and fails when it is not saved", async () => {
+    const { env, runner, collected } = setup();
+    let release!: () => void;
+    collected.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((_resolve, reject) => {
+          release = () => reject(new Error("No space left on the disk."));
+        }),
+    );
+    const scheduled = runner.scheduled();
+    await flush();
+    env.pending[0]!.resolve("summary");
+    await flush();
+    // Still running while the snapshot is written.
+    expect(runner.busy()).toBe("a scheduled collection");
+    release();
+    await expect(scheduled).rejects.toThrow("Snapshot not saved. No space left on the disk.");
+    await expect(scheduled).rejects.not.toBeInstanceOf(ScheduleSkip);
+    expect(runner.current()).toBeNull();
+  });
+
+  it("does not wait for or fail on the snapshot of a manual run", async () => {
+    const { env, runner, collected } = setup();
+    collected.mockRejectedValueOnce(new Error("No space left on the disk."));
+    const manual = runner.manual("owner-1", () => undefined);
+    await flush();
+    env.pending[0]!.resolve("summary");
+    await expect(manual).resolves.toBe("summary");
+    expect(collected).toHaveBeenCalledWith("owner-1", false);
+    await flush();
   });
 
   it("reports a failed scheduled collection as an error, not a skip", async () => {

@@ -192,21 +192,47 @@ describe("CollectionScheduler", () => {
     expect(latest()).toMatchObject({ state: "waiting", lastResult: "collected" });
   });
 
-  it("records a failed run, for example a lapsed license, and tries again next interval", async () => {
+  it("records a failed run, for example no network after wake, and tries again soon", async () => {
     const { env, scheduler, latest } = setup({ hours: 6 });
-    env.fail = "The license is not valid for this tenant.";
+    env.fail = "fetch failed";
     await scheduler.refresh();
     await vi.advanceTimersByTimeAsync(6 * HOUR + 1000);
     expect(env.runs).toBe(1);
     expect(latest()).toMatchObject({
       state: "waiting",
       lastResult: "failed",
-      lastError: "The license is not valid for this tenant.",
+      lastError: "fetch failed",
+      nextRunAt: new Date(T0 + 6 * HOUR + SKIP_RETRY_MS).toISOString(),
     });
-    env.fail = null;
-    await vi.advanceTimersByTimeAsync(6 * HOUR);
+    // Not a full interval: the short retry.
+    await vi.advanceTimersByTimeAsync(SKIP_RETRY_MS);
     expect(env.runs).toBe(2);
+    // Each further failure waits twice as long.
+    await vi.advanceTimersByTimeAsync(SKIP_RETRY_MS);
+    expect(env.runs).toBe(2);
+    env.fail = null;
+    await vi.advanceTimersByTimeAsync(SKIP_RETRY_MS);
+    expect(env.runs).toBe(3);
     expect(latest()).toMatchObject({ lastResult: "collected", lastError: null });
+    // After a success the interval applies again.
+    await vi.advanceTimersByTimeAsync(5 * HOUR);
+    expect(env.runs).toBe(3);
+    await vi.advanceTimersByTimeAsync(HOUR);
+    expect(env.runs).toBe(4);
+  });
+
+  it("never waits longer than the interval between failed runs", async () => {
+    const { env, scheduler } = setup({ hours: 6 });
+    env.fail = "fetch failed";
+    await scheduler.refresh();
+    await vi.advanceTimersByTimeAsync(6 * HOUR + 1000);
+    // 15, 30, 60, 120, 240 minutes, then the 6 hour cap.
+    await vi.advanceTimersByTimeAsync((15 + 30 + 60 + 120 + 240) * 60_000);
+    expect(env.runs).toBe(6);
+    await vi.advanceTimersByTimeAsync(6 * HOUR);
+    expect(env.runs).toBe(7);
+    await vi.advanceTimersByTimeAsync(6 * HOUR);
+    expect(env.runs).toBe(8);
   });
 
   it("stops for good", async () => {

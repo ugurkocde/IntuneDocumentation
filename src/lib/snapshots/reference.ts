@@ -33,6 +33,7 @@ export const REFERENCE_MAX_SETTINGS = 100_000;
 export const REFERENCE_MAX_VALUE = 1000;
 
 const REDACTED = "[Redacted]";
+const SEPARATOR = "\u0000";
 // Setting ids that name a secret, matched as the last word as the collector
 // does; their values are never stored, also when a collection kept one.
 const SECRET_SETTING =
@@ -55,6 +56,10 @@ export interface ReferenceSetting {
   value?: string;
   // SHA-256 of the full value when value was shortened.
   sha256?: string;
+  // SHA-256 of the group instance the setting is part of (its sibling and
+  // child settings with their values), for settings inside a Settings
+  // Catalog group such as one firewall rule.
+  group?: string;
   redacted?: true;
   // Name of the policy that configures it; a hint only, never compared.
   policy: string;
@@ -199,6 +204,7 @@ function itemRows(
     } else entry.value = row.value;
     return entry;
   });
+  if (catalog) groupInstances(rows);
   // Custom OMA-URI strings the projection does not keep may be secrets; the
   // export lists none of them, so they are added as not comparable.
   for (const oma of Array.isArray(data.omaSettings) ? data.omaSettings : []) {
@@ -216,6 +222,31 @@ function itemRows(
     });
   }
   return rows;
+}
+
+// Settings inside a group instance, such as the action of one firewall rule,
+// get the digest of that whole instance: its settings with the same path and
+// the ones below it. Several instances of a setting are then compared as
+// tuples, so swapping the actions of two rules is a difference.
+function groupInstances(rows: ReferenceSetting[]): void {
+  const members = new Map<string, string[]>();
+  for (const row of rows) {
+    if (!row.path?.length) continue;
+    const key = row.path.join(SEPARATOR);
+    const list = members.get(key) ?? [];
+    list.push([row.setting, row.redacted ? REDACTED : (row.sha256 ?? row.value ?? "")].join(SEPARATOR));
+    members.set(key, list);
+  }
+  const digests = new Map<string, string>();
+  for (const key of members.keys()) {
+    const inside = [...members]
+      .filter(([other]) => other === key || other.startsWith(`${key}${SEPARATOR}`))
+      .flatMap(([other, list]) => list.map((entry) => `${other}${SEPARATOR}${entry}`.slice(key.length)));
+    digests.set(key, digest(inside.sort().join("\n")));
+  }
+  for (const row of rows) {
+    if (row.path?.length) row.group = digests.get(row.path.join(SEPARATOR));
+  }
 }
 
 // Settings of every family collected completely. A family with a failed or
@@ -278,6 +309,20 @@ export function serializeReference(file: ReferenceFile): string {
   return `${JSON.stringify(file)}\n`;
 }
 
+export const REFERENCE_TOO_LARGE =
+  "This reference would be larger than 10 MB, the most a reference file can hold. Reduce the collection, for example by leaving out families, and export again.";
+
+// The file as saved. Refused above the size parseReference accepts, so an
+// exported reference can always be loaded again.
+export function encodeReference(
+  file: ReferenceFile,
+  maxBytes = REFERENCE_MAX_BYTES,
+): Uint8Array {
+  const bytes = new TextEncoder().encode(serializeReference(file));
+  if (bytes.length > maxBytes) throw new Error(REFERENCE_TOO_LARGE);
+  return bytes;
+}
+
 export function referenceFileName(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `intunedoc-reference-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.json`;
@@ -305,6 +350,7 @@ const SETTING_KEYS = new Set([
   "value",
   "sha256",
   "redacted",
+  "group",
   "policy",
 ]);
 
@@ -357,6 +403,11 @@ function isSetting(value: unknown): value is ReferenceSetting {
     )
   )
     return false;
+  if (
+    value.group !== undefined &&
+    !(typeof value.group === "string" && HEX_64.test(value.group) && value.path)
+  )
+    return false;
   if (value.redacted !== undefined) {
     // A redacted setting carries no value.
     return (
@@ -366,10 +417,24 @@ function isSetting(value: unknown): value is ReferenceSetting {
     );
   }
   if (!isText(value.value, REFERENCE_MAX_VALUE + 3)) return false;
+  // A digest belongs to a shortened value and every longer value is
+  // shortened, exactly as createReference writes them.
+  if (value.sha256 === undefined) return value.value.length <= REFERENCE_MAX_VALUE;
   return (
-    value.sha256 === undefined ||
-    (typeof value.sha256 === "string" && HEX_64.test(value.sha256))
+    typeof value.sha256 === "string" &&
+    HEX_64.test(value.sha256) &&
+    value.value.length === REFERENCE_MAX_VALUE + 3 &&
+    value.value.endsWith("...")
   );
+}
+
+// A family is either compared or not, never both or listed twice, and
+// settings only come from compared families.
+function isConsistent(file: ReferenceFile): boolean {
+  const keys = [...file.families, ...file.notCompared].map((family) => family.key);
+  if (new Set(keys).size !== keys.length) return false;
+  const compared = new Set(file.families.map((family) => family.key));
+  return file.settings.every((setting) => compared.has(setting.family));
 }
 
 function isReferenceFile(value: unknown): value is ReferenceFile {
@@ -419,7 +484,8 @@ export async function parseReference(
     return { ok: false, reason: "size" };
   try {
     const parsed: unknown = JSON.parse(text.replace(/^﻿/, ""));
-    if (!isReferenceFile(parsed)) return { ok: false, reason: "schema" };
+    if (!isReferenceFile(parsed) || !isConsistent(parsed))
+      return { ok: false, reason: "schema" };
     const { checksum, ...body } = parsed;
     if ((await sha256(body)) !== checksum.value)
       return { ok: false, reason: "checksum" };
@@ -441,17 +507,18 @@ export function referenceSettings(file: ReferenceFile): SettingSet {
 // --- Comparison ---------------------------------------------------------------
 
 
-const SEPARATOR = "\u0000";
-
 function emptyCounts(): ComparisonCounts {
   return { different: 0, missing: 0, extra: 0, notComparable: 0, matching: 0 };
 }
 
 // Equality token of one value. Long values are shortened with a digest of
-// the full value, so the digest is what is compared.
-function token(setting: ReferenceSetting): string | null {
+// the full value, so the digest is what is compared. A setting configured
+// more than once is compared with the group instance it belongs to, when it
+// is part of one.
+function token(setting: ReferenceSetting, tuples: boolean): string | null {
   if (setting.redacted || setting.value === undefined) return null;
-  return setting.sha256 ?? digest(setting.value);
+  const value = setting.sha256 ?? digest(setting.value);
+  return tuples && setting.group ? `${value}${SEPARATOR}${setting.group}` : value;
 }
 
 function byKey(settings: readonly ReferenceSetting[], compared: ReadonlySet<string>) {
@@ -480,9 +547,10 @@ function statusOf(
   if (!actual?.length) return "missing";
   if (!expected?.length) return "extra";
   const all = [...expected, ...actual];
-  if (all.some((setting) => token(setting) === null)) return "notComparable";
-  const a = new Set(expected.map(token));
-  const b = new Set(actual.map(token));
+  if (all.some((setting) => token(setting, false) === null)) return "notComparable";
+  const tuples = expected.length > 1 || actual.length > 1;
+  const a = new Set(expected.map((setting) => token(setting, tuples)));
+  const b = new Set(actual.map((setting) => token(setting, tuples)));
   return a.size === b.size && [...a].every((value) => b.has(value))
     ? "matching"
     : "different";

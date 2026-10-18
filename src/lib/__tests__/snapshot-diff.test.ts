@@ -373,6 +373,83 @@ describe("diffSnapshots", () => {
     expect(JSON.stringify(diff)).not.toContain("Write-Host");
   });
 
+  it("reports a rotated secret or dropped OMA-URI value without the value", () => {
+    const secrets = (key: string, token: string) =>
+      collection([
+        section("settingsCatalog", [
+          {
+            id: "wifi",
+            name: "Wi-Fi",
+            settings: [
+              {
+                id: "0",
+                settingInstance: {
+                  "@odata.type":
+                    "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+                  settingDefinitionId: "vendor_msft_wifi_presharedkey",
+                  simpleSettingValue: {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSecretSettingValue",
+                    value: key,
+                  },
+                },
+                settingDefinitions: [
+                  { id: "vendor_msft_wifi_presharedkey", displayName: "Pre-shared key" },
+                ],
+              },
+            ],
+          },
+        ]),
+        section("deviceConfigurations", [
+          {
+            id: "custom",
+            "@odata.type": "#microsoft.graph.windows10CustomConfiguration",
+            displayName: "Custom",
+            omaSettings: [
+              {
+                "@odata.type": "#microsoft.graph.omaSettingString",
+                omaUri: "./Vendor/MSFT/Custom/Token",
+                displayName: "Token",
+                value: token,
+              },
+            ],
+          },
+        ]),
+      ]);
+    const same = diffSnapshots(
+      snap(secrets("key-1", "token-1")),
+      snap(secrets("key-1", "token-1")),
+    );
+    expect(same.policies).toEqual([]);
+    const diff = diffSnapshots(
+      snap(secrets("key-1", "token-1")),
+      snap(secrets("key-2", "token-2")),
+    );
+    expect(diff.policies.flatMap((policy) => policy.settings)).toEqual([
+      expect.objectContaining({
+        name: "Pre-shared key",
+        definitionId: "vendor_msft_wifi_presharedkey",
+        change: "changed",
+        before: null,
+        after: null,
+        notStored: true,
+        valueNotStored: true,
+      }),
+      expect.objectContaining({
+        name: "Token",
+        definitionId: "./Vendor/MSFT/Custom/Token",
+        change: "changed",
+        before: null,
+        after: null,
+        notStored: true,
+        valueNotStored: true,
+      }),
+    ]);
+    const text = JSON.stringify(diff);
+    for (const secret of ["key-1", "key-2", "token-1", "token-2"])
+      expect(text).not.toContain(secret);
+  });
+
   it("caps rows and values but keeps the totals", () => {
     const many = (value: string) =>
       collection([
@@ -480,6 +557,74 @@ describe("diffAssessments", () => {
         after: null,
       }),
     ]);
+  });
+
+  it("keeps several checks and evidence entries of one setting apart", () => {
+    const check = (actualValue: string, result: "matches" | "different" = "different") => ({
+      settingId: "firewall_rule_action",
+      policyId: "policy-1",
+      policyName: "Firewall",
+      assessmentStatus: "checked" as const,
+      result,
+      actualValue,
+    });
+    const evidence = {
+      policyId: "policy-1",
+      policyName: "Firewall",
+      settingId: "firewall_rule_action",
+      observedValue: "block",
+      verdict: "enforced" as const,
+      assignment: "assigned" as const,
+    };
+    const assessment = (
+      status: "evidenceFound" | "partialEvidence",
+      checks: ReturnType<typeof check>[],
+      evidenceCount: number,
+    ): StoredAssessment => ({
+      rulesetVersion: "2026.10.4",
+      generatedAt: "2026-10-18T10:00:00Z",
+      scope: {},
+      capabilities: [
+        {
+          id: "cap-1",
+          name: "Firewall rules",
+          platform: "windows",
+          status: status === "evidenceFound" ? "enforced" : "partialConfiguration",
+          evidence: Array.from({ length: evidenceCount }, () => ({ ...evidence })),
+          checks,
+        },
+      ] as StoredAssessment["capabilities"],
+      frameworks: [
+        {
+          id: "fw",
+          name: "Framework",
+          version: "1",
+          summary: {} as StoredAssessment["frameworks"][number]["summary"],
+          controls: [{ id: "c1", title: "Control", status, capabilityIds: ["cap-1"] }],
+        },
+      ] as StoredAssessment["frameworks"],
+    });
+    // Reordered checks and the same evidence: nothing changed.
+    const same = diffAssessments(
+      assessment("evidenceFound", [check("allow"), check("block")], 2),
+      assessment("partialEvidence", [check("block"), check("allow")], 2),
+    );
+    expect(same.frameworks[0]!.changes[0]!.causes[0]).toMatchObject({
+      evidenceAdded: [],
+      evidenceRemoved: [],
+      checksChanged: [],
+    });
+    // One of two checks changed, and one of two identical evidence entries went.
+    const diff = diffAssessments(
+      assessment("evidenceFound", [check("allow"), check("block")], 2),
+      assessment("partialEvidence", [check("allow"), check("audit")], 1),
+    );
+    const cause = diff.frameworks[0]!.changes[0]!.causes[0]!;
+    expect(cause.checksChanged).toEqual([
+      expect.objectContaining({ beforeValue: "block", afterValue: "audit" }),
+    ]);
+    expect(cause.evidenceRemoved).toHaveLength(1);
+    expect(cause.evidenceAdded).toEqual([]);
   });
 
   it("caps causes and values", () => {

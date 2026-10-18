@@ -4,6 +4,7 @@ import type { ConfigurationSectionData } from "~/lib/configuration-sections";
 import { CONTOSO_TENANT } from "~/lib/compliance/demo/contoso-tenant";
 import { assessCompliance } from "~/lib/compliance/engine";
 import {
+  compactAssessment,
   projectSnapshot,
   restoreCollection,
   SNAPSHOT_FORMAT,
@@ -235,8 +236,28 @@ function canaryCollection(): SnapshotSource & DetailedExportData {
         id: "ca-1",
         displayName: "CA",
         state: "enabled",
-        conditions: { users: { includeUsers: ["All"] } },
-        grantControls: { operator: "OR", builtInControls: ["mfa"] },
+        conditions: {
+          users: { includeUsers: ["All"], note: CANARY },
+          applications: {
+            includeApplications: ["All"],
+            applicationFilter: { mode: "exclude", rule: "x", extra: CANARY },
+          },
+          locations: { includeLocations: ["All"], label: CANARY },
+          futureCondition: { value: CANARY },
+          // Not a field of the allowlist even though every object has it.
+          constructor: CANARY,
+        },
+        grantControls: {
+          operator: "OR",
+          builtInControls: ["mfa"],
+          "authenticationStrength@odata.context": CANARY,
+          authenticationStrength: {
+            id: "00000000-0000-0000-0000-000000000002",
+            requirementsSatisfied: "mfa",
+            combinationConfigurations: [{ secret: CANARY }],
+          },
+          futureGrant: CANARY,
+        },
         sessionControls: { secret: CANARY },
       },
     ]),
@@ -395,11 +416,40 @@ describe("projectSnapshot", () => {
     expect(
       item("windowsUpdatePolicies").data.qualityUpdatesDeferralPeriodInDays,
     ).toBe(3);
+    // Exactly the allowlisted fields, nested ones included.
     expect(item("conditionalAccessPolicies").data).toMatchObject({
       state: "enabled",
-      conditions: { users: { includeUsers: ["All"] } },
-      grantControls: { operator: "OR", builtInControls: ["mfa"] },
+      conditions: {
+        users: { includeUsers: ["All"] },
+        applications: {
+          includeApplications: ["All"],
+          applicationFilter: { mode: "exclude", rule: "x" },
+        },
+        locations: { includeLocations: ["All"] },
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["mfa"],
+        authenticationStrength: {
+          id: "00000000-0000-0000-0000-000000000002",
+          requirementsSatisfied: "mfa",
+        },
+      },
     });
+    const ca = item("conditionalAccessPolicies").data as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(Object.keys(ca.conditions!)).toEqual([
+      "users",
+      "applications",
+      "locations",
+    ]);
+    expect(Object.keys(ca.grantControls!)).toEqual([
+      "operator",
+      "builtInControls",
+      "authenticationStrength",
+    ]);
     expect(
       item("conditionalAccessPolicies").data.sessionControls,
     ).toBeUndefined();
@@ -538,6 +588,23 @@ describe("projectSnapshot", () => {
     expect(project(canaryCollection()).partial).toBe(false);
   });
 
+  it("is partial when only a family was skipped", () => {
+    const collection = canaryCollection();
+    collection.collectionSkippedFamilies = ["conditionalAccessPolicies"];
+    expect(project(collection).partial).toBe(true);
+  });
+
+  it("is partial when an Entra identity policy was not collected", () => {
+    for (const gap of ["failed", "skipped", "permissionDenied"] as const) {
+      const collection = canaryCollection();
+      const identity = collection.tenantIdentityPolicies as {
+        status: Record<string, string>;
+      };
+      identity.status.securityDefaults = gap;
+      expect(project(collection).partial, gap).toBe(true);
+    }
+  });
+
   it("stores the assessment made at collection time", () => {
     const collection = canaryCollection();
     const assessment = assessCompliance(collection);
@@ -611,6 +678,10 @@ describe("restoreCollection", () => {
           evidence.assignment.targets,
         ]),
       ),
+    );
+    // What a snapshot stores, checks included, is the same for both.
+    expect(compactAssessment(after).capabilities).toEqual(
+      compactAssessment(before).capabilities,
     );
   });
 

@@ -72,9 +72,9 @@ const { HistoryScreen, formatDate } = await import("./HistoryScreen");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function appState({ signedIn = true, entitled = true } = {}) {
+function appState({ signedIn = true, entitled = true, tenantId = "tenant-1", account = "admin@contoso.com" } = {}) {
   return {
-    auth: { signedIn, tenantId: signedIn ? "tenant-1" : null, account: "admin@contoso.com" },
+    auth: { signedIn, tenantId: signedIn ? tenantId : null, account },
     license: { entitled },
     collection: { running: false, summary: null },
   };
@@ -438,6 +438,56 @@ describe("HistoryScreen", () => {
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Delete all" })));
     await settle();
     expect(mocks.removeAll).toHaveBeenCalled();
+    expect(screen.getByText("No snapshots yet")).toBeTruthy();
+  });
+
+  it("deletes unreadable history as a whole from the unavailable notice", async () => {
+    mocks.status.mockResolvedValue(
+      status({ available: false, reason: "Secure storage is not available on this computer.", unreadableData: true }),
+    );
+    mocks.removeAll.mockResolvedValue(
+      status({ available: false, reason: "Secure storage is not available on this computer." }),
+    );
+    await renderScreen();
+    await settle();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Delete all history" })));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("Delete all history on this computer?")).toBeTruthy();
+    expect(within(dialog).getByText(/Every snapshot of every tenant/)).toBeTruthy();
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Delete all" })));
+    await settle();
+    expect(mocks.removeAll).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Delete all history" })).toBeNull();
+  });
+
+  it("offers no delete when nothing unreadable is stored", async () => {
+    mocks.status.mockResolvedValue(
+      status({ available: false, reason: "Secure storage is not available on this computer." }),
+    );
+    await renderScreen();
+    await settle();
+    expect(screen.queryByRole("button", { name: "Delete all history" })).toBeNull();
+  });
+
+  it("drops the previous account's history at once after an account switch", async () => {
+    mocks.status.mockResolvedValue(status({ count: 2 }));
+    mocks.list.mockResolvedValue([LATEST, PREVIOUS]);
+    mocks.diff.mockImplementation(async (request: HistoryDiffRequest) => view(request));
+    await renderScreen();
+    await settle();
+    expect(screen.getByRole("button", { name: "Delete all" })).toBeTruthy();
+    expect(screen.getByText("WIN - Baseline - BitLocker")).toBeTruthy();
+    // The other tenant's status is still loading.
+    let resolveStatus!: (value: HistoryStatus) => void;
+    mocks.status.mockImplementationOnce(() => new Promise((resolve) => (resolveStatus = resolve)));
+    mocks.list.mockResolvedValue([]);
+    mocks.state.current = appState({ tenantId: "tenant-2", account: "admin@fabrikam.com" });
+    await act(async () => root!.render(<HistoryScreen />));
+    expect(screen.getByText("Loading history")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete all" })).toBeNull();
+    expect(screen.queryByText("WIN - Baseline - BitLocker")).toBeNull();
+    await act(async () => resolveStatus(status()));
+    await settle();
     expect(screen.getByText("No snapshots yet")).toBeTruthy();
   });
 

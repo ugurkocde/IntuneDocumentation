@@ -12,6 +12,7 @@ import {
   capComparison,
   compareSettings,
   createReference,
+  encodeReference,
   GENERAL_PLATFORM,
   parseReference,
   platformOf,
@@ -19,6 +20,7 @@ import {
   REFERENCE_MAX_BYTES,
   REFERENCE_MAX_VALUE,
   REFERENCE_SCHEMA,
+  REFERENCE_TOO_LARGE,
   referenceFileName,
   referenceSettings,
   serializeReference,
@@ -152,7 +154,7 @@ describe("reference file", () => {
     const file = await reference();
     const text = serializeReference(file);
     for (const entry of file.settings) {
-      expect(Object.keys(entry).every((key) => ["platform", "family", "setting", "name", "path", "value", "sha256", "redacted", "policy"].includes(key))).toBe(true);
+      expect(Object.keys(entry).every((key) => ["platform", "family", "setting", "name", "path", "value", "sha256", "redacted", "group", "policy"].includes(key))).toBe(true);
     }
     expect(text).not.toContain("assignments");
     expect(text).not.toContain("groupId");
@@ -215,6 +217,38 @@ describe("reference file", () => {
     expect(await parseReference("[]")).toEqual({ ok: false, reason: "schema" });
   });
 
+  it("rejects fields that contradict each other", async () => {
+    const file = (await reference()) as unknown as Record<string, any>;
+    const family = file.families[0];
+    const plain = file.settings.find((setting: Item) => typeof setting.value === "string")!;
+    const index = file.settings.indexOf(plain);
+    const withSetting = (setting: Item) => file.settings.map((entry: Item, at: number) => (at === index ? setting : entry));
+    for (const variant of [
+      // In both lists, or twice in one.
+      { ...file, notCompared: [...file.notCompared, family] },
+      { ...file, families: [...file.families, family] },
+      // A setting of a family that is not compared.
+      { ...file, families: file.families.filter((entry: Item) => entry.key !== plain.family), notCompared: [...file.notCompared, file.families.find((entry: Item) => entry.key === plain.family)] },
+      // A digest on a value that was not shortened, and a long value without one.
+      { ...file, settings: withSetting({ ...plain, sha256: "a".repeat(64) }) },
+      { ...file, settings: withSetting({ ...plain, value: "x".repeat(REFERENCE_MAX_VALUE + 1) }) },
+      // A group digest outside a group.
+      { ...file, settings: withSetting({ ...plain, path: undefined, group: "a".repeat(64) }) },
+    ]) {
+      expect(await parseReference(await resign(variant))).toEqual({ ok: false, reason: "schema" });
+    }
+    expect((await parseReference(await resign(file))).ok).toBe(true);
+  });
+
+  it("refuses to export a file that would be too large to load again", async () => {
+    const file = await reference();
+    const size = new TextEncoder().encode(serializeReference(file)).length;
+    expect(encodeReference(file, size)).toHaveLength(size);
+    expect(() => encodeReference(file, size - 1)).toThrow(REFERENCE_TOO_LARGE);
+    // The default is the limit parseReference accepts.
+    expect(encodeReference(file).length).toBeLessThanOrEqual(REFERENCE_MAX_BYTES);
+  });
+
   it("rejects an oversized file before parsing it", async () => {
     expect(await parseReference(" ".repeat(REFERENCE_MAX_BYTES + 1))).toEqual({ ok: false, reason: "size" });
     // Multi byte characters count as bytes, not characters.
@@ -244,6 +278,71 @@ describe("reference file", () => {
     expect(result.totals).toMatchObject({ different: 1, matching: 0 });
     const same = compareSettings(referenceSettings(file), projectionSettings(snap(collection([section("cat", [policy])]))));
     expect(same.totals).toMatchObject({ different: 0, matching: 1 });
+  });
+});
+
+describe("settings inside repeated groups", () => {
+  const RULES = "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}";
+  const simple = (id: string, value: string) => ({
+    "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+    settingDefinitionId: id,
+    simpleSettingValue: {
+      "@odata.type": "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+      value,
+    },
+  });
+  const choice = (id: string, value: string) => ({
+    "@odata.type": "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
+    settingDefinitionId: id,
+    choiceSettingValue: { value, children: [] },
+  });
+  const firewall = (rules: Array<[string, "allow" | "block"]>) =>
+    collection([
+      section("settingsCatalog", [
+        {
+          id: "firewall",
+          name: "WIN - Firewall rules",
+          platforms: "windows10",
+          settings: [
+            {
+              id: "0",
+              settingInstance: {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance",
+                settingDefinitionId: RULES,
+                groupSettingCollectionValue: rules.map(([name, action]) => ({
+                  children: [
+                    simple(`${RULES}_name`, name),
+                    choice(`${RULES}_action_type`, `${RULES}_action_type_${action === "allow" ? 1 : 0}`),
+                  ],
+                })),
+              },
+            },
+          ],
+        },
+      ]),
+    ]);
+
+  it("treats swapped rule actions as a difference", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
+    expect((await parseReference(serializeReference(file))).ok).toBe(true);
+    const swapped = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Allow RDP", "block"], ["Block SMB", "allow"]]))),
+    );
+    expect(swapped.totals.different).toBeGreaterThan(0);
+    const action = swapped.groups.flatMap((group) => group.rows).find((row) => row.setting === `${RULES}_action_type`);
+    expect(action?.status).toBe("different");
+  });
+
+  it("matches the same rules in another order", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
+    const reordered = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Block SMB", "block"], ["Allow RDP", "allow"]]))),
+    );
+    expect(reordered.totals.different + reordered.totals.missing + reordered.totals.extra).toBe(0);
+    expect(reordered.totals.matching).toBeGreaterThan(0);
   });
 });
 

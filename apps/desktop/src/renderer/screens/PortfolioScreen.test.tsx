@@ -41,9 +41,15 @@ const { PortfolioScreen, formatAge } = await import("./PortfolioScreen");
 const MSP_PLAN_REQUIRED =
   "Portfolio and comparing tenants are part of the MSP plan. The license of the signed in tenant is a Pro license.";
 
-function appState({ signedIn = true, entitled = true, plan = "msp" as "pro" | "msp" | null } = {}) {
+function appState({
+  signedIn = true,
+  entitled = true,
+  plan = "msp" as "pro" | "msp" | null,
+  tenantId = "tenant-1",
+  account = "admin@contoso.com",
+} = {}) {
   return {
-    auth: { signedIn, tenantId: signedIn ? "tenant-1" : null, account: "admin@contoso.com" },
+    auth: { signedIn, tenantId: signedIn ? tenantId : null, account },
     license: { entitled, plan },
     collection: { running: false, summary: null },
   };
@@ -155,6 +161,23 @@ describe("PortfolioScreen", () => {
     expect(within(contoso).getByText("60%")).toBeTruthy();
     expect(within(fabrikam).getByText("25%")).toBeTruthy();
     expect(screen.getByText(/no snapshot is opened/)).toBeTruthy();
+  });
+
+  it("drops the previous account's portfolio at once after an account switch", async () => {
+    mocks.list.mockResolvedValue(portfolio());
+    await renderScreen();
+    await settle();
+    expect(screen.getByRole("listitem", { name: "Contoso" })).toBeTruthy();
+    let resolveList!: (value: PortfolioView) => void;
+    mocks.list.mockImplementationOnce(() => new Promise((resolve) => (resolveList = resolve)));
+    mocks.state.current = appState({ tenantId: "tenant-2", account: "admin@fabrikam.com" });
+    await act(async () => root!.render(<PortfolioScreen />));
+    expect(screen.getByText("Loading tenants")).toBeTruthy();
+    expect(screen.queryByRole("listitem", { name: "Contoso" })).toBeNull();
+    await act(async () => resolveList(portfolio([{ ...FABRIKAM, current: true }])));
+    await settle();
+    expect(screen.queryByRole("listitem", { name: "Contoso" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "bbbb…0002" })).toBeTruthy();
   });
 
   it("renames a tenant and cancels with Escape", async () => {

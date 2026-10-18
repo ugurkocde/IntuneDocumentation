@@ -40,7 +40,7 @@ vi.mock("electron", () => ({
 
 vi.mock("./logger", () => ({ log: () => undefined }));
 
-const { HistoryUnavailableError, SnapshotStore, UNAVAILABLE_REASONS, seal, unseal } =
+const { HistoryUnavailableError, KEY_LOCKED, SnapshotStore, UNAVAILABLE_REASONS, seal, unseal } =
   await import("./snapshots");
 
 const TENANT = "11111111-2222-3333-4444-555555555555";
@@ -207,18 +207,54 @@ describe("SnapshotStore", () => {
     }
   });
 
-  it("reports a key that no longer unlocks and resets on delete all", async () => {
+  it("tries a key that did not unlock again on the next read", async () => {
+    const history = store();
+    const entry = await history.save(TENANT, projection(), guard(history));
+    env.failDecrypt = true;
+    const fresh = store();
+    await expect(fresh.list(TENANT)).rejects.toThrow(KEY_LOCKED);
+    // Not latched, and no advice to delete everything.
+    expect(fresh.unavailableReason()).toBeNull();
+    await expect(fresh.deleteTenant(TENANT)).rejects.toThrow(KEY_LOCKED);
+    expect(snapshotFiles()).toHaveLength(1);
+    env.failDecrypt = false;
+    expect(await fresh.list(TENANT)).toEqual([entry]);
+  });
+
+  it("reports a damaged key and resets on delete all", async () => {
     const history = store();
     await history.save(TENANT, projection(), guard(history));
-    env.failDecrypt = true;
+    // Unwraps, but is not a 256 bit key.
+    writeFileSync(
+      path.join(dir, "key.bin"),
+      `wrapped:${Buffer.from(Buffer.alloc(5).toString("base64")).toString("hex")}`,
+    );
     const fresh = store();
     await expect(fresh.list(TENANT)).rejects.toThrow(UNAVAILABLE_REASONS.key);
     expect(fresh.unavailableReason()).toBe(UNAVAILABLE_REASONS.key);
     await fresh.deleteTenant(TENANT);
     expect(existsSync(dir)).toBe(false);
-    env.failDecrypt = false;
     expect(fresh.unavailableReason()).toBeNull();
     expect(await fresh.list(TENANT)).toEqual([]);
+  });
+
+  it("reads the backup when the index is damaged, then keeps a good backup", async () => {
+    const history = store();
+    const first = await history.save(TENANT, projection(), guard(history));
+    clock += 60_000;
+    await history.save(TENANT, projection(), guard(history));
+    const file = path.join(dir, "index.bin");
+    const index = readFileSync(file);
+    index[index.length - 1] ^= 0xff;
+    writeFileSync(file, index);
+    const fresh = store();
+    expect(await fresh.list(TENANT)).toEqual([first]);
+    expect(fresh.unavailableReason()).toBeNull();
+    // The snapshot only the damaged index listed is swept.
+    expect(snapshotFiles()).toHaveLength(1);
+    clock += 60_000;
+    const third = await fresh.save(TENANT, projection(), guard(fresh));
+    expect(await store().list(TENANT)).toEqual([third, first]);
   });
 
   it("reports a changed index", async () => {
@@ -229,6 +265,15 @@ describe("SnapshotStore", () => {
     writeFileSync(path.join(dir, "index.bin"), index);
     const fresh = store();
     await expect(fresh.list(TENANT)).rejects.toThrow(UNAVAILABLE_REASONS.index);
+  });
+
+  it("removes snapshots past the age limit when history is opened, not only on save", async () => {
+    const history = store({ maxAgeDays: 30 });
+    await history.save(TENANT, projection(), guard(history));
+    clock += 31 * DAY;
+    expect(await history.list(TENANT)).toEqual([]);
+    expect(snapshotFiles()).toEqual([]);
+    expect(await store().list(TENANT)).toEqual([]);
   });
 
   it("applies the count, age and size limits, oldest first", async () => {
@@ -275,6 +320,67 @@ describe("SnapshotStore", () => {
     ).toBeNull();
     expect(snapshotFiles()).toEqual([]);
     expect(await history.list(TENANT)).toEqual([]);
+  });
+
+  it("undoes a save when the account changes during the index write", async () => {
+    const history = store();
+    const kept = await history.save(TENANT, projection(), guard(history));
+    clock += 60_000;
+    let calls = 0;
+    // Current before and after the snapshot write, not after the index write.
+    expect(
+      await history.save(TENANT, projection(), {
+        generation: history.begin(),
+        isCurrent: () => (calls += 1) <= 2,
+      }),
+    ).toBeNull();
+    expect(calls).toBe(3);
+    expect(snapshotFiles()).toHaveLength(1);
+    expect(await history.list(TENANT)).toEqual([kept]);
+    expect(await store().list(TENANT)).toEqual([kept]);
+  });
+
+  it("flushes every file to disk before it is renamed into place", async () => {
+    const { promises } = await import("node:fs");
+    const open = promises.open.bind(promises);
+    const rename = promises.rename.bind(promises);
+    const name = (file: unknown) => path.basename(String(file)).split(".")[0];
+    const order: string[] = [];
+    const opened = vi.spyOn(promises, "open").mockImplementation(async (...args: Parameters<typeof open>) => {
+      const handle = await open(...args);
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        order.push(`sync ${name(args[0])}`);
+        return sync();
+      };
+      return handle;
+    });
+    const renamed = vi.spyOn(promises, "rename").mockImplementation(async (from, to) => {
+      order.push(`rename ${name(from)}`);
+      return rename(from, to);
+    });
+    try {
+      const history = store();
+      await history.save(TENANT, projection(), guard(history));
+    } finally {
+      opened.mockRestore();
+      renamed.mockRestore();
+    }
+    // Key, snapshot and index: each flushed, then renamed.
+    expect(order).toHaveLength(6);
+    for (let index = 0; index < order.length; index += 2) {
+      expect(order[index]!.replace("sync", "rename")).toBe(order[index + 1]);
+    }
+  });
+
+  it("has data to delete only once something was stored", async () => {
+    const history = store();
+    expect(await history.hasData()).toBe(false);
+    await history.save(TENANT, projection(), guard(history));
+    env.available = false;
+    expect(await history.hasData()).toBe(true);
+    await history.clear();
+    expect(await history.hasData()).toBe(false);
   });
 
   it("deletes one snapshot and all snapshots of a tenant", async () => {

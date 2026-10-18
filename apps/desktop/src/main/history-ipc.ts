@@ -11,13 +11,13 @@ import {
   capComparison,
   compareSettings,
   createReference,
+  encodeReference,
   parseReference,
   projectionSettings,
   REFERENCE_MAX_BYTES,
   REFERENCE_REJECTION_MESSAGES,
   referenceFileName,
   referenceSettings,
-  serializeReference,
   type ReferenceFile,
   type SettingSet,
 } from "../../../../src/lib/snapshots/reference";
@@ -64,6 +64,13 @@ import {
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 
+// The account a handler started for: owner, tenant and session generation.
+interface Session {
+  owner: string;
+  tenant: string;
+  started: number;
+}
+
 export interface SnapshotInputs {
   collection: SnapshotSource & { collectedAt?: string };
   assessment: ComplianceAssessment;
@@ -86,6 +93,9 @@ export interface HistoryIpcDeps {
     | "deleteTenant"
     | "tenants"
     | "setLabel"
+    | "invalidate"
+    | "clear"
+    | "hasData"
   >;
   readSettings(): Promise<AppSettings>;
   writeSettings(input: Partial<AppSettings>): Promise<AppSettings>;
@@ -170,40 +180,52 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
   let generation = 0;
   const projections = new WeakMap<object, SnapshotProjection>();
 
-  // Signed in, licensed, and the signed in tenant.
-  // The tenant is read once, before the awaits, and must still be the
-  // signed in one afterwards.
-  async function licensed(): Promise<{ owner: string; tenant: string }> {
+  // Signed in, licensed, and the signed in tenant, with the session
+  // generation from before the first await. Every account change resets the
+  // session, so a later generation also means another owner.
+  async function licensed(): Promise<Session> {
+    const started = generation;
     const tenant = deps.signedInTenant()?.toLowerCase();
     const owner = await deps.requireOwner();
     if (!tenant || !isGuid(tenant)) throw new Error("Sign in before continuing.");
     await license.requireEntitlement(tenant);
-    if (deps.signedInTenant()?.toLowerCase() !== tenant) throw new Error(ACCOUNT_SWITCHED);
-    return { owner, tenant };
+    const session = { owner, tenant, started };
+    stillCurrent(session);
+    return session;
   }
 
   // Work that awaited must still belong to the account that started it.
-  function stillCurrent(tenant: string, started: number): void {
-    if (generation !== started || deps.signedInTenant()?.toLowerCase() !== tenant) {
+  // Checked after every await and before anything is cached or returned.
+  function stillCurrent(session: Session): void {
+    if (
+      generation !== session.started ||
+      deps.signedInTenant()?.toLowerCase() !== session.tenant
+    ) {
       throw new Error(ACCOUNT_SWITCHED);
     }
   }
 
-  // Portfolio and cross tenant comparison: the MSP plan of the signed in
-  // tenant's entitlement.
-  async function msp(): Promise<{ owner: string; tenant: string }> {
-    const signedIn = await licensed();
-    await license.requireMspPlan(signedIn.tenant);
-    return signedIn;
+  // The result of awaited work, once it is known to still be current.
+  function current<T>(session: Session, value: T): T {
+    stillCurrent(session);
+    return value;
   }
 
-  async function historyStatus(tenant: string): Promise<HistoryStatus> {
+  // Portfolio and cross tenant comparison: the MSP plan of the signed in
+  // tenant's entitlement.
+  async function msp(): Promise<Session> {
+    const signedIn = await licensed();
+    await license.requireMspPlan(signedIn.tenant);
+    return current(signedIn, signedIn);
+  }
+
+  async function historyStatus(session: Session): Promise<HistoryStatus> {
     const settings = await deps.readSettings();
     let reason = store.unavailableReason();
     let count = 0;
     if (!reason) {
       try {
-        count = (await store.list(tenant)).length;
+        count = (await store.list(session.tenant)).length;
       } catch (error) {
         reason =
           error instanceof HistoryUnavailableError
@@ -211,7 +233,14 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
             : "History could not be read on this computer.";
       }
     }
-    return { enabled: settings.keepHistory, available: !reason, reason, count };
+    const unreadableData = Boolean(reason) && (await store.hasData());
+    return current(session, {
+      enabled: settings.keepHistory,
+      available: !reason,
+      reason,
+      count,
+      ...(unreadableData ? { unreadableData } : {}),
+    });
   }
 
   // The current collection as a snapshot projection, built once per
@@ -230,35 +259,39 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     owner: string,
     tenant: string,
     request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+    started = generation,
   ): Promise<ManagementChangesResult> {
+    const session = { owner, tenant, started };
     if (store.unavailableReason()) return { state: "none", reason: "unavailable" };
-    const current = await currentProjection(owner);
+    const latest = current(session, await currentProjection(owner));
     let entries;
     try {
-      entries = await store.list(tenant);
+      entries = current(session, await store.list(tenant));
     } catch (error) {
       if (error instanceof HistoryUnavailableError) {
         return { state: "none", reason: "unavailable" };
       }
       throw error;
     }
-    const previous = previousSnapshot(entries, current.collectedAt);
+    const previous = previousSnapshot(entries, latest.collectedAt);
     if (!previous) return { state: "none", reason: "noSnapshot" };
     // Snapshots keep the full scope assessment only.
-    if (scopeKeyOf(request.scope) !== scopeKeyOf(current.assessment.scope)) {
+    if (scopeKeyOf(request.scope) !== scopeKeyOf(latest.assessment.scope)) {
       return { state: "none", reason: "scope" };
     }
-    const key = `${tenant}|${previous.id}|${current.collectedAt}`;
-    if (changes?.key !== key) {
-      const from = await store.read(tenant, previous.id);
-      if (scopeKeyOf(from.assessment.scope) !== scopeKeyOf(current.assessment.scope)) {
+    const key = `${tenant}|${previous.id}|${latest.collectedAt}`;
+    let compared = changes?.key === key ? changes : null;
+    if (!compared) {
+      const from = current(session, await store.read(tenant, previous.id));
+      if (scopeKeyOf(from.assessment.scope) !== scopeKeyOf(latest.assessment.scope)) {
         return { state: "none", reason: "scope" };
       }
-      changes = { key, compared: compareProjections(from, current), from };
+      compared = { key, compared: compareProjections(from, latest), from };
+      changes = compared;
     }
     return {
       state: "ready",
-      changes: managementChanges(changes.from, current, changes.compared, request.frameworkId),
+      changes: managementChanges(compared.from, latest, compared.compared, request.frameworkId),
     };
   }
 
@@ -269,7 +302,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
 
   // ---- History --------------------------------------------------------------
 
-  handle("history:status", async () => historyStatus((await licensed()).tenant));
+  handle("history:status", async () => historyStatus(await licensed()));
 
   // Writes the setting only; unlike settings:save it keeps the sign in and
   // the collection.
@@ -277,26 +310,33 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     if (typeof enabled !== "boolean") {
       throw new Error("Refused an unexpected history setting.");
     }
-    const { tenant } = await licensed();
+    const session = await licensed();
     const reason = store.unavailableReason();
     if (enabled && reason) throw new Error(reason);
     await deps.writeSettings({ keepHistory: enabled });
+    // A snapshot that is still being prepared is dropped once history is
+    // off; one that starts afterwards reads the new setting.
+    if (!enabled) store.invalidate();
     deps.log("info", "history changed", { enabled });
     await deps.scheduler.refresh();
-    return historyStatus(tenant);
+    return historyStatus(session);
   });
 
-  handle("history:list", async () => store.list((await licensed()).tenant));
+  handle("history:list", async () => {
+    const session = await licensed();
+    return current(session, await store.list(session.tenant));
+  });
 
   handle("history:diff", async (_event, input) => {
     const request = parseHistoryDiffRequest(input);
-    const { tenant } = await licensed();
-    const { from, to } = pickPair(await store.list(tenant), request);
+    const session = await licensed();
+    const { tenant } = session;
+    const { from, to } = pickPair(current(session, await store.list(tenant)), request);
     const key = `${tenant}|${from.id}|${to.id}`;
     let compared = historyDiff?.key === key ? historyDiff.compared : null;
     if (!compared) {
-      const before = await store.read(tenant, from.id);
-      const after = await store.read(tenant, to.id);
+      const before = current(session, await store.read(tenant, from.id));
+      const after = current(session, await store.read(tenant, to.id));
       compared = compareProjections(before, after);
       historyDiff = { key, compared };
     }
@@ -305,29 +345,38 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
 
   handle("history:delete", async (_event, input) => {
     const id = parseSnapshotId(input);
-    const { tenant } = await licensed();
-    await store.delete(tenant, id);
+    const session = await licensed();
+    await store.delete(session.tenant, id);
     invalidate();
     deps.log("info", "snapshot deleted");
     await deps.scheduler.refresh();
-    return store.list(tenant);
+    return current(session, await store.list(session.tenant));
   });
 
   handle("history:deleteAll", async () => {
-    const { tenant } = await licensed();
-    await store.deleteTenant(tenant);
+    const session = await licensed();
+    try {
+      await store.deleteTenant(session.tenant);
+    } catch (error) {
+      // History that cannot be decrypted, for example without secure
+      // storage, cannot be told apart by tenant, so all of it is removed
+      // without reading it.
+      if (!(error instanceof HistoryUnavailableError)) throw error;
+      await store.clear();
+      deps.log("info", "unreadable history deleted");
+    }
     invalidate();
     deps.log("info", "history deleted");
     await deps.scheduler.refresh();
-    return historyStatus(tenant);
+    return historyStatus(session);
   });
 
   handle("history:changes", async (_event, input) => {
     const request = parseComplianceRequest(input, true) as ComplianceRequest & {
       frameworkId: ComplianceFrameworkId;
     };
-    const { owner, tenant } = await licensed();
-    return deps.track(() => changesFor(owner, tenant, request));
+    const { owner, tenant, started } = await licensed();
+    return deps.track(() => changesFor(owner, tenant, request, started));
   });
 
   handle("history:scheduleStatus", async (): Promise<ScheduleStatus> => {
@@ -354,26 +403,24 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
   // ---- Compare ----------------------------------------------------------------
 
   handle("compare:exportReference", async () => {
-    const started = generation;
-    const { owner, tenant } = await licensed();
+    const session = await licensed();
+    const { owner, tenant } = session;
     const file = await deps.track(async () => {
       const reference = await createReference(await currentProjection(owner), {
         createdAt: now().toISOString(),
         sourceLabel: shortLabel(tenant),
       });
-      stillCurrent(tenant, started);
-      return reference;
+      return current(session, reference);
     });
+    // Checked before the save dialog: a file over the import limit could
+    // never be loaded again.
+    const bytes = encodeReference(file);
     deps.log("info", "reference exported", { settings: file.settings.length });
-    return deps.saveFile(
-      referenceFileName(now()),
-      new TextEncoder().encode(serializeReference(file)),
-    );
+    return deps.saveFile(referenceFileName(now()), bytes);
   });
 
   handle("compare:loadReference", async (): Promise<ReferenceLoadResult> => {
-    const started = generation;
-    const { owner, tenant } = await licensed();
+    const { owner, tenant, started } = await licensed();
     const file = await deps.pickJsonFile();
     if (!file) return { canceled: true };
     // The size is checked before the file is read.
@@ -404,8 +451,9 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
   });
 
   handle("compare:tenants", async (): Promise<CompareTenant[]> => {
-    const { tenant } = await msp();
-    return (await store.tenants())
+    const session = await msp();
+    const { tenant } = session;
+    return current(session, await store.tenants())
       .filter((entry) => entry.tenantId !== tenant && entry.latest)
       .map((entry) => ({
         tenantId: entry.tenantId,
@@ -418,8 +466,8 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
 
   handle("compare:run", async (_event, input): Promise<CompareView> => {
     const source = parseCompareSource(input);
-    const started = generation;
-    const { owner, tenant } = source.kind === "tenant" ? await msp() : await licensed();
+    const session = source.kind === "tenant" ? await msp() : await licensed();
+    const { owner, tenant } = session;
     return deps.track(async () => {
       let target: SettingSet;
       let info: CompareView["source"];
@@ -437,9 +485,11 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
         if (source.tenantId === tenant) {
           throw new Error("Choose another tenant. History compares the signed in tenant with itself.");
         }
-        const stored = (await store.tenants()).find((entry) => entry.tenantId === source.tenantId);
+        const stored = current(session, await store.tenants()).find(
+          (entry) => entry.tenantId === source.tenantId,
+        );
         if (!stored?.latest) throw new Error("This tenant has no snapshot on this computer.");
-        const projection = await store.read(source.tenantId, stored.latest.id);
+        const projection = current(session, await store.read(source.tenantId, stored.latest.id));
         target = projectionSettings(projection);
         info = {
           kind: "tenant",
@@ -448,13 +498,12 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
           rulesetVersion: projection.rulesetVersion,
         };
       }
-      const current = await currentProjection(owner);
-      stillCurrent(tenant, started);
-      const result = capComparison(compareSettings(target, projectionSettings(current)));
+      const latest = current(session, await currentProjection(owner));
+      const result = capComparison(compareSettings(target, projectionSettings(latest)));
       deps.log("info", "comparison run", { source: source.kind, ...result.totals });
       return {
         source: info,
-        current: { collectedAt: current.collectedAt, rulesetVersion: current.rulesetVersion },
+        current: { collectedAt: latest.collectedAt, rulesetVersion: latest.rulesetVersion },
         totals: result.totals,
         groups: result.groups,
         notCompared: result.notCompared,
@@ -465,12 +514,14 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
 
   // ---- Portfolio --------------------------------------------------------------
 
-  async function portfolio(tenant: string): Promise<PortfolioView> {
+  async function portfolio(session: Session): Promise<PortfolioView> {
+    stillCurrent(session);
+    const { tenant } = session;
     const reason = store.unavailableReason();
     if (reason) return { available: false, reason, tenants: [] };
     let stored: StoredTenant[];
     try {
-      stored = await store.tenants();
+      stored = current(session, await store.tenants());
     } catch (error) {
       if (error instanceof HistoryUnavailableError) {
         return { available: false, reason: error.message, tenants: [] };
@@ -500,20 +551,21 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     return { available: true, reason: null, tenants };
   }
 
-  handle("portfolio:list", async () => portfolio((await msp()).tenant));
+  handle("portfolio:list", async () => portfolio(await msp()));
 
   handle("portfolio:setLabel", async (_event, tenantId, label) => {
     const target = parseTenantId(tenantId);
     const clean = parseTenantLabel(label);
-    const { tenant } = await msp();
+    const session = await msp();
     await store.setLabel(target, clean);
     deps.log("info", "tenant label changed", { cleared: clean === "" });
-    return portfolio(tenant);
+    return portfolio(session);
   });
 
   handle("portfolio:deleteTenant", async (_event, tenantId) => {
     const target = parseTenantId(tenantId);
-    const { tenant } = await msp();
+    const session = await msp();
+    const { tenant } = session;
     await store.deleteTenant(target);
     invalidate();
     deps.log("info", "tenant history deleted", { current: target === tenant });
@@ -521,7 +573,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
       deps.notifyHistoryChanged();
       await deps.scheduler.refresh();
     }
-    return portfolio(tenant);
+    return portfolio(session);
   });
 
   return {

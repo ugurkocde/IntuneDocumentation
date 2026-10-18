@@ -1,5 +1,5 @@
 import { sign } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { IpcMainInvokeEvent } from "electron";
@@ -11,6 +11,7 @@ import type { ConfigurationSectionData } from "../../../../src/lib/configuration
 import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
 import type {
   CompareView,
+  HistoryStatus,
   ManagementChangesResult,
   PortfolioView,
   ReferenceLoadResult,
@@ -51,7 +52,7 @@ vi.mock("./config", () => ({
 vi.mock("./logger", () => ({ log: () => undefined, errorText: String }));
 
 const { LicenseService, MSP_PLAN_REQUIRED } = await import("./license");
-const { SnapshotStore } = await import("./snapshots");
+const { SnapshotStore, UNAVAILABLE_REASONS } = await import("./snapshots");
 const { registerHistoryIpc, NEEDS_REFERENCE, ACCOUNT_SWITCHED } = await import("./history-ipc");
 
 const TENANT = "11111111-2222-3333-4444-555555555555";
@@ -473,6 +474,115 @@ describe("management change section", () => {
     await h.store.save(TENANT, projectionOf(contoso("2026-10-10T10:00:00Z")), h.guard());
     const result = await h.ipc.changesFor(OWNER, TENANT, { frameworkId: "nis2-2022-2555", scope: {} });
     expect(result.state).toBe("ready");
+  });
+});
+
+// Runs effect once the next call of the store method has finished reading,
+// before the handler continues.
+function afterStoreCall(
+  h: ReturnType<typeof harness>,
+  method: "list" | "read" | "tenants",
+  effect: () => void,
+) {
+  const store = h.store as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+  const original = store[method]!.bind(h.store);
+  return vi.spyOn(store, method).mockImplementationOnce(async (...args: unknown[]) => {
+    const result = await original(...args);
+    effect();
+    return result;
+  });
+}
+
+const THIRD = "33333333-2222-3333-4444-555555555555";
+
+describe("account switches during pending history reads", () => {
+  async function withHistory() {
+    const h = harness("msp");
+    await h.store.save(TENANT, projectionOf(contoso("2026-10-10T10:00:00Z")), h.guard());
+    await h.store.save(TENANT, projectionOf(contoso("2026-10-12T10:00:00Z")), h.guard());
+    await h.store.save(OTHER, projectionOf(contoso("2026-10-11T10:00:00Z")), h.guard());
+    return h;
+  }
+
+  const READS: Array<[string, "list" | "read" | "tenants", ...unknown[]]> = [
+    ["history:status", "list"],
+    ["history:list", "list"],
+    ["history:diff", "read", {}],
+    ["history:changes", "read", request],
+    ["history:deleteAll", "list"],
+    ["compare:tenants", "tenants"],
+    ["portfolio:list", "tenants"],
+  ];
+
+  for (const [channel, method, ...args] of READS) {
+    it(`${channel} returns nothing of the previous tenant after a switch`, async () => {
+      const h = await withHistory();
+      afterStoreCall(h, method, () => {
+        h.env.signedIn = THIRD;
+      });
+      await expect(h.invoke(channel, ...args)).rejects.toThrow(ACCOUNT_SWITCHED);
+    });
+  }
+
+  it("history:delete returns no list of the previous tenant after a switch", async () => {
+    const h = await withHistory();
+    const [latest] = await h.store.list(TENANT);
+    afterStoreCall(h, "list", () => {
+      h.env.signedIn = THIRD;
+    });
+    await expect(h.invoke("history:delete", latest!.id)).rejects.toThrow(ACCOUNT_SWITCHED);
+  });
+
+  it("does not cache a comparison read across a reset, and compares again afterwards", async () => {
+    const h = await withHistory();
+    const reads = afterStoreCall(h, "read", () => h.ipc.reset());
+    await expect(h.invoke("history:diff", {})).rejects.toThrow(ACCOUNT_SWITCHED);
+    reads.mockRestore();
+    const read = vi.spyOn(h.store, "read");
+    await expect(h.invoke("history:diff", {})).resolves.toMatchObject({ from: expect.anything() });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache the management change section across a switch", async () => {
+    const h = await withHistory();
+    afterStoreCall(h, "read", () => {
+      h.env.signedIn = THIRD;
+    });
+    await expect(h.ipc.changesFor(OWNER, TENANT, { frameworkId: "nis2-2022-2555", scope: {} })).rejects.toThrow(
+      ACCOUNT_SWITCHED,
+    );
+    h.env.signedIn = TENANT;
+    const read = vi.spyOn(h.store, "read");
+    const result = await h.ipc.changesFor(OWNER, TENANT, { frameworkId: "nis2-2022-2555", scope: {} });
+    expect(result.state).toBe("ready");
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("turning history off and unreadable history", () => {
+  it("drops a snapshot that was prepared before history was turned off", async () => {
+    const h = harness("pro");
+    const guard = h.guard();
+    await h.invoke("history:setEnabled", false);
+    expect(await h.store.save(TENANT, projectionOf(contoso("2026-10-18T10:00:00Z")), guard)).toBeNull();
+    expect(await h.store.list(TENANT)).toEqual([]);
+    // Turning it on again does not drop a save that starts afterwards.
+    await h.invoke("history:setEnabled", true);
+    expect(await h.store.save(TENANT, projectionOf(contoso("2026-10-18T10:00:00Z")), h.guard())).not.toBeNull();
+  });
+
+  it("deletes all history without decrypting it when secure storage is unavailable", async () => {
+    const h = harness("pro");
+    await h.store.save(TENANT, projectionOf(contoso("2026-10-17T10:00:00Z")), h.guard());
+    await h.store.save(OTHER, projectionOf(contoso("2026-10-17T10:00:00Z")), h.guard());
+    // The license keeps working; only the history store loses secure storage.
+    vi.spyOn(h.store, "unavailableReason").mockReturnValue(UNAVAILABLE_REASONS.encryption);
+    const before = await h.invoke<HistoryStatus>("history:status");
+    expect(before).toMatchObject({ available: false, unreadableData: true });
+    const after = await h.invoke<HistoryStatus>("history:deleteAll");
+    expect(after).toMatchObject({ available: false, count: 0 });
+    expect(after.unreadableData).toBeUndefined();
+    expect(existsSync(path.join(keys.dir.current, "snapshots"))).toBe(false);
   });
 });
 

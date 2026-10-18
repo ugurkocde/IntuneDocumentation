@@ -84,7 +84,7 @@ import { errorText, log, tailLog } from "./logger";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
 import { CollectionRunner } from "./collection-runner";
 import { CollectionScheduler } from "./scheduler";
-import { SnapshotStore } from "./snapshots";
+import { RM_RETRY, SnapshotStore } from "./snapshots";
 import {
   checkForUpdates,
   downloadUpdate,
@@ -530,10 +530,6 @@ async function clearLocalData(): Promise<void> {
   clearCollection();
   clearManagementState();
   resetHistorySession();
-  // Waits for a snapshot write, then removes snapshots, key and index.
-  await history.clear().catch((error: unknown) =>
-    log("warn", "history clear failed", { message: errorText(error) }),
-  );
   const released = await license.deactivate().then(
     () => true,
     (error: unknown) => {
@@ -546,16 +542,47 @@ async function clearLocalData(): Promise<void> {
   if (auth) await auth.signOut().catch(() => undefined);
   auth = null;
   authKey = "";
+  // After the slow steps and with nobody signed in, so no snapshot can be
+  // written afterwards. Waits for a running write, then removes snapshots,
+  // key and index.
+  await history.clear().catch((error: unknown) =>
+    log("warn", "history clear failed", { message: errorText(error) }),
+  );
   const userData = app.getPath("userData");
   await Promise.all(
     LOCAL_DATA.map((name) =>
-      fs.rm(path.join(userData, name), { recursive: true, force: true }),
+      fs
+        .rm(path.join(userData, name), { recursive: true, force: true, ...RM_RETRY })
+        .catch((error: unknown) =>
+          log("warn", "local data not removed", { name, message: errorText(error) }),
+        ),
     ),
   );
   await session.defaultSession.clearStorageData({ storages: ["localstorage"] });
+  const snapshots = path.join(userData, "snapshots");
+  if (await fs.stat(snapshots).then(() => true, () => false)) {
+    await explainRemainingSnapshots(snapshots);
+  }
   if (!released) await explainUnreleasedActivation();
   app.relaunch();
   app.exit(0);
+}
+
+// Encrypted history that could not be removed, for example because another
+// program held a file open. The user is told before the app restarts.
+async function explainRemainingSnapshots(folder: string): Promise<void> {
+  const notice = {
+    type: "error" as const,
+    buttons: ["Show folder", "Continue"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "History could not be removed completely",
+    detail: `Some history files are still in ${folder}. They stay encrypted. Close any program that may use them, then delete the folder.`,
+  };
+  const answer = mainWindow
+    ? await dialog.showMessageBox(mainWindow, notice)
+    : await dialog.showMessageBox(notice);
+  if (answer.response === 0) shell.showItemInFolder(folder);
 }
 
 // The local data is gone either way; the activation may still count against
@@ -579,7 +606,8 @@ async function explainUnreleasedActivation(): Promise<void> {
 }
 
 // Saves a snapshot of the collection just finished when history is on. The
-// collecting account must still be signed in when it is written.
+// collecting account must still be signed in when it is written. Rejects
+// when the snapshot could not be saved.
 async function recordSnapshot(
   owner: string,
   tenantId: string,
@@ -614,6 +642,7 @@ async function recordSnapshot(
     void scheduler.refresh();
   } catch (error) {
     log("warn", "snapshot not saved", { message: errorText(error) });
+    throw error;
   }
 }
 
@@ -655,12 +684,19 @@ const collections = new CollectionRunner<
       pushLicense();
     }
   },
-  // Off the hot path: the summary returns first.
-  collected: (owner) => {
+  // A scheduled run waits for the snapshot; after a manual collection the
+  // summary returns first and a failed save shows a notice.
+  collected: async (owner, scheduled) => {
     const tenant = signedInTenant();
     if (!tenant) return;
     const generation = history.begin();
-    setImmediate(() => void recordSnapshot(owner, tenant, generation));
+    if (scheduled) return recordSnapshot(owner, tenant, generation);
+    setImmediate(
+      () =>
+        void recordSnapshot(owner, tenant, generation).catch((error: unknown) =>
+          broadcast("history:notSaved", errorText(error)),
+        ),
+    );
   },
 });
 

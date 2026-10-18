@@ -5,6 +5,7 @@ import type { CapabilityStatus, ControlStatus } from "../compliance/types";
 import {
   FINGERPRINT_LABELS,
   snapshotItemLabel,
+  VALUE_FINGERPRINT,
   type SnapshotItem,
   type SnapshotProjection,
   type SnapshotSection,
@@ -25,6 +26,9 @@ export interface SettingChange {
   after: string | null;
   // The content itself is not stored, only whether it changed.
   notStored?: true;
+  // A setting value that is not stored, such as a secret, rather than a
+  // script body.
+  valueNotStored?: true;
 }
 
 export interface AssignmentChange {
@@ -149,22 +153,62 @@ function settingChanges(
         after: null,
       });
   }
-  for (const [property, label] of Object.entries(FINGERPRINT_LABELS)) {
+  const values = [
+    ...new Set([
+      ...Object.keys(before.fingerprints ?? {}),
+      ...Object.keys(after.fingerprints ?? {}),
+    ]),
+  ]
+    .filter((property) => property.startsWith(VALUE_FINGERPRINT))
+    .sort();
+  for (const property of [...Object.keys(FINGERPRINT_LABELS), ...values]) {
     const old = before.fingerprints?.[property];
     const next = after.fingerprints?.[property];
     if (old === next) continue;
+    const value = property.startsWith(VALUE_FINGERPRINT);
+    const settingId = value
+      ? property.slice(VALUE_FINGERPRINT.length, property.lastIndexOf("#"))
+      : property;
     changes.push({
       key: `fingerprint${OCCURRENCE}${property}`,
-      name: label,
+      name: value
+        ? (droppedValueName(after, settingId) ??
+          droppedValueName(before, settingId) ??
+          settingId)
+        : FINGERPRINT_LABELS[property]!,
       path: [],
-      definitionId: property,
+      definitionId: settingId,
       change: !old ? "added" : !next ? "removed" : "changed",
       before: null,
       after: null,
       notStored: true,
+      ...(value ? { valueNotStored: true as const } : {}),
     });
   }
   return changes;
+}
+
+// The display name of a setting whose value is not stored: the custom
+// OMA-URI row or the Settings Catalog definition.
+function droppedValueName(
+  item: SnapshotItem,
+  settingId: string,
+): string | undefined {
+  const oma = (Array.isArray(item.data.omaSettings) ? item.data.omaSettings : [])
+    .map((entry) => (entry ?? {}) as Record<string, unknown>)
+    .find((entry) => entry.omaUri === settingId);
+  if (typeof oma?.displayName === "string" && oma.displayName)
+    return oma.displayName;
+  const labels: DefinitionLabels = { settings: new Map(), options: new Map() };
+  collectDefinitions(item.data.settings, labels);
+  for (const category of Array.isArray(item.data.categories)
+    ? item.data.categories
+    : [])
+    collectDefinitions(
+      (category as Record<string, unknown> | null)?.settings,
+      labels,
+    );
+  return labels.settings.get(settingId);
 }
 
 type AssignmentState = Map<string, string> | null;
@@ -513,48 +557,70 @@ function checkKey(check: StoredCheck): string {
   return [check.settingId, check.policyId ?? ""].join(OCCURRENCE);
 }
 
+function checkValueKey(check: StoredCheck): string {
+  return [checkKey(check), check.result ?? "", check.actualValue ?? ""].join(
+    OCCURRENCE,
+  );
+}
+
+// The entries of list that other does not have, counted as a multiset, so
+// repeated entries such as several values of one setting are kept apart.
+function unmatched<T>(
+  list: readonly T[],
+  other: readonly T[],
+  key: (item: T) => string,
+): T[] {
+  const counts = new Map<string, number>();
+  for (const item of other) counts.set(key(item), (counts.get(key(item)) ?? 0) + 1);
+  return list.filter((item) => {
+    const left = counts.get(key(item)) ?? 0;
+    if (left > 0) counts.set(key(item), left - 1);
+    return left === 0;
+  });
+}
+
 function capabilityChange(
   id: string,
   a: StoredCapability | undefined,
   b: StoredCapability | undefined,
 ): CapabilityChange | null {
-  const fromEvidence = new Map(
-    (a?.evidence ?? []).map((item) => [evidenceKey(item), item]),
+  const fromEvidence = a?.evidence ?? [];
+  const toEvidence = b?.evidence ?? [];
+  const evidenceAdded = unmatched(toEvidence, fromEvidence, evidenceKey).map(
+    evidenceRef,
   );
-  const toEvidence = new Map(
-    (b?.evidence ?? []).map((item) => [evidenceKey(item), item]),
+  const evidenceRemoved = unmatched(fromEvidence, toEvidence, evidenceKey).map(
+    evidenceRef,
   );
-  const evidenceAdded = [...toEvidence]
-    .filter(([key]) => !fromEvidence.has(key))
-    .map(([, item]) => evidenceRef(item));
-  const evidenceRemoved = [...fromEvidence]
-    .filter(([key]) => !toEvidence.has(key))
-    .map(([, item]) => evidenceRef(item));
-  const fromChecks = new Map(
-    (a?.checks ?? []).map((check) => [checkKey(check), check]),
-  );
-  const toChecks = new Map(
-    (b?.checks ?? []).map((check) => [checkKey(check), check]),
-  );
+  // Unchanged checks drop out first; the rest pair up by setting and policy,
+  // in order, so each of several checks of one setting keeps its own change.
+  const fromChecks = a?.checks ?? [];
+  const toChecks = b?.checks ?? [];
+  const pending = new Map<string, { old: StoredCheck[]; next: StoredCheck[] }>();
+  const slot = (check: StoredCheck) => {
+    const key = checkKey(check);
+    let entry = pending.get(key);
+    if (!entry) pending.set(key, (entry = { old: [], next: [] }));
+    return entry;
+  };
+  for (const check of unmatched(fromChecks, toChecks, checkValueKey))
+    slot(check).old.push(check);
+  for (const check of unmatched(toChecks, fromChecks, checkValueKey))
+    slot(check).next.push(check);
   const checksChanged: CheckChange[] = [];
-  for (const key of new Set([...fromChecks.keys(), ...toChecks.keys()])) {
-    const old = fromChecks.get(key);
-    const next = toChecks.get(key);
-    if (
-      old &&
-      next &&
-      old.result === next.result &&
-      old.actualValue === next.actualValue
-    )
-      continue;
-    checksChanged.push({
-      settingId: (next ?? old)!.settingId,
-      policyName: (next ?? old)!.policyName ?? null,
-      before: old ? old.result : "absent",
-      after: next ? next.result : "absent",
-      beforeValue: old?.actualValue ?? null,
-      afterValue: next?.actualValue ?? null,
-    });
+  for (const { old: olds, next: nexts } of pending.values()) {
+    for (let index = 0; index < Math.max(olds.length, nexts.length); index += 1) {
+      const old = olds[index];
+      const next = nexts[index];
+      checksChanged.push({
+        settingId: (next ?? old)!.settingId,
+        policyName: (next ?? old)!.policyName ?? null,
+        before: old ? old.result : "absent",
+        after: next ? next.result : "absent",
+        beforeValue: old?.actualValue ?? null,
+        afterValue: next?.actualValue ?? null,
+      });
+    }
   }
   const before = a?.status ?? null;
   const after = b?.status ?? null;

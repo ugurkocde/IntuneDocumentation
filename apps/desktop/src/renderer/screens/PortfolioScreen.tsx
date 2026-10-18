@@ -386,7 +386,14 @@ function TenantList({
   );
 }
 
+// Keyed by the signed in account and tenant, so nothing of the previous
+// account, such as its portfolio or a pending request, survives a switch.
 export function PortfolioScreen() {
+  const { state } = useApp();
+  return <PortfolioBody key={`${state.auth?.account ?? ""}|${state.auth?.tenantId ?? ""}`} />;
+}
+
+function PortfolioBody() {
   const { state, actions } = useApp();
   const signedIn = Boolean(state.auth?.signedIn);
   const entitled = Boolean(state.license?.entitled);

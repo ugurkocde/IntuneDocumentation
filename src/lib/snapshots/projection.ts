@@ -32,7 +32,8 @@ export interface SnapshotItem {
   data: Record<string, unknown>;
   // Details or assignments were not fully collected.
   incomplete?: true;
-  // Short SHA-256 of content that is never stored, such as script bodies.
+  // Short SHA-256 of content that is never stored, such as script bodies
+  // and secret values (see VALUE_FINGERPRINT).
   fingerprints?: Record<string, string>;
 }
 
@@ -221,6 +222,14 @@ export const FINGERPRINT_LABELS: Readonly<Record<string, string>> = {
   remediationScriptContent: "Remediation script",
 };
 
+// Fingerprint keys of setting values that are never stored (secret Settings
+// Catalog values and dropped custom OMA-URI values):
+// value:<setting definition id or OMA-URI>#<occurrence>.
+export const VALUE_FINGERPRINT = "value:";
+
+// Called with each value that is dropped, so it is compared by fingerprint.
+type DroppedValue = (settingId: string, content: string) => void;
+
 // Fields the compound policy checks read, by normalized @odata.type.
 const POLICY_CHECK_FIELDS: Readonly<Record<string, readonly string[]>> = {
   windows10generalconfiguration: [
@@ -302,26 +311,98 @@ function plainValue(
   return undefined;
 }
 
-// A JSON copy of structured values such as Conditional Access conditions:
-// objects, lists and primitives only.
-function jsonCopy(value: unknown, depth = 0): unknown {
-  if (depth > 8) return undefined;
-  if (value === null || isPrimitive(value)) return value;
-  if (Array.isArray(value))
-    return value
-      .map((entry) => jsonCopy(entry, depth + 1))
-      .filter((entry) => entry !== undefined);
-  if (isRecord(value)) {
-    const out: Json = {};
-    for (const [key, entry] of Object.entries(value)) {
-      if (key.startsWith("@odata.") && key !== "@odata.type") continue;
-      const copied = jsonCopy(entry, depth + 1);
-      if (copied !== undefined) out[key] = copied;
-    }
-    return out;
-  }
-  return undefined;
+// A nested allowlist: true keeps a primitive, a list of primitives or null;
+// an object keeps the named fields of a nested object, or null.
+interface Shape {
+  readonly [key: string]: true | Shape;
 }
+
+// Keys in source order, so a restored policy reads like the collected one.
+function projectShape(value: unknown, shape: Shape): Json | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value)) return undefined;
+  const out: Json = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!Object.hasOwn(shape, key)) continue;
+    const rule = shape[key]!;
+    const kept = rule === true ? plainValue(entry) : projectShape(entry, rule);
+    if (kept !== undefined) out[key] = kept;
+  }
+  return out;
+}
+
+// Conditional Access: what the policy checks read (state, grant operator,
+// built in controls, authentication strength, users and applications) and
+// the documented conditions the engine shows as the policy's scope. Field
+// names from the Graph conditionalAccessConditionSet and
+// conditionalAccessGrantControls schemas, checked against a beta response
+// in the lab tenant (2026-10-18). Anything else is dropped.
+const CA_FILTER: Shape = { mode: true, rule: true };
+const CA_GUESTS: Shape = {
+  guestOrExternalUserTypes: true,
+  externalTenants: { "@odata.type": true, membershipKind: true, members: true },
+};
+const CA_CONDITIONS: Shape = {
+  userRiskLevels: true,
+  signInRiskLevels: true,
+  servicePrincipalRiskLevels: true,
+  insiderRiskLevels: true,
+  agentIdRiskLevels: true,
+  clientAppTypes: true,
+  // Deprecated or not yet documented; kept only while Graph returns null.
+  times: true,
+  agents: true,
+  users: {
+    includeUsers: true,
+    excludeUsers: true,
+    includeGroups: true,
+    excludeGroups: true,
+    includeRoles: true,
+    excludeRoles: true,
+    includeGuestsOrExternalUsers: CA_GUESTS,
+    excludeGuestsOrExternalUsers: CA_GUESTS,
+  },
+  applications: {
+    includeApplications: true,
+    excludeApplications: true,
+    includeUserActions: true,
+    includeAgentActions: true,
+    includeAuthenticationContextClassReferences: true,
+    applicationFilter: CA_FILTER,
+  },
+  platforms: { includePlatforms: true, excludePlatforms: true },
+  locations: { includeLocations: true, excludeLocations: true },
+  deviceStates: { includeStates: true, excludeStates: true },
+  devices: {
+    includeDevices: true,
+    excludeDevices: true,
+    includeDeviceStates: true,
+    excludeDeviceStates: true,
+    deviceFilter: CA_FILTER,
+  },
+  clientApplications: {
+    includeServicePrincipals: true,
+    excludeServicePrincipals: true,
+    includeAgentIdServicePrincipals: true,
+    excludeAgentIdServicePrincipals: true,
+    servicePrincipalFilter: CA_FILTER,
+    agentIdServicePrincipalFilter: CA_FILTER,
+  },
+  authenticationFlows: { transferMethods: true },
+};
+const CA_GRANT_CONTROLS: Shape = {
+  operator: true,
+  builtInControls: true,
+  customAuthenticationFactors: true,
+  termsOfUse: true,
+  authenticationStrength: {
+    id: true,
+    displayName: true,
+    policyType: true,
+    requirementsSatisfied: true,
+    allowedCombinations: true,
+  },
+};
 
 function pick(source: Json, keys: readonly string[]): Json {
   const out: Json = {};
@@ -377,23 +458,36 @@ function projectCollectionStatus(value: unknown): Json | undefined {
 
 // --- Settings Catalog ---------------------------------------------------------
 
-function projectSimpleValue(value: unknown): Json | undefined {
+function projectSimpleValue(
+  value: unknown,
+  dropped?: (content: string) => void,
+): Json | undefined {
   if (!isRecord(value)) return undefined;
   const type = text(value["@odata.type"]);
   // Secret values are never stored, also when Graph returned one.
   const secret = Boolean(type && /secretsettingvalue$/i.test(type));
+  if (secret && isPrimitive(value.value)) dropped?.(String(value.value));
   return {
     ...(type ? { "@odata.type": type } : {}),
     ...(!secret && isPrimitive(value.value) ? { value: value.value } : {}),
   };
 }
 
-function projectInstance(instance: unknown, depth = 0): Json | undefined {
+function projectInstance(
+  instance: unknown,
+  depth = 0,
+  dropped?: DroppedValue,
+): Json | undefined {
   if (!isRecord(instance) || depth > 16) return undefined;
+  const definitionId = text(instance.settingDefinitionId);
+  const drop =
+    dropped && definitionId
+      ? (content: string) => dropped(definitionId, content)
+      : undefined;
   const children = (list: unknown) =>
     Array.isArray(list)
       ? list
-          .map((child) => projectInstance(child, depth + 1))
+          .map((child) => projectInstance(child, depth + 1, dropped))
           .filter((child): child is Json => Boolean(child))
       : undefined;
   const choice = (value: unknown) =>
@@ -406,11 +500,11 @@ function projectInstance(instance: unknown, depth = 0): Json | undefined {
         }
       : undefined;
   const out: Json = pick(instance, ["@odata.type", "settingDefinitionId"]);
-  const simple = projectSimpleValue(instance.simpleSettingValue);
+  const simple = projectSimpleValue(instance.simpleSettingValue, drop);
   if (simple) out.simpleSettingValue = simple;
   if (Array.isArray(instance.simpleSettingCollectionValue))
     out.simpleSettingCollectionValue = instance.simpleSettingCollectionValue
-      .map(projectSimpleValue)
+      .map((entry) => projectSimpleValue(entry, drop))
       .filter(Boolean);
   const single = choice(instance.choiceSettingValue);
   if (single) out.choiceSettingValue = single;
@@ -444,7 +538,10 @@ function projectDefinitions(value: unknown): Json[] | undefined {
   }));
 }
 
-function projectSettings(value: unknown): Json[] | undefined {
+function projectSettings(
+  value: unknown,
+  dropped?: DroppedValue,
+): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const records = value.filter(isRecord);
   if (records.some((setting) => "settingInstance" in setting)) {
@@ -452,7 +549,8 @@ function projectSettings(value: unknown): Json[] | undefined {
       const definitions = projectDefinitions(setting.settingDefinitions);
       return {
         ...pick(setting, ["id"]),
-        settingInstance: projectInstance(setting.settingInstance) ?? {},
+        settingInstance:
+          projectInstance(setting.settingInstance, 0, dropped) ?? {},
         ...(definitions ? { settingDefinitions: definitions } : {}),
       };
     });
@@ -503,7 +601,10 @@ function projectDefinitionValues(value: unknown): Json[] | undefined {
 
 // Custom OMA-URI values are kept for the URIs the engine reads (including
 // AppLocker); other strings may be free-form secrets and are dropped.
-function projectOmaSettings(value: unknown): Json[] | undefined {
+function projectOmaSettings(
+  value: unknown,
+  dropped?: DroppedValue,
+): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const { omaUris } = signals();
   return value.filter(isRecord).map((setting) => {
@@ -514,6 +615,8 @@ function projectOmaSettings(value: unknown): Json[] | undefined {
       (read ||
         typeof setting.value === "number" ||
         typeof setting.value === "boolean");
+    if (!keep && isPrimitive(setting.value))
+      dropped?.(text(setting.omaUri) ?? "", String(setting.value));
     return {
       ...pick(setting, ["@odata.type", "omaUri", "displayName", "isEncrypted"]),
       ...(keep && isPrimitive(setting.value) ? { value: setting.value } : {}),
@@ -564,21 +667,31 @@ function projectItem(
   if (assignments) data.assignments = assignments;
 
   if (section.familyKey === "conditionalAccessPolicies") {
-    for (const key of ["state", "conditions", "grantControls"]) {
-      const value = jsonCopy(raw[key]);
-      if (value !== undefined) data[key] = value;
-    }
+    const state = plainValue(raw.state);
+    if (state !== undefined) data.state = state;
+    const conditions = projectShape(raw.conditions, CA_CONDITIONS);
+    if (conditions !== undefined) data.conditions = conditions;
+    const grants = projectShape(raw.grantControls, CA_GRANT_CONTROLS);
+    if (grants !== undefined) data.grantControls = grants;
   }
-  const settings = projectSettings(raw.settings);
+  const fingerprints: Record<string, string> = {};
+  const occurrences = new Map<string, number>();
+  const dropped: DroppedValue = (settingId, content) => {
+    const occurrence = occurrences.get(settingId) ?? 0;
+    occurrences.set(settingId, occurrence + 1);
+    fingerprints[`${VALUE_FINGERPRINT}${settingId}#${occurrence}`] =
+      fingerprint(content);
+  };
+  const settings = projectSettings(raw.settings, dropped);
   if (settings) data.settings = settings;
   if (Array.isArray(raw.categories))
     data.categories = raw.categories.filter(isRecord).map((category) => ({
       ...pick(category, ["id", "displayName"]),
-      settings: projectSettings(category.settings) ?? [],
+      settings: projectSettings(category.settings, dropped) ?? [],
     }));
   const definitionValues = projectDefinitionValues(raw.definitionValues);
   if (definitionValues) data.definitionValues = definitionValues;
-  const omaSettings = projectOmaSettings(raw.omaSettings);
+  const omaSettings = projectOmaSettings(raw.omaSettings, dropped);
   if (omaSettings) data.omaSettings = omaSettings;
   const scheduled = projectScheduledActions(raw.scheduledActionsForRule);
   if (scheduled) data.scheduledActionsForRule = scheduled;
@@ -591,7 +704,6 @@ function projectItem(
     if (value !== undefined) setPath(data, path, value);
   }
 
-  const fingerprints: Record<string, string> = {};
   for (const key of Object.keys(FINGERPRINT_LABELS)) {
     const content = raw[key];
     if (typeof content === "string" && content) {
@@ -685,6 +797,15 @@ function projectIdentity(
           ...pick(configuration, ["@odata.type", "id", "state"]),
           includeTargets: targets(configuration.includeTargets),
           excludeTargets: targets(configuration.excludeTargets),
+          // The X.509 default mode the engine reports with the method.
+          ...(isRecord(configuration.authenticationModeConfiguration)
+            ? {
+                authenticationModeConfiguration: pick(
+                  configuration.authenticationModeConfiguration,
+                  ["x509CertificateAuthenticationDefaultMode"],
+                ),
+              }
+            : {}),
         })),
     };
   }
@@ -752,6 +873,29 @@ function projectDeviceStatus(
   };
 }
 
+// The Conditional Access compound checks report the policy's state, grant
+// controls and conditions as JSON; only their allowlisted fields are kept.
+function storedActualValue(check: TechnicalCheck): string | null {
+  let value = check.actualValue;
+  if (value && check.settingId.startsWith("conditionalAccess")) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (isRecord(parsed)) {
+        value = JSON.stringify(
+          projectShape(parsed, {
+            state: true,
+            grantControls: CA_GRANT_CONTROLS,
+            conditions: CA_CONDITIONS,
+          }),
+        );
+      }
+    } catch {
+      // Plain text, as the engine reports it for other checks.
+    }
+  }
+  return value?.slice(0, MAX_CHECK_VALUE) ?? null;
+}
+
 // The stored assessment keeps statuses, evidence and check results, not the
 // capability or control definitions.
 export function compactAssessment(
@@ -780,7 +924,7 @@ export function compactAssessment(
         ...(check.policyName ? { policyName: check.policyName } : {}),
         assessmentStatus: check.assessmentStatus,
         result: check.result,
-        actualValue: check.actualValue?.slice(0, MAX_CHECK_VALUE) ?? null,
+        actualValue: storedActualValue(check),
       })),
     })),
     frameworks: assessment.frameworks.map((framework) => {
@@ -865,7 +1009,11 @@ export function projectSnapshot(
     partial:
       fetchErrors.length > 0 ||
       permissionErrors.length > 0 ||
-      sections.some((section) => section.status === "failed"),
+      skipped.length > 0 ||
+      sections.some((section) => section.status !== "complete") ||
+      Object.values(identity?.status ?? {}).some(
+        (status) => status !== "collected",
+      ),
     collectionSkippedFamilies: [...skipped],
     fetchErrors: fetchErrors.map((error) => ({
       policyId: error.policyId,

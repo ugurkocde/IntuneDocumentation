@@ -118,6 +118,7 @@ const api: IntunedocApi = {
   onUpdateStatus: (callback) => subscribe("update:status", callback),
   onMenuCommand: (callback) => subscribe("menu:command", callback),
   onHistoryChanged: (callback) => subscribe("history:changed", () => callback()),
+  onSnapshotNotSaved: (callback) => subscribe("history:notSaved", callback),
   onScheduleStatus: (callback) => subscribe("history:schedule", callback),
 };
 

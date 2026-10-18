@@ -429,6 +429,55 @@ const TYPE_REDACTED_FIELDS: Record<string, Set<string>> = {
 
 export const REDACTED_VALUE = "[Redacted]";
 
+// Digests of values taken right before they are redacted, so the desktop
+// history can tell that a script or secret changed without keeping it. Off
+// unless a digest function is set (desktop main sets SHA-256; the web never
+// does). The digests sit under a symbol key, which JSON, Object.keys and
+// entries, and the structured clone used for IPC all skip, so exports, the
+// search index and the renderer never see them; object spreads of an item
+// keep them. They are private fields, so logs and inspection show none.
+const REDACTED_DIGESTS = Symbol("intunedoc.redactedDigests");
+
+class RedactedDigests {
+  readonly #byField: ReadonlyMap<string, string>;
+
+  constructor(byField: ReadonlyMap<string, string>) {
+    this.#byField = byField;
+  }
+
+  entries(): Array<[string, string]> {
+    return [...this.#byField];
+  }
+}
+
+let redactionDigest: ((content: string) => string) | null = null;
+
+export function setRedactionDigest(
+  digest: ((content: string) => string) | null,
+): void {
+  redactionDigest = digest;
+}
+
+// Field name and digest of every value redacted on this record.
+export function redactedDigests(record: unknown): Array<[string, string]> {
+  const holder =
+    record && typeof record === "object"
+      ? (record as Record<symbol, unknown>)[REDACTED_DIGESTS]
+      : undefined;
+  return holder instanceof RedactedDigests ? holder.entries() : [];
+}
+
+// The content a digest is taken of; nothing for empty values and values
+// that were already redacted.
+function redactableContent(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  if (value === REDACTED_VALUE) return undefined;
+  if (Array.isArray(value) && value.length === 1 && value[0] === REDACTED_VALUE)
+    return undefined;
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
 const SENSITIVE_FIELD_PATTERN =
   /(apikey|password|secret|token|privatekey|presharedkey|credential|qrcodecontent|qrcodeimage|scriptcontent|configurationfilecontent|encodedsettingxml|largeicon|payload(?:json)?)$/i;
 
@@ -530,8 +579,14 @@ export function sanitizeGraphData(
       typeof record["@odata.type"] === "string"
         ? TYPE_REDACTED_FIELDS[record["@odata.type"].toLowerCase()]
         : undefined;
+    // A record sanitized again keeps the digests taken the first time.
+    const digests = new Map(redactedDigests(record));
+    const redact = (key: string, nested: unknown) => {
+      const content = redactionDigest ? redactableContent(nested) : undefined;
+      if (content !== undefined) digests.set(key, redactionDigest!(content));
+    };
 
-    return Object.fromEntries(
+    const sanitized = Object.fromEntries(
       Object.entries(record)
         .filter(([key]) => !["@odata.context", "@odata.nextLink"].includes(key))
         .map(([key, nested]) => {
@@ -541,24 +596,33 @@ export function sanitizeGraphData(
             PAIR_VALUE_KEYS.has(lowerKey) &&
             typeof nested !== "boolean"
           ) {
+            redact(key, nested);
             return [
               key,
               Array.isArray(nested) ? [REDACTED_VALUE] : REDACTED_VALUE,
             ];
           }
-          return [
-            key,
+          if (
             sensitiveFields.has(lowerKey) ||
             typeFields?.has(lowerKey) ||
             SENSITIVE_FIELD_PATTERN.test(key)
-              ? REDACTED_VALUE
-              : visit(
-                  nested,
-                  sensitiveDefinition && SETTING_VALUE_KEYS.has(lowerKey),
-                ),
+          ) {
+            redact(key, nested);
+            return [key, REDACTED_VALUE];
+          }
+          return [
+            key,
+            visit(
+              nested,
+              sensitiveDefinition && SETTING_VALUE_KEYS.has(lowerKey),
+            ),
           ];
         }),
     );
+    if (digests.size)
+      (sanitized as Record<symbol, unknown>)[REDACTED_DIGESTS] =
+        new RedactedDigests(digests);
+    return sanitized;
   };
 
   return visit(value);

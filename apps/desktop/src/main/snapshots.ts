@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import {
   SNAPSHOT_FORMAT,
+  type SnapshotFingerprint,
   type SnapshotProjection,
 } from "../../../../src/lib/snapshots/projection";
 import type { HistoryEntry } from "../shared/ipc-types";
@@ -83,7 +84,14 @@ export interface StoredTenant {
 
 export const MAX_TENANT_LABEL = 60;
 
+// History cannot be used until the user deletes it, or secure storage is
+// missing. Delete all removes it without decrypting.
 export class HistoryUnavailableError extends Error {}
+
+// History is intact but could not be read right now, for example while the
+// keychain is locked or another program holds a file. Never latched and never
+// a reason to delete anything: the next attempt tries again.
+export class HistoryLockedError extends Error {}
 
 export const UNAVAILABLE_REASONS = {
   encryption:
@@ -97,6 +105,11 @@ export const UNAVAILABLE_REASONS = {
 // locked. Not latched: the next read tries again.
 export const KEY_LOCKED =
   "The history key could not be unlocked right now. Make sure your keychain or credential store is unlocked, then try again.";
+
+// A history file exists but could not be read right now, for example while
+// another program holds it open. Not latched either.
+export const FILE_BUSY =
+  "The history files could not be read right now. Close any program that may use them, then try again.";
 
 function emptyIndex(): StoredIndex {
   return { format: INDEX_FORMAT, tenants: {} };
@@ -224,6 +237,10 @@ export interface SaveGuard {
   isCurrent: () => boolean;
 }
 
+// Delete, label and reset requests: still the account that asked, checked
+// inside the store queue right before anything is changed.
+export type MutationGuard = () => boolean;
+
 export class SnapshotStore {
   private readonly dir: () => string;
   private readonly limits: RetentionLimits;
@@ -234,6 +251,8 @@ export class SnapshotStore {
   private swept = false;
   private queue: Promise<unknown> = Promise.resolve();
   private generation = 0;
+  // The fingerprint function for the current master key.
+  private fingerprint: { key: Buffer; digest: SnapshotFingerprint } | null = null;
 
   constructor(options: SnapshotStoreOptions) {
     this.dir = options.dir;
@@ -302,13 +321,13 @@ export class SnapshotStore {
     try {
       wrapped = await fs.readFile(this.file("key.bin"));
     } catch (error) {
+      // Busy, locked or not permitted right now: the key is still there.
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        log("warn", "history key ignored", {
+        log("warn", "history key not read", {
           reason: "unreadable",
           code: (error as NodeJS.ErrnoException).code,
         });
-        this.damaged = "key";
-        throw new HistoryUnavailableError(UNAVAILABLE_REASONS.key);
+        throw new HistoryLockedError(FILE_BUSY);
       }
       if (!create) return false;
       const key = randomBytes(32);
@@ -325,7 +344,7 @@ export class SnapshotStore {
       unwrapped = safeStorage.decryptString(wrapped);
     } catch {
       log("warn", "history key not unlocked", { reason: "decrypt_failed" });
-      throw new HistoryUnavailableError(KEY_LOCKED);
+      throw new HistoryLockedError(KEY_LOCKED);
     }
     const key = Buffer.from(unwrapped, "base64");
     if (key.length !== 32) {
@@ -339,25 +358,40 @@ export class SnapshotStore {
 
   // The index, or its backup when the index itself cannot be read. Only when
   // neither can is the history damaged.
-  private async loadIndex(): Promise<StoredIndex> {
+  //
+  // An index that exists but cannot be read right now (busy, locked, not
+  // permitted) is not damage. Reads then use the backup without keeping it,
+  // and writes wait, since the newer index may list snapshots the backup does
+  // not; with no readable copy at all the retryable locked error is thrown.
+  private async loadIndex(write: boolean): Promise<StoredIndex> {
     if (this.index) return this.index;
     let found = false;
+    let busy = false;
     for (const name of ["index.bin", "index.bin.bak"]) {
       let sealed: Buffer;
       try {
         sealed = await fs.readFile(this.file(name));
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") continue;
+        log("warn", "history index not read", { reason: "unreadable", code, file: name });
+        busy = true;
         continue;
       }
       found = true;
+      let index: StoredIndex;
       try {
         const plain = await gunzipAsync(unseal(this.key!, aad(INDEX_FORMAT, "", "index"), sealed));
-        this.index = parseIndex(plain.toString("utf8"));
+        index = parseIndex(plain.toString("utf8"));
       } catch {
         log("warn", "history index ignored", { reason: "decrypt_failed", file: name });
         continue;
       }
+      if (busy) {
+        if (write) throw new HistoryLockedError(FILE_BUSY);
+        return index;
+      }
+      this.index = index;
       if (name !== "index.bin") {
         // The good copy replaces the unreadable index, so the next write
         // keeps it as the backup.
@@ -367,6 +401,8 @@ export class SnapshotStore {
       break;
     }
     if (!this.index) {
+      // A copy that could not be read may be the good one.
+      if (busy) throw new HistoryLockedError(FILE_BUSY);
       if (found) {
         this.damaged = "index";
         throw new HistoryUnavailableError(UNAVAILABLE_REASONS.index);
@@ -377,10 +413,11 @@ export class SnapshotStore {
     return this.index;
   }
 
-  // The index being replaced is kept as index.bin.bak first.
-  private async writeIndex(index: StoredIndex): Promise<void> {
+  // The index being replaced is kept as index.bin.bak first, except when a
+  // rollback restores the index the backup already holds.
+  private async writeIndex(index: StoredIndex, rotate = true): Promise<void> {
     const plain = await gzipAsync(Buffer.from(JSON.stringify(index), "utf8"));
-    const previous = await fs.readFile(this.file("index.bin")).catch(() => null);
+    const previous = rotate ? await fs.readFile(this.file("index.bin")).catch(() => null) : null;
     if (previous) await writeAtomic(this.file("index.bin.bak"), previous);
     await writeAtomic(this.file("index.bin"), seal(this.key!, aad(INDEX_FORMAT, "", "index"), plain));
     this.index = index;
@@ -415,14 +452,16 @@ export class SnapshotStore {
 
   // Index and key, or nothing when no history was ever saved. Snapshots
   // past the age limit are removed first, also while no new snapshot is
-  // saved; the count and size limits only change with a save.
-  private async open(): Promise<StoredIndex | null> {
+  // saved; the count and size limits only change with a save. Write is set
+  // for callers that change the index.
+  private async open(write = false): Promise<StoredIndex | null> {
     this.requireAvailable();
     if (!(await this.loadKey(false))) return null;
-    const index = await this.loadIndex();
+    const index = await this.loadIndex(write);
     const next = structuredClone(index);
     const removed = this.expire(next, this.now());
-    if (!removed.length) return index;
+    // A backup read while the index is busy is not written back.
+    if (!removed.length || this.index !== index) return removed.length ? next : index;
     await this.writeIndex(next);
     for (const old of removed) {
       await fs.rm(this.snapshotFile(old.tenant, old.id), { force: true });
@@ -479,7 +518,7 @@ export class SnapshotStore {
       if (!current()) return null;
       this.requireAvailable();
       await this.loadKey(true);
-      const before = await this.loadIndex();
+      const before = await this.loadIndex(true);
       const index = structuredClone(before);
       const now = this.now();
       const id = newSnapshotId(now);
@@ -515,7 +554,8 @@ export class SnapshotStore {
       await this.writeIndex(index);
       // A sign out or reset during the index write: the save is undone.
       if (!current()) {
-        await this.writeIndex(before);
+        // index.bin.bak already holds the index from before this save.
+        await this.writeIndex(before, false);
         await fs.rm(file, { force: true });
         return null;
       }
@@ -600,52 +640,57 @@ export class SnapshotStore {
     });
   }
 
-  // The name shown for a stored tenant; an empty label removes it.
-  async setLabel(tenantId: string, label: string): Promise<void> {
+  // The name shown for a stored tenant; an empty label removes it. False
+  // when the guard says the account changed while the change was queued.
+  async setLabel(tenantId: string, label: string, isCurrent: MutationGuard): Promise<boolean> {
     const tenant = normalizeTenant(tenantId);
     const clean = label.trim();
     if (clean.length > MAX_TENANT_LABEL) throw new Error("The tenant name is too long.");
-    await this.serial(async () => {
-      const index = await this.open();
+    return this.serial(async () => {
+      const index = await this.open(true);
       if (!index?.tenants[tenant]) throw new Error("This tenant has no history on this computer.");
+      if (!isCurrent()) return false;
       const next = structuredClone(index);
       if (clean) next.tenants[tenant]!.label = clean;
       else delete next.tenants[tenant]!.label;
       await this.writeIndex(next);
+      return true;
     });
   }
 
-  async delete(tenantId: string, id: string): Promise<void> {
+  async delete(tenantId: string, id: string, isCurrent: MutationGuard): Promise<boolean> {
     const tenant = normalizeTenant(tenantId);
     if (!SNAPSHOT_ID_PATTERN.test(id)) throw new Error("Unknown snapshot.");
-    await this.serial(async () => {
-      const index = await this.open();
+    return this.serial(async () => {
+      const index = await this.open(true);
+      if (!isCurrent()) return false;
       const bucket = index?.tenants[tenant];
-      if (!index || !bucket?.snapshots.some((entry) => entry.id === id)) return;
+      if (!index || !bucket?.snapshots.some((entry) => entry.id === id)) return true;
       const next = structuredClone(index);
       next.tenants[tenant]!.snapshots = bucket.snapshots.filter((entry) => entry.id !== id);
       // A tenant label stays with the tenant until all its history is deleted.
       if (!next.tenants[tenant]!.snapshots.length && !bucket.label) delete next.tenants[tenant];
       await this.writeIndex(next);
       await fs.rm(this.snapshotFile(tenant, id), { force: true });
+      return true;
     });
   }
 
-  // Every snapshot of one tenant. When the key or index cannot be read,
-  // nothing is readable for any tenant, so the whole history is reset.
-  async deleteTenant(tenantId: string): Promise<void> {
+  // Every snapshot of one tenant. When the key or index is damaged, nothing
+  // is readable for any tenant, so the whole history is reset. A key or
+  // index that is only locked or busy right now is never a reason to reset.
+  async deleteTenant(tenantId: string, isCurrent: MutationGuard): Promise<boolean> {
     const tenant = normalizeTenant(tenantId);
-    if (this.damaged) {
-      await this.clear();
-      return;
-    }
-    await this.serial(async () => {
-      const index = await this.open();
-      if (!index?.tenants[tenant]) return;
+    if (this.damaged) return this.clear(isCurrent);
+    return this.serial(async () => {
+      const index = await this.open(true);
+      if (!isCurrent()) return false;
+      if (!index?.tenants[tenant]) return true;
       const next = structuredClone(index);
       delete next.tenants[tenant];
       await this.writeIndex(next);
       await fs.rm(this.tenantDir(tenant), { recursive: true, force: true });
+      return true;
     });
   }
 
@@ -655,16 +700,43 @@ export class SnapshotStore {
     return names.length > 0;
   }
 
-  // Removes snapshots, the wrapped key and the index. Waits for a running
-  // write first, so nothing is written after it.
-  async clear(): Promise<void> {
-    this.invalidate();
-    await this.serial(async () => {
+  // Removes snapshots, the wrapped key and the index. Waits for writes
+  // queued before it, and drops saves that began before it, so nothing is
+  // written after it. With a guard, nothing is removed (false) when the
+  // account changed while the reset was queued.
+  async clear(isCurrent?: MutationGuard): Promise<boolean> {
+    return this.serial(async () => {
+      if (isCurrent && !isCurrent()) return false;
+      this.invalidate();
       await fs.rm(this.dir(), { recursive: true, force: true, ...RM_RETRY });
       this.key = null;
       this.index = null;
       this.damaged = null;
       this.swept = false;
+      return true;
+    });
+  }
+
+  // Fingerprints for content a snapshot does not store, such as secrets and
+  // script bodies: HMAC-SHA256 of the content digest with a key derived from
+  // the master key, so fingerprints compare across this install's snapshots
+  // but a guessable secret cannot be found by hashing guesses. Null when no
+  // history key exists and create is not set, or when a key would be made
+  // for a save that a reset since begin() has already dropped.
+  async fingerprinter(create: boolean, generation?: number): Promise<SnapshotFingerprint | null> {
+    return this.serial(async () => {
+      this.requireAvailable();
+      if (generation !== undefined && generation !== this.generation) return null;
+      if (!(await this.loadKey(create))) return null;
+      const key = this.key!;
+      if (this.fingerprint?.key !== key) {
+        const derived = createHmac("sha256", key).update("intunedoc.snapshot/fingerprint").digest();
+        this.fingerprint = {
+          key,
+          digest: (digest) => createHmac("sha256", derived).update(digest).digest("hex").slice(0, 32),
+        };
+      }
+      return this.fingerprint.digest;
     });
   }
 }

@@ -312,6 +312,77 @@ describe("CompareScreen", () => {
     expect(screen.getByText("Set in the reference, not in this tenant.")).toBeTruthy();
   });
 
+  it("shows Entra tenant settings apart from the configuration counts", async () => {
+    mocks.run.mockResolvedValue(
+      view({
+        identity: {
+          totals: counts({ different: 1, notComparable: 1 }),
+          groups: [
+            group({
+              platform: "Entra ID",
+              family: "authenticationMethods",
+              familyLabel: "Authentication methods policy",
+              counts: counts({ different: 1, notComparable: 1 }),
+              rows: [
+                row({
+                  setting: "method:sms:state",
+                  name: "State",
+                  path: ["SMS"],
+                  expected: [{ value: "disabled", policy: "Authentication methods policy" }],
+                  actual: [{ value: "enabled", policy: "Authentication methods policy" }],
+                }),
+                row({
+                  status: "notComparable",
+                  setting: "campaign:includeTargets",
+                  name: "Include target",
+                  path: ["Registration campaign"],
+                  expected: [{ value: null, policy: "Authentication methods policy" }],
+                  actual: [{ value: null, policy: "Authentication methods policy" }],
+                }),
+              ],
+              rowsTotal: 2,
+            }),
+          ],
+          notCompared: [{ family: "securityDefaults", label: "Security defaults", side: "current" }],
+        },
+      }),
+    );
+    await renderScreen();
+    await loadReference();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run comparison" })));
+    await settle();
+    const section = screen.getByRole("region", { name: "Entra tenant settings" });
+    const card = within(section).getByRole("article", { name: "Entra ID, Authentication methods policy" });
+    expect(within(card).getByText("disabled")).toBeTruthy();
+    expect(within(card).getByText("enabled")).toBeTruthy();
+    expect(within(section).getByText(/not read in this tenant's collection/)).toBeTruthy();
+    // The configuration summary keeps its own counts.
+    const summary = screen.getByRole("group", { name: "Comparison summary" });
+    expect(within(summary).getByText("1 different")).toBeTruthy();
+  });
+
+  it("marks a matching setting inside a changed group", async () => {
+    mocks.run.mockResolvedValue(
+      view({
+        totals: counts({ matching: 1 }),
+        groups: [
+          group({
+            counts: counts({ matching: 1 }),
+            rows: [row({ status: "matching", name: "Rule name", instanceChanged: true, expected: [], actual: [] })],
+            rowsTotal: 1,
+          }),
+        ],
+      }),
+    );
+    await renderScreen();
+    await loadReference();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Run comparison" })));
+    await settle();
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /^Matching/ })));
+    expect(screen.getByText("Rule name")).toBeTruthy();
+    expect(screen.getByText("The same values, in a group where another setting differs.")).toBeTruthy();
+  });
+
   it("says when rows are capped", async () => {
     const rows = Array.from({ length: 3 }, (_, index) =>
       row({ setting: `setting-${index}`, name: `Setting ${index}` }),

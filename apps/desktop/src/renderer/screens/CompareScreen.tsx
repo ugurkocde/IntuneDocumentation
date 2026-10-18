@@ -29,6 +29,7 @@ import {
   type CompareRow,
   type CompareValue,
   type ComparisonCounts,
+  type ComparisonPart,
   type NotComparedSettingsFamily,
   type SettingComparison,
 } from "../../../../../src/lib/snapshots/reference-types";
@@ -355,6 +356,11 @@ function SettingRow({ row, expectedLabel }: { row: CompareRow; expectedLabel: st
           <p className="text-petrol-600 selectable mb-0.5 text-[11px] leading-4 break-words">{row.path.join(" › ")}</p>
         )}
         <p className="text-petrol-950 selectable text-sm leading-5 font-semibold break-words">{row.name}</p>
+        {row.instanceChanged && (
+          <p className="text-petrol-700 mt-0.5 text-[11px] leading-4">
+            The same values, in a group where another setting differs.
+          </p>
+        )}
         {row.setting !== row.name && (
           <p className="text-petrol-600 selectable mt-1 font-mono text-[11px] leading-4 break-all">
             <span className="sr-only">Technical id: </span>
@@ -428,6 +434,64 @@ function notComparedText(family: NotComparedSettingsFamily, kind: SourceKind): s
   if (family.side === "both") return "incomplete on both sides";
   if (family.side === "current") return "incomplete in this tenant's collection";
   return kind === "reference" ? "incomplete in the reference" : "incomplete in the other tenant's snapshot";
+}
+
+function identityNotComparedText(family: NotComparedSettingsFamily, kind: SourceKind): string {
+  if (family.side === "both") return "not read on either side";
+  if (family.side === "current") return "not read in this tenant's collection";
+  return kind === "reference" ? "not in the reference" : "not read in the other tenant's snapshot";
+}
+
+// Tenant-wide Entra ID settings, counted on their own and not in the
+// configuration totals above.
+function IdentityResults({
+  identity,
+  filter,
+  kind,
+  expectedLabel,
+}: {
+  identity: ComparisonPart;
+  filter: Filter;
+  kind: SourceKind;
+  expectedLabel: string;
+}) {
+  const total = ORDER.reduce((sum, status) => sum + identity.totals[status], 0);
+  if (total === 0 && identity.notCompared.length === 0) return null;
+  const groups = identity.groups.filter((group) => countOf(group.counts, filter) > 0);
+  return (
+    <section aria-labelledby="compare-identity-title" className="space-y-3">
+      <h3 id="compare-identity-title" className="text-petrol-700 px-1 text-xs font-bold tracking-[0.12em] uppercase">
+        Entra tenant settings
+      </h3>
+      <p className="text-petrol-600 px-1 text-xs leading-5">
+        Tenant-wide Entra ID settings, counted apart from the settings above. Group and user targets name objects of
+        one tenant, so they are not comparable; All users is.
+      </p>
+      {total > 0 && (
+        <div role="group" className="flex flex-wrap gap-2 px-1" aria-label="Entra settings summary">
+          <CountBadges counts={identity.totals} statuses={ORDER} />
+        </div>
+      )}
+      {identity.notCompared.length > 0 && (
+        <Alert tone="warning" title="Some Entra settings were not compared">
+          <ul className="list-disc space-y-0.5 pl-5">
+            {identity.notCompared.map((family) => (
+              <li key={family.family} className="break-words">
+                <span className="font-semibold">{family.label}</span>: {identityNotComparedText(family, kind)}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+      {total > 0 && groups.length === 0 ? (
+        <p className="text-petrol-700 px-1 text-[13px] leading-5">No Entra settings with this result.</p>
+      ) : (
+        groups.map((group) => (
+          <FamilyCard key={group.family} group={group} filter={filter} expectedLabel={expectedLabel} />
+        ))
+      )}
+    </section>
+  );
 }
 
 function Results({
@@ -533,6 +597,9 @@ function Results({
         </div>
       )}
       {body}
+      {view.identity && (
+        <IdentityResults identity={view.identity} filter={filter} kind={kind} expectedLabel={expectedLabel} />
+      )}
     </div>
   );
 }

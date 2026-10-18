@@ -3,6 +3,14 @@
 import { flattenItemSettings } from "../settings-flatten";
 import type { CapabilityStatus, ControlStatus } from "../compliance/types";
 import {
+  IDENTITY_POLICY_LABELS,
+  identityCompleteness,
+  identityRows,
+  type IdentityNotCompared,
+  type IdentityPolicyName,
+  type IdentityRow,
+} from "./identity";
+import {
   FINGERPRINT_LABELS,
   snapshotItemLabel,
   VALUE_FINGERPRINT,
@@ -80,11 +88,34 @@ export interface SnapshotDiffTotals {
   notComparedItems: number;
 }
 
+// A changed Entra tenant identity setting. Kept apart from the policy
+// changes and their totals: these are tenant-wide settings, not
+// configuration policies.
+export interface IdentityChange {
+  policy: IdentityPolicyName;
+  policyLabel: string;
+  key: string;
+  name: string;
+  path: string[];
+  change: "added" | "removed" | "changed";
+  before: string | null;
+  after: string | null;
+}
+
+export interface IdentityDiff {
+  changes: IdentityChange[];
+  // Policies not read in one or both snapshots.
+  notCompared: IdentityNotCompared[];
+  // Changes before capping.
+  total: number;
+}
+
 export interface SnapshotDiff {
   policies: PolicyChange[];
   notCompared: NotComparedFamily[];
   notComparedItems: NotComparedItem[];
   totals: SnapshotDiffTotals;
+  identity: IdentityDiff;
 }
 
 const OCCURRENCE = "\u0000";
@@ -285,6 +316,82 @@ function assignmentChanges(
   return changes;
 }
 
+// One value per key: the values of a target list in a stable order, so a
+// reordered list is no change.
+function identityValues(
+  rows: readonly IdentityRow[],
+): Map<string, { row: IdentityRow; values: Map<string, string> }> {
+  const out = new Map<
+    string,
+    { row: IdentityRow; values: Map<string, string> }
+  >();
+  for (const row of rows) {
+    const key = `${row.policy}${OCCURRENCE}${row.setting}`;
+    let entry = out.get(key);
+    if (!entry) out.set(key, (entry = { row, values: new Map() }));
+    entry.values.set(row.value, row.display);
+  }
+  return out;
+}
+
+function shown(values: Map<string, string>): string {
+  return [...values.keys()]
+    .sort()
+    .map((value) => values.get(value)!)
+    .join(", ");
+}
+
+export function diffIdentity(
+  from: SnapshotProjection,
+  to: SnapshotProjection,
+): IdentityDiff {
+  const { compared, notCompared } = identityCompleteness(
+    from.tenantIdentityPolicies,
+    to.tenantIdentityPolicies,
+  );
+  const groupNames = { ...from.groupNames, ...to.groupNames };
+  const keep = (rows: IdentityRow[]) =>
+    rows.filter((row) => compared.includes(row.policy));
+  const a = identityValues(
+    keep(identityRows(from.tenantIdentityPolicies, groupNames)),
+  );
+  const b = identityValues(
+    keep(identityRows(to.tenantIdentityPolicies, groupNames)),
+  );
+  const changes: IdentityChange[] = [];
+  const push = (
+    { row }: { row: IdentityRow },
+    key: string,
+    change: IdentityChange["change"],
+    before: string | null,
+    after: string | null,
+  ) =>
+    changes.push({
+      policy: row.policy,
+      policyLabel: IDENTITY_POLICY_LABELS[row.policy],
+      key,
+      name: row.name,
+      path: row.path,
+      change,
+      before,
+      after,
+    });
+  for (const [key, entry] of b) {
+    const old = a.get(key);
+    const after = shown(entry.values);
+    if (!old) push(entry, key, "added", null, after);
+    else {
+      const same =
+        old.values.size === entry.values.size &&
+        [...old.values.keys()].every((value) => entry.values.has(value));
+      if (!same) push(entry, key, "changed", shown(old.values), after);
+    }
+  }
+  for (const [key, entry] of a)
+    if (!b.has(key)) push(entry, key, "removed", shown(entry.values), null);
+  return { changes, notCompared, total: changes.length };
+}
+
 function byId(section: SnapshotSection): Map<string, SnapshotItem> {
   return new Map(section.items.map((item) => [item.id, item]));
 }
@@ -426,6 +533,7 @@ export function diffSnapshots(
       notComparedFamilies: notCompared.length,
       notComparedItems: notComparedItems.length,
     },
+    identity: diffIdentity(from, to),
   };
 }
 
@@ -435,6 +543,7 @@ export interface DiffLimits {
   maxAssignmentsPerPolicy: number;
   maxValueLength: number;
   maxNotComparedItems: number;
+  maxIdentityChanges: number;
 }
 
 export const DEFAULT_DIFF_LIMITS: DiffLimits = {
@@ -443,6 +552,7 @@ export const DEFAULT_DIFF_LIMITS: DiffLimits = {
   maxAssignmentsPerPolicy: 50,
   maxValueLength: 2000,
   maxNotComparedItems: 50,
+  maxIdentityChanges: 200,
 };
 
 function clip(value: string | null, max: number): string | null {
@@ -473,6 +583,16 @@ export function capSnapshotDiff(
       0,
       limits.maxNotComparedItems,
     ),
+    identity: {
+      ...diff.identity,
+      changes: diff.identity.changes
+        .slice(0, limits.maxIdentityChanges)
+        .map((change) => ({
+          ...change,
+          before: clip(change.before, limits.maxValueLength),
+          after: clip(change.after, limits.maxValueLength),
+        })),
+    },
   };
 }
 

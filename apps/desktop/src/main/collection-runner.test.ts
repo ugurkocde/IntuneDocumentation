@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { CollectionRunner, SCHEDULED_RUN_ACTIVE } from "./collection-runner";
+import { SignInUnreachableError } from "./auth";
+import {
+  CollectionRunner,
+  SCHEDULED_RUN_ACTIVE,
+  SCHEDULED_SIGN_IN_UNREACHABLE,
+} from "./collection-runner";
 import { ScheduleSkip } from "./scheduler";
 
 type Progress = (step: string) => void;
@@ -7,6 +12,8 @@ type Progress = (step: string) => void;
 function setup() {
   const env = {
     owner: "owner-1" as string | null,
+    // Microsoft sign-in did not answer, for example right after wake.
+    unreachable: false,
     licensed: true,
     otherWork: null as string | null,
     historyBlocker: null as string | null,
@@ -24,6 +31,7 @@ function setup() {
   const collected = vi.fn(async (_owner: string, _scheduled: boolean) => undefined);
   const runner = new CollectionRunner<string, Progress>({
     requireOwner: async () => {
+      if (env.unreachable) throw new SignInUnreachableError();
       if (!env.owner) throw new Error("Sign in before continuing.");
       return env.owner;
     },
@@ -63,6 +71,16 @@ describe("CollectionRunner", () => {
     const { env, runner } = setup();
     env.owner = null;
     await expect(runner.scheduled()).rejects.toBeInstanceOf(ScheduleSkip);
+    expect(env.pending).toHaveLength(0);
+  });
+
+  it("says sign-in could not be reached, not to sign in, when the network is down", async () => {
+    const { env, runner } = setup();
+    env.unreachable = true;
+    await expect(runner.scheduled()).rejects.toEqual(new ScheduleSkip(SCHEDULED_SIGN_IN_UNREACHABLE));
+    expect(SCHEDULED_SIGN_IN_UNREACHABLE).toBe(
+      "Could not reach Microsoft sign-in. The scheduled collection tries again in 15 minutes.",
+    );
     expect(env.pending).toHaveLength(0);
   });
 

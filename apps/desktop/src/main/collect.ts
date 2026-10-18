@@ -7,7 +7,9 @@ import {
   getItemLabel,
   getStableItemId,
 } from "../../../../src/lib/configuration-sections";
+import { setRedactionDigest } from "../../../../src/lib/intune-policy-registry";
 import { estimatePdfPageCount } from "../../../../src/lib/pdf-page-estimate";
+import { contentDigest } from "../../../../src/lib/snapshots/projection";
 import type { DetailedExportData } from "../../../../src/lib/configuration-analyzer";
 import {
   classifyItem,
@@ -23,6 +25,11 @@ import type {
   SectionItemSummary,
   SectionItemsResult,
 } from "../shared/ipc-types";
+
+// The collector keeps a digest of each value it redacts, so history can tell
+// that a script or secret changed without storing it. The digests stay in
+// main and are keyed before a snapshot keeps them.
+setRedactionDigest(contentDigest);
 
 type FullCollection = Awaited<
   ReturnType<DetailedIntuneService["getAllDetailedConfigurations"]>

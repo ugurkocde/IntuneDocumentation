@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { labCollectionSections } from "../../../apps/desktop/src/main/__fixtures__/lab-collection";
 import type { DetailedExportData } from "~/lib/configuration-analyzer";
@@ -84,10 +85,16 @@ const groupNames = new Map(
   [...(CONTOSO_TENANT.groupNames ?? new Map())].map(([id, name]) => [id, name]),
 );
 
+// Keyed like the store's fingerprints.
+const fingerprint = (digest: string) =>
+  createHmac("sha256", "test key").update(digest).digest("hex").slice(0, 32);
+
 function snap(data: DetailedExportData): SnapshotProjection {
   // Through JSON, as the store keeps it.
   return JSON.parse(
-    JSON.stringify(projectSnapshot(data, assessCompliance(data), groupNames)),
+    JSON.stringify(
+      projectSnapshot(data, assessCompliance(data), groupNames, fingerprint),
+    ),
   );
 }
 
@@ -474,6 +481,7 @@ describe("diffSnapshots", () => {
       maxAssignmentsPerPolicy: 1,
       maxValueLength: 10,
       maxNotComparedItems: 1,
+      maxIdentityChanges: 1,
     });
     expect(capped.totals).toEqual(diff.totals);
     expect(capped.totals.settingChanges).toBe(20);

@@ -1,4 +1,5 @@
-import { ScheduleSkip } from "./scheduler";
+import { SignInUnreachableError } from "./auth";
+import { ScheduleSkip, SKIP_RETRY_MS } from "./scheduler";
 
 // The one collection that may run at a time, manual or scheduled. A manual
 // collection replaces an earlier manual one, as before. A scheduled run never
@@ -8,6 +9,9 @@ import { ScheduleSkip } from "./scheduler";
 
 export const SCHEDULED_RUN_ACTIVE =
   "A scheduled collection is running. Wait until it finishes, or cancel it and collect again.";
+
+// A skipped run is tried again after SKIP_RETRY_MS.
+export const SCHEDULED_SIGN_IN_UNREACHABLE = `Could not reach Microsoft sign-in. The scheduled collection tries again in ${SKIP_RETRY_MS / 60_000} minutes.`;
 
 export interface CollectionRunnerDeps<Summary, Progress> {
   // The signed in account with a usable token; throws otherwise.
@@ -89,7 +93,9 @@ export class CollectionRunner<Summary, Progress> {
       owner = await this.deps.requireOwner();
       await this.deps.requireLicense();
     } catch (error) {
-      throw new ScheduleSkip(message(error));
+      throw new ScheduleSkip(
+        error instanceof SignInUnreachableError ? SCHEDULED_SIGN_IN_UNREACHABLE : message(error),
+      );
     }
     const busy = this.busy();
     if (busy) {

@@ -21,6 +21,7 @@ import type {
 } from "../../../../src/lib/compliance/management/types";
 import type {
   ControlStatusChange,
+  IdentityDiff,
   NotComparedFamily,
   NotComparedItem,
   PolicyChange,
@@ -30,6 +31,7 @@ import type { ManagementReportChanges } from "../../../../src/lib/compliance/man
 import type {
   CompareGroup,
   ComparisonCounts,
+  ComparisonPart,
   NotComparedSettingsFamily,
 } from "../../../../src/lib/snapshots/reference-types";
 
@@ -376,6 +378,10 @@ export interface HistoryStatus {
   // History that cannot be read is still on this computer and can be
   // deleted as a whole. Only set when available is false.
   unreadableData?: boolean;
+  // History is intact but could not be read right now, for example while
+  // the keychain is locked: try again, never delete. Only set when
+  // available is false.
+  locked?: boolean;
 }
 
 export interface HistoryDiffRequest {
@@ -394,6 +400,8 @@ export interface HistoryDiffView {
   totals: SnapshotDiffTotals;
   notCompared: NotComparedFamily[];
   notComparedItems: NotComparedItem[];
+  // Entra tenant identity settings, outside the policy totals.
+  identity: IdentityDiff;
   controls: {
     fromRuleset: string;
     toRuleset: string;
@@ -468,6 +476,8 @@ export interface CompareView {
   totals: ComparisonCounts;
   groups: CompareGroup[];
   notCompared: NotComparedSettingsFamily[];
+  // Entra tenant identity settings, counted on their own.
+  identity: ComparisonPart;
   rulesetChanged: boolean;
 }
 

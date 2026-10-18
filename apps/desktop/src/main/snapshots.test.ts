@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdtempSync,
@@ -40,8 +41,16 @@ vi.mock("electron", () => ({
 
 vi.mock("./logger", () => ({ log: () => undefined }));
 
-const { HistoryUnavailableError, KEY_LOCKED, SnapshotStore, UNAVAILABLE_REASONS, seal, unseal } =
-  await import("./snapshots");
+const {
+  FILE_BUSY,
+  HistoryLockedError,
+  HistoryUnavailableError,
+  KEY_LOCKED,
+  SnapshotStore,
+  UNAVAILABLE_REASONS,
+  seal,
+  unseal,
+} = await import("./snapshots");
 
 const TENANT = "11111111-2222-3333-4444-555555555555";
 const OTHER = "99999999-8888-7777-6666-555555555555";
@@ -76,6 +85,8 @@ function projection(name = "WIN - Secret Policy Name", collectedAt?: string): Sn
   };
   return projectSnapshot(data, assessCompliance(data), new Map());
 }
+
+const yes = () => true;
 
 const guard = (target: InstanceType<typeof SnapshotStore>) => ({
   generation: target.begin(),
@@ -213,13 +224,47 @@ describe("SnapshotStore", () => {
     env.failDecrypt = true;
     const fresh = store();
     await expect(fresh.list(TENANT)).rejects.toThrow(KEY_LOCKED);
+    // Its own retryable type, not one that leads to deleting everything.
+    const locked = await fresh.list(TENANT).catch((error: unknown) => error);
+    expect(locked).toBeInstanceOf(HistoryLockedError);
+    expect(locked).not.toBeInstanceOf(HistoryUnavailableError);
     // Not latched, and no advice to delete everything.
     expect(fresh.unavailableReason()).toBeNull();
-    await expect(fresh.deleteTenant(TENANT)).rejects.toThrow(KEY_LOCKED);
+    await expect(fresh.deleteTenant(TENANT, yes)).rejects.toThrow(KEY_LOCKED);
+    await expect(fresh.delete(TENANT, entry!.id, yes)).rejects.toThrow(KEY_LOCKED);
     expect(snapshotFiles()).toHaveLength(1);
     env.failDecrypt = false;
     expect(await fresh.list(TENANT)).toEqual([entry]);
   });
+
+  for (const code of ["EBUSY", "EAGAIN", "EPERM", "EACCES"]) {
+    it(`treats a key file that cannot be read right now (${code}) as locked, not damaged`, async () => {
+      const history = store();
+      const entry = await history.save(TENANT, projection(), guard(history));
+      const { promises } = await import("node:fs");
+      const readFile = promises.readFile.bind(promises);
+      const spy = vi.spyOn(promises, "readFile").mockImplementation((async (file: unknown, ...rest: unknown[]) => {
+        if (path.basename(String(file)) === "key.bin") {
+          throw Object.assign(new Error(`${code}: key.bin`), { code });
+        }
+        return (readFile as (...args: unknown[]) => Promise<Buffer>)(file, ...rest);
+      }) as typeof promises.readFile);
+      const fresh = store();
+      try {
+        const error = await fresh.list(TENANT).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(HistoryLockedError);
+        expect((error as Error).message).toBe(FILE_BUSY);
+        expect(fresh.unavailableReason()).toBeNull();
+        // Delete all neither resets nor deletes while the key is unreadable.
+        await expect(fresh.deleteTenant(TENANT, yes)).rejects.toThrow(FILE_BUSY);
+        expect(existsSync(path.join(dir, "key.bin"))).toBe(true);
+        expect(snapshotFiles()).toHaveLength(1);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await fresh.list(TENANT)).toEqual([entry]);
+    });
+  }
 
   it("reports a damaged key and resets on delete all", async () => {
     const history = store();
@@ -232,7 +277,7 @@ describe("SnapshotStore", () => {
     const fresh = store();
     await expect(fresh.list(TENANT)).rejects.toThrow(UNAVAILABLE_REASONS.key);
     expect(fresh.unavailableReason()).toBe(UNAVAILABLE_REASONS.key);
-    await fresh.deleteTenant(TENANT);
+    await fresh.deleteTenant(TENANT, yes);
     expect(existsSync(dir)).toBe(false);
     expect(fresh.unavailableReason()).toBeNull();
     expect(await fresh.list(TENANT)).toEqual([]);
@@ -255,6 +300,59 @@ describe("SnapshotStore", () => {
     clock += 60_000;
     const third = await fresh.save(TENANT, projection(), guard(fresh));
     expect(await store().list(TENANT)).toEqual([third, first]);
+  });
+
+  it("reads the backup when the index cannot be read right now, without replacing or sweeping it", async () => {
+    const history = store();
+    const first = await history.save(TENANT, projection(), guard(history));
+    clock += 60_000;
+    const second = await history.save(TENANT, projection(), guard(history));
+    const file = path.join(dir, "index.bin");
+    const before = readFileSync(file);
+    const { promises } = await import("node:fs");
+    const readFile = promises.readFile.bind(promises);
+    const spy = vi.spyOn(promises, "readFile").mockImplementation((async (target: unknown, ...rest: unknown[]) => {
+      if (path.basename(String(target)) === "index.bin") {
+        throw Object.assign(new Error("EBUSY: index.bin"), { code: "EBUSY" });
+      }
+      return (readFile as (...args: unknown[]) => Promise<Buffer>)(target, ...rest);
+    }) as typeof promises.readFile);
+    const fresh = store();
+    try {
+      // The backup lists the first snapshot only.
+      expect(await fresh.list(TENANT)).toEqual([first]);
+      expect(fresh.unavailableReason()).toBeNull();
+      // A write would drop the snapshot only the busy index lists: it waits.
+      await expect(fresh.save(TENANT, projection(), guard(fresh))).rejects.toThrow(FILE_BUSY);
+      await expect(fresh.delete(TENANT, first!.id, yes)).rejects.toBeInstanceOf(HistoryLockedError);
+    } finally {
+      spy.mockRestore();
+    }
+    // Nothing was swept or replaced: the busy index still lists both.
+    expect(readFileSync(file).equals(before)).toBe(true);
+    expect(snapshotFiles()).toHaveLength(2);
+    expect(await fresh.list(TENANT)).toEqual([second, first]);
+  });
+
+  it("says try again, not delete, when neither index copy can be read right now", async () => {
+    const history = store();
+    await history.save(TENANT, projection(), guard(history));
+    const { promises } = await import("node:fs");
+    const readFile = promises.readFile.bind(promises);
+    const spy = vi.spyOn(promises, "readFile").mockImplementation((async (target: unknown, ...rest: unknown[]) => {
+      if (path.basename(String(target)).startsWith("index.bin")) {
+        throw Object.assign(new Error("EPERM: index"), { code: "EPERM" });
+      }
+      return (readFile as (...args: unknown[]) => Promise<Buffer>)(target, ...rest);
+    }) as typeof promises.readFile);
+    const fresh = store();
+    try {
+      await expect(fresh.list(TENANT)).rejects.toBeInstanceOf(HistoryLockedError);
+      expect(fresh.unavailableReason()).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fresh.list(TENANT)).toHaveLength(1);
   });
 
   it("reports a changed index", async () => {
@@ -338,6 +436,10 @@ describe("SnapshotStore", () => {
     expect(snapshotFiles()).toHaveLength(1);
     expect(await history.list(TENANT)).toEqual([kept]);
     expect(await store().list(TENANT)).toEqual([kept]);
+    // The backup is still the index from before the undone save, not the
+    // index that listed it.
+    rmSync(path.join(dir, "index.bin"));
+    expect(await store().list(TENANT)).toEqual([kept]);
   });
 
   it("flushes every file to disk before it is renamed into place", async () => {
@@ -389,12 +491,34 @@ describe("SnapshotStore", () => {
     clock += 60_000;
     const second = await history.save(TENANT, projection(), guard(history));
     await history.save(OTHER, projection(), guard(history));
-    await history.delete(TENANT, first!.id);
+    await history.delete(TENANT, first!.id, yes);
     expect(await history.list(TENANT)).toEqual([second]);
-    await history.deleteTenant(TENANT);
+    await history.deleteTenant(TENANT, yes);
     expect(await history.list(TENANT)).toEqual([]);
     expect(await history.list(OTHER)).toHaveLength(1);
     expect(snapshotFiles()).toHaveLength(1);
+  });
+
+  it("changes nothing when the account changed while a delete or label change was queued", async () => {
+    const history = store();
+    const first = await history.save(TENANT, projection(), guard(history));
+    let signedIn = true;
+    const stillSignedIn = () => signedIn;
+    // Each mutation queues behind a save; the account changes meanwhile.
+    const blocked = history.save(OTHER, projection(), guard(history));
+    const label = history.setLabel(TENANT, "Contoso", stillSignedIn);
+    const removed = history.delete(TENANT, first!.id, stillSignedIn);
+    const removedTenant = history.deleteTenant(TENANT, stillSignedIn);
+    const cleared = history.clear(stillSignedIn);
+    signedIn = false;
+    await blocked;
+    expect(await label).toBe(false);
+    expect(await removed).toBe(false);
+    expect(await removedTenant).toBe(false);
+    expect(await cleared).toBe(false);
+    expect(await history.list(TENANT)).toEqual([first]);
+    expect((await history.tenants()).find((entry) => entry.tenantId === TENANT)?.label).toBeNull();
+    expect(snapshotFiles()).toHaveLength(2);
   });
 
   it("clears snapshots, key and index after a running write", async () => {
@@ -405,6 +529,31 @@ describe("SnapshotStore", () => {
     await cleared;
     expect(existsSync(dir)).toBe(false);
     expect(await history.list(TENANT)).toEqual([]);
+  });
+
+  it("keys fingerprints with the history key and never returns the plain digest", async () => {
+    const history = store();
+    expect(await history.fingerprinter(false)).toBeNull();
+    expect(existsSync(dir)).toBe(false);
+    const fingerprint = (await history.fingerprinter(true))!;
+    const digest = createHash("sha256").update("wifi-key").digest("hex");
+    expect(fingerprint(digest)).toMatch(/^[0-9a-f]{32}$/);
+    expect(digest).not.toContain(fingerprint(digest));
+    expect(fingerprint(digest)).not.toBe(fingerprint(createHash("sha256").update("other").digest("hex")));
+    // Another process of this install reads the same key, so fingerprints
+    // compare across snapshots.
+    expect((await store().fingerprinter(false))!(digest)).toBe(fingerprint(digest));
+    expect(await history.fingerprinter(false)).toBe(fingerprint);
+    // No key is made for a save that a reset already dropped.
+    const fresh = store();
+    const started = fresh.begin();
+    fresh.invalidate();
+    await fresh.clear();
+    expect(await fresh.fingerprinter(true, started)).toBeNull();
+    expect(existsSync(dir)).toBe(false);
+    // A new key after a reset gives fingerprints that do not match the old.
+    await history.clear();
+    expect((await history.fingerprinter(true))!(digest)).not.toBe(fingerprint(digest));
   });
 });
 
@@ -442,33 +591,33 @@ describe("SnapshotStore tenants and labels", () => {
   it("stores a label in the encrypted index and removes it when empty", async () => {
     const target = store();
     await target.save(TENANT, projection(), guard(target));
-    await target.setLabel(TENANT, "  Contoso Retail  ");
+    await target.setLabel(TENANT, "  Contoso Retail  ", yes);
     expect((await store().tenants())[0]!.label).toBe("Contoso Retail");
     const text = allFiles(dir).map((file) => readFileSync(file).toString("latin1")).join("");
     expect(text).not.toContain("Contoso Retail");
-    await target.setLabel(TENANT, "");
+    await target.setLabel(TENANT, "", yes);
     expect((await store().tenants())[0]!.label).toBeNull();
   });
 
   it("refuses a label for a tenant without history or a label that is too long", async () => {
     const target = store();
     await target.save(TENANT, projection(), guard(target));
-    await expect(target.setLabel(OTHER, "Fabrikam")).rejects.toThrow(
+    await expect(target.setLabel(OTHER, "Fabrikam", yes)).rejects.toThrow(
       "This tenant has no history on this computer.",
     );
-    await expect(target.setLabel(TENANT, "x".repeat(61))).rejects.toThrow("too long");
-    await expect(target.setLabel("not-a-tenant", "Fabrikam")).rejects.toThrow("Unknown tenant.");
+    await expect(target.setLabel(TENANT, "x".repeat(61), yes)).rejects.toThrow("too long");
+    await expect(target.setLabel("not-a-tenant", "Fabrikam", yes)).rejects.toThrow("Unknown tenant.");
   });
 
   it("keeps the label when the last snapshot is deleted and drops it with the tenant", async () => {
     const target = store();
     const entry = await target.save(TENANT, projection(), guard(target));
-    await target.setLabel(TENANT, "Contoso");
-    await target.delete(TENANT, entry!.id);
+    await target.setLabel(TENANT, "Contoso", yes);
+    await target.delete(TENANT, entry!.id, yes);
     expect(await target.tenants()).toEqual([
       { tenantId: TENANT, label: "Contoso", snapshots: 0, latest: null },
     ]);
-    await target.deleteTenant(TENANT);
+    await target.deleteTenant(TENANT, yes);
     expect(await target.tenants()).toEqual([]);
   });
 });

@@ -31,7 +31,7 @@ import { localDateStamp } from "../shared/dates";
 import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
 import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
-import { AuthService } from "./auth";
+import { AuthService, SignInUnreachableError } from "./auth";
 import {
   clearCollection,
   collectAll,
@@ -280,6 +280,7 @@ async function requireOwner(): Promise<string> {
   const service = await getAuth();
   const owner = service.getOwnerKey();
   if (!owner || !(await service.getAccessToken())) {
+    if (service.signInUnreachable()) throw new SignInUnreachableError();
     throw new Error("Sign in before continuing.");
   }
   return owner;
@@ -301,6 +302,7 @@ async function tokenProvider(): Promise<string> {
   const service = await getAuth();
   const token = await service.getAccessToken();
   if (!token) {
+    if (service.signInUnreachable()) throw new SignInUnreachableError();
     throw new Error("Sign in before continuing.");
   }
   return token;
@@ -626,6 +628,7 @@ async function recordSnapshot(
       inputs.collection,
       inputs.assessment,
       inputs.groupNames,
+      (await history.fingerprinter(true, generation)) ?? undefined,
     );
     const entry = await history.save(tenant, projection, {
       generation,

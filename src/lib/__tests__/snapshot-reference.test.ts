@@ -335,6 +335,44 @@ describe("settings inside repeated groups", () => {
     expect(action?.status).toBe("different");
   });
 
+  it("marks only the changed value as different inside a changed rule", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
+    const result = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Allow RDP", "block"], ["Block SMB", "block"]]))),
+    );
+    const rows = result.groups.flatMap((group) => group.rows);
+    const action = rows.find((row) => row.setting === `${RULES}_action_type`);
+    const name = rows.find((row) => row.setting === `${RULES}_name`);
+    expect(action?.status).toBe("different");
+    expect(name?.status).toBe("matching");
+    expect(name?.instanceChanged).toBe(true);
+    expect(result.totals.different).toBe(1);
+  });
+
+  it("keeps sibling names matching when two rules swap their actions", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
+    const swapped = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Allow RDP", "block"], ["Block SMB", "allow"]]))),
+    );
+    const rows = swapped.groups.flatMap((group) => group.rows);
+    expect(rows.find((row) => row.setting === `${RULES}_action_type`)?.status).toBe("different");
+    const name = rows.find((row) => row.setting === `${RULES}_name`);
+    expect(name?.status).toBe("matching");
+    expect(name?.instanceChanged).toBe(true);
+    expect(swapped.totals.different).toBe(1);
+  });
+
+  it("does not mark rules that only moved as changed", async () => {
+    const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
+    const reordered = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(firewall([["Block SMB", "block"], ["Allow RDP", "allow"]]))),
+    );
+    expect(reordered.groups.flatMap((group) => group.rows).some((row) => row.instanceChanged)).toBe(false);
+  });
+
   it("matches the same rules in another order", async () => {
     const file = await reference(firewall([["Allow RDP", "allow"], ["Block SMB", "block"]]));
     const reordered = compareSettings(

@@ -335,6 +335,53 @@ describe("HistoryScreen", () => {
     expect(mocks.diff).toHaveBeenLastCalledWith({ fromId: OLDEST.id, toId: LATEST.id });
   });
 
+  it("lists Entra tenant setting changes apart from the policy changes", async () => {
+    mocks.status.mockResolvedValue(status({ count: 2 }));
+    mocks.list.mockResolvedValue([LATEST, PREVIOUS]);
+    mocks.diff.mockImplementation(async (request: HistoryDiffRequest) =>
+      view(request, {
+        identity: {
+          changes: [
+            {
+              policy: "authenticationMethods",
+              policyLabel: "Authentication methods policy",
+              key: "sms-state",
+              name: "State",
+              path: ["SMS"],
+              change: "changed",
+              before: "disabled",
+              after: "enabled",
+            },
+            {
+              policy: "authenticationMethods",
+              policyLabel: "Authentication methods policy",
+              key: "fido-exclude",
+              name: "Exclude target",
+              path: ["Passkey (FIDO2)"],
+              change: "added",
+              before: null,
+              after: "Group Break glass",
+            },
+          ],
+          notCompared: [{ policy: "securityDefaults", label: "Security defaults", side: "from" }],
+          total: 2,
+        },
+      }),
+    );
+    await renderScreen();
+    await settle();
+    const section = screen.getByRole("region", { name: /Entra tenant settings/ });
+    const card = within(section).getByRole("article", { name: "Authentication methods policy" });
+    expect(within(card).getByText("disabled")).toBeTruthy();
+    expect(within(card).getByText("Group Break glass")).toBeTruthy();
+    expect(within(card).getByText("Passkey (FIDO2)")).toBeTruthy();
+    expect(within(section).getByText(/not read in the earlier snapshot/)).toBeTruthy();
+    // The policy totals are unchanged by them.
+    const summary = document.querySelector('[aria-label="Change summary"]');
+    expect(summary?.textContent).toContain("1 setting change");
+    expect(summary?.textContent).not.toContain("3 setting changes");
+  });
+
   it("shows control changes with causes and a ruleset warning", async () => {
     mocks.status.mockResolvedValue(status({ count: 2 }));
     mocks.list.mockResolvedValue([LATEST, PREVIOUS]);

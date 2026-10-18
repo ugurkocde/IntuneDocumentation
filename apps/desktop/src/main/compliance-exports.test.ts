@@ -9,6 +9,7 @@ import {
   fixPackPreviewOf,
   parseRegisterFormat,
   policyDeviceStatusOf,
+  referencedGroupIds,
   registerFile,
   registerPolicyStatus,
 } from "./compliance";
@@ -206,5 +207,34 @@ describe("policy device status of a section", () => {
   it("returns null for families without device status and rejects unknown sections", () => {
     expect(policyDeviceStatusOf(collection, "appProtection")).toBeNull();
     expect(() => policyDeviceStatusOf(collection, "missing")).toThrow(/not part of the last collection/);
+  });
+});
+
+describe("group names to resolve", () => {
+  it("include groups targeted by the authentication method policy, not all_users or users", () => {
+    const group = "b46af1fd-84d5-485b-ba5b-86b7abe448ca";
+    const excluded = "c46af1fd-84d5-485b-ba5b-86b7abe448ca";
+    const ids = referencedGroupIds({
+      sections: [],
+      tenantIdentityPolicies: {
+        status: { authenticationMethods: "collected" },
+        authenticationMethods: {
+          authenticationMethodConfigurations: [
+            {
+              id: "Fido2",
+              includeTargets: [{ targetType: "group", id: "all_users" }],
+              excludeTargets: [{ targetType: "group", id: excluded }],
+            },
+          ],
+          registrationEnforcement: {
+            authenticationMethodsRegistrationCampaign: {
+              includeTargets: [{ targetType: "group", id: group }],
+              excludeTargets: [{ targetType: "user", id: "e8ef57e6-3eb3-4bbd-aada-467677f1df07" }],
+            },
+          },
+        },
+      },
+    } as never);
+    expect(ids.sort()).toEqual([group, excluded].sort());
   });
 });

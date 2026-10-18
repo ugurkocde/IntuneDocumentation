@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { DetailedExportData } from "~/lib/configuration-analyzer";
 import type { ConfigurationSectionData } from "~/lib/configuration-sections";
@@ -295,6 +296,24 @@ function canaryCollection(): SnapshotSource & DetailedExportData {
       authenticationMethods: {
         policyMigrationState: "migrationComplete",
         reportSuspiciousActivitySettings: { voiceReportingCode: CANARY },
+        registrationEnforcement: {
+          other: CANARY,
+          authenticationMethodsRegistrationCampaign: {
+            snoozeDurationInDays: 1,
+            enforceRegistrationAfterAllowedSnoozes: false,
+            state: "enabled",
+            note: CANARY,
+            excludeTargets: [{ id: "user-1", targetType: "user", note: CANARY }],
+            includeTargets: [
+              {
+                id: "group-1",
+                targetType: "group",
+                targetedAuthenticationMethod: "FIDO2",
+                note: CANARY,
+              },
+            ],
+          },
+        },
         authenticationMethodConfigurations: [
           {
             "@odata.type":
@@ -343,11 +362,16 @@ function canaryCollection(): SnapshotSource & DetailedExportData {
   } as unknown as SnapshotSource & DetailedExportData;
 }
 
+// Keyed like the store's fingerprints.
+const fingerprint = (digest: string) =>
+  createHmac("sha256", "test key").update(digest).digest("hex").slice(0, 32);
+
 function project(collection: SnapshotSource & DetailedExportData) {
   return projectSnapshot(
     collection,
     assessCompliance(collection),
     new Map([["group-1", "Finance"]]),
+    fingerprint,
   );
 }
 
@@ -462,11 +486,11 @@ describe("projectSnapshot", () => {
     ]);
     expect(item("windowsScripts").data.fileName).toBe("install.ps1");
     expect(item("windowsScripts").fingerprints?.scriptContent).toMatch(
-      /^[0-9a-f]{16}$/,
+      /^[0-9a-f]{32}$/,
     );
     expect(item("deviceHealthScripts").fingerprints).toEqual({
-      detectionScriptContent: expect.stringMatching(/^[0-9a-f]{16}$/),
-      remediationScriptContent: expect.stringMatching(/^[0-9a-f]{16}$/),
+      detectionScriptContent: expect.stringMatching(/^[0-9a-f]{32}$/),
+      remediationScriptContent: expect.stringMatching(/^[0-9a-f]{32}$/),
     });
     expect(item("appConfigurations").data.settings).toBeUndefined();
     expect(item("enrollmentConfigurations").data).toEqual({
@@ -492,16 +516,28 @@ describe("projectSnapshot", () => {
             excludeTargets: [],
           },
         ],
+        registrationEnforcement: {
+          authenticationMethodsRegistrationCampaign: {
+            snoozeDurationInDays: 1,
+            enforceRegistrationAfterAllowedSnoozes: false,
+            state: "enabled",
+            includeTargets: [
+              {
+                targetType: "group",
+                id: "group-1",
+                targetedAuthenticationMethod: "FIDO2",
+              },
+            ],
+            excludeTargets: [{ targetType: "user", id: "user-1" }],
+          },
+        },
       },
       securityDefaults: { isEnabled: false },
-      authorization: {
-        allowInvitesFrom: "everyone",
-        defaultUserRolePermissions: { allowedToCreateApps: true },
-      },
+      // An older collection's authorization policy is not evaluated and is
+      // dropped with its status.
       status: {
         authenticationMethods: "collected",
         securityDefaults: "collected",
-        authorization: "collected",
       },
     });
     expect(projection.policyDeviceStatus?.rows).toEqual([

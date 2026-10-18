@@ -181,8 +181,29 @@ function requireCollection(owner: string): Collection {
 
 // Group ids referenced by assignments and Conditional Access user conditions,
 // the same set the website resolves for its compliance view.
-function referencedGroupIds(collection: Collection): string[] {
+// Group ids named by assignments, Conditional Access and the Entra
+// authentication method policy, so history and Compare show group names.
+export function referencedGroupIds(collection: Collection): string[] {
   const ids = new Set<string>();
+  const methods = (collection as { tenantIdentityPolicies?: { authenticationMethods?: any } })
+    .tenantIdentityPolicies?.authenticationMethods;
+  const campaign = methods?.registrationEnforcement?.authenticationMethodsRegistrationCampaign;
+  for (const owner of [
+    ...(Array.isArray(methods?.authenticationMethodConfigurations)
+      ? methods.authenticationMethodConfigurations
+      : []),
+    ...(campaign ? [campaign] : []),
+  ]) {
+    for (const target of [
+      ...(Array.isArray(owner?.includeTargets) ? owner.includeTargets : []),
+      ...(Array.isArray(owner?.excludeTargets) ? owner.excludeTargets : []),
+    ]) {
+      // "all_users" is a fixed target, not a group id.
+      if (target?.targetType === "group" && typeof target.id === "string" && target.id !== "all_users") {
+        ids.add(target.id);
+      }
+    }
+  }
   for (const section of collection.sections) {
     for (const item of section.items as Array<Record<string, any>>) {
       for (const assignment of Array.isArray(item.assignments)

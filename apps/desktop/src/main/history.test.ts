@@ -82,6 +82,20 @@ describe("historyDiffView", () => {
         notComparedFamilies: 0,
         notComparedItems: 0,
       },
+      identity: {
+        changes: Array.from({ length: 205 }, (_, index) => ({
+          policy: "authenticationMethods" as const,
+          policyLabel: "Authentication methods policy",
+          key: `k${index}`,
+          name: "State",
+          path: ["SMS"],
+          change: "changed" as const,
+          before: "disabled",
+          after: "enabled",
+        })),
+        notCompared: [{ policy: "securityDefaults", label: "Security defaults", side: "to" }],
+        total: 205,
+      },
     },
     assessments: {
       fromRuleset: "1",
@@ -111,6 +125,16 @@ describe("historyDiffView", () => {
       total: 0,
     });
     expect(historyDiffView(PREVIOUS, LATEST, compared, "zz").controls.frameworkId).toBe("b");
+  });
+
+  it("passes the Entra setting changes capped, with their own total", () => {
+    const view = historyDiffView(PREVIOUS, LATEST, compared);
+    expect(view.identity.changes).toHaveLength(200);
+    expect(view.identity.total).toBe(205);
+    expect(view.identity.notCompared).toEqual([
+      { policy: "securityDefaults", label: "Security defaults", side: "to" },
+    ]);
+    expect(view.totals.policies).toBe(0);
   });
 });
 

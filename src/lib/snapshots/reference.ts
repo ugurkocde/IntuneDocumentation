@@ -8,6 +8,12 @@ import { createHash } from "node:crypto";
 import { sha256 } from "../compliance/manifest";
 import { flattenItemSettings } from "../settings-flatten";
 import {
+  identityCollected,
+  identityRows,
+  IDENTITY_POLICY_LABELS,
+  type IdentityPolicyName,
+} from "./identity";
+import {
   snapshotItemLabel,
   type SnapshotItem,
   type SnapshotProjection,
@@ -16,9 +22,11 @@ import {
 import {
   COMPARISON_ORDER,
   GENERAL_PLATFORM,
+  IDENTITY_PLATFORM,
   type CompareGroup,
   type CompareValue,
   type ComparisonCounts,
+  type ComparisonPart,
   type NotComparedSettingsFamily,
   type SettingComparison,
   type SettingsComparison,
@@ -70,6 +78,14 @@ export interface ReferenceFamily {
   label: string;
 }
 
+// Entra tenant identity settings, compared on their own and never counted
+// with the configuration settings. Families are the identity policies.
+export interface ReferenceIdentity {
+  families: ReferenceFamily[];
+  notCompared: ReferenceFamily[];
+  settings: ReferenceSetting[];
+}
+
 export interface ReferenceFile {
   schema: typeof REFERENCE_SCHEMA;
   createdAt: string;
@@ -81,6 +97,8 @@ export interface ReferenceFile {
   // Families whose collection failed, was skipped or is incomplete.
   notCompared: ReferenceFamily[];
   settings: ReferenceSetting[];
+  // Absent in files saved before identity settings were kept.
+  identity?: ReferenceIdentity;
   checksum: { algorithm: "sha-256"; value: string };
 }
 
@@ -90,6 +108,7 @@ export interface SettingSet {
   families: ReferenceFamily[];
   notCompared: ReferenceFamily[];
   settings: ReferenceSetting[];
+  identity?: ReferenceIdentity;
 }
 
 export type ReferenceRejection = "schema" | "checksum" | "size";
@@ -275,7 +294,41 @@ export function projectionSettings(projection: SnapshotProjection): SettingSet {
     families,
     notCompared,
     settings,
+    identity: identitySettings(projection),
   };
+}
+
+const IDENTITY_POLICIES = Object.keys(
+  IDENTITY_POLICY_LABELS,
+) as IdentityPolicyName[];
+
+// The identity policies collected in the snapshot as settings rows. Targets
+// that name a group or user of the tenant mean nothing elsewhere, so they
+// are not comparable; "All users" is.
+export function identitySettings(
+  projection: Pick<SnapshotProjection, "tenantIdentityPolicies">,
+): ReferenceIdentity {
+  const identity = projection.tenantIdentityPolicies;
+  const families: ReferenceFamily[] = [];
+  const notCompared: ReferenceFamily[] = [];
+  for (const policy of IDENTITY_POLICIES) {
+    const family = { key: policy, label: IDENTITY_POLICY_LABELS[policy] };
+    (identityCollected(identity, policy) ? families : notCompared).push(family);
+  }
+  const settings = identityRows(identity).map(
+    (row): ReferenceSetting => ({
+      platform: IDENTITY_PLATFORM,
+      family: row.policy,
+      setting: row.setting,
+      name: row.name,
+      ...(row.path.length ? { path: [...row.path] } : {}),
+      ...(row.tenantObject
+        ? { redacted: true as const }
+        : { value: row.display.slice(0, REFERENCE_MAX_VALUE) }),
+      policy: IDENTITY_POLICY_LABELS[row.policy],
+    }),
+  );
+  return { families, notCompared, settings };
 }
 
 type ReferenceBody = Omit<ReferenceFile, "checksum">;
@@ -298,6 +351,7 @@ export async function createReference(
     families: set.families,
     notCompared: set.notCompared,
     settings: set.settings,
+    ...(set.identity ? { identity: set.identity } : {}),
   };
   return {
     ...body,
@@ -338,8 +392,11 @@ const FILE_KEYS = new Set([
   "families",
   "notCompared",
   "settings",
+  "identity",
   "checksum",
 ]);
+
+const IDENTITY_KEYS = new Set(["families", "notCompared", "settings"]);
 
 const SETTING_KEYS = new Set([
   "platform",
@@ -437,6 +494,29 @@ function isConsistent(file: ReferenceFile): boolean {
   return file.settings.every((setting) => compared.has(setting.family));
 }
 
+function isIdentity(value: unknown): value is ReferenceIdentity {
+  if (!isRecord(value) || !onlyKeys(value, IDENTITY_KEYS)) return false;
+  if (!isFamilyList(value.families) || !isFamilyList(value.notCompared))
+    return false;
+  const known = new Set<string>(IDENTITY_POLICIES);
+  const keys = [...value.families, ...value.notCompared].map(
+    (family) => family.key,
+  );
+  if (new Set(keys).size !== keys.length || !keys.every((key) => known.has(key)))
+    return false;
+  const compared = new Set(value.families.map((family) => family.key));
+  return (
+    Array.isArray(value.settings) &&
+    value.settings.length <= REFERENCE_MAX_SETTINGS &&
+    value.settings.every(
+      (setting) =>
+        isSetting(setting) &&
+        setting.platform === IDENTITY_PLATFORM &&
+        compared.has(setting.family),
+    )
+  );
+}
+
 function isReferenceFile(value: unknown): value is ReferenceFile {
   if (!isRecord(value) || !onlyKeys(value, FILE_KEYS)) return false;
   if (value.schema !== REFERENCE_SCHEMA) return false;
@@ -462,6 +542,7 @@ function isReferenceFile(value: unknown): value is ReferenceFile {
     !value.settings.every(isSetting)
   )
     return false;
+  if (value.identity !== undefined && !isIdentity(value.identity)) return false;
   return (
     isRecord(checksum) &&
     Object.keys(checksum).length === 2 &&
@@ -501,24 +582,17 @@ export function referenceSettings(file: ReferenceFile): SettingSet {
     families: file.families,
     notCompared: file.notCompared,
     settings: file.settings,
+    ...(file.identity ? { identity: file.identity } : {}),
   };
 }
 
-// --- Comparison ---------------------------------------------------------------
-
-
-function emptyCounts(): ComparisonCounts {
-  return { different: 0, missing: 0, extra: 0, notComparable: 0, matching: 0 };
-}
+// --- Value tokens -------------------------------------------------------------
 
 // Equality token of one value. Long values are shortened with a digest of
-// the full value, so the digest is what is compared. A setting configured
-// more than once is compared with the group instance it belongs to, when it
-// is part of one.
-function token(setting: ReferenceSetting, tuples: boolean): string | null {
+// the full value, so the digest is what is compared.
+function token(setting: ReferenceSetting): string | null {
   if (setting.redacted || setting.value === undefined) return null;
-  const value = setting.sha256 ?? digest(setting.value);
-  return tuples && setting.group ? `${value}${SEPARATOR}${setting.group}` : value;
+  return setting.sha256 ?? digest(setting.value);
 }
 
 function byKey(settings: readonly ReferenceSetting[], compared: ReadonlySet<string>) {
@@ -540,29 +614,126 @@ function values(list: readonly ReferenceSetting[] | undefined): CompareValue[] {
   }));
 }
 
+// --- Group instances ----------------------------------------------------------
+
+// One group instance, such as one firewall rule, on one side: the policy it
+// is in, its path and the digest of its content.
+function instanceOf(setting: ReferenceSetting): string | null {
+  return setting.group && setting.path?.length
+    ? [setting.platform, setting.family, setting.policy, setting.path.join(SEPARATOR), setting.group].join(
+        SEPARATOR,
+      )
+    : null;
+}
+
+interface Instance {
+  group: string;
+  // Setting and value tokens of the settings directly in the instance.
+  tokens: Map<string, number>;
+}
+
+function instancesOf(settings: readonly ReferenceSetting[]): Map<string, Instance> {
+  const instances = new Map<string, Instance>();
+  for (const setting of settings) {
+    const key = instanceOf(setting);
+    if (!key) continue;
+    let instance = instances.get(key);
+    if (!instance) instances.set(key, (instance = { group: setting.group!, tokens: new Map() }));
+    const entry = `${setting.setting}${SEPARATOR}${token(setting) ?? REDACTED}`;
+    instance.tokens.set(entry, (instance.tokens.get(entry) ?? 0) + 1);
+  }
+  return instances;
+}
+
+function overlap(a: Instance, b: Instance): number {
+  let shared = 0;
+  for (const [entry, count] of a.tokens) shared += Math.min(count, b.tokens.get(entry) ?? 0);
+  return shared;
+}
+
+// Instances of both sides paired by the most settings they share; ties go
+// to the same position, so swapping one value between two rules pairs each
+// rule with itself and only that value differs.
+function pairInstances(
+  expected: readonly string[],
+  actual: readonly string[],
+  a: ReadonlyMap<string, Instance>,
+  b: ReadonlyMap<string, Instance>,
+): Array<[string, string]> {
+  const candidates: Array<{ i: number; j: number; score: number }> = [];
+  expected.forEach((left, i) =>
+    actual.forEach((right, j) => candidates.push({ i, j, score: overlap(a.get(left)!, b.get(right)!) })),
+  );
+  candidates.sort((x, y) => y.score - x.score || Math.abs(x.i - x.j) - Math.abs(y.i - y.j) || x.i - y.i);
+  const usedLeft = new Set<number>();
+  const usedRight = new Set<number>();
+  const pairs: Array<[string, string]> = [];
+  for (const { i, j } of candidates) {
+    if (usedLeft.has(i) || usedRight.has(j)) continue;
+    usedLeft.add(i);
+    usedRight.add(j);
+    pairs.push([expected[i]!, actual[j]!]);
+  }
+  return pairs;
+}
+
+interface InstanceContext {
+  expected: Map<string, Instance>;
+  actual: Map<string, Instance>;
+  // Pairings by candidate instances, shared by the settings of one group.
+  pairs: Map<string, Array<[string, string]>>;
+}
+
+function ownValues(list: readonly ReferenceSetting[], instance: string): string {
+  return list
+    .filter((setting) => instanceOf(setting) === instance)
+    .map((setting) => token(setting)!)
+    .sort()
+    .join(SEPARATOR);
+}
+
+// A setting differs only when its own values differ. Inside group
+// instances its values are compared per paired instance, so a swapped value
+// is a difference, while the other settings of a changed instance stay
+// matching and are marked as part of a changed instance.
 function statusOf(
   expected: readonly ReferenceSetting[] | undefined,
   actual: readonly ReferenceSetting[] | undefined,
-): SettingComparison {
-  if (!actual?.length) return "missing";
-  if (!expected?.length) return "extra";
+  context: InstanceContext,
+): { status: SettingComparison; instanceChanged?: true } {
+  if (!actual?.length) return { status: "missing" };
+  if (!expected?.length) return { status: "extra" };
   const all = [...expected, ...actual];
-  if (all.some((setting) => token(setting, false) === null)) return "notComparable";
-  const tuples = expected.length > 1 || actual.length > 1;
-  const a = new Set(expected.map((setting) => token(setting, tuples)));
-  const b = new Set(actual.map((setting) => token(setting, tuples)));
-  return a.size === b.size && [...a].every((value) => b.has(value))
-    ? "matching"
-    : "different";
+  if (all.some((setting) => token(setting) === null)) return { status: "notComparable" };
+  const a = new Set(expected.map(token));
+  const b = new Set(actual.map(token));
+  if (a.size !== b.size || ![...a].every((value) => b.has(value))) return { status: "different" };
+  if (!all.every(instanceOf)) return { status: "matching" };
+  const left = [...new Set(expected.map(instanceOf) as string[])];
+  const right = [...new Set(actual.map(instanceOf) as string[])];
+  const cacheKey = JSON.stringify([left, right]);
+  let pairs = context.pairs.get(cacheKey);
+  if (!pairs) {
+    pairs = pairInstances(left, right, context.expected, context.actual);
+    context.pairs.set(cacheKey, pairs);
+  }
+  let instanceChanged = false;
+  for (const [from, to] of pairs) {
+    if (ownValues(expected, from) !== ownValues(actual, to)) return { status: "different" };
+    if (context.expected.get(from)!.group !== context.actual.get(to)!.group) instanceChanged = true;
+  }
+  return instanceChanged ? { status: "matching", instanceChanged: true } : { status: "matching" };
 }
 
-// A setting matches when the same values are configured for it in the same
-// platform and family, whichever policies carry them. Assignments are not
-// compared. Families incomplete on either side are listed as not compared.
-export function compareSettings(
-  reference: SettingSet,
-  current: SettingSet,
-): SettingsComparison {
+// --- Comparison ---------------------------------------------------------------
+
+function emptyCounts(): ComparisonCounts {
+  return { different: 0, missing: 0, extra: 0, notComparable: 0, matching: 0 };
+}
+
+type ComparedSide = Pick<SettingSet, "families" | "notCompared" | "settings">;
+
+function compareSides(reference: ComparedSide, current: ComparedSide): ComparisonPart {
   const referenceComplete = new Set(reference.families.map((family) => family.key));
   const currentComplete = new Set(current.families.map((family) => family.key));
   const labels = new Map<string, string>();
@@ -591,13 +762,18 @@ export function compareSettings(
 
   const expected = byKey(reference.settings, compared);
   const actual = byKey(current.settings, compared);
+  const context: InstanceContext = {
+    expected: instancesOf([...expected.values()].flat()),
+    actual: instancesOf([...actual.values()].flat()),
+    pairs: new Map(),
+  };
   const groups = new Map<string, CompareGroup>();
   const totals = emptyCounts();
   for (const key of new Set([...expected.keys(), ...actual.keys()])) {
     const a = expected.get(key);
     const b = actual.get(key);
     const sample = (b ?? a)![0]!;
-    const status = statusOf(a, b);
+    const { status, instanceChanged } = statusOf(a, b, context);
     const groupKey = [sample.platform, sample.family].join(SEPARATOR);
     let group = groups.get(groupKey);
     if (!group) {
@@ -620,6 +796,7 @@ export function compareSettings(
       path: sample.path ?? [],
       expected: values(a),
       actual: values(b),
+      ...(instanceChanged ? { instanceChanged } : {}),
     });
   }
   const order = (status: SettingComparison) => COMPARISON_ORDER.indexOf(status);
@@ -641,6 +818,23 @@ export function compareSettings(
     groups: list,
     totals,
     notCompared: notCompared.sort((x, y) => x.label.localeCompare(y.label)),
+  };
+}
+
+const NO_IDENTITY: ReferenceIdentity = { families: [], notCompared: [], settings: [] };
+
+// A setting matches when the same values are configured for it in the same
+// platform and family, whichever policies carry them. Assignments are not
+// compared. Families incomplete on either side are listed as not compared.
+// Entra identity settings are compared the same way but reported on their
+// own, outside the configuration counts.
+export function compareSettings(
+  reference: SettingSet,
+  current: SettingSet,
+): SettingsComparison {
+  return {
+    ...compareSides(reference, current),
+    identity: compareSides(reference.identity ?? NO_IDENTITY, current.identity ?? NO_IDENTITY),
     rulesetChanged: reference.rulesetVersion !== current.rulesetVersion,
   };
 }
@@ -674,9 +868,8 @@ export function capComparison(
           ? `${entry.value.slice(0, limits.maxValueLength)}...`
           : entry.value,
     }));
-  return {
-    ...comparison,
-    groups: comparison.groups.map((group) => {
+  const cap = (groups: CompareGroup[]) =>
+    groups.map((group) => {
       const take = Math.max(0, Math.min(limits.maxRowsPerGroup, budget));
       budget -= Math.min(take, group.rows.length);
       return {
@@ -687,6 +880,13 @@ export function capComparison(
           actual: clip(row.actual),
         })),
       };
-    }),
+    });
+  const groups = cap(comparison.groups);
+  // Identity settings are few; they get their own budget.
+  budget = limits.maxRows;
+  return {
+    ...comparison,
+    groups,
+    identity: { ...comparison.identity, groups: cap(comparison.identity.groups) },
   };
 }

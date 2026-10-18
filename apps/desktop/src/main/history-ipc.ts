@@ -4,6 +4,7 @@ import { scopeKeyOf } from "../../../../src/lib/compliance/management/management
 import type { ComplianceAssessment } from "../../../../src/lib/compliance/types";
 import {
   projectSnapshot,
+  type SnapshotFingerprint,
   type SnapshotProjection,
   type SnapshotSource,
 } from "../../../../src/lib/snapshots/projection";
@@ -51,6 +52,7 @@ import type { LicenseService } from "./license";
 import { isScheduleHours, type CollectionScheduler } from "./scheduler";
 import type { AppSettings } from "./settings";
 import {
+  HistoryLockedError,
   HistoryUnavailableError,
   MAX_TENANT_LABEL,
   type SnapshotStore,
@@ -96,6 +98,7 @@ export interface HistoryIpcDeps {
     | "invalidate"
     | "clear"
     | "hasData"
+    | "fingerprinter"
   >;
   readSettings(): Promise<AppSettings>;
   writeSettings(input: Partial<AppSettings>): Promise<AppSettings>;
@@ -178,7 +181,10 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
   let reference: { owner: string; file: ReferenceFile } | null = null;
   // Bumped by every reset, so a file picked before a sign-out is dropped.
   let generation = 0;
-  const projections = new WeakMap<object, SnapshotProjection>();
+  const projections = new WeakMap<
+    object,
+    { fingerprint: SnapshotFingerprint | null; projection: SnapshotProjection }
+  >();
 
   // Signed in, licensed, and the signed in tenant, with the session
   // generation from before the first await. Every account change resets the
@@ -196,13 +202,22 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
 
   // Work that awaited must still belong to the account that started it.
   // Checked after every await and before anything is cached or returned.
+  function isCurrent(session: Session): boolean {
+    return (
+      generation === session.started &&
+      deps.signedInTenant()?.toLowerCase() === session.tenant
+    );
+  }
+
   function stillCurrent(session: Session): void {
-    if (
-      generation !== session.started ||
-      deps.signedInTenant()?.toLowerCase() !== session.tenant
-    ) {
-      throw new Error(ACCOUNT_SWITCHED);
-    }
+    if (!isCurrent(session)) throw new Error(ACCOUNT_SWITCHED);
+  }
+
+  // Deletes and label changes wait in the store queue; the store checks
+  // this right before it changes anything, and false means it did not.
+  function mutated(session: Session, done: boolean): void {
+    if (!done) throw new Error(ACCOUNT_SWITCHED);
+    stillCurrent(session);
   }
 
   // The result of awaited work, once it is known to still be current.
@@ -223,35 +238,47 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     const settings = await deps.readSettings();
     let reason = store.unavailableReason();
     let count = 0;
+    // Locked right now: the history is intact, so it is never offered for
+    // deletion.
+    let locked = false;
     if (!reason) {
       try {
         count = (await store.list(session.tenant)).length;
       } catch (error) {
+        locked = error instanceof HistoryLockedError;
         reason =
-          error instanceof HistoryUnavailableError
-            ? error.message
+          error instanceof HistoryUnavailableError || locked
+            ? (error as Error).message
             : "History could not be read on this computer.";
       }
     }
-    const unreadableData = Boolean(reason) && (await store.hasData());
+    const unreadableData = Boolean(reason) && !locked && (await store.hasData());
     return current(session, {
       enabled: settings.keepHistory,
       available: !reason,
       reason,
       count,
       ...(unreadableData ? { unreadableData } : {}),
+      ...(locked ? { locked } : {}),
     });
   }
 
   // The current collection as a snapshot projection, built once per
-  // collection.
+  // collection and history key. Its fingerprints use the history key, so
+  // they compare with stored snapshots; without a readable key there are
+  // none, and there is no snapshot to compare them with either.
   async function currentProjection(owner: string): Promise<SnapshotProjection> {
     const inputs = await deps.currentInputs(owner);
-    let projection = projections.get(inputs.collection);
-    if (!projection) {
-      projection = projectSnapshot(inputs.collection, inputs.assessment, inputs.groupNames);
-      projections.set(inputs.collection, projection);
-    }
+    const fingerprint = await store.fingerprinter(false).catch(() => null);
+    const cached = projections.get(inputs.collection);
+    if (cached?.fingerprint === fingerprint) return cached.projection;
+    const projection = projectSnapshot(
+      inputs.collection,
+      inputs.assessment,
+      inputs.groupNames,
+      fingerprint ?? undefined,
+    );
+    projections.set(inputs.collection, { fingerprint, projection });
     return projection;
   }
 
@@ -268,7 +295,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     try {
       entries = current(session, await store.list(tenant));
     } catch (error) {
-      if (error instanceof HistoryUnavailableError) {
+      if (error instanceof HistoryUnavailableError || error instanceof HistoryLockedError) {
         return { state: "none", reason: "unavailable" };
       }
       throw error;
@@ -346,7 +373,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
   handle("history:delete", async (_event, input) => {
     const id = parseSnapshotId(input);
     const session = await licensed();
-    await store.delete(session.tenant, id);
+    mutated(session, await store.delete(session.tenant, id, () => isCurrent(session)));
     invalidate();
     deps.log("info", "snapshot deleted");
     await deps.scheduler.refresh();
@@ -355,14 +382,16 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
 
   handle("history:deleteAll", async () => {
     const session = await licensed();
+    const guard = () => isCurrent(session);
     try {
-      await store.deleteTenant(session.tenant);
+      mutated(session, await store.deleteTenant(session.tenant, guard));
     } catch (error) {
       // History that cannot be decrypted, for example without secure
       // storage, cannot be told apart by tenant, so all of it is removed
-      // without reading it.
+      // without reading it. A locked keychain or a busy file is not that:
+      // the history is intact and the error goes back to the user.
       if (!(error instanceof HistoryUnavailableError)) throw error;
-      await store.clear();
+      mutated(session, await store.clear(guard));
       deps.log("info", "unreadable history deleted");
     }
     invalidate();
@@ -507,6 +536,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
         totals: result.totals,
         groups: result.groups,
         notCompared: result.notCompared,
+        identity: result.identity,
         rulesetChanged: result.rulesetChanged,
       };
     });
@@ -523,7 +553,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     try {
       stored = current(session, await store.tenants());
     } catch (error) {
-      if (error instanceof HistoryUnavailableError) {
+      if (error instanceof HistoryUnavailableError || error instanceof HistoryLockedError) {
         return { available: false, reason: error.message, tenants: [] };
       }
       throw error;
@@ -557,7 +587,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     const target = parseTenantId(tenantId);
     const clean = parseTenantLabel(label);
     const session = await msp();
-    await store.setLabel(target, clean);
+    mutated(session, await store.setLabel(target, clean, () => isCurrent(session)));
     deps.log("info", "tenant label changed", { cleared: clean === "" });
     return portfolio(session);
   });
@@ -566,7 +596,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     const target = parseTenantId(tenantId);
     const session = await msp();
     const { tenant } = session;
-    await store.deleteTenant(target);
+    mutated(session, await store.deleteTenant(target, () => isCurrent(session)));
     invalidate();
     deps.log("info", "tenant history deleted", { current: target === tenant });
     if (target === tenant) {

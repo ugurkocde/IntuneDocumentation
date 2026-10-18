@@ -12,6 +12,7 @@ import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { normalizeOdataType } from "../compliance/engine";
 import { canonicalOmaUri } from "../compliance/oma-uri";
 import { frameworkCoverageLabel } from "../compliance/presentation";
+import { REDACTED_VALUE, redactedDigests } from "../intune-policy-registry";
 import type {
   AssessmentScope,
   CapabilityStatus,
@@ -32,8 +33,8 @@ export interface SnapshotItem {
   data: Record<string, unknown>;
   // Details or assignments were not fully collected.
   incomplete?: true;
-  // Short SHA-256 of content that is never stored, such as script bodies
-  // and secret values (see VALUE_FINGERPRINT).
+  // Keyed digests of content that is never stored, such as script bodies
+  // and secret values (see VALUE_FINGERPRINT and SnapshotFingerprint).
   fingerprints?: Record<string, string>;
 }
 
@@ -122,7 +123,6 @@ type CollectionStatus = "collected" | "permissionDenied" | "failed" | "skipped";
 export interface SnapshotTenantIdentityPolicies {
   authenticationMethods?: Record<string, unknown>;
   securityDefaults?: Record<string, unknown>;
-  authorization?: Record<string, unknown>;
   status: Record<string, CollectionStatus>;
   errors?: Record<string, string>;
 }
@@ -229,6 +229,18 @@ export const VALUE_FINGERPRINT = "value:";
 
 // Called with each value that is dropped, so it is compared by fingerprint.
 type DroppedValue = (settingId: string, content: string) => void;
+
+// Turns the SHA-256 digest of content that is not stored into the stored
+// fingerprint. The desktop keys it (HMAC-SHA256 with a key derived from the
+// history master key), so a low entropy secret such as a Wi-Fi key cannot be
+// found by hashing guesses. Without one, no fingerprints are kept.
+export type SnapshotFingerprint = (digest: string) => string;
+
+// The digest the collector takes of a value before it redacts it, and the
+// one taken here of content the projection drops.
+export function contentDigest(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
 
 // Fields the compound policy checks read, by normalized @odata.type.
 const POLICY_CHECK_FIELDS: Readonly<Record<string, readonly string[]>> = {
@@ -639,8 +651,40 @@ function projectScheduledActions(value: unknown): Json[] | undefined {
   }));
 }
 
-function fingerprint(content: string): string {
-  return createHash("sha256").update(content).digest("hex").slice(0, 16);
+// The name of the setting a nested record belongs to.
+function settingName(record: Json): string | undefined {
+  const presentation = isRecord(record.presentation)
+    ? record.presentation
+    : undefined;
+  return (
+    text(record.settingDefinitionId) ??
+    text(record.omaUri) ??
+    text(record.appConfigKey) ??
+    text(presentation?.label) ??
+    text(presentation?.id) ??
+    text(record.name)
+  );
+}
+
+// Every digest the collector took of a value it redacted on this item, with
+// the nearest setting the value belongs to; undefined on the item itself.
+function walkRedacted(
+  value: unknown,
+  owner: string | undefined,
+  depth: number,
+  found: (owner: string | undefined, field: string, digest: string) => void,
+): void {
+  if (depth > 64) return;
+  if (Array.isArray(value)) {
+    for (const entry of value) walkRedacted(entry, owner, depth + 1, found);
+    return;
+  }
+  if (!isRecord(value)) return;
+  const name = depth === 0 ? undefined : (settingName(value) ?? owner);
+  for (const [field, digest] of redactedDigests(value))
+    found(name, field, digest);
+  for (const nested of Object.values(value))
+    walkRedacted(nested, name, depth + 1, found);
 }
 
 function projectItem(
@@ -648,6 +692,7 @@ function projectItem(
   raw: Json,
   index: number,
   itemErrors: ReadonlySet<string>,
+  fingerprint?: SnapshotFingerprint,
 ): SnapshotItem {
   const id = getStableItemId(section, raw, index);
   const data: Json = pick(raw, ITEM_KEYS);
@@ -676,11 +721,17 @@ function projectItem(
   }
   const fingerprints: Record<string, string> = {};
   const occurrences = new Map<string, number>();
-  const dropped: DroppedValue = (settingId, content) => {
+  const valueFingerprint = (settingId: string, digest: string) => {
+    if (!fingerprint) return;
     const occurrence = occurrences.get(settingId) ?? 0;
     occurrences.set(settingId, occurrence + 1);
     fingerprints[`${VALUE_FINGERPRINT}${settingId}#${occurrence}`] =
-      fingerprint(content);
+      fingerprint(digest);
+  };
+  // A value the collector redacted is fingerprinted from its digest below.
+  const dropped: DroppedValue = (settingId, content) => {
+    if (content !== REDACTED_VALUE)
+      valueFingerprint(settingId, contentDigest(content));
   };
   const settings = projectSettings(raw.settings, dropped);
   if (settings) data.settings = settings;
@@ -706,10 +757,20 @@ function projectItem(
 
   for (const key of Object.keys(FINGERPRINT_LABELS)) {
     const content = raw[key];
-    if (typeof content === "string" && content) {
-      fingerprints[key] = fingerprint(content);
-    }
+    if (
+      fingerprint &&
+      typeof content === "string" &&
+      content &&
+      content !== REDACTED_VALUE
+    )
+      fingerprints[key] = fingerprint(contentDigest(content));
   }
+  if (fingerprint)
+    walkRedacted(raw, undefined, 0, (owner, field, digest) => {
+      if (owner === undefined && Object.hasOwn(FINGERPRINT_LABELS, field))
+        fingerprints[field] = fingerprint(digest);
+      else valueFingerprint(owner ?? field, digest);
+    });
   const incomplete =
     raw.hasFetchError === true ||
     Object.values(collectionStatus ?? {}).includes("incomplete") ||
@@ -763,7 +824,6 @@ function errorRecord(value: unknown): Record<string, string> | undefined {
 const IDENTITY_POLICIES = [
   "authenticationMethods",
   "securityDefaults",
-  "authorization",
 ] as const;
 
 // Fields verified against Graph beta in the lab tenant (2026-10-18).
@@ -808,38 +868,38 @@ function projectIdentity(
             : {}),
         })),
     };
+    // The registration campaign, compared by the change report (fields
+    // checked against Graph beta in the lab tenant, 2026-10-18).
+    const campaign = getPath(
+      methods,
+      "registrationEnforcement.authenticationMethodsRegistrationCampaign",
+    );
+    if (isRecord(campaign))
+      out.authenticationMethods.registrationEnforcement = {
+        authenticationMethodsRegistrationCampaign: {
+          ...pick(campaign, [
+            "state",
+            "snoozeDurationInDays",
+            "enforceRegistrationAfterAllowedSnoozes",
+          ]),
+          includeTargets: (Array.isArray(campaign.includeTargets)
+            ? campaign.includeTargets
+            : []
+          )
+            .filter(isRecord)
+            .map((target) =>
+              pick(target, [
+                "targetType",
+                "id",
+                "targetedAuthenticationMethod",
+              ]),
+            ),
+          excludeTargets: targets(campaign.excludeTargets),
+        },
+      };
   }
   if (isRecord(value.securityDefaults))
     out.securityDefaults = pick(value.securityDefaults, ["isEnabled"]);
-  const authorization = value.authorization;
-  if (isRecord(authorization)) {
-    out.authorization = {
-      ...pick(authorization, [
-        "allowInvitesFrom",
-        "allowedToSignUpEmailBasedSubscriptions",
-        "allowedToUseSSPR",
-        "allowEmailVerifiedUsersToJoinOrganization",
-        "allowUserConsentForRiskyApps",
-        "blockMsolPowerShell",
-        "guestUserRoleId",
-        "permissionGrantPolicyIdsAssignedToDefaultUserRole",
-      ]),
-      ...(isRecord(authorization.defaultUserRolePermissions)
-        ? {
-            defaultUserRolePermissions: pick(
-              authorization.defaultUserRolePermissions,
-              [
-                "allowedToCreateApps",
-                "allowedToCreateSecurityGroups",
-                "allowedToCreateTenants",
-                "allowedToReadBitlockerKeysForOwnedDevice",
-                "allowedToReadOtherUsers",
-              ],
-            ),
-          }
-        : {}),
-    };
-  }
   return out;
 }
 
@@ -953,6 +1013,7 @@ export function projectSnapshot(
   collection: SnapshotSource,
   assessment: ComplianceAssessment,
   groupNames: ReadonlyMap<string, string> | Readonly<Record<string, string>>,
+  fingerprint?: SnapshotFingerprint,
 ): SnapshotProjection {
   const fetchErrors = collection.fetchErrors ?? [];
   const skipped = collection.collectionSkippedFamilies ?? [];
@@ -981,7 +1042,7 @@ export function projectSnapshot(
         items: section.items
           .map((item, index) =>
             isRecord(item)
-              ? projectItem(section, item, index, itemErrors)
+              ? projectItem(section, item, index, itemErrors, fingerprint)
               : null,
           )
           .filter((item): item is SnapshotItem => item !== null),

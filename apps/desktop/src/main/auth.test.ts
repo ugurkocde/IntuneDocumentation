@@ -11,6 +11,9 @@ const msal = vi.hoisted(() => ({
   // Age (ms) of the cached ID token, and every forceRefresh flag seen.
   cachedIdTokenAge: 0,
   silent: [] as boolean[],
+  // Lifetime of the next access token, and an error for silent requests.
+  tokenLifetime: 3600_000,
+  silentError: null as null | Record<string, unknown>,
 }));
 
 const idTokenIssued = (ms: number) =>
@@ -26,17 +29,18 @@ vi.mock("@azure/msal-node", () => ({
       return Promise.resolve({
         accessToken: `token-${msal.nextAccount.homeAccountId}`,
         account: { ...msal.nextAccount },
-        expiresOn: new Date(Date.now() + 3600_000),
+        expiresOn: new Date(Date.now() + msal.tokenLifetime),
       });
     }
     acquireTokenSilent(request: { forceRefresh?: boolean }) {
       msal.silent.push(Boolean(request.forceRefresh));
+      if (msal.silentError) return Promise.reject(msal.silentError);
       const age = request.forceRefresh ? 0 : msal.cachedIdTokenAge;
       return Promise.resolve({
         accessToken: `token-${msal.nextAccount.homeAccountId}`,
         idToken: idTokenIssued(Date.now() - age),
         account: { ...msal.nextAccount },
-        expiresOn: new Date(Date.now() + 3600_000),
+        expiresOn: new Date(Date.now() + msal.tokenLifetime),
       });
     }
     getTokenCache() {
@@ -196,6 +200,42 @@ describe("AuthService.signInInteractive", () => {
     });
     expect(await service.getAccessToken()).toBe("token-a");
     expect(msal.removed).toEqual(["b"]);
+  });
+});
+
+describe("AuthService.getAccessToken", () => {
+  const config = { clientId: "c", tenantId: "organizations", scopes: ["User.Read"] };
+
+  it("keeps the session when sign-in cannot be reached and ends it when it needs a new sign-in", async () => {
+    const statuses: boolean[] = [];
+    const service = new AuthService(config, (status) => statuses.push(status.signedIn));
+    msal.nextAccount = { homeAccountId: "a", username: "a@contoso.com", tenantId: "t-a" };
+    // Already inside the refresh window, so every call asks MSAL.
+    msal.tokenLifetime = 30_000;
+    try {
+      await signIn(service);
+      expect(service.getStatus().signedIn).toBe(true);
+
+      msal.silentError = { errorCode: "network_error", message: "Network request failed" };
+      expect(await service.getAccessToken()).toBeNull();
+      expect(service.signInUnreachable()).toBe(true);
+      expect(service.getStatus().signedIn).toBe(true);
+
+      // The network is back: the next call renews the token.
+      msal.silentError = null;
+      expect(await service.getAccessToken()).toBe("token-a");
+      expect(service.signInUnreachable()).toBe(false);
+
+      msal.silentError = { errorCode: "invalid_grant", name: "InteractionRequiredAuthError" };
+      expect(await service.getAccessToken()).toBeNull();
+      expect(service.signInUnreachable()).toBe(false);
+      expect(service.getStatus().signedIn).toBe(false);
+      expect(statuses.at(-1)).toBe(false);
+    } finally {
+      msal.tokenLifetime = 3600_000;
+      msal.silentError = null;
+      await service.signOut();
+    }
   });
 });
 

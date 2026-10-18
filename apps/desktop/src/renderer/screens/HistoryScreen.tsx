@@ -34,6 +34,8 @@ import type {
   CapabilityChange,
   ControlStatusChange,
   EvidenceRef,
+  IdentityChange,
+  IdentityDiff,
   NotComparedFamily,
   PolicyChange,
   SettingChange,
@@ -344,7 +346,95 @@ function PolicyChanges({ diff }: { diff: HistoryDiffView }) {
           Compare snapshots closer together to see fewer changes at a time.
         </p>
       )}
+      {diff.identity && <IdentityChanges identity={diff.identity} />}
     </div>
+  );
+}
+
+function IdentityRow({ change }: { change: IdentityChange }) {
+  return (
+    <li className="grid gap-x-6 gap-y-2 px-5 py-3 md:grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,4fr)]">
+      <div className="min-w-0">
+        {change.path.length > 0 && (
+          <p className="text-petrol-600 selectable mb-0.5 text-[11px] leading-4 break-words">
+            {change.path.join(" › ")}
+          </p>
+        )}
+        <p className="text-petrol-950 selectable text-sm leading-5 font-semibold break-words">
+          {change.name}
+          {change.change !== "changed" && (
+            <Badge variant={change.change === "added" ? "success" : "danger"} className="ml-2 align-[1px]">
+              {change.change === "added" ? "Added" : "Removed"}
+            </Badge>
+          )}
+        </p>
+      </div>
+      <Value value={change.before} label="Before" />
+      <Value value={change.after} label="After" />
+    </li>
+  );
+}
+
+// Entra tenant settings are tenant-wide, not configuration policies, so
+// they are listed and counted apart from the policy changes.
+function IdentityChanges({ identity }: { identity: IdentityDiff }) {
+  if (!identity.total && !identity.notCompared.length) return null;
+  const policies = [...new Set(identity.changes.map((change) => change.policyLabel))];
+  return (
+    <section aria-labelledby="identity-changes-title" className="space-y-3">
+      <h2
+        id="identity-changes-title"
+        className="text-petrol-700 px-1 text-xs font-bold tracking-[0.12em] uppercase"
+      >
+        Entra tenant settings{" "}
+        <span className="text-petrol-600 font-semibold tabular-nums">({identity.total})</span>
+      </h2>
+      <p className="text-petrol-600 px-1 text-xs leading-5">
+        Tenant-wide Entra ID settings, counted apart from the policy changes above.
+      </p>
+      {identity.notCompared.length > 0 && (
+        <Alert tone="warning" title="Some Entra settings were not compared">
+          <p>They were not read in one of the snapshots, so changes there are not shown.</p>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+            {identity.notCompared.map((entry) => (
+              <li key={entry.policy}>
+                <span className="font-semibold">{entry.label}</span>: not read in {SIDE_TEXT[entry.side]}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+      {identity.total === 0 ? (
+        <p className="text-petrol-700 px-1 text-[13px] leading-5">
+          No changes in the Entra settings that could be compared.
+        </p>
+      ) : (
+        policies.map((label) => (
+          <article
+            key={label}
+            className="border-petrol-950/6 shadow-card overflow-hidden rounded-2xl border bg-white"
+            aria-label={label}
+          >
+            <h3 className="text-petrol-950 border-petrol-950/6 border-b px-5 py-3 text-[15px] leading-6 font-semibold break-words">
+              {label}
+            </h3>
+            <ul className="divide-petrol-950/6 divide-y" aria-label="Setting changes">
+              {identity.changes
+                .filter((change) => change.policyLabel === label)
+                .map((change) => (
+                  <IdentityRow key={change.key} change={change} />
+                ))}
+            </ul>
+          </article>
+        ))
+      )}
+      {identity.changes.length < identity.total && (
+        <p className="text-petrol-600 px-1 text-xs">
+          Showing {identity.changes.length.toLocaleString()} of {identity.total.toLocaleString()} Entra setting
+          changes.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -801,12 +891,14 @@ function KeepHistoryCard({
   status,
   onToggle,
   onDeleteAll,
+  onRetry,
   busy,
   error,
 }: {
   status: HistoryStatus;
   onToggle: (enabled: boolean) => void;
   onDeleteAll: () => void;
+  onRetry: () => void;
   busy: boolean;
   error: string | null;
 }) {
@@ -834,13 +926,20 @@ function KeepHistoryCard({
       {!status.available && (
         <Alert
           tone="warning"
-          title="History is not available on this computer"
+          title={status.locked ? "History could not be opened right now" : "History is not available on this computer"}
           className="mt-4 sm:ml-15"
           action={
-            status.unreadableData && (
-              <Button variant="dangerOutline" size="sm" icon={Trash2} disabled={busy} onClick={onDeleteAll}>
-                Delete all history
+            // Locked history is intact: it is opened again, never deleted.
+            status.locked ? (
+              <Button variant="secondary" size="sm" icon={RotateCw} disabled={busy} onClick={onRetry}>
+                Try again
               </Button>
+            ) : (
+              status.unreadableData && (
+                <Button variant="dangerOutline" size="sm" icon={Trash2} disabled={busy} onClick={onDeleteAll}>
+                  Delete all history
+                </Button>
+              )
             )
           }
         >
@@ -848,13 +947,15 @@ function KeepHistoryCard({
         </Alert>
       )}
       <div className="mt-4 sm:pl-13">
-        <Checkbox checked={status.enabled && status.available} disabled={!status.available || busy} onChange={onToggle}>
+        <Checkbox checked={status.enabled} disabled={!status.available || busy} onChange={onToggle}>
           <span className="min-w-0">
             <span className="text-petrol-950 block text-sm font-semibold">Keep history on this computer</span>
             <span className="text-petrol-600 mt-0.5 block text-[13px] leading-5">
-              {status.enabled
-                ? "On. A snapshot is saved after each collection."
-                : "Off. No new snapshots are saved; saved snapshots stay until you delete them."}
+              {status.enabled && !status.available
+                ? "On, but no snapshots can be saved until history is available again."
+                : status.enabled
+                  ? "On. A snapshot is saved after each collection."
+                  : "Off. No new snapshots are saved; saved snapshots stay until you delete them."}
             </span>
           </span>
         </Checkbox>
@@ -1199,6 +1300,7 @@ function HistoryBody() {
           status={status}
           onToggle={onToggle}
           onDeleteAll={() => setConfirm({ kind: "all" })}
+          onRetry={reload}
           busy={toggle.busy !== null || remove.busy !== null}
           error={toggle.error}
         />

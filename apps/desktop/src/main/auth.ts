@@ -50,6 +50,39 @@ h1{font-size:20px;margin:0 0 8px;letter-spacing:-0.02em}p{margin:0;color:#44747a
 <body><main><h1>${title}</h1><p>${text}</p></main></body></html>`;
 const INTERACTIVE_TIMEOUT_MS = 5 * 60_000;
 
+// Microsoft sign-in did not answer, for example while the network is still
+// coming back after sleep. The session is kept and the next call tries again.
+export const SIGN_IN_UNREACHABLE =
+  "Could not reach Microsoft sign-in. Check the network connection and try again.";
+
+export class SignInUnreachableError extends Error {
+  constructor() {
+    super(SIGN_IN_UNREACHABLE);
+  }
+}
+
+// MSAL network failures and the Node errors beneath them. Anything else,
+// such as a revoked session, needs a new sign-in.
+const UNREACHABLE_CODES = new Set([
+  "network_error",
+  "endpoints_resolution_error",
+  "no_network_connectivity",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+]);
+
+function isUnreachable(error: unknown): boolean {
+  const { errorCode, code } = (error ?? {}) as { errorCode?: unknown; code?: unknown };
+  return [errorCode, code].some(
+    (value) => typeof value === "string" && UNREACHABLE_CODES.has(value),
+  );
+}
+
 function base64Url(buffer: Buffer): string {
   return buffer
     .toString("base64")
@@ -175,6 +208,8 @@ export class AuthService {
   private account: AccountInfo | null = null;
   private accessToken: string | null = null;
   private expiresOn: Date | null = null;
+  // The last silent refresh failed because sign-in could not be reached.
+  private unreachable = false;
   private generation = 0;
   private activeCancel: (() => void) | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -240,10 +275,22 @@ export class AuthService {
       }
       this.accept(result);
       return this.accessToken;
-    } catch {
-      if (generation === this.generation) this.expire();
+    } catch (error) {
+      if (generation !== this.generation) return null;
+      if (isUnreachable(error)) {
+        // Still signed in: the token is renewed once sign-in answers again.
+        this.unreachable = true;
+        return null;
+      }
+      this.expire();
       return null;
     }
+  }
+
+  // No token because Microsoft sign-in could not be reached, not because the
+  // session needs a new sign-in.
+  signInUnreachable(): boolean {
+    return this.unreachable && this.account !== null;
   }
 
   // A recent Microsoft ID token for the organization license check, or null
@@ -276,6 +323,7 @@ export class AuthService {
   // The refresh failed: the session no longer has a usable token. The account
   // is kept so a later silent attempt can recover without a new sign-in.
   private expire(): void {
+    this.unreachable = false;
     this.clearExpiryTimer();
     this.accessToken = null;
     this.expiresOn = null;
@@ -312,6 +360,7 @@ export class AuthService {
   }
 
   private accept(result: AuthenticationResult): SignInResult {
+    this.unreachable = false;
     this.accessToken = result.accessToken;
     this.account = result.account ?? null;
     this.expiresOn = result.expiresOn ?? null;
@@ -459,6 +508,7 @@ export class AuthService {
     this.account = null;
     this.accessToken = null;
     this.expiresOn = null;
+    this.unreachable = false;
     this.report();
     await this.disposeCache();
   }

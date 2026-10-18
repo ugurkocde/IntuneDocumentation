@@ -113,6 +113,7 @@ export function historyDiffView(
     totals: capped.totals,
     notCompared: capped.notCompared,
     notComparedItems: capped.notComparedItems,
+    identity: capped.identity,
     controls: {
       fromRuleset: compared.assessments.fromRuleset,
       toRuleset: compared.assessments.toRuleset,

@@ -29,6 +29,8 @@ const keys = await vi.hoisted(async () => {
     publicPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
     privatePem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
     dir: { current: "" },
+    // The keychain refuses the history key; the license file still unwraps.
+    lockHistory: { current: false },
   };
 });
 
@@ -39,8 +41,11 @@ vi.mock("electron", () => ({
     isEncryptionAvailable: () => true,
     getSelectedStorageBackend: () => "keychain",
     encryptString: (text: string) => Buffer.from(`wrapped:${Buffer.from(text).toString("hex")}`),
-    decryptString: (bytes: Buffer) =>
-      Buffer.from(bytes.toString().replace(/^wrapped:/, ""), "hex").toString(),
+    decryptString: (bytes: Buffer) => {
+      const text = Buffer.from(bytes.toString().replace(/^wrapped:/, ""), "hex").toString();
+      if (keys.lockHistory.current && !text.startsWith("{")) throw new Error("Keychain locked");
+      return text;
+    },
   },
 }));
 
@@ -52,7 +57,7 @@ vi.mock("./config", () => ({
 vi.mock("./logger", () => ({ log: () => undefined, errorText: String }));
 
 const { LicenseService, MSP_PLAN_REQUIRED } = await import("./license");
-const { SnapshotStore, UNAVAILABLE_REASONS } = await import("./snapshots");
+const { KEY_LOCKED, SnapshotStore, UNAVAILABLE_REASONS } = await import("./snapshots");
 const { registerHistoryIpc, NEEDS_REFERENCE, ACCOUNT_SWITCHED } = await import("./history-ipc");
 
 const TENANT = "11111111-2222-3333-4444-555555555555";
@@ -204,6 +209,7 @@ function harness(plan: Plan, options: { current?: DetailedExportData | null } = 
 }
 
 beforeEach(() => {
+  keys.lockHistory.current = false;
   keys.dir.current = mkdtempSync(path.join(tmpdir(), "history-ipc-"));
   writeFileSync(path.join(keys.dir.current, "install-id"), INSTALL);
   // The licensing service is never reachable: no new activation can happen.
@@ -461,6 +467,44 @@ describe("management change section", () => {
     expect(JSON.stringify(result.changes)).not.toContain(CONTOSO_TENANT.compliancePolicies[0]!.displayName);
   });
 
+  it("compares values that are not stored with the stored snapshot's fingerprints", async () => {
+    // A custom OMA-URI string the snapshot keeps only as a fingerprint.
+    const withToken = (collectedAt: string, value: string) =>
+      contoso(collectedAt, (data) => {
+        data.deviceConfigurations = [
+          ...data.deviceConfigurations,
+          {
+            id: "custom-token",
+            "@odata.type": "#microsoft.graph.windows10CustomConfiguration",
+            displayName: "Custom token",
+            omaSettings: [
+              {
+                "@odata.type": "#microsoft.graph.omaSettingString",
+                omaUri: "./Vendor/MSFT/Custom/Setting",
+                displayName: "Setting",
+                value,
+              },
+            ],
+          },
+        ];
+      });
+    const h = harness("pro");
+    const earlier = withToken("2026-10-10T10:00:00Z", "value-1");
+    const fingerprint = (await h.store.fingerprinter(true))!;
+    await h.store.save(
+      TENANT,
+      JSON.parse(JSON.stringify(projectSnapshot(earlier, assessCompliance(earlier), new Map(), fingerprint))),
+      h.guard(),
+    );
+    h.env.current = withToken("2026-10-18T10:00:00Z", "value-1");
+    const same = await h.invoke<ManagementChangesResult>("history:changes", request);
+    expect(same.state === "ready" && same.changes.policies).toMatchObject({ changed: 0, settingChanges: 0 });
+    h.ipc.invalidate();
+    h.env.current = withToken("2026-10-18T10:00:00Z", "value-2");
+    const changed = await h.invoke<ManagementChangesResult>("history:changes", request);
+    expect(changed.state === "ready" && changed.changes.policies).toMatchObject({ changed: 1, settingChanges: 1 });
+  });
+
   it("is not shown for a scope other than the stored full scope", async () => {
     const h = harness("pro");
     await h.store.save(TENANT, projectionOf(contoso("2026-10-10T10:00:00Z")), h.guard());
@@ -622,3 +666,80 @@ describe("account switches during history work", () => {
   });
 });
 
+
+describe("a locked keychain", () => {
+  it("says try again, never offers or performs a delete of the intact history", async () => {
+    const h = harness("pro");
+    const entry = await h.store.save(TENANT, projectionOf(contoso("2026-10-17T10:00:00Z")), h.guard());
+    await h.store.save(OTHER, projectionOf(contoso("2026-10-17T10:00:00Z")), h.guard());
+    keys.lockHistory.current = true;
+    // A new process, so the key is unwrapped again.
+    const fresh = harness("pro");
+    const status = await fresh.invoke<HistoryStatus>("history:status");
+    expect(status).toMatchObject({ available: false, reason: KEY_LOCKED, locked: true });
+    expect(status.unreadableData).toBeUndefined();
+    const clear = vi.spyOn(fresh.store, "clear");
+    await expect(fresh.invoke("history:deleteAll")).rejects.toThrow(KEY_LOCKED);
+    await expect(fresh.invoke("history:delete", entry!.id)).rejects.toThrow(KEY_LOCKED);
+    await expect(fresh.invoke("history:changes", request)).resolves.toEqual({ state: "none", reason: "unavailable" });
+    expect(clear).not.toHaveBeenCalled();
+    keys.lockHistory.current = false;
+    expect(await fresh.invoke<HistoryStatus>("history:status")).toMatchObject({ available: true, count: 1 });
+    expect(await fresh.store.list(OTHER)).toHaveLength(1);
+  });
+});
+
+describe("account switches while a mutation is queued", () => {
+  // The account changes after the handler checked it, while the change waits
+  // in the store queue: the store's guard sees the switch.
+  function switchWhileQueued(h: ReturnType<typeof harness>, method: "delete" | "deleteTenant" | "setLabel" | "clear") {
+    const store = h.store as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+    const original = store[method]!.bind(h.store);
+    vi.spyOn(store, method).mockImplementationOnce(async (...args: unknown[]) => {
+      h.env.signedIn = THIRD;
+      return original(...args);
+    });
+  }
+
+  async function withHistory() {
+    const h = harness("msp");
+    const first = await h.store.save(TENANT, projectionOf(contoso("2026-10-10T10:00:00Z")), h.guard());
+    await h.store.save(OTHER, projectionOf(contoso("2026-10-11T10:00:00Z")), h.guard());
+    return { h, first: first! };
+  }
+
+  it("history:delete deletes nothing", async () => {
+    const { h, first } = await withHistory();
+    switchWhileQueued(h, "delete");
+    await expect(h.invoke("history:delete", first.id)).rejects.toThrow(ACCOUNT_SWITCHED);
+    expect(await h.store.list(TENANT)).toEqual([first]);
+  });
+
+  it("history:deleteAll deletes nothing, also through the unreadable history reset", async () => {
+    const { h, first } = await withHistory();
+    switchWhileQueued(h, "deleteTenant");
+    await expect(h.invoke("history:deleteAll")).rejects.toThrow(ACCOUNT_SWITCHED);
+    expect(await h.store.list(TENANT)).toEqual([first]);
+
+    h.env.signedIn = TENANT;
+    const reason = vi.spyOn(h.store, "unavailableReason").mockReturnValue(UNAVAILABLE_REASONS.encryption);
+    switchWhileQueued(h, "clear");
+    await expect(h.invoke("history:deleteAll")).rejects.toThrow(ACCOUNT_SWITCHED);
+    reason.mockRestore();
+    expect(existsSync(path.join(keys.dir.current, "snapshots"))).toBe(true);
+    h.env.signedIn = TENANT;
+    expect(await h.store.list(TENANT)).toEqual([first]);
+  });
+
+  it("portfolio:setLabel and portfolio:deleteTenant change nothing", async () => {
+    const { h } = await withHistory();
+    switchWhileQueued(h, "setLabel");
+    await expect(h.invoke("portfolio:setLabel", OTHER, "Fabrikam")).rejects.toThrow(ACCOUNT_SWITCHED);
+    h.env.signedIn = TENANT;
+    switchWhileQueued(h, "deleteTenant");
+    await expect(h.invoke("portfolio:deleteTenant", OTHER)).rejects.toThrow(ACCOUNT_SWITCHED);
+    const other = (await h.store.tenants()).find((entry) => entry.tenantId === OTHER);
+    expect(other).toMatchObject({ label: null, snapshots: 1 });
+    expect(h.notified).not.toHaveBeenCalled();
+  });
+});

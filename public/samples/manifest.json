@@ -1,6 +1,6 @@
 {
-  "rulesetVersion": "2026.10.5",
-  "fixtureHash": "6a1330c605235dc0ec0c9ff742e07b547ce1da4ab364fc6a5a3540fa36e9040a",
+  "rulesetVersion": "2026.10.6",
+  "fixtureHash": "e0e54b5532ba201fececb878a1beb87940b875eeea3af66cca71f66cf63b62cd",
   "files": [
     {
       "frameworkId": "iso-27001-2022",

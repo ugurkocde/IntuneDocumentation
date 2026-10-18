@@ -1,0 +1,201 @@
+---
+title: "Intune Documentation and Purview Compliance Manager"
+description: "How Microsoft Purview Compliance Manager and Intune Documentation fit together, what each one checks, and how to attach device evidence to improvement actions."
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+
+Microsoft Purview Compliance Manager and Intune Documentation do different jobs. They work well together. Compliance Manager is the register for a regulation, with controls, owners and workflow. Intune Documentation produces the device configuration evidence that Compliance Manager asks for but cannot collect itself.
+
+This page explains the difference in plain terms, with links to Microsoft Learn so you can check every claim about Purview.
+
+<Callout type="info" title="Evidence, not certification">
+  Intune Documentation produces evidence about how devices are configured. It does not certify your organisation and it does not make any control pass. A person still reviews the evidence in Compliance Manager and decides what it means for the assessment.
+</Callout>
+
+## Two different meanings of compliance policy
+
+Microsoft uses similar names for two unrelated things.
+
+- In Microsoft Purview, a compliance policy usually means a data policy, such as data loss prevention, retention, sensitivity labels, Insider Risk Management, Communication Compliance or eDiscovery. These policies govern data in Microsoft 365 and connected services.
+- In Microsoft Intune, a device compliance policy checks device state, for example whether a disk is encrypted. Intune configuration profiles, Settings Catalog policies and endpoint security policies configure the device itself.
+
+[Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager) belongs to the first world. It helps you work through a regulation with templates, improvement actions and a compliance score that Microsoft calculates from the tests and records held in Compliance Manager. Evidence for many controls is uploaded by hand.
+
+Intune Documentation belongs to the second world. It reads the Intune configuration itself.
+
+## What Compliance Manager checks automatically
+
+Compliance Manager can test some improvement actions automatically. Microsoft lists the sources for that automated testing as other Purview solutions, Microsoft Secure Score, Microsoft Defender for Cloud, and connectors, including connectors for Salesforce, Zoom and Corporate Sustainability. See [Improvement actions in Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager-improvement-actions), [Connectors in Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager-connectors) and [Microsoft Secure Score](https://learn.microsoft.com/defender-xdr/microsoft-secure-score).
+
+There is no Intune connector in that list. Secure Score lists its own contributing products, and Intune is not one of them.
+
+That means Compliance Manager does not read:
+
+- Intune configuration profiles
+- Settings Catalog policies
+- Intune device compliance policies
+- Endpoint security policies
+
+It also does not show which Intune policy or which setting value satisfies a device control, because it never looks at that configuration.
+
+### What happens to device controls instead
+
+Controls that depend on device configuration are handled as customer managed work in Compliance Manager. Someone opens the improvement action, marks the status, and uploads evidence on the Evidence tab. Accepted evidence file types include `.pdf` and `.zip`. See [Storing evidence](https://learn.microsoft.com/purview/compliance-manager-improvement-actions#storing-evidence) on Microsoft Learn.
+
+In practice, an admin has to find the right Intune settings, prove their values, check that the policy is assigned, and package all of that as a file. Intune Documentation does that collection and packaging step.
+
+## What Purview does better
+
+Use Compliance Manager for the parts it was built for. In several areas it goes far beyond anything an Intune documentation tool should try to do.
+
+- **Regulation coverage.** Microsoft offers more than 360 regulatory templates, far more than the frameworks Intune Documentation maps Intune settings to. Premium templates are licensed per regulation family. Microsoft 365 E5, A5 and G5 plans include three premium templates. For current licensing, check Microsoft's licensing guidance rather than relying on a page like this one.
+- **Organisational and nontechnical controls.** Policies, training, supplier management and other measures outside Intune still need a home. Compliance Manager covers the whole regulation, not only device settings. Intune Documentation covers only the controls that Intune and Conditional Access configuration can evidence, and marks the rest clearly. See [Compliance evidence](/desktop/compliance-evidence#frameworks).
+- **Workflow.** Improvement actions have owners, due dates and status tracking across a team.
+- **Continuous testing for data controls.** For supported Microsoft 365 data controls, Compliance Manager retests automatically, typically every 24 hours, and updates the result without anyone uploading a file.
+
+If your organisation tracks a regulation in Compliance Manager, keep doing that. Intune Documentation feeds device evidence into that process. It does not replace it.
+
+## What Intune Documentation adds
+
+Intune Documentation reads the actual Intune settings in your tenant, with exact setting ids and configured values, and it is assignment aware. A setting in a policy that is assigned to nobody does not count as evidence.
+
+For each mapped control, you can see and export:
+
+- the Intune policy behind the evidence, and whether it is assigned
+- the exact setting, with its expected value and its actual value
+- whether the value matches, differs, or is missing
+
+That evidence supports several outputs:
+
+- **As built documentation.** A readable Word or PDF document of your policies, settings and assignments. See [Select and export](/desktop/select-and-export).
+- **Framework evidence reports.** A PDF evidence report per framework for an auditor, an insurer or a customer questionnaire. See [Compliance evidence](/desktop/compliance-evidence).
+- **Purview evidence pack (desktop app).** A ZIP file with one PDF per control, an index that maps each assessed framework to the matching Purview template name, and upload instructions for Compliance Manager. Where no matching Purview template exists, the index says so.
+- **Evidence register (desktop app).** The same assessment as an Excel workbook and as CSV, one row per technical check, for review, tracking or import into your own tooling.
+- **Local snapshot history and change tracking (desktop app).** Collections you choose to keep on your computer, so you can show what changed between two points in time and which policy or setting caused a control result to change.
+- **Reference comparison (desktop app).** Compare one tenant or snapshot against a reference tenant or snapshot, setting by setting.
+- **MSP portfolio overview (desktop app).** Several tenants side by side, with framework coverage and snapshot age, for teams that manage many customers. See [Work with multiple tenants](/desktop/multiple-tenants).
+
+In the desktop app, collection and report generation happen on your computer, and tenant data stays on your machine. See [Security and privacy](/security). If a report flags a value as different, [Search settings](/desktop/search-settings) shows every policy that sets it. The [management report](/desktop/management-report) summarises safeguard coverage for leadership.
+
+## At a glance
+
+| Question | Purview Compliance Manager | Intune Documentation |
+| --- | --- | --- |
+| Main job | Track a regulation end to end, with templates, owners and workflow | Document Intune configuration and map exact settings to framework controls |
+| Reads Intune configuration | No. No Intune connector and no reading of profiles, Settings Catalog, device compliance policies or endpoint security policies | Yes. Exact setting ids and values, with assignment for each policy |
+| Automated testing | Other Purview solutions, Secure Score, Defender for Cloud and connectors such as Salesforce, Zoom and Corporate Sustainability | Checks collected Intune and Conditional Access configuration against expected values each time you collect and assess |
+| Evidence for device controls | Customer managed. Someone marks the improvement action and uploads a file, for example a PDF, on the Evidence tab | Builds the file for you, per control, with policy, setting, expected value, actual value and assignment |
+| Framework coverage | More than 360 templates, including premium templates licensed per regulation family | The frameworks listed in [Compliance evidence](/desktop/compliance-evidence#frameworks), mapped to device configuration evidence |
+| Organisational controls | Yes, as part of the full assessment | No. Controls that Intune cannot evidence stay clearly marked for separate assessment |
+| Workflow and owners | Improvement actions with owners, due dates and status | No task workflow. Outputs are documents, an evidence pack and a register |
+| Output for an auditor | The assessment, its records and the evidence you attached | As built Word and PDF documentation, framework evidence PDFs, a Purview evidence pack, and an Excel and CSV register in the desktop app |
+| Where tenant data is processed | In your Microsoft 365 tenant | Desktop app: on your computer. Web app: in memory only, never stored. See [Security and privacy](/security) |
+
+## How they work together
+
+Use Compliance Manager as the control register and Intune Documentation as the evidence source for device controls.
+
+<Steps>
+<Step>
+
+### Assess your configuration in Intune Documentation
+
+Collect your tenant, open [Compliance evidence](/desktop/compliance-evidence), choose the framework that matches your Compliance Manager assessment, and set the scope to the platforms and levels in that assessment. Review controls with missing, different or mixed evidence before you export anything.
+
+</Step>
+<Step>
+
+### Save the Purview evidence pack in the desktop app
+
+Export the Purview evidence pack for that framework. The ZIP file contains one PDF per assessed control, an index that maps the framework to its Purview template name and lists the file for each control, and a short set of upload instructions. Save the Excel or CSV evidence register alongside it if your team tracks checks in a spreadsheet.
+
+Before you upload, check each control id in the index against the template version in your tenant. Template contents can differ between versions, so treat the index as a map you verify, not as a promise that every id will match.
+
+</Step>
+<Step>
+
+### Attach the PDFs to improvement actions in Compliance Manager
+
+In Compliance Manager, open the assessment, then open the improvement action for the device control. On the <Ui>Evidence</Ui> tab, use <Ui>Add evidence</Ui> and upload the PDF for that control from the pack. Repeat for each improvement action you are evidencing, then record the status your team decides on.
+
+Keep the rest of the pack, including the index and the register, with your assessment records. When the configuration changes, collect again, export a fresh pack, and replace or add the affected evidence. Local snapshot history in the desktop app helps you show what changed between the two packs.
+
+</Step>
+</Steps>
+
+<Note>
+  Uploading a PDF does not change a test result on its own. Your team reviews the evidence and updates the improvement action in Compliance Manager. Intune Documentation shortens the step before that: finding, checking and packaging the device configuration evidence.
+</Note>
+
+## A related Microsoft capability: Entra Tenant Governance
+
+Microsoft also offers configuration management in Microsoft Entra Tenant Governance, sometimes called Unified Tenant Configuration Management. It can capture Intune configuration snapshots and monitor them for drift. Its output is JSON based and aimed at comparison and backup workflows, and it carries no framework mapping. See [Intune resources in Microsoft Entra Tenant Governance](https://learn.microsoft.com/graph/utcm-intune-resources) on Microsoft Learn.
+
+That capability and Intune Documentation answer different questions. Tenant Governance answers whether configuration drifted from a snapshot. Intune Documentation answers what the configuration says in readable form, which framework controls it evidences, and what has changed over a local history that you keep and control on your own machine in the desktop app. Teams can use both: one for drift snapshots in Microsoft's service, the other for readable documentation and framework evidence.
+
+## Questions
+
+<Accordions type="single">
+<Accordion title="Do I still need Intune Documentation if I have Purview?" id="still-need-intune-documentation">
+
+For device controls, yes, unless someone collects the evidence by hand. Compliance Manager does not read Intune configuration profiles, Settings Catalog policies, device compliance policies or endpoint security policies, and there is no Intune connector for its automated testing. For those controls it expects customer managed evidence, uploaded as a file on the improvement action.
+
+Intune Documentation produces that file for you, from the real settings and values in the tenant, with assignment shown per policy. You then decide in Compliance Manager what the evidence means for the control. Microsoft describes the testing sources in [Improvement actions in Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager-improvement-actions) and the evidence upload in [Storing evidence](https://learn.microsoft.com/purview/compliance-manager-improvement-actions#storing-evidence).
+
+</Accordion>
+<Accordion title="Do I still need Purview if I have Intune Documentation?" id="still-need-purview">
+
+If you track a full regulation, probably yes. Intune Documentation only evidences the controls that Intune and Conditional Access configuration can support. It has no owners, no due dates, no coverage of organisational and nontechnical controls, and far fewer frameworks than the more than 360 templates in Compliance Manager.
+
+Keep Compliance Manager as the assessment register, and use Intune Documentation for the device evidence inside it. For a smaller audit, an insurer or a customer questionnaire that only asks about device configuration, a [framework evidence report](/desktop/compliance-evidence#download) on its own may be enough.
+
+</Accordion>
+<Accordion title="Does Compliance Manager read my Intune policies automatically?" id="reads-intune-policies">
+
+No. Its automated testing comes from other Purview solutions, Microsoft Secure Score, Microsoft Defender for Cloud and connectors, including Salesforce, Zoom and Corporate Sustainability. There is no Intune connector, and Secure Score does not list Intune among its contributing products. See [Connectors in Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager-connectors) and [Microsoft Secure Score](https://learn.microsoft.com/defender-xdr/microsoft-secure-score).
+
+Because of that, Compliance Manager cannot tell you which Intune policy or setting satisfies a device control. That check happens in Intune Documentation, or by hand in the Intune admin center.
+
+</Accordion>
+<Accordion title="Can the Purview evidence pack upload itself to Compliance Manager?" id="pack-upload">
+
+No. Evidence is added by a person on the improvement action's <Ui>Evidence</Ui> tab, so the pack is designed for that step: one PDF per control, an index that maps the framework to the matching Purview template name and names the file for each control, and upload instructions. You open each improvement action, upload the matching PDF, and record the outcome your team agrees on.
+
+Check control ids against the template in your tenant before you rely on them, because template versions can differ.
+
+</Accordion>
+<Accordion title="Does Intune Documentation improve our position in Compliance Manager by itself?" id="improve-position">
+
+No. Attaching stronger evidence can support a better assessment outcome, but the result in Compliance Manager depends on your actual configuration and on the review your team records. Intune Documentation shows expected and actual values, flags missing and conflicting settings, and packages the result. It does not change your tenant, and it does not decide whether a control is met.
+
+</Accordion>
+<Accordion title="Which one should we start with?" id="start-with">
+
+Start with the question you need answered. If leadership asks where the organisation stands against a regulation, start the assessment in Compliance Manager and assign owners. As soon as the improvement actions turn into device questions, collect the tenant in Intune Documentation, assess the matching framework in [Compliance evidence](/desktop/compliance-evidence), and attach the evidence pack.
+
+If an auditor or a customer questionnaire only asks how devices are configured, start in Intune Documentation and export the [as built documentation](/desktop/select-and-export) and the framework evidence report.
+
+</Accordion>
+</Accordions>
+
+## Sources and further reading
+
+Microsoft Learn is the source for every Purview claim on this page.
+
+- [Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager): templates, improvement actions and the compliance score.
+- [Improvement actions in Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager-improvement-actions): automated testing sources and manual testing.
+- [Storing evidence](https://learn.microsoft.com/purview/compliance-manager-improvement-actions#storing-evidence): uploading evidence files, including PDF and ZIP files, on the Evidence tab.
+- [Connectors in Microsoft Purview Compliance Manager](https://learn.microsoft.com/purview/compliance-manager-connectors): the available connectors, including Salesforce, Zoom and Corporate Sustainability.
+- [Microsoft Secure Score](https://learn.microsoft.com/defender-xdr/microsoft-secure-score): the products that contribute to Secure Score.
+- [Intune resources in Microsoft Entra Tenant Governance](https://learn.microsoft.com/graph/utcm-intune-resources): Intune configuration snapshots and drift monitoring.
+
+## Related pages
+
+- [Compliance evidence](/desktop/compliance-evidence): choose a framework, read control results and download evidence reports.
+- [Select and export](/desktop/select-and-export): as built Word and PDF documentation of your configuration.
+- [Search settings](/desktop/search-settings): find every policy that sets a value flagged in a report.
+- [Management report](/desktop/management-report): a one page summary of safeguard coverage.
+- [Work with multiple tenants](/desktop/multiple-tenants): document and compare several tenants.
+- [Security and privacy](/security): what the apps read and where your data is processed.
+

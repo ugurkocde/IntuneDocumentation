@@ -731,6 +731,7 @@ const compliancePolicies = [
       passcodeBlockSimple: true,
       passcodeMinimumLength: 6,
       passcodeMinutesOfInactivityBeforeLock: 5,
+      passcodeMinutesOfInactivityBeforeScreenTimeout: 2,
       passcodeRequiredType: "numeric",
       passcodeRequired: true,
       osMinimumVersion: "17.6",
@@ -1022,6 +1023,243 @@ const conditionalAccessPolicies = [
   }),
 ];
 
+// Entra tenant policies, read with the Conditional Access permission. Passkeys
+// are enabled for administrators, SMS sign-in is still enabled for everyone
+// (counter-evidence), and security defaults are off because Conditional
+// Access is in use.
+const tenantIdentityPolicies: DetailedExportData["tenantIdentityPolicies"] = {
+  authenticationMethods: {
+    id: "authenticationMethodsPolicy",
+    displayName: "Authentication Methods Policy",
+    lastModifiedDateTime: "2026-09-02T08:15:00Z",
+    policyVersion: "1.5",
+    policyMigrationState: "migrationComplete",
+    authenticationMethodConfigurations: [
+      {
+        "@odata.type":
+          "#microsoft.graph.fido2AuthenticationMethodConfiguration",
+        id: "Fido2",
+        state: "enabled",
+        isSelfServiceRegistrationAllowed: true,
+        isAttestationEnforced: true,
+        includeTargets: [
+          { targetType: "group", id: GROUPS.itAdministrators.id },
+        ],
+        excludeTargets: [],
+      },
+      {
+        "@odata.type":
+          "#microsoft.graph.microsoftAuthenticatorAuthenticationMethodConfiguration",
+        id: "MicrosoftAuthenticator",
+        state: "enabled",
+        includeTargets: [{ targetType: "group", id: "all_users" }],
+        excludeTargets: [],
+      },
+      {
+        "@odata.type": "#microsoft.graph.smsAuthenticationMethodConfiguration",
+        id: "Sms",
+        state: "enabled",
+        includeTargets: [{ targetType: "group", id: "all_users" }],
+        excludeTargets: [],
+      },
+      {
+        "@odata.type":
+          "#microsoft.graph.voiceAuthenticationMethodConfiguration",
+        id: "Voice",
+        state: "disabled",
+        includeTargets: [{ targetType: "group", id: "all_users" }],
+        excludeTargets: [],
+      },
+      {
+        "@odata.type":
+          "#microsoft.graph.emailAuthenticationMethodConfiguration",
+        id: "Email",
+        state: "enabled",
+        allowExternalIdToUseEmailOtp: "default",
+        includeTargets: [],
+        excludeTargets: [],
+      },
+      {
+        "@odata.type":
+          "#microsoft.graph.x509CertificateAuthenticationMethodConfiguration",
+        id: "X509Certificate",
+        state: "disabled",
+        authenticationModeConfiguration: {
+          x509CertificateAuthenticationDefaultMode:
+            "x509CertificateSingleFactor",
+          rules: [],
+        },
+        includeTargets: [{ targetType: "group", id: "all_users" }],
+        excludeTargets: [],
+      },
+    ],
+  },
+  securityDefaults: {
+    id: "00000000-0000-0000-0000-000000000005",
+    displayName: "Security Defaults",
+    isEnabled: false,
+  },
+  authorization: {
+    id: "authorizationPolicy",
+    displayName: "Authorization Policy",
+    allowInvitesFrom: "adminsAndGuestInviters",
+    permissionGrantPolicyIdsAssignedToDefaultUserRole: [
+      "ManagePermissionGrantsForSelf.microsoft-user-default-low",
+    ],
+  },
+  status: {
+    authenticationMethods: "collected",
+    securityDefaults: "collected",
+    authorization: "collected",
+  },
+};
+
+// Intune's per-policy status summaries, for the device status annex. The
+// draft macOS policy has no row, so it shows "No status reported".
+const statusRow = (
+  policyId: string,
+  policyName: string,
+  source:
+    | "configurationPolicies"
+    | "compliancePolicies"
+    | "deviceConfigurations",
+  succeeded: number,
+  error: number,
+  conflict: number,
+  notApplicable: number,
+  pending: number | null = null,
+) => ({
+  policyId,
+  policyName,
+  source,
+  succeeded,
+  error,
+  conflict,
+  notApplicable,
+  pending,
+});
+
+const policyDeviceStatus: DetailedExportData["policyDeviceStatus"] = {
+  collectedAt: COLLECTED_AT,
+  sources: {
+    configurationPolicies: "collected",
+    compliancePolicies: "collected",
+    deviceConfigurations: "collected",
+  },
+  rows: [
+    statusRow(
+      guid(0x101),
+      "WIN - Baseline - BitLocker",
+      "configurationPolicies",
+      412,
+      6,
+      2,
+      3,
+    ),
+    statusRow(
+      guid(0x102),
+      "WIN - Defender Antivirus",
+      "configurationPolicies",
+      418,
+      1,
+      0,
+      4,
+    ),
+    statusRow(
+      guid(0x103),
+      "WIN - Attack surface reduction - Block",
+      "configurationPolicies",
+      120,
+      0,
+      0,
+      0,
+    ),
+    statusRow(
+      guid(0x104),
+      "WIN - Defender Firewall - All profiles",
+      "configurationPolicies",
+      415,
+      2,
+      1,
+      5,
+    ),
+    statusRow(
+      guid(0x105),
+      "WIN - Office - Macro security",
+      "configurationPolicies",
+      398,
+      0,
+      4,
+      21,
+    ),
+    statusRow(
+      guid(0x109),
+      "MAC - FileVault enforcement",
+      "configurationPolicies",
+      58,
+      3,
+      0,
+      0,
+    ),
+    statusRow(
+      guid(0x301),
+      "WIN - Compliance - Baseline",
+      "compliancePolicies",
+      401,
+      22,
+      0,
+      0,
+    ),
+    statusRow(
+      guid(0x302),
+      "MAC - Compliance - Baseline",
+      "compliancePolicies",
+      57,
+      4,
+      0,
+      0,
+    ),
+    statusRow(
+      guid(0x304),
+      "iOS - Compliance - Baseline",
+      "compliancePolicies",
+      233,
+      9,
+      0,
+      0,
+    ),
+    statusRow(
+      guid(0x305),
+      "AND - Compliance - Work profile",
+      "compliancePolicies",
+      87,
+      5,
+      0,
+      0,
+    ),
+    statusRow(
+      guid(0x201),
+      "WIN - Device restrictions - Corporate",
+      "deviceConfigurations",
+      409,
+      3,
+      0,
+      8,
+      2,
+    ),
+    statusRow(
+      guid(0x203),
+      "MAC - Endpoint protection - Gatekeeper",
+      "deviceConfigurations",
+      60,
+      0,
+      0,
+      1,
+      0,
+    ),
+  ],
+};
+
 export const CONTOSO_TENANT: DetailedExportData = {
   collectedAt: COLLECTED_AT,
   collectionStartedAt: "2026-10-08T08:58:30Z",
@@ -1036,6 +1274,8 @@ export const CONTOSO_TENANT: DetailedExportData = {
   windowsUpdatePolicies,
   enrollmentConfigurations: [],
   conditionalAccessPolicies,
+  tenantIdentityPolicies,
+  policyDeviceStatus,
   groupNames: new Map(
     Object.values(GROUPS).map((group) => [group.id, group.name]),
   ),

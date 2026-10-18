@@ -78,6 +78,15 @@ export const ISO_27001: FrameworkDefinition = {
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": ["8.1"],
+    "macos-inactivity-lock": ["8.1"],
+    "ios-inactivity-lock": ["8.1"],
+    "android-inactivity-lock": ["8.1"],
+    "tenant-phishing-resistant-method-enabled": ["8.5"],
+    "tenant-weak-methods-disabled": ["8.5"],
+    "tenant-security-defaults-enabled": ["8.5"],
+
     "windows-lsa-protection": ["8.5"],
     "windows-remote-credential-guard": ["8.5"],
     "windows-laps-management": ["8.5"],

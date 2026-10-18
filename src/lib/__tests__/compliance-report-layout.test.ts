@@ -69,7 +69,11 @@ describe("report layout on extreme input", () => {
     if (process.env.LAYOUT_DUMP)
       (await import("node:fs")).writeFileSync(process.env.LAYOUT_DUMP, report);
     const pages = readPdfPageTexts(report);
-    const summary = pages[2] ?? "";
+    // The contents may take one or two pages before the summary.
+    const summaryIndex = pages.findIndex((text) =>
+      text.includes("(Key findings) Tj"),
+    );
+    const summary = pages[summaryIndex] ?? "";
     expect(summary).toContain("(Summary) Tj");
     expect(summary).toContain("(Key findings) Tj");
     // Up to five findings, as before the redesign, all on the summary.
@@ -80,7 +84,7 @@ describe("report layout on extreme input", () => {
     expect(summary).toMatch(/more famil(y is|ies are) listed/);
     expect(summary).toContain("Scope note".toUpperCase());
     // The results overview opens the next page: the summary is one page.
-    expect(pages[3]).toContain("(Results Overview) Tj");
+    expect(pages[summaryIndex + 1]).toContain("(Results Overview) Tj");
   });
 
   it("breaks very long reasons and unassessed aspects across pages", async () => {

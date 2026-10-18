@@ -158,8 +158,10 @@ describe("compliance report with a multi page table of contents", () => {
       // long titles wrap, so compare against the page's shown text runs.
       const control = /^([A-Z]{2}-\d+) (.+)$/.exec(entry.title);
       if (control) {
-        const shown = [...(pageText ?? "").matchAll(/\((.*?)\) Tj/g)]
-          .map((match) => match[1])
+        const shown = [
+          ...(pageText ?? "").matchAll(/\(((?:\\.|[^\\)])*)\) Tj/g),
+        ]
+          .map((match) => match[1]!.replace(/\\([()\\])/g, "$1"))
           .join(" ");
         expect(pageText).toContain(`(${control[1]}) Tj`);
         expect(shown).toContain(control[2]);

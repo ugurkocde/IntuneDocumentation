@@ -33,6 +33,7 @@ export const metadata: Metadata = {
 const sampleDescriptions: Partial<Record<ComplianceFrameworkId, string>> = {
   "iso-27001-2022": "Annex A technology controls with cited policy evidence.",
   "nis2-2022-2555": "The Article 21(2) risk management measures.",
+  "dora-2022-2554": "Selected ICT risk management points of DORA and its RTS.",
   "soc2-tsc": "Trust Services Criteria mapped to device configuration.",
   "hipaa-security-rule":
     "45 CFR 164 safeguards such as encryption and audit controls.",
@@ -68,6 +69,12 @@ const frameworks: {
     name: "NIS2 Directive (EU) 2022/2555",
     detail:
       "The ten cybersecurity risk management measures of Article 21(2), each cross-referenced to the German BSIG and the Danish NIS 2-loven. Technical measures receive supporting Intune evidence; governance measures remain a manual assessment.",
+  },
+  {
+    id: "dora-2022-2554",
+    name: "DORA, Regulation (EU) 2022/2554 and RTS (EU) 2024/1774",
+    detail:
+      "Selected ICT risk management points, such as encryption, patching, malware protection, session lock, blocking non-compliant endpoints and strong authentication, receive supporting Intune and Entra ID evidence. Governance, incident reporting, resilience testing and third-party risk remain a manual assessment.",
   },
   {
     id: "soc2-tsc",

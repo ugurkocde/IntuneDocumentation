@@ -109,6 +109,10 @@ describe("ComplianceView", () => {
       screen.getByRole("button", { name: "HIPAA Security Rule" }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(11);
+    // NIS2 and DORA are desktop only.
+    expect(
+      screen.queryByRole("button", { name: /NIS2|DORA/ }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Download report/ }),
     ).not.toBeInTheDocument();
@@ -141,7 +145,7 @@ describe("ComplianceView", () => {
       name: "Selected framework: NIST SP 800-171 Rev. 2",
     });
     expect(
-      screen.getByText(/12 of 110 published requirements/),
+      screen.getByText(/13 of 110 published requirements/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /3\.13\.16/ }),
@@ -156,7 +160,7 @@ describe("ComplianceView", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/11 of 97 published requirements/),
+      await screen.findByText(/12 of 97 published requirements/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /03\.13\.08/ }),

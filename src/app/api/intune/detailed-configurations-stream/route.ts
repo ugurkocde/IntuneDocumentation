@@ -182,6 +182,9 @@ export async function GET(request: NextRequest) {
             collectedAt: configurations.collectedAt,
             collectionStartedAt: configurations.collectionStartedAt,
             collectionSkippedFamilies: configurations.collectionSkippedFamilies,
+            // Outside sections: Entra tenant policies and the device status annex.
+            tenantIdentityPolicies: configurations.tenantIdentityPolicies,
+            policyDeviceStatus: configurations.policyDeviceStatus,
             permissionErrors: configurations.permissionErrors,
             fetchErrors: configurations.fetchErrors,
             summary: configurations.summary,

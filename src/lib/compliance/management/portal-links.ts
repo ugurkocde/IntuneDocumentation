@@ -16,6 +16,12 @@ import type { PortalAreaId } from "./types";
 //   label names the path. windowsUpdates opens the documented Windows platform
 //   page (Devices > Windows), where Windows updates sits under Manage updates;
 //   Learn documents no direct link to the update rings tab.
+// - Entra tenant policies (18 October 2026): Learn links the authentication
+//   methods blade as Microsoft_AAD_IAM/AuthenticationMethodsMenuBlade/
+//   AdminAuthMethods (Troubleshoot self-service password reset), opened here
+//   in the Entra admin center. Security defaults have only the menu path
+//   Entra ID > Overview > Properties, so that link opens the Entra admin
+//   center root and the label names the path.
 export const PORTAL_AREAS: Record<
   PortalAreaId,
   { url: string; label: { en: string; de: string } }
@@ -81,6 +87,20 @@ export const PORTAL_AREAS: Record<
       de: "Bedingter Zugriff > Richtlinien",
     },
   },
+  entraAuthenticationMethods: {
+    url: "https://entra.microsoft.com/#view/Microsoft_AAD_IAM/AuthenticationMethodsMenuBlade/~/AdminAuthMethods",
+    label: {
+      en: "Entra ID > Authentication methods > Policies",
+      de: "Entra ID > Authentifizierungsmethoden > Richtlinien",
+    },
+  },
+  entraSecurityDefaults: {
+    url: "https://entra.microsoft.com/",
+    label: {
+      en: "Entra ID > Overview > Properties > Security defaults",
+      de: "Entra ID > Übersicht > Eigenschaften > Sicherheitsstandards",
+    },
+  },
   intuneHome: {
     url: "https://intune.microsoft.com/",
     label: { en: "Intune admin center", de: "Intune Admin Center" },
@@ -96,6 +116,8 @@ function signalKeys(signal: DetectionSignal): string[] {
       return signal.odataTypes.map((type) => `${type}.${signal.propertyPath}`);
     case "policyCheck":
       return [signal.check];
+    case "tenantPolicy":
+      return [`${signal.policy}.${signal.check}`];
     default:
       return [signal.settingId];
   }
@@ -130,6 +152,13 @@ const AREA_RULES: readonly (readonly [PortalAreaId, RegExp])[] = [
 const COMPLIANCE_POLICY_KEY = /^\w+CompliancePolicy\./;
 
 export function portalAreaFor(capability: ComplianceCapability): PortalAreaId {
+  const tenantPolicy = capability.signals.find(
+    (signal) => signal.source === "tenantPolicy",
+  );
+  if (tenantPolicy?.source === "tenantPolicy")
+    return tenantPolicy.policy === "securityDefaults"
+      ? "entraSecurityDefaults"
+      : "entraAuthenticationMethods";
   if (capability.platform === "tenant") return "conditionalAccess";
   const keys = capability.signals.flatMap(signalKeys);
   if (!keys.length) return "intuneHome";

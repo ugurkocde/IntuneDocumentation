@@ -26,6 +26,8 @@ export type PortalAreaId =
   | "windowsUpdates"
   | "appProtection"
   | "conditionalAccess"
+  | "entraAuthenticationMethods"
+  | "entraSecurityDefaults"
   | "intuneHome";
 
 export interface ManagementMetrics {

@@ -67,7 +67,7 @@ describe("published sample reports", () => {
   // Regenerates every sample through the build script's code path, so a
   // generator change that is not republished fails here.
   it.each(SAMPLE_REPORTS.map((sample) => [sample.file, sample] as const))(
-    "%s matches a fresh render and has 5 to 7 pages",
+    "%s matches a fresh render and has 5 to 8 pages",
     async (file, sample) => {
       const committedPath = path.join(SAMPLES_DIR, file);
       expect(existsSync(committedPath), `${file} is missing. ${REBUILD}`).toBe(
@@ -86,7 +86,8 @@ describe("published sample reports", () => {
         committed.toString("latin1").match(/\/Type \/Page\b(?!s)/g) ?? []
       ).length;
       expect(pages, `${file} has ${pages} pages`).toBeGreaterThanOrEqual(5);
-      expect(pages, `${file} has ${pages} pages`).toBeLessThanOrEqual(7);
+      // The policy device status annex can add the eighth page.
+      expect(pages, `${file} has ${pages} pages`).toBeLessThanOrEqual(8);
     },
   );
 });

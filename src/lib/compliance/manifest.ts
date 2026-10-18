@@ -4,7 +4,17 @@ import {
   type ComplianceExportData,
 } from "./engine";
 import { COMPLIANCE_CAPABILITIES } from "./capabilities";
+import { withoutDesktopOnlyFrameworks } from "./framework-availability";
 import type { AssessmentScope } from "./types";
+
+export interface EvidenceManifestOptions {
+  /**
+   * "web" leaves desktop-only frameworks (NIS2, DORA) out of the record. The
+   * ruleset fingerprint always covers every framework, so it matches the
+   * desktop record and the framework PDF.
+   */
+  audience?: "desktop" | "web";
+}
 
 export function canonicalJson(value: unknown): string {
   const normalize = (item: any): any => {
@@ -33,6 +43,7 @@ export async function sha256(value: unknown): Promise<string> {
 export async function createEvidenceManifest(
   data: ComplianceExportData,
   scope: AssessmentScope = data.assessmentScope ?? {},
+  options: EvidenceManifestOptions = {},
 ) {
   const assessment = assessCompliance(data, scope);
   // Branding and report generation time do not alter the source snapshot fingerprint.
@@ -56,5 +67,14 @@ export async function createEvidenceManifest(
       })),
     }),
   ]);
-  return { schemaVersion: 1, snapshotSha256, rulesetSha256, assessment };
+  // Schema 2 adds provenance.policyStatusSummary.
+  return {
+    schemaVersion: 2,
+    snapshotSha256,
+    rulesetSha256,
+    assessment:
+      options.audience === "web"
+        ? withoutDesktopOnlyFrameworks(assessment)
+        : assessment,
+  };
 }

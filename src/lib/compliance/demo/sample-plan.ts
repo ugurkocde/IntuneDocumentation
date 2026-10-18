@@ -29,6 +29,10 @@ export const SAMPLE_EXCERPTS: Readonly<
     { controlId: "21.2.h", status: "partialEvidence" },
     { controlId: "21.2.b", status: "noEvidence" },
   ],
+  "dora-2022-2554": [
+    { controlId: "RTS 13(l)", status: "partialEvidence" },
+    { controlId: "DORA 10(1)", status: "noEvidence" },
+  ],
   "soc2-tsc": [
     { controlId: "CC6.7", status: "partialEvidence" },
     { controlId: "CC6.6", status: "noEvidence" },
@@ -82,6 +86,7 @@ const REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
   "nis2-2022-2555": "NIS2",
+  "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA",
 };
 

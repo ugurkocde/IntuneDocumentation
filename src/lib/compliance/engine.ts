@@ -15,6 +15,11 @@ import {
   capabilityCollectionGaps,
 } from "./coverage";
 import { COMPLIANCE_CAPABILITIES } from "./capabilities";
+import {
+  evaluateTenantPolicySignals,
+  TENANT_POLICY_FAMILIES,
+  tenantPolicySettingId,
+} from "./tenant-policies";
 import { BSI_IT_GRUNDSCHUTZ } from "./frameworks/bsi-it-grundschutz";
 import { CYBER_ESSENTIALS } from "./frameworks/cyber-essentials";
 import { DEF_STAN_05_138 } from "./frameworks/def-stan-05-138";
@@ -25,6 +30,7 @@ import { NIST_800_171_R3 } from "./frameworks/nist-800-171-r3";
 import { HIPAA_SECURITY_RULE } from "./frameworks/hipaa-security-rule";
 import { NIST_CSF } from "./frameworks/nist-csf";
 import { NIS2 } from "./frameworks/nis2";
+import { DORA } from "./frameworks/dora";
 import { SOC_2 } from "./frameworks/soc2";
 import type {
   AssessmentScope,
@@ -50,7 +56,11 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.3";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.4";
+
+const TENANT_POLICY_FAMILY_KEYS = new Set(
+  Object.values(TENANT_POLICY_FAMILIES),
+);
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -192,7 +202,7 @@ function compliancePolicyNote(
 
 function verdictsFor(
   values: readonly unknown[],
-  signal: Exclude<DetectionSignal, { source: "policyCheck" }>,
+  signal: Exclude<DetectionSignal, { source: "policyCheck" | "tenantPolicy" }>,
 ) {
   return [...new Set(values)].flatMap<{
     verdict: "enforced" | "disabled";
@@ -305,6 +315,8 @@ function evaluateConfiguration(
 
   for (const capability of capabilities) {
     for (const signal of capability.signals) {
+      // Tenant-wide Entra policies are not configurations; see tenant-policies.ts.
+      if (signal.source === "tenantPolicy") continue;
       const checks = checksByCapability.get(capability.id) ?? [];
       checksByCapability.set(capability.id, checks);
       let values: unknown[] = [];
@@ -567,6 +579,20 @@ export function assessCapabilities(
     }
   }
 
+  for (const capability of capabilities) {
+    if (!capability.signals.some((signal) => signal.source === "tenantPolicy"))
+      continue;
+    const tenant = evaluateTenantPolicySignals(data, capability);
+    evidenceByCapability.set(capability.id, [
+      ...(evidenceByCapability.get(capability.id) ?? []),
+      ...tenant.evidence,
+    ]);
+    checksByCapability.set(capability.id, [
+      ...(checksByCapability.get(capability.id) ?? []),
+      ...tenant.checks,
+    ]);
+  }
+
   return capabilities.map((capability) => {
     const evidence = evidenceByCapability.get(capability.id) ?? [];
     const collectionGaps = capabilityCollectionGaps(data, capability);
@@ -583,7 +609,9 @@ export function assessCapabilities(
                 ? signal.propertyPath
                 : signal.source === "policyCheck"
                   ? signal.check
-                  : signal.settingId,
+                  : signal.source === "tenantPolicy"
+                    ? tenantPolicySettingId(signal)
+                    : signal.settingId,
           );
         if (!checks.some((check) => groupIds.includes(check.settingId)))
           checks.push({
@@ -663,7 +691,11 @@ export function assessCapabilities(
           row.family === "conditionalAccessPolicies" &&
           row.status === "notCollected"
             ? "Conditional Access policies were not collected. Enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies to assess MFA and access requirements."
-            : `${row.family}: ${row.status === "notCollected" ? "not collected" : "collection incomplete"}. Refresh the policies to retry collection. See collection coverage for the API error details.`,
+            : TENANT_POLICY_FAMILY_KEYS.has(row.family)
+              ? row.status === "notCollected"
+                ? "Entra tenant policies were not collected. They are read with the Conditional Access permission: enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies."
+                : `${row.family}: collection incomplete. ${row.errors.join(" ")}`
+              : `${row.family}: ${row.status === "notCollected" ? "not collected" : "collection incomplete"}. Refresh the policies to retry collection. See collection coverage for the API error details.`,
         ),
         ...(status === "conflictingEvidence"
           ? [
@@ -850,6 +882,11 @@ export function assessCompliance(
       collectedAt: data.collectedAt,
       collectionStartedAt: data.collectionStartedAt,
       deviceState: "notCollected",
+      policyStatusSummary: Object.values(
+        data.policyDeviceStatus?.sources ?? {},
+      ).includes("collected")
+        ? "collected"
+        : "notCollected",
       effectiveAccess: "unverified",
     },
     frameworks: [
@@ -868,6 +905,7 @@ export function assessCompliance(
         scope,
       ),
       assessFramework(capabilities, NIS2, scope),
+      assessFramework(capabilities, DORA, scope),
       assessFramework(capabilities, HIPAA_SECURITY_RULE, scope),
     ],
   };

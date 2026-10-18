@@ -10,6 +10,7 @@ export type FrameworkId =
   | "nist-800-171-r3"
   | "essential-eight"
   | "nis2-2022-2555"
+  | "dora-2022-2554"
   | "hipaa-security-rule";
 
 // Text-forward wordmarks only: official logos, insignia, and association marks
@@ -49,6 +50,7 @@ const WORDMARK_DETAILS: Record<
     line2: "171 Rev. 3",
   },
   "nis2-2022-2555": { fill: "#334155", line1: "NIS2", line2: "2022/2555" },
+  "dora-2022-2554": { fill: "#3F3F46", line1: "DORA", line2: "2022/2554" },
   "hipaa-security-rule": {
     fill: "#0369A1",
     line1: "HIPAA",

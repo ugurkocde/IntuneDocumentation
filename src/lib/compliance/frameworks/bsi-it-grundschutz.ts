@@ -250,6 +250,15 @@ export const BSI_IT_GRUNDSCHUTZ: FrameworkDefinition = {
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": [],
+    "macos-inactivity-lock": [],
+    "ios-inactivity-lock": [],
+    "android-inactivity-lock": [],
+    "tenant-phishing-resistant-method-enabled": [],
+    "tenant-weak-methods-disabled": [],
+    "tenant-security-defaults-enabled": [],
+
     "windows-lsa-protection": ["SYS.2.2.3.A23"],
     "windows-remote-credential-guard": ["SYS.2.2.3.A23"],
     "windows-laps-management": ["ORP.4", "SYS.2.1"],

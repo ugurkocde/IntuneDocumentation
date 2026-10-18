@@ -29,6 +29,16 @@ export {
   NIS2_OUTSIDE_INTUNE_SCOPE,
   nis2MeasureFromCode,
 } from "./frameworks/nis2";
+export {
+  DORA,
+  DORA_OUTSIDE_INTUNE_SCOPE,
+  DORA_SOURCE_ATTRIBUTION,
+} from "./frameworks/dora";
+export {
+  DESKTOP_ONLY_FRAMEWORK_IDS,
+  isDesktopOnlyFramework,
+  withoutDesktopOnlyFrameworks,
+} from "./framework-availability";
 export type {
   AssessmentScope,
   CollectionCoverage,

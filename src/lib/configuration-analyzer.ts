@@ -1,6 +1,10 @@
 import { INTUNE_POLICY_REGISTRY } from "./intune-policy-registry";
 import { summarizeAssignments } from "./compliance/assignments";
-import type { AssessmentScope } from "./compliance/types";
+import type {
+  AssessmentScope,
+  PolicyDeviceStatus,
+  TenantIdentityPolicies,
+} from "./compliance/types";
 import type { BrandingOptions } from "~/types/branding";
 import type { ConfigurationSectionData } from "./configuration-sections";
 
@@ -40,6 +44,10 @@ export interface DetailedExportData {
   windowsUpdatePolicies?: any[];
   enrollmentConfigurations?: any[];
   conditionalAccessPolicies?: any[];
+  /** Entra tenant policies; never part of `sections`. */
+  tenantIdentityPolicies?: TenantIdentityPolicies;
+  /** Intune per-policy device status counts; an annex, never assessed. */
+  policyDeviceStatus?: PolicyDeviceStatus;
   groupNames?: Map<string, string>;
   deviceCounts?: Record<string, number>;
   branding?: BrandingOptions;

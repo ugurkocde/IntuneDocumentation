@@ -52,8 +52,8 @@ describe("Defender policy exports", () => {
     expect(renderedText).not.toContain("Evidence found");
     expect(renderedText).toContain("Rev. 2");
     expect(renderedText).toContain("Rev. 3");
-    expect(renderedText).toContain("12 of 110 published requirements");
-    expect(renderedText).toContain("11 of 97 published requirements");
+    expect(renderedText).toContain("13 of 110 published requirements");
+    expect(renderedText).toContain("12 of 97 published requirements");
   });
 
   it.each(["PDF", "Word"])(
@@ -98,8 +98,8 @@ describe("Defender policy exports", () => {
     expect(documentXml).toContain("Compliance Evidence Preview");
     expect(documentXml).toContain("Rev. 2");
     expect(documentXml).toContain("Rev. 3");
-    expect(documentXml).toContain("12 of 110 published requirements");
-    expect(documentXml).toContain("11 of 97 published requirements");
+    expect(documentXml).toContain("13 of 110 published requirements");
+    expect(documentXml).toContain("12 of 97 published requirements");
     expect(documentXml).toContain("BSI IT-Grundschutz");
     expect(documentXml).toContain("not a compliance certification");
     expect(documentXml).toContain("intunedocumentation.com/dashboard");

@@ -725,6 +725,17 @@ export default function DashboardPage() {
                           : data.data.collectionStartedAt,
                         collectionSkippedFamilies:
                           data.data.collectionSkippedFamilies,
+                        // A partial retry refreshes these only with their step.
+                        tenantIdentityPolicies:
+                          data.data.tenantIdentityPolicies ??
+                          (retry
+                            ? previousSnapshot?.tenantIdentityPolicies
+                            : undefined),
+                        policyDeviceStatus:
+                          data.data.policyDeviceStatus ??
+                          (retry
+                            ? previousSnapshot?.policyDeviceStatus
+                            : undefined),
                         permissionErrors: [
                           ...(retry
                             ? (previousSnapshot?.permissionErrors ?? []).filter(

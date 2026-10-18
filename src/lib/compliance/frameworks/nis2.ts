@@ -106,6 +106,15 @@ export const NIS2: FrameworkDefinition = {
     CONTROLS.map((control) => [control.id, control]),
   ),
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": [],
+    "macos-inactivity-lock": [],
+    "ios-inactivity-lock": [],
+    "android-inactivity-lock": [],
+    "tenant-phishing-resistant-method-enabled": ["21.2.j"],
+    "tenant-weak-methods-disabled": ["21.2.j"],
+    "tenant-security-defaults-enabled": ["21.2.j"],
+
     "windows-lsa-protection": ["21.2.i"],
     "windows-remote-credential-guard": ["21.2.i"],
     "windows-laps-management": ["21.2.i"],

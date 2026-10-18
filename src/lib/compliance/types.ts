@@ -72,11 +72,81 @@ export interface PolicyCheckSignal {
   requirementGroup?: string;
 }
 
+/**
+ * Tenant-wide Entra policy read from `tenantIdentityPolicies`. These policies
+ * have no assignment relation; evidence is always supporting.
+ */
+export interface TenantPolicySignal {
+  source: "tenantPolicy";
+  policy: TenantIdentityPolicyName;
+  check:
+    | "phishingResistantMethodEnabled"
+    | "weakMethodsDisabled"
+    | "securityDefaultsEnabled";
+  requirementGroup?: string;
+}
+
 export type DetectionSignal =
   | SettingsCatalogSignal
   | GraphPropertySignal
   | LegacySettingSignal
-  | PolicyCheckSignal;
+  | PolicyCheckSignal
+  | TenantPolicySignal;
+
+export type TenantIdentityPolicyName =
+  | "authenticationMethods"
+  | "securityDefaults"
+  | "authorization";
+
+export type TenantPolicyCollectionStatus =
+  | "collected"
+  | "permissionDenied"
+  | "failed"
+  | "skipped";
+
+/**
+ * Entra tenant policies read with the Conditional Access token. Kept apart
+ * from configuration sections, so they never change configuration counts,
+ * search, classification or the documentation export.
+ */
+export interface TenantIdentityPolicies {
+  authenticationMethods?: Record<string, unknown>;
+  securityDefaults?: Record<string, unknown>;
+  authorization?: Record<string, unknown>;
+  status: Partial<
+    Record<TenantIdentityPolicyName, TenantPolicyCollectionStatus>
+  >;
+  /** Short reason per policy when it was not collected. */
+  errors?: Partial<Record<TenantIdentityPolicyName, string>>;
+}
+
+export type PolicyStatusSource =
+  | "configurationPolicies"
+  | "compliancePolicies"
+  | "deviceConfigurations";
+
+/**
+ * Device status counts per policy as summarised by Intune. An annex only:
+ * never a field on CapabilityEvidence and never input to any status.
+ */
+export interface PolicyDeviceStatus {
+  collectedAt: string;
+  sources: Record<PolicyStatusSource, TenantPolicyCollectionStatus>;
+  /** Short reason per source when it was not collected. */
+  errors?: Partial<Record<PolicyStatusSource, string>>;
+  rows: PolicyDeviceStatusRow[];
+}
+
+export interface PolicyDeviceStatusRow {
+  policyId: string;
+  policyName: string;
+  source: PolicyStatusSource;
+  succeeded: number | null;
+  error: number | null;
+  conflict: number | null;
+  notApplicable: number | null;
+  pending: number | null;
+}
 
 export interface ComplianceCapability {
   id: string;
@@ -241,7 +311,10 @@ export interface ComplianceAssessment {
     rulesetVersion: string;
     collectedAt?: string;
     collectionStartedAt?: string;
+    /** Per-device state is never collected. */
     deviceState: "notCollected";
+    /** Intune's per-policy status counts, shown as an annex only. */
+    policyStatusSummary?: "collected" | "notCollected";
     effectiveAccess: "unverified";
   };
 }

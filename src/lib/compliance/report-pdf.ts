@@ -8,6 +8,12 @@ import {
   frameworkCoverageLabel,
 } from "./presentation";
 import { createEvidenceManifest } from "./manifest";
+import { tenantPolicySettingId } from "./tenant-policies";
+import {
+  deviceStatusAnnexRows,
+  hasPolicyDeviceStatus,
+  type DeviceStatusAnnexRow,
+} from "./device-status-annex";
 import verifiedSettings from "./verified-technical-settings.json";
 import additionalVerifiedSettings from "./additional-verified-settings.json";
 import { humanizePropertyName } from "../configuration-parser";
@@ -52,7 +58,9 @@ import type {
   ControlAssessment,
   ControlStatus,
   FrameworkAssessment,
+  PolicyStatusSource,
   TechnicalCheck,
+  TenantPolicyCollectionStatus,
 } from "./types";
 
 export type ComplianceFrameworkId =
@@ -67,6 +75,7 @@ export type ComplianceFrameworkId =
   | "nist-800-171-r3"
   | "essential-eight"
   | "nis2-2022-2555"
+  | "dora-2022-2554"
   | "hipaa-security-rule";
 
 type Locale = "en" | "de";
@@ -263,6 +272,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
       "nis2-2022-2555": "NIS2",
+      "dora-2022-2554": "DORA",
       "hipaa-security-rule": "HIPAA-Security-Rule",
     },
   },
@@ -407,6 +417,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
       "nist-800-171-r2": "NIST-800-171-R2",
       "nist-800-171-r3": "NIST-800-171-R3",
       "nis2-2022-2555": "NIS2",
+      "dora-2022-2554": "DORA",
       "hipaa-security-rule": "HIPAA-Security-Rule",
     },
   },
@@ -445,6 +456,16 @@ export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
   "tenant-mfa-all-apps":
     "MFA für alle Cloud-Apps im Richtlinienumfang erforderlich",
   "tenant-phishing-resistant-mfa": "Phishingresistente MFA erforderlich",
+  "tenant-phishing-resistant-method-enabled":
+    "Phishingresistente Anmeldemethode aktiviert (Entra ID)",
+  "tenant-weak-methods-disabled":
+    "SMS, Sprachanruf und E-Mail-Einmalcode deaktiviert (Entra ID)",
+  "tenant-security-defaults-enabled":
+    "Sicherheitsstandards aktiviert (Entra ID)",
+  "windows-inactivity-lock": "Bildschirmsperre nach Inaktivität (Windows)",
+  "macos-inactivity-lock": "Bildschirmsperre nach Inaktivität (macOS)",
+  "ios-inactivity-lock": "Bildschirmsperre nach Inaktivität (iOS/iPadOS)",
+  "android-inactivity-lock": "Bildschirmsperre nach Inaktivität (Android)",
 
   "windows-office-macro-win32-block":
     "Win32-Aufrufe durch Office-Makros blockiert",
@@ -698,6 +719,7 @@ const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
   "nis2-2022-2555": "NIS2",
+  "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA",
 };
 
@@ -791,6 +813,82 @@ export interface ComplianceReportOptions {
    */
   excerpt?: { controlIds: readonly string[] };
 }
+
+// Device status annex: Intune's per-policy status counts, context only.
+const DEVICE_STATUS_STRINGS: Record<
+  Locale,
+  {
+    eyebrow: string;
+    heading: string;
+    lead: string;
+    collected: (when: string) => string;
+    headers: readonly [string, string, string, string, string, string, string];
+    noStatus: string;
+    notCollected: string;
+    notReported: string;
+    sources: Record<PolicyStatusSource, string>;
+    sourceStates: Record<TenantPolicyCollectionStatus, string>;
+  }
+> = {
+  en: {
+    eyebrow: "Annex",
+    heading: "Policy device status",
+    lead: "Device counts as summarised by Intune for the device policies cited in this report. Context only: no status in this report depends on them, and they do not show the state of an individual device. Errors include devices reported as not compliant. No status reported means the Intune summary has no row for the policy, not a count of zero.",
+    collected: (when) => `Status summaries read on ${when}.`,
+    headers: [
+      "Policy",
+      "Source",
+      "Succeeded",
+      "Errors",
+      "Conflicts",
+      "Not applicable",
+      "Pending",
+    ],
+    noStatus: "No status reported",
+    notCollected: "Not collected",
+    notReported: "n/a",
+    sources: {
+      configurationPolicies: "Configuration report",
+      compliancePolicies: "Compliance report",
+      deviceConfigurations: "Profile status overview",
+    },
+    sourceStates: {
+      collected: "collected",
+      permissionDenied: "access denied",
+      failed: "failed",
+      skipped: "skipped",
+    },
+  },
+  de: {
+    eyebrow: "Anhang",
+    heading: "Gerätestatus je Richtlinie",
+    lead: "Gerätezahlen, wie Intune sie für die in diesem Bericht zitierten Geräterichtlinien zusammenfasst. Nur Kontext: Kein Status in diesem Bericht hängt von ihnen ab, und sie zeigen nicht den Zustand eines einzelnen Geräts. Fehler schließen nicht konforme Geräte ein. Kein Status gemeldet bedeutet, dass die Intune-Zusammenfassung keine Zeile für die Richtlinie enthält; das ist keine Anzahl von null.",
+    collected: (when) => `Statuszusammenfassungen gelesen am ${when}.`,
+    headers: [
+      "Richtlinie",
+      "Quelle",
+      "Erfolgreich",
+      "Fehler",
+      "Konflikte",
+      "Nicht anwendbar",
+      "Ausstehend",
+    ],
+    noStatus: "Kein Status gemeldet",
+    notCollected: "Nicht erfasst",
+    notReported: "k. A.",
+    sources: {
+      configurationPolicies: "Konfigurationsbericht",
+      compliancePolicies: "Konformitätsbericht",
+      deviceConfigurations: "Profilstatusübersicht",
+    },
+    sourceStates: {
+      collected: "erfasst",
+      permissionDenied: "Zugriff verweigert",
+      failed: "fehlgeschlagen",
+      skipped: "übersprungen",
+    },
+  },
+};
 
 interface EvidenceRegistryEntry {
   ref: string;
@@ -1139,6 +1237,7 @@ const SHORT_FRAMEWORK_NAMES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r3": "NIST SP 800-171",
   "essential-eight": "Essential Eight",
   "nis2-2022-2555": "NIS2 Directive",
+  "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA Security Rule",
 };
 
@@ -1235,6 +1334,13 @@ function groupLabel(
       return { code: key, name: NIST_CSF_FUNCTIONS[key] };
     case "nis2-2022-2555":
       return { code: key, name: "Cybersecurity risk-management measures" };
+    case "dora-2022-2554":
+      return {
+        code: key,
+        name: key.startsWith("RTS")
+          ? "Delegated Regulation (EU) 2024/1774"
+          : "Regulation (EU) 2022/2554",
+      };
     case "hipaa-security-rule":
       return { code: `§ ${key}`, name: HIPAA_SECTIONS[key] };
     case "essential-eight":
@@ -1261,9 +1367,11 @@ function controlFamily(
             control.control.id.slice(0, 2))
           : frameworkId === "nis2-2022-2555"
             ? "Art. 21(2)"
-            : frameworkId === "hipaa-security-rule"
-              ? control.control.id.split("(")[0]
-              : control.control.id.split(".")[0];
+            : frameworkId === "dora-2022-2554"
+              ? control.control.id.replace(/^(\w+) (\d+).*$/, "$1 Art. $2")
+              : frameworkId === "hipaa-security-rule"
+                ? control.control.id.split("(")[0]
+                : control.control.id.split(".")[0];
 }
 
 /**
@@ -1445,6 +1553,8 @@ function implementationSignals(results: readonly CapabilityResult[]): string[] {
         if (odataType) signals.add(`${odataType}.${signal.propertyPath}`);
       } else if (signal.source === "policyCheck") {
         signals.add(signal.check);
+      } else if (signal.source === "tenantPolicy") {
+        signals.add(`${signal.policy}.${signal.check}`);
       } else {
         signals.add(signal.settingId);
       }
@@ -1636,16 +1746,19 @@ export async function generateComplianceReportPDF(
     const { capability } = result;
     if (settingId === capability.id) return capabilityName(result);
     const signal = capability.signals.find((item) =>
-      item.source === "policyCheck"
-        ? item.check === settingId
-        : item.source === "graphProperty"
-          ? item.propertyPath === settingId ||
-            item.odataTypes.some(
-              (type) => settingId === `${type}.${item.propertyPath}`,
-            )
-          : false,
+      item.source === "tenantPolicy"
+        ? tenantPolicySettingId(item) === settingId
+        : item.source === "policyCheck"
+          ? item.check === settingId
+          : item.source === "graphProperty"
+            ? item.propertyPath === settingId ||
+              item.odataTypes.some(
+                (type) => settingId === `${type}.${item.propertyPath}`,
+              )
+            : false,
     );
-    if (signal?.source === "policyCheck") return capabilityName(result);
+    if (signal?.source === "policyCheck" || signal?.source === "tenantPolicy")
+      return capabilityName(result);
     if (signal?.source === "graphProperty")
       return readablePropertyName(signal.propertyPath);
     return undefined;
@@ -5434,6 +5547,118 @@ export async function generateComplianceReportPDF(
     color: PALETTE.muted,
     after: 6,
   });
+
+  // ------------------------------------------------------ Device status annex
+  const deviceStatus = data.policyDeviceStatus;
+  const annexRows: DeviceStatusAnnexRow[] = hasPolicyDeviceStatus(deviceStatus)
+    ? deviceStatusAnnexRows(
+        evidenceRegistry.map((entry) => entry.evidence),
+        deviceStatus,
+      )
+    : [];
+  if (hasPolicyDeviceStatus(deviceStatus) && annexRows.length) {
+    const annex = DEVICE_STATUS_STRINGS[locale];
+    // Shares the register's last page when more than half of it is free.
+    if (yPosition > contentTop + (contentBottom - contentTop) / 2)
+      addContentPage();
+    else if (yPosition > contentTop) yPosition += 6;
+    drawPageTitle(annex.eyebrow, annex.heading, { lead: annex.lead });
+    drawWrappedText(
+      [
+        annex.collected(deviceStatus.collectedAt),
+        ...(
+          Object.entries(deviceStatus.sources) as Array<
+            [PolicyStatusSource, TenantPolicyCollectionStatus]
+          >
+        ).map(
+          ([source, state]) =>
+            `${annex.sources[source]}: ${annex.sourceStates[state]}.`,
+        ),
+      ].join(" "),
+      { fontSize: 7.6, color: PALETTE.muted, after: 4 },
+    );
+    const widths = [58, 30, 18.4, 18.4, 18.4, 18.4, 18.4] as const;
+    const columnX = widths.map(
+      (_, index) =>
+        margin + widths.slice(0, index).reduce((sum, width) => sum + width, 0),
+    );
+    const drawAnnexHeader = () => {
+      annex.headers.forEach((header, index) =>
+        drawEyebrow(
+          doc,
+          header,
+          (columnX[index] ?? margin) + 1.5,
+          yPosition + 3.2,
+          { color: PALETTE.muted, size: 5.6, charSpace: 0.2 },
+        ),
+      );
+      drawRule(doc, margin, yPosition + 5.2, right, primaryColor, 0.4);
+      yPosition += 5.6;
+    };
+    drawAnnexHeader();
+    const value = (count: number | null) =>
+      count === null ? annex.notReported : String(count);
+    annexRows.forEach((row, rowIndex) => {
+      const nameLines = wrap(
+        row.policyName || row.policyId,
+        widths[0] - 3,
+        6.9,
+      );
+      const sourceLines = wrap(annex.sources[row.source], widths[1] - 3, 6.2);
+      const height =
+        Math.max(nameLines.length * 3, sourceLines.length * 2.8) + 3;
+      if (yPosition + height > contentBottom) {
+        addContentPage();
+        drawAnnexHeader();
+      }
+      if (rowIndex % 2 === 1) doc.setFillColor(...PALETTE.zebra);
+      else doc.setFillColor(...PALETTE.white);
+      doc.rect(margin, yPosition, contentWidth, height, "F");
+      drawRule(doc, margin, yPosition + height, right);
+      const top = yPosition + 1.5;
+      drawLines(nameLines, margin + 1.5, top, 6.9, "normal", textColor, 3);
+      drawLines(
+        sourceLines,
+        (columnX[1] ?? margin) + 1.5,
+        top,
+        6.2,
+        "normal",
+        PALETTE.muted,
+        2.8,
+      );
+      if (row.state === "reported" && row.counts) {
+        [
+          row.counts.succeeded,
+          row.counts.error,
+          row.counts.conflict,
+          row.counts.notApplicable,
+          row.counts.pending,
+        ].forEach((count, index) =>
+          drawLines(
+            [value(count)],
+            (columnX[index + 2] ?? margin) + 1.5,
+            top,
+            6.9,
+            "bold",
+            textColor,
+            3,
+          ),
+        );
+      } else {
+        drawLines(
+          [row.state === "notCollected" ? annex.notCollected : annex.noStatus],
+          (columnX[2] ?? margin) + 1.5,
+          top,
+          6.9,
+          "italic",
+          PALETTE.muted,
+          3,
+        );
+      }
+      yPosition += height;
+    });
+    yPosition += 6;
+  }
 
   // ------------------------------------------------------ Methodology
   if (!methodologyDrawn) drawMethodology(layout.methodologyEyebrow, true);

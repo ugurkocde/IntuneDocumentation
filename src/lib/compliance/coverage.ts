@@ -4,6 +4,11 @@ import type {
   CollectionCoverage,
   ComplianceCapability,
 } from "./types";
+import {
+  tenantPolicyCoverage,
+  tenantPolicyNames,
+  TENANT_POLICY_FAMILIES,
+} from "./tenant-policies";
 
 function families(data: Omit<DetailedExportData, "groupNames">) {
   if (data.sections?.length)
@@ -180,7 +185,10 @@ export function buildCollectionCoverage(
         errors: [error.message],
       });
   }
+  for (const row of tenantPolicyCoverage(data, evidence))
+    rows.set(row.family, row);
   for (const row of rows.values()) {
+    if (TENANT_POLICY_FAMILY_KEYS.has(row.family)) continue;
     if (row.errors.length) row.status = "incomplete";
     else if (data.collectionSkippedFamilies?.includes(row.family))
       row.status = "notCollected";
@@ -196,10 +204,24 @@ export function isCapabilityCollectionIncomplete(
   return capabilityCollectionGaps(data, capability).length > 0;
 }
 
+const TENANT_POLICY_FAMILY_KEYS = new Set(
+  Object.values(TENANT_POLICY_FAMILIES),
+);
+
 export function capabilityCollectionGaps(
   data: Omit<DetailedExportData, "groupNames">,
   capability: ComplianceCapability,
 ): CollectionCoverage[] {
+  const policies = tenantPolicyNames(capability);
+  // Entra tenant policies are read on their own, never from sections.
+  if (policies.length) {
+    const families = policies.map((name) => TENANT_POLICY_FAMILIES[name]);
+    return tenantPolicyCoverage(data, new Set(), true).filter(
+      (row) =>
+        families.includes(row.family) &&
+        ["incomplete", "notCollected"].includes(row.status),
+    );
+  }
   const relevant =
     capability.platform === "tenant"
       ? ["conditionalAccessPolicies"]

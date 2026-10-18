@@ -27,6 +27,13 @@ export const SAMPLE_REPORTS: readonly SampleReport[] = [
     locale: "en",
     desktopOnly: true,
   },
+  {
+    frameworkId: "dora-2022-2554",
+    label: "DORA",
+    file: "dora.pdf",
+    locale: "en",
+    desktopOnly: true,
+  },
   { frameworkId: "soc2-tsc", label: "SOC 2", file: "soc2.pdf", locale: "en" },
   {
     frameworkId: "hipaa-security-rule",

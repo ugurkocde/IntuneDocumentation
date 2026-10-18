@@ -4,7 +4,8 @@ Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
 SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0, BSI IT-Grundschutz,
 UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, ASD Essential Eight
 with target Maturity Levels 1, 2 and 3, NIS2 (Directive (EU) 2022/2555,
-Art. 21(2)), and the HIPAA Security Rule (45 CFR Part 164, Subpart C).
+Art. 21(2)), DORA (Regulation (EU) 2022/2554 with RTS (EU) 2024/1774) and the
+HIPAA Security Rule (45 CFR Part 164, Subpart C).
 
 ## Design rules
 
@@ -65,9 +66,9 @@ Art. 21(2)), and the HIPAA Security Rule (45 CFR Part 164, Subpart C).
 ## NIST SP 800-171 revisions
 
 Revision 2 (`nist-800-171-r2`) remains available for CMMC Level 2 and has
-supporting mappings for 12 of its 110 published requirements. Revision 3
+supporting mappings for 13 of its 110 published requirements. Revision 3
 (`nist-800-171-r3`, May 2024) is a separate assessment with supporting mappings
-for 11 of its 97 active requirements. These counts describe mapping coverage,
+for 12 of its 97 active requirements. These counts describe mapping coverage,
 not satisfied requirements or a compliance score. Unmapped requirements need
 separate assessment, including requirements that cannot be assessed through
 Intune. Neither report produces a CMMC certification or an SPRS score.
@@ -150,7 +151,8 @@ macros counts as malware protection under 164.308(a)(5)(ii)(B).
 management summary. Unique user identification, automatic logoff, transmission
 security and its integrity controls and encryption specifications are marked
 `notEvaluated`: Intune or Entra settings could support them, but no detector
-checks them yet. The remaining 40 are organizational or physical. The
+checks them yet. The screen lock capabilities (ruleset 2026.10.4) do not map to
+automatic logoff: a lock does not end the session. The remaining 40 are organizational or physical. The
 January 2025 proposed rule (RIN 0945-AA22) is not final and is not reflected.
 HITRUST CSF content is not shipped.
 
@@ -445,3 +447,124 @@ central log ingestion, device execution or password escrow results. Source IDs
 and choices were read using seven scoped, read-only Graph beta requests on
 8 September 2026 and are stored in additional-verified-settings.json; no tenant
 policy data was saved. Only DeviceManagementConfiguration.Read.All was needed.
+
+## Screen lock, DORA, Entra tenant policies and device status (ruleset 2026.10.4)
+
+### Screen lock after inactivity
+
+`windows-inactivity-lock`, `macos-inactivity-lock`, `ios-inactivity-lock` and
+`android-inactivity-lock` read an explicitly configured inactivity limit. Any
+positive value is the observation; the engine invents no maximum, because the
+acceptable period is organisation-defined. Zero (no timeout) is a different
+value and counter-evidence. Not configured template properties read `null` and
+produce no result. Sources:
+
+| Platform | Setting | Unit |
+| --- | --- | --- |
+| Windows | `device_vendor_msft_policy_config_devicelock_maxinactivitytimedevicelock`, only with its parent `devicepasswordenabled_0` (Enabled) on the same policy | minutes, 0 to 999 |
+| Windows | `device_vendor_msft_policy_config_localpoliciessecurityoptions_interactivelogon_machineinactivitylimit_v2` | seconds, 0 to 599940 |
+| Windows, macOS, Android | compliance `passwordMinutesOfInactivityBeforeLock` | minutes |
+| iOS/iPadOS | compliance `passcodeMinutesOfInactivityBeforeScreenTimeout` (not `passcodeMinutesOfInactivityBeforeLock`, which is the grace period before the passcode is required) | minutes |
+
+The Settings Catalog identifiers and options were read with
+`GET /beta/deviceManagement/configurationSettings('<id>')` on 18 October 2026
+and are stored with source and date in `additional-verified-settings.json`; the
+deprecated choice version of the machine inactivity limit is not used. The
+compliance properties were checked against the Graph beta schemas and a lab
+compliance policy (`passwordMinutesOfInactivityBeforeLock: 15`, and `null` when
+not configured). Mappings are supporting: NIST SP 800-53 AC-11, SP 800-171
+3.1.10 and 03.01.10, ISO/IEC 27001 8.1 and DORA RTS Art. 13(l). A lock is not
+a logoff, so HIPAA 164.312(a)(2)(iii) stays `notEvaluated`.
+
+### DORA (desktop only)
+
+`dora-2022-2554` lists selected points of Regulation (EU) 2022/2554 (prefix
+`DORA`, Art. 9(2), 9(4)(c), 9(4)(d), 9(4)(f) and 10(1)) and of Commission
+Delegated Regulation (EU) 2024/1774 (prefix `RTS`, Art. 6(2)(a), 10(4)(c),
+11(2)(b) to (e), 13(d), 13(l), 21(e)(ii) and 21(f)(ii)). Paragraph numbers
+were checked against the Official Journal text on 18 October 2026; the data
+protection duty is Art. 9(2), not 9(3). Every control is `supporting` with
+unassessed aspects. Titles are paraphrased and the framework note carries the
+attribution "Source: EUR-Lex, Regulation (EU) 2022/2554 and Commission
+Delegated Regulation (EU) 2024/1774. Titles paraphrased; only the Official
+Journal text is authentic." Reuse is permitted under Commission Decision
+2011/833/EU and the EUR-Lex legal notice. A minimum OS version is not mapped
+to patch deployment, and behaviour monitoring supports malware protection
+(RTS 11(2)(d)) rather than Art. 10(1), which uses logging only, as NIS2 point
+(b) does. `DORA_OUTSIDE_INTUNE_SCOPE` names governance (Art. 5), the risk
+management framework (Art. 6), identification (Art. 8), response, backup and
+communication (Art. 11 to 14), incident management and reporting (Art. 17 to
+23), resilience testing (Art. 24 to 27), third-party risk (Art. 28 to 30) and
+information sharing (Art. 45). The framework has no published total.
+
+NIS2 and DORA are desktop only (`DESKTOP_ONLY_FRAMEWORK_IDS`). The web picker
+does not offer them, and `createEvidenceManifest(data, scope, { audience:
+"web" })` leaves them out of the web JSON evidence record. The engine still
+assesses them, so desktop output and the ruleset fingerprint are unchanged.
+
+### Entra tenant policy signals
+
+The Conditional Access step also reads three tenant-wide Entra policies with
+the same token (Policy.Read.All, which Microsoft lists as a higher privileged
+permission for each of them): `GET /beta/policies/authenticationMethodsPolicy`,
+`/beta/policies/identitySecurityDefaultsEnforcementPolicy` and
+`/beta/policies/authorizationPolicy` (beta returns the last one as a `value`
+collection with one item; both shapes are read). The desktop app always reads
+them; the website only when Conditional Access is included. They are stored on
+the collection as `tenantIdentityPolicies` with a status per policy
+(`collected`, `permissionDenied`, `failed`, `skipped`) and never in `sections`,
+so configuration counts, search, classification and the documentation export
+are unchanged.
+
+`tenantPolicy` signals have their own evaluation (`tenant-policies.ts`):
+platform `tenant`, a fixed tenant-wide assignment, supporting evidence only,
+and a caveat that the setting shows what the tenant allows, not what users
+registered or used. A failed, denied, skipped or absent read is a collection
+gap: dependent checks are `unableToCheck` with the reason (and the permission
+hint for 403), never `missing`. A method counts as enabled only when its state
+is `enabled` and it has at least one include target; Microsoft's default email
+OTP configuration for guests (enabled, no include targets) is not enabled for
+users.
+
+| Capability | Evidence | Counter-evidence | Not counter-evidence |
+| --- | --- | --- | --- |
+| `tenant-phishing-resistant-method-enabled` | `Fido2` enabled, or `X509Certificate` enabled with default mode `x509CertificateMultiFactor` | none | both disabled: Windows Hello for Business is phishing resistant and not part of this policy; single-factor certificate mode does not count |
+| `tenant-weak-methods-disabled` | `Sms`, `Voice` and `Email` all readable and none enabled | any of them enabled | legacy per-user MFA and SSPR settings are not read |
+| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: expected when Conditional Access provides MFA (the two cannot be combined) |
+
+Mappings: NIST SP 800-53 IA-2 (phishing-resistant method, security defaults)
+and IA-5 (weak methods), ISO/IEC 27001 8.5, SP 800-171 3.5.3 and 03.05.03,
+Cyber Essentials user access control, NIS2 21.2.j and DORA 9(4)(d) and RTS
+21(f)(ii). Essential Eight is not mapped: an enabled method does not show that
+MFA is used. IA-2 also lists the Conditional Access MFA capabilities. The
+authorization policy is collected but not evaluated: user consent and guest
+invitation settings have no honest control mapping yet. Portal links open the
+Entra authentication methods policies page, and the Entra admin center root
+labelled with the security defaults path.
+
+### Policy device status annex
+
+The collector reads Intune's per-policy status summaries after the policy
+streams: `POST /beta/deviceManagement/reports/getConfigurationPolicyNonComplianceSummaryReport`
+(Settings Catalog, ADMX and intents),
+`POST /beta/deviceManagement/reports/getCompliancePolicyNonComplianceSummaryReport`
+and `GET /beta/deviceManagement/deviceConfigurations?$select=id,displayName&$expand=deviceStatusOverview`
+(DeviceManagementConfiguration.Read.All, verified in the lab on 18 October
+2026). Report bodies are read as text and may be JSON or a JSON string; values
+are read by column name from `Schema`, paged with `top` 1000 and `skip` up to
+`TotalRowCount`. Errors are `NumberOfNonCompliantOrErrorDevices` for reports
+and `errorCount + failedCount` for the overview; reports have no pending
+column, so pending is `null`. The website skips the annex with a recorded
+reason when less than 20 seconds of its 105 second budget remain, and stops
+paging 10 seconds before the budget ends. A partial retry keeps the previous
+annex.
+
+The result is `policyDeviceStatus` on the collection. It is not a field on
+`CapabilityEvidence` and never an input to any status; a test asserts that
+statuses, counts, coverage and the management summary are identical with and
+without it. `provenance.deviceState` stays `notCollected` (per-device state is
+not collected) and `provenance.policyStatusSummary` records whether the annex
+was collected (evidence record schema version 2). The framework PDF adds an
+annex (English and German) listing the cited device policies; a policy without
+a row in the Intune summary shows "No status reported", never zero.
+

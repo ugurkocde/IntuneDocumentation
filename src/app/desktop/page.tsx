@@ -52,7 +52,7 @@ import reportSummary from "../../../public/landing/report-summary.png";
 
 const SITE_URL = "https://intunedocumentation.com";
 const title = "Intune Documentation Desktop App";
-const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 12 frameworks including NIS2 and HIPAA, a one-page management report, and multi-tenant support for MSPs. ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`;
+const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 13 frameworks including NIS2, DORA and HIPAA, a one-page management report, and multi-tenant support for MSPs. ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`;
 
 export const metadata: Metadata = {
   title,
@@ -98,6 +98,10 @@ const staysLocal = [
   { icon: Lock, text: "Microsoft access and refresh tokens" },
   { icon: FileText, text: "Exported Word and PDF documents" },
   { icon: ShieldCheck, text: "Compliance evidence reports" },
+  {
+    icon: Lock,
+    text: "Optional history snapshots, encrypted on your machine (off by default)",
+  },
 ];
 
 const sentToLicensing = [
@@ -121,13 +125,13 @@ const localPrinciples = [
     icon: Laptop,
     title: "Straight to Microsoft Graph",
     detail:
-      "Collection runs on your machine and talks to Microsoft directly. Configuration, tokens, and exports are never uploaded to us.",
+      "Collection runs on your machine and talks to Microsoft directly. Configuration, tokens, and exports are never uploaded to us. History snapshots you choose to keep stay encrypted on your machine too.",
   },
   {
     icon: Lock,
     title: "Encrypted on disk",
     detail:
-      "Your license key and token are encrypted with the operating system keychain. Documents are saved only where you choose.",
+      "Your license key and token are encrypted with the operating system keychain. Documents are saved where you choose each time. If you turn on history, snapshots are stored encrypted in the app folder (AES-256-GCM, key in the operating system secure storage) and never leave your machine. Clear local data removes them.",
   },
 ];
 
@@ -173,9 +177,9 @@ const features = [
   },
   {
     icon: ShieldCheck,
-    title: "Compliance evidence for 12 frameworks",
+    title: "Compliance evidence for 13 frameworks",
     detail:
-      "Map your configuration to NIS2, ISO/IEC 27001, SOC 2, HIPAA, NIST, BSI IT-Grundschutz, Cyber Essentials, Essential Eight, and more. Each report is built to hand to an auditor, with sample reports to preview.",
+      "Map your configuration to NIS2, DORA, ISO/IEC 27001, SOC 2, HIPAA, NIST, BSI IT-Grundschutz, Cyber Essentials, Essential Eight, and more. Save the same assessment as an Excel and CSV evidence register or as a Purview evidence pack for Compliance Manager. Each report is built to hand to an auditor, with sample reports to preview.",
     href: "/compliance",
   },
   {
@@ -264,7 +268,7 @@ const faqs = [
     id: "data",
     question: "What data is sent to your servers?",
     answer:
-      "License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify its signature with Microsoft, use only its tenant ID and app registration ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Update checks request the latest version from our update service with a random update identifier and standard request data such as your IP address; you can turn automatic update checks off in Settings. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft.",
+      "License checks send the license key and a short-lived Microsoft sign-in token (for an organization license, the token alone). We verify its signature with Microsoft, use only its tenant ID and app registration ID, and never store it. License checks also send a random installation ID, your Entra tenant ID, the operating system, the app version, and, when you use a key, the client ID of your app registration. Update checks request the latest version from our update service with a random update identifier and standard request data such as your IP address; you can turn automatic update checks off in Settings. Tenant configuration, Microsoft access tokens, and exported documents never leave your machine, and Graph calls go directly from the app to Microsoft. If you turn on history, encrypted snapshots of your collections are stored in the app folder on your machine only.",
   },
   {
     id: "limits",

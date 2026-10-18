@@ -19,12 +19,12 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 is available in the desktop app only. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 and DORA are available in the desktop app only. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 is available in the desktop app only. Sample reports for every framework are free to view.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 and DORA are available in the desktop app only. Sample reports for every framework are free to view.",
     url: "/compliance",
     type: "website",
   },
@@ -116,13 +116,13 @@ const frameworks: {
     id: "nist-800-171-r2",
     name: "NIST SP 800-171 (Rev. 2)",
     detail:
-      "Supporting Intune evidence for 12 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
+      "Supporting Intune evidence for 13 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
   },
   {
     id: "nist-800-171-r3",
     name: "NIST SP 800-171 (Rev. 3)",
     detail:
-      "Supporting Intune evidence for 11 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
+      "Supporting Intune evidence for 12 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
   },
   {
     id: "bsi-it-grundschutz",

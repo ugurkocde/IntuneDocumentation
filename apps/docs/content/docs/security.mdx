@@ -11,11 +11,11 @@ This page explains exactly what Intune Documentation reads, where that data goes
 - **Your own Intune role applies.** Delegated access means the app acts as the signed-in person. It never sees more than that person's Intune role allows.
 - **Sensitive values are redacted.** Script bodies, passwords, tokens and similar values are replaced with `[Redacted]` before anything is shown or exported.
 - **Documents are built on your device.** PDF and Word files are generated in your browser (web app) or on your computer (desktop app). They are never uploaded to us.
-- **No stored tenant configuration.** We do not persist your Intune configuration or your Microsoft access tokens.
+- **No stored tenant configuration on our side.** We do not persist your Intune configuration or your Microsoft access tokens. The desktop app can optionally keep an encrypted history of collections on your own computer. It is off by default and never leaves the computer. See [Optional local history](#optional-local-history) below.
 
 ## What is read
 
-Both apps read your Intune configuration through Microsoft Graph: configuration profiles, Settings Catalog, compliance policies, security baselines, administrative templates, scripts and remediations, apps and app policies, Windows updates, enrollment and Autopilot, assignment filters, RBAC, tenant settings, connectors and specialist policies. Assignments are resolved to group names. Conditional Access is optional in the web app and included in the desktop app.
+Both apps read your Intune configuration through Microsoft Graph: configuration profiles, Settings Catalog, compliance policies, security baselines, administrative templates, scripts and remediations, apps and app policies, Windows updates, enrollment and Autopilot, assignment filters, RBAC, tenant settings, connectors and specialist policies. Assignments are resolved to group names. Conditional Access is optional in the web app and included in the desktop app. With the same Policy.Read.All permission, both apps also read the tenant authentication methods policy and security defaults for compliance evidence. The apps also read Intune's per-policy device status counts and show them next to the evidence. These counts never change a requirement status.
 
 ### Permissions
 
@@ -31,7 +31,7 @@ All permissions are delegated and read-only.
 | <CopyValue value="DeviceManagementServiceConfig.Read.All" /> | Enrollment configurations, Autopilot and tenant service settings. |
 | <CopyValue value="DeviceManagementScripts.Read.All" /> | Scripts and remediations. Script bodies are redacted. |
 | <CopyValue value="Group.Read.All" /> | Resolve group names in policy assignments. |
-| <CopyValue value="Policy.Read.All" /> | Conditional Access policies. Optional in the web app, requested only when you turn Conditional Access on. Always requested by the desktop app. |
+| <CopyValue value="Policy.Read.All" /> | Conditional Access policies, plus the tenant authentication methods policy and security defaults for compliance evidence. Optional in the web app, requested only when you turn Conditional Access on. Always requested by the desktop app. |
 
 The Intune and group permissions need tenant-wide admin consent once. A Global Administrator, Privileged Role Administrator or Cloud Application Administrator can grant it.
 
@@ -96,10 +96,21 @@ The desktop app removes the server hop. It signs in through an app registration 
 
 ### What stays on your computer
 
-- Your Intune configuration and your Microsoft tokens are held in memory on your computer.
-- PDF and Word documents are generated locally and saved only to a folder you choose.
+- Your Intune configuration and your Microsoft tokens are held in memory on your computer during collection.
+- PDF and Word documents, evidence reports, registers and evidence packs are generated locally and saved to a folder you choose each time.
 - Your license key, if you entered one, and the signed license token are encrypted with the operating system keychain (Keychain on macOS, Windows' built-in credential encryption on Windows).
 - The app sends no telemetry.
+
+### Optional local history [#optional-local-history]
+
+The desktop app can keep a history of your collections on your computer, so you can see what changed between two collections. This is off by default. You turn it on with <Ui>Keep history on this computer</Ui>.
+
+- Snapshots are stored in the app data folder on your computer. They are stored only in encrypted form (AES-256-GCM), with a key protected by your operating system's secure storage. If secure storage is not available, history stays off and the app says why.
+- Snapshots never leave your computer. They are not part of a license check or an update check.
+- The encryption protects a snapshot if the disk or the app data folder is copied, and against other user accounts on the same computer. It does not protect against software running under your own user account, which can use the same secure storage.
+- A snapshot holds the configuration data the assessment needs and the assessment itself. Script bodies and data the assessment does not read are left out.
+- Old snapshots are removed automatically when the history reaches its count, age or size limits, oldest first.
+- <Ui>Clear local data</Ui> in the app removes the snapshots, the history index and its key. See [Settings and updates](/desktop/settings-and-updates).
 
 ### Everything that leaves your computer
 

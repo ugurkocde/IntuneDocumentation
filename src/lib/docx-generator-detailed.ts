@@ -51,6 +51,7 @@ import type { BrandingOptions } from "~/types/branding";
 import { normalizeDocx } from "./docx-compatibility";
 import { REDACTED_VALUE } from "./intune-policy-registry";
 import { assessCompliance, compareControlIds } from "./compliance";
+import { withoutDesktopOnlyFrameworks } from "./compliance/framework-availability";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -266,8 +267,18 @@ class SectionBookmark extends Bookmark {
 // Main export function
 // ---------------------------------------------------------------------------
 
+export interface DetailedDocxOptions {
+  /**
+   * "web" (the default) leaves desktop-only frameworks such as NIS2 and DORA
+   * out of the compliance evidence preview. The desktop app passes "desktop"
+   * to keep every framework.
+   */
+  audience?: "desktop" | "web";
+}
+
 export async function generateDetailedDOCX(
   data: DetailedExportData,
+  options: DetailedDocxOptions = {},
 ): Promise<ExportGenerationResult> {
   const errors: PolicyExportError[] = [];
   let totalPolicies = 0;
@@ -1035,7 +1046,10 @@ export async function generateDetailedDOCX(
   // ===== 3b. COMPLIANCE EVIDENCE PREVIEW =====
   if (data.includeComplianceEvidence !== false) {
     try {
-      const complianceAssessment = assessCompliance(data);
+      const complianceAssessment =
+        options.audience === "desktop"
+          ? assessCompliance(data)
+          : withoutDesktopOnlyFrameworks(assessCompliance(data));
       const complianceChildren: (Paragraph | Table)[] = [];
       const statusLabels = CONTROL_STATUS_LABELS;
       const statusRank = CONTROL_STATUS_ORDER;

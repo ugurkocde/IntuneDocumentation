@@ -75,7 +75,7 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       `Up to ${DESKTOP_INSTALLS_PER_TENANT} installations`,
       "Other admins in your tenant sign in without a key",
       "Word and PDF exports",
-      "Compliance evidence for 12 frameworks, including NIS2 and HIPAA",
+      "Compliance evidence for 13 frameworks, including NIS2, DORA and HIPAA",
       "One-page management report with month-over-month change",
       `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
       "Free updates, installed when you choose",
@@ -95,7 +95,7 @@ export const DESKTOP_PLANS: Record<DesktopPlanId, DesktopPlan> = {
       "Share the license with the customer tenants you choose",
       "Switch tenants without extra keys",
       "Word and PDF exports for every tenant",
-      "Compliance evidence for 12 frameworks, including NIS2 and HIPAA",
+      "Compliance evidence for 13 frameworks, including NIS2, DORA and HIPAA",
       "One-page management report with month-over-month change",
       `Works offline for ${DESKTOP_OFFLINE_GRACE_DAYS} days between license checks`,
       "Free updates, installed when you choose",
@@ -159,6 +159,7 @@ export const DESKTOP_GRAPH_PERMISSIONS: readonly GraphPermission[] = [
   },
   {
     scope: "Policy.Read.All",
-    reason: "Conditional Access policies.",
+    reason:
+      "Conditional Access policies, plus the tenant authentication methods policy and security defaults for evidence.",
   },
 ];

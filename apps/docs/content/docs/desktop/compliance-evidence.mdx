@@ -19,13 +19,14 @@ Auditors, insurers and customer questionnaires all ask the same thing: show me t
 
 ## Supported frameworks [#frameworks]
 
-The app supports twelve frameworks.
+The app supports thirteen frameworks. NIS2 and DORA are available in the desktop app only.
 
 | Framework | What is covered |
 | --- | --- |
 | ASD Essential Eight | Australian enterprise IT requirements with target Maturity Levels 1, 2 and 3. Configuration evidence only. |
 | ISO/IEC 27001 | Selected Annex A technology controls mapped to managed-device configuration evidence. |
 | NIS2 Directive | EU Directive 2022/2555 Article 21(2) measures with Danish and German law references. Organisational measures need separate assessment. |
+| DORA | Selected points of Regulation (EU) 2022/2554 and its RTS (EU) 2024/1774, as supporting evidence only. Governance, incident reporting, resilience testing and third-party risk need separate assessment. |
 | SOC 2 | Selected Trust Services Criteria mapped to managed-device configuration evidence. |
 | HIPAA Security Rule | Selected 45 CFR Part 164 safeguards for electronic protected health information. Administrative and physical safeguards need separate assessment. |
 | NIST SP 800-53 | Security and privacy controls for information systems and organizations. |
@@ -94,7 +95,13 @@ Use <Ui>Expand all</Ui> to open every control at once.
 
 A safeguard is one technical capability behind a control, such as requiring device encryption. It counts as **in place** when a recognized setting is configured with a recognized value in an Intune or Conditional Access policy that is assigned. A setting in a policy that is not assigned does not count, because it protects no one.
 
-Safeguards in place is a coverage figure from your configuration. It is not a compliance score or an audit result. The app does not verify device state or effective access.
+Safeguards in place is a coverage figure from your configuration. It is not a compliance score or an audit result. It does not verify effective access.
+
+The evidence also covers three things beyond Intune policies:
+
+- **Entra tenant policies.** With the Policy.Read.All permission the app already requests for Conditional Access, it also reads the tenant authentication methods policy and security defaults. No new permissions are needed. If these cannot be read, the checks behind them are shown as unable to check, never as missing.
+- **Screen lock.** A configured screen lock after inactivity counts as supporting evidence where a framework asks for it.
+- **Device status counts.** Intune's per-policy device status counts are shown next to the evidence and in the report annex. They describe rollout, and they never change a control status. A policy with no reported status is shown as no status reported, not as zero.
 
 ### Statuses in the report [#statuses]
 
@@ -129,6 +136,13 @@ The app resolves group names, generates the report and then asks where to save t
 </Steps>
 
 Need the data in machine-readable form, for a GRC tool or your own records? Select <Ui>Download evidence record (JSON)</Ui> in the scope section. The file contains the assessment and records which data and rules the result was based on.
+
+### More ways to save the assessment [#more-downloads]
+
+- **Evidence register.** The same assessment as an Excel workbook (with Controls, Checks and Policy status sheets) and as CSV, one row per control and per technical check, for review, tracking or import into your own tooling.
+- **Purview evidence pack.** One ZIP file with the framework evidence PDF, the JSON evidence record, an index of every assessed control with the matching Microsoft Purview Compliance Manager template name, and short upload instructions. You attach the ZIP, or the framework PDF from it, to the related improvement action in Compliance Manager. See [Intune Documentation and Purview Compliance Manager](/purview-compliance-manager).
+- **Draft fix pack.** For safeguards with no evidence at all, the app can save draft, unassigned Windows Settings Catalog policies as JSON. A draft has no effect until you review it, import it and assign it yourself.
+- **History, compare and portfolio.** With local history on, collections are kept encrypted on your computer (see [Security and privacy](/security)), so you can see what changed between two collections, compare against a reference, collect on a schedule while the app is open, and, on the MSP plan, see several tenants side by side in a portfolio view.
 
 ## What the evidence report contains [#report-contents]
 

@@ -25,6 +25,7 @@ import {
 } from "./configuration-analyzer";
 import { REDACTED_VALUE } from "./intune-policy-registry";
 import { assessCompliance } from "./compliance";
+import { withoutDesktopOnlyFrameworks } from "./compliance/framework-availability";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -36,8 +37,18 @@ export type PdfGenerationResult = ExportGenerationResult;
 
 type DetailedPdfData = DetailedExportData;
 
+export interface DetailedPdfOptions {
+  /**
+   * "web" (the default) leaves desktop-only frameworks such as NIS2 and DORA
+   * out of the compliance evidence preview. The desktop app passes "desktop"
+   * to keep every framework.
+   */
+  audience?: "desktop" | "web";
+}
+
 export async function generateDetailedPDF(
   data: DetailedPdfData,
+  options: DetailedPdfOptions = {},
 ): Promise<PdfGenerationResult> {
   const doc = new jsPDF({
     orientation: "portrait",
@@ -1279,7 +1290,10 @@ export async function generateDetailedPDF(
   const addComplianceOverview = () => {
     let assessment;
     try {
-      assessment = assessCompliance(data);
+      assessment =
+        options.audience === "desktop"
+          ? assessCompliance(data)
+          : withoutDesktopOnlyFrameworks(assessCompliance(data));
     } catch (error) {
       console.error("Skipping compliance preview section:", error);
       return;

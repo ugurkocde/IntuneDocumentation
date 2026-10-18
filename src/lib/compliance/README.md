@@ -1,6 +1,6 @@
 # Compliance evidence engine
 
-Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
+Maps an Intune tenant export to evidence for 13 frameworks: ISO/IEC 27001:2022, SOC 2, NIST
 SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0, BSI IT-Grundschutz,
 UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, ASD Essential Eight
 with target Maturity Levels 1, 2 and 3, NIS2 (Directive (EU) 2022/2555,

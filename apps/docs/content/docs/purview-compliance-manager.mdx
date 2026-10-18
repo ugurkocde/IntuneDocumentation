@@ -70,9 +70,11 @@ That evidence supports several outputs:
 
 - **As built documentation.** A readable Word or PDF document of your policies, settings and assignments. See [Select and export](/desktop/select-and-export).
 - **Framework evidence reports.** A PDF evidence report per framework for an auditor, an insurer or a customer questionnaire. See [Compliance evidence](/desktop/compliance-evidence).
-- **Purview evidence pack (desktop app).** A ZIP file with one PDF per control, an index that maps each assessed framework to the matching Purview template name, and upload instructions for Compliance Manager. Where no matching Purview template exists, the index says so.
+- **Purview evidence pack (desktop app).** One ZIP file with the framework evidence PDF, the JSON evidence record, an index that lists every assessed control with the matching Purview template name and where to find it in the PDF, and upload instructions for Compliance Manager. Where no matching Purview template exists, the index says so. There are no per-control PDFs. You attach the ZIP, or the framework PDF from it, to the related improvement action.
 - **Evidence register (desktop app).** The same assessment as an Excel workbook and as CSV, one row per technical check, for review, tracking or import into your own tooling.
-- **Local snapshot history and change tracking (desktop app).** Collections you choose to keep on your computer, so you can show what changed between two points in time and which policy or setting caused a control result to change.
+- **Local snapshot history and change tracking (desktop app).** Collections you choose to keep, encrypted on your computer and off by default, so you can show what changed between two points in time and which policy or setting caused a control result to change. Collection can also run on a schedule while the app is open.
+- **Draft fix pack (desktop app).** For safeguards with no evidence at all, draft, unassigned Windows Settings Catalog policies as JSON. A draft has no effect until you review it, import it and assign it yourself.
+- **Entra tenant policy and device status context.** The tenant authentication methods policy and security defaults are read with the Policy.Read.All permission already used for Conditional Access, with no new permissions. Screen lock after inactivity counts as supporting evidence. Intune's per-policy device status counts are shown next to the evidence and never change a status.
 - **Reference comparison (desktop app).** Compare one tenant or snapshot against a reference tenant or snapshot, setting by setting.
 - **MSP portfolio overview (desktop app).** Several tenants side by side, with framework coverage and snapshot age, for teams that manage many customers. See [Work with multiple tenants](/desktop/multiple-tenants).
 
@@ -85,7 +87,7 @@ In the desktop app, collection and report generation happen on your computer, an
 | Main job | Track a regulation end to end, with templates, owners and workflow | Document Intune configuration and map exact settings to framework controls |
 | Reads Intune configuration | No. No Intune connector and no reading of profiles, Settings Catalog, device compliance policies or endpoint security policies | Yes. Exact setting ids and values, with assignment for each policy |
 | Automated testing | Other Purview solutions, Secure Score, Defender for Cloud and connectors such as Salesforce, Zoom and Corporate Sustainability | Checks collected Intune and Conditional Access configuration against expected values each time you collect and assess |
-| Evidence for device controls | Customer managed. Someone marks the improvement action and uploads a file, for example a PDF, on the Evidence tab | Builds the file for you, per control, with policy, setting, expected value, actual value and assignment |
+| Evidence for device controls | Customer managed. Someone marks the improvement action and uploads a file, for example a PDF, on the Evidence tab | Builds the file for you: one framework evidence PDF (alone or in the ZIP evidence pack), with policy, setting, expected value, actual value and assignment per control |
 | Framework coverage | More than 360 templates, including premium templates licensed per regulation family | The frameworks listed in [Compliance evidence](/desktop/compliance-evidence#frameworks), mapped to device configuration evidence |
 | Organisational controls | Yes, as part of the full assessment | No. Controls that Intune cannot evidence stay clearly marked for separate assessment |
 | Workflow and owners | Improvement actions with owners, due dates and status | No task workflow. Outputs are documents, an evidence pack and a register |
@@ -108,16 +110,16 @@ Collect your tenant, open [Compliance evidence](/desktop/compliance-evidence), c
 
 ### Save the Purview evidence pack in the desktop app
 
-Export the Purview evidence pack for that framework. The ZIP file contains one PDF per assessed control, an index that maps the framework to its Purview template name and lists the file for each control, and a short set of upload instructions. Save the Excel or CSV evidence register alongside it if your team tracks checks in a spreadsheet.
+Export the Purview evidence pack for that framework. The ZIP file contains the framework evidence PDF, the JSON evidence record, an index that lists every assessed control with its Purview template name and where to find it in the PDF, and a short set of upload instructions. Save the Excel or CSV evidence register alongside it if your team tracks checks in a spreadsheet.
 
 Before you upload, check each control id in the index against the template version in your tenant. Template contents can differ between versions, so treat the index as a map you verify, not as a promise that every id will match.
 
 </Step>
 <Step>
 
-### Attach the PDFs to improvement actions in Compliance Manager
+### Attach the pack to improvement actions in Compliance Manager
 
-In Compliance Manager, open the assessment, then open the improvement action for the device control. On the <Ui>Evidence</Ui> tab, use <Ui>Add evidence</Ui> and upload the PDF for that control from the pack. Repeat for each improvement action you are evidencing, then record the status your team decides on.
+In Compliance Manager, open the assessment, then open the improvement action for the device control. On the <Ui>Evidence</Ui> tab, use <Ui>Add evidence</Ui> and upload the evidence pack ZIP, or the framework PDF from it. The index in the pack says where each control is covered in the PDF. Repeat for each improvement action you are evidencing, then record the status your team decides on.
 
 Keep the rest of the pack, including the index and the register, with your assessment records. When the configuration changes, collect again, export a fresh pack, and replace or add the affected evidence. Local snapshot history in the desktop app helps you show what changed between the two packs.
 
@@ -160,7 +162,7 @@ Because of that, Compliance Manager cannot tell you which Intune policy or setti
 </Accordion>
 <Accordion title="Can the Purview evidence pack upload itself to Compliance Manager?" id="pack-upload">
 
-No. Evidence is added by a person on the improvement action's <Ui>Evidence</Ui> tab, so the pack is designed for that step: one PDF per control, an index that maps the framework to the matching Purview template name and names the file for each control, and upload instructions. You open each improvement action, upload the matching PDF, and record the outcome your team agrees on.
+No. Evidence is added by a person on the improvement action's <Ui>Evidence</Ui> tab, so the pack is designed for that step: one ZIP with the framework evidence PDF, the JSON evidence record, an index that lists every assessed control with the matching Purview template name and where to find it in the PDF, and upload instructions. You open each improvement action, upload the ZIP or the framework PDF, and record the outcome your team agrees on. The pack does not contain a separate PDF per control.
 
 Check control ids against the template in your tenant before you rely on them, because template versions can differ.
 

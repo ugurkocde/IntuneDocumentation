@@ -528,6 +528,20 @@ describe("Word design helpers", () => {
     expect(coverTitle("W".repeat(20)).sizeHp).toBeLessThan(72);
   });
 
+  it("measures the cover title with a monospace font's wider glyphs", () => {
+    // Rendered on four lines in LibreOffice with Courier New before.
+    const title =
+      "Windows 11 - Microsoft Defender Antivirus and Attack Surface Reduction - Corporate Workstations - Production - Global";
+    const courier = coverTitle(title, "Courier New");
+    expect(courier.lines).toBe(3);
+    expect(courier.text.endsWith("...")).toBe(true);
+    // Each of Courier's three lines holds at most this many characters.
+    expect(courier.text.length).toBeLessThanOrEqual(3 * 34);
+    expect(coverTitle(title, "Calibri").text.length).toBeGreaterThan(
+      courier.text.length,
+    );
+  });
+
   it("leaves a notice too long for the cover off it and prints it on content pages", async () => {
     const notice =
       "Confidential configuration record for named recipients only. "

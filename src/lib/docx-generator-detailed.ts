@@ -261,7 +261,7 @@ export async function generateDetailedDOCX(
         // As in the PDF: a single configuration reads "Configuration
         // Documentation" here, and a three line title leaves no room.
         description:
-          coverTitle(titleText).lines > 2
+          coverTitle(titleText, theme.font).lines > 2
             ? ""
             : scope?.subtitle
               ? "Configuration Documentation"

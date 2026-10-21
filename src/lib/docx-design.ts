@@ -320,7 +320,11 @@ export interface CoverContent {
 
 // Approximate glyph widths in em for a proportional sans font, generous for
 // wide letters, so the estimate never wraps fewer lines than Word does.
-function glyphEm(char: string): number {
+// Every glyph of a monospace font takes about 0.6 em.
+const MONOSPACE = /courier|mono|consolas|menlo|monaco/i;
+
+function glyphEm(char: string, monospace = false): number {
+  if (monospace) return 0.62;
   if ("WM@%".includes(char)) return 1;
   if ("mw".includes(char)) return 0.9;
   if (/[A-Z0-9#&]/.test(char)) return 0.75;
@@ -328,11 +332,12 @@ function glyphEm(char: string): number {
   return 0.6;
 }
 
-const emWidth = (text: string) =>
-  [...text].reduce((sum, char) => sum + glyphEm(char), 0);
+const emWidthOf = (text: string, monospace = false) =>
+  [...text].reduce((sum, char) => sum + glyphEm(char, monospace), 0);
 
 /** Lines the text wraps to at this capacity in em, breaking long words. */
-function wrapEm(text: string, capacity: number): string[] {
+function wrapEm(text: string, capacity: number, monospace = false): string[] {
+  const emWidth = (value: string) => emWidthOf(value, monospace);
   const lines: string[] = [];
   let current = "";
   for (const word of text.split(/\s+/).filter(Boolean)) {
@@ -362,19 +367,24 @@ function wrapEm(text: string, capacity: number): string[] {
  * the cover band, measured with generous glyph widths so a title of wide
  * letters cannot push the tenant block out of the band.
  */
-export function coverTitle(title: string): {
+export function coverTitle(
+  title: string,
+  font?: string,
+): {
   text: string;
   sizeHp: number;
   lines: number;
 } {
+  const monospace = MONOSPACE.test(font ?? "");
+  const emWidth = (value: string) => emWidthOf(value, monospace);
   // Usable band width in points, with a safety margin for wider fonts.
   const capacity = (sizeHp: number) =>
     ((COVER_INNER / 20) * 0.9) / (sizeHp / 2);
   for (const sizeHp of [72, 56])
-    if (wrapEm(title, capacity(sizeHp)).length === 1)
+    if (wrapEm(title, capacity(sizeHp), monospace).length === 1)
       return { text: title, sizeHp, lines: 1 };
   const sizeHp = 48;
-  const lines = wrapEm(title, capacity(sizeHp));
+  const lines = wrapEm(title, capacity(sizeHp), monospace);
   if (lines.length <= 3) return { text: title, sizeHp, lines: lines.length };
   let last = lines[2]!;
   while (last && emWidth(`${last}...`) > capacity(sizeHp))
@@ -632,7 +642,7 @@ function documentControlTable(theme: WordTheme, content: CoverContent): Table {
  * document control grid.
  */
 export function coverTable(theme: WordTheme, content: CoverContent): Table {
-  const title = coverTitle(content.title);
+  const title = coverTitle(content.title, theme.font);
   const description = clampText(content.description, 170);
   const mastheadHeight = content.logo
     ? Math.round((content.logo.heightMm + 4) * MM_TWIPS)

@@ -402,7 +402,7 @@ function ReportPreview() {
       />
       <Image
         src={reportSummary}
-        alt="Executive summary page with configurations per policy type, assignment counts and platform coverage"
+        alt="Executive summary page with the configurations per family and their assignment counts"
         sizes="(min-width: 1024px) 320px, 60vw"
         className="ring-petrol-950/8 shadow-soft absolute top-0 right-0 w-[60%] rotate-2 rounded-lg ring-1"
         priority

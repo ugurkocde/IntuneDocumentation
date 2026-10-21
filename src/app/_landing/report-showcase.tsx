@@ -73,7 +73,7 @@ export function ReportShowcase() {
             className={`${buttonStyles.secondaryInverted} mt-10`}
           >
             <Download className="h-4 w-4" />
-            Download the full sample report (PDF)
+            Download a sample report excerpt (PDF)
           </a>
           <p className="mt-4 text-sm leading-6 text-white/70">
             Preparing for an audit?{" "}

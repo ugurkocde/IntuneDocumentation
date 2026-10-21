@@ -201,6 +201,7 @@ function view(request: HistoryDiffRequest, overrides: Partial<HistoryDiffView> =
                       },
                     ],
                     checksChanged: [],
+                    notCompared: false,
                   },
                 ],
               },
@@ -548,6 +549,38 @@ describe("HistoryScreen", () => {
     await act(async () => mocks.changed.listener?.());
     await settle();
     expect(screen.getByText("One snapshot so far")).toBeTruthy();
+  });
+
+  it("says a capability was not compared instead of listing evidence as removed", async () => {
+    mocks.status.mockResolvedValue(status({ count: 2 }));
+    mocks.list.mockResolvedValue([LATEST, PREVIOUS]);
+    mocks.diff.mockImplementation(async (request: HistoryDiffRequest) => {
+      const base = view(request);
+      const [change] = base.controls.changes;
+      if (!change) return base;
+      const gap = {
+        ...change.causes[0]!,
+        after: "collectionIncomplete" as const,
+        evidenceAdded: [],
+        evidenceRemoved: [],
+        checksChanged: [],
+        notCompared: true,
+      };
+      return {
+        ...base,
+        controls: {
+          ...base.controls,
+          changes: [{ ...change, after: "notAssessed" as const, causes: [gap] }],
+        },
+      };
+    });
+    await renderScreen();
+    await settle();
+    await act(async () => fireEvent.click(screen.getByRole("tab", { name: /Controls/ })));
+    const control = screen.getByRole("article", { name: "SC-28 Protection of Information at Rest" });
+    expect(within(control).getByText(/^Not compared:/).textContent).toContain("This is not evidence added or removed.");
+    expect(within(control).queryByText("Evidence removed:")).toBeNull();
+    expect(within(control).queryByText("Evidence added:")).toBeNull();
   });
 
   it("shows readable setting names and value labels in the control causes", async () => {

@@ -627,6 +627,10 @@ export interface CapabilityChange {
   evidenceAdded: EvidenceRef[];
   evidenceRemoved: EvidenceRef[];
   checksChanged: CheckChange[];
+  // The capability could not be assessed in one of the two collections, for
+  // example a policy that could not be read. Its evidence and checks are not
+  // compared, so a collection gap never reads as evidence added or removed.
+  notCompared: boolean;
 }
 
 export interface ControlStatusChange {
@@ -699,6 +703,11 @@ function unmatched<T>(
   });
 }
 
+// Statuses that mean the data to assess the capability was missing.
+const UNAVAILABLE: ReadonlySet<CapabilityStatus | null> = new Set<
+  CapabilityStatus | null
+>(["collectionIncomplete", "assignmentUnknown"]);
+
 function capabilityChange(
   id: string,
   a: StoredCapability | undefined,
@@ -751,14 +760,17 @@ function capabilityChange(
     !checksChanged.length
   )
     return null;
+  const notCompared =
+    before !== after && (UNAVAILABLE.has(before) || UNAVAILABLE.has(after));
   return {
     capabilityId: id,
     name: (b ?? a)?.name ?? id,
     before,
     after,
-    evidenceAdded,
-    evidenceRemoved,
-    checksChanged,
+    evidenceAdded: notCompared ? [] : evidenceAdded,
+    evidenceRemoved: notCompared ? [] : evidenceRemoved,
+    checksChanged: notCompared ? [] : checksChanged,
+    notCompared,
   };
 }
 

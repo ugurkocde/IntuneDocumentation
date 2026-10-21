@@ -503,6 +503,12 @@ function CauseBlock({ cause }: { cause: CapabilityChange }) {
         <ArrowRight className="h-3 w-3" aria-label="to" />
         {statusText(cause.after, CAPABILITY_STATUS_LABELS)}
       </p>
+      {cause.notCompared && (
+        <p className="mt-1 text-xs leading-5 text-amber-800">
+          Not compared: this capability could not be assessed in one of the two collections, usually because data
+          was missing. This is not evidence added or removed.
+        </p>
+      )}
       {rows.length > 0 && <ul className="text-petrol-800 mt-1.5 space-y-1 text-xs leading-5">{rows}</ul>}
       {cause.checksChanged.length > 0 && rows.length === 0 && (
         <p className="text-petrol-600 mt-1 text-xs">

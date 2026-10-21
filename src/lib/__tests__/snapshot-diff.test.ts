@@ -635,6 +635,72 @@ describe("diffAssessments", () => {
     expect(cause.evidenceAdded).toEqual([]);
   });
 
+  it("does not compare evidence of a capability that could not be assessed in one collection", () => {
+    const evidence = {
+      policyId: "securityDefaults",
+      policyName: "Security defaults",
+      settingId: "isEnabled",
+      observedValue: "true",
+      verdict: "enforced" as const,
+      assignment: "assigned" as const,
+    };
+    const assessment = (read: boolean): StoredAssessment => ({
+      rulesetVersion: "2026.10.7",
+      generatedAt: "2026-10-18T10:00:00Z",
+      scope: {},
+      capabilities: [
+        {
+          id: "tenant-security-defaults",
+          name: "Security defaults",
+          platform: "tenant",
+          // Security defaults read, then HTTP 403 on the next collection.
+          status: read ? "enforced" : "collectionIncomplete",
+          evidence: read ? [evidence] : [],
+          checks: read
+            ? [
+                {
+                  settingId: "isEnabled",
+                  policyId: "securityDefaults",
+                  policyName: "Security defaults",
+                  assessmentStatus: "checked" as const,
+                  result: "matches" as const,
+                  actualValue: "true",
+                },
+              ]
+            : [],
+        },
+      ] as StoredAssessment["capabilities"],
+      frameworks: [
+        {
+          id: "nist",
+          name: "NIST",
+          version: "1",
+          summary: {} as StoredAssessment["frameworks"][number]["summary"],
+          controls: [
+            {
+              id: "IA-2",
+              title: "Identification and authentication",
+              status: read ? "partialEvidence" : "notAssessed",
+              capabilityIds: ["tenant-security-defaults"],
+            },
+          ],
+        },
+      ] as StoredAssessment["frameworks"],
+    });
+    for (const [from, to] of [
+      [true, false],
+      [false, true],
+    ] as const) {
+      const cause = diffAssessments(assessment(from), assessment(to)).frameworks[0]!.changes[0]!.causes[0]!;
+      expect(cause).toMatchObject({
+        notCompared: true,
+        evidenceAdded: [],
+        evidenceRemoved: [],
+        checksChanged: [],
+      });
+    }
+  });
+
   it("caps causes and values", () => {
     const before = contoso();
     const after = contoso();
@@ -711,6 +777,7 @@ describe("readable names for control evidence", () => {
             evidenceAdded: [ref(BITLOCKER, `${BITLOCKER}_1`), ref("unknown_setting", "unknown_setting_1")],
             evidenceRemoved: [ref(BITLOCKER, `${BITLOCKER}_0`)],
             checksChanged: [],
+            notCompared: false,
           },
         ],
       },

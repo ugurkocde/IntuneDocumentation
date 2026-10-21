@@ -6,6 +6,7 @@ import {
   frameworkCoverageLabel,
 } from "./compliance/presentation";
 import jsPDF from "jspdf";
+import { dateParts, pinPdfMetadata } from "./compliance/pdf-kit";
 import {
   extractSettingValue,
   parseDeviceConfiguration,
@@ -44,6 +45,11 @@ export interface DetailedPdfOptions {
    * to keep every framework.
    */
   audience?: "desktop" | "web";
+  /**
+   * Fixed render time. Replaces the current time for the generated date and
+   * the PDF metadata, so the same input always produces the same bytes.
+   */
+  renderDate?: Date;
 }
 
 export async function generateDetailedPDF(
@@ -56,6 +62,18 @@ export async function generateDetailedPDF(
     format: "a4",
     compress: true, // Enable compression for smaller file size
   });
+  const generatedAt = options.renderDate
+    ? new Date(options.renderDate.getTime())
+    : new Date();
+  // Fixed render dates read calendar fields in UTC so every time zone renders
+  // the same text.
+  const fixedDate = options.renderDate !== undefined;
+  if (fixedDate)
+    pinPdfMetadata(
+      doc,
+      generatedAt,
+      `documentation|${generatedAt.toISOString()}|${data.collectedAt ?? ""}`,
+    );
 
   let yPosition = 20;
   const pageHeight = doc.internal.pageSize.height;
@@ -70,7 +88,7 @@ export async function generateDetailedPDF(
   let successfulPolicies = 0;
 
   // Analyze configurations for overview
-  const analytics = analyzeConfigurations(data);
+  const analytics = analyzeConfigurations(data, generatedAt);
 
   // Opt in: a scoped export titles the cover for its scope, and a compact
   // one leaves out the summary pages.
@@ -954,7 +972,6 @@ export async function generateDetailedPDF(
   }
 
   // Generated on row - Simplified format: "31 Aug 2025 · 15:43"
-  const dateTime = new Date();
   const monthNames = [
     "Jan",
     "Feb",
@@ -969,16 +986,20 @@ export async function generateDetailedPDF(
     "Nov",
     "Dec",
   ];
-  const day = dateTime.getDate();
-  const month = monthNames[dateTime.getMonth()];
-  const year = dateTime.getFullYear();
-  const hours = dateTime.getHours().toString().padStart(2, "0");
-  const minutes = dateTime.getMinutes().toString().padStart(2, "0");
+  const {
+    year,
+    month: monthNumber,
+    hours,
+    minutes,
+    ...parts
+  } = dateParts(generatedAt, fixedDate);
+  const day = Number(parts.day);
+  const month = monthNames[Number(monthNumber) - 1];
   const formattedDateTime = `${day} ${month} ${year} · ${hours}:${minutes}`;
   addTableRow("Generated:", formattedDateTime);
 
   // Version row (using date as version)
-  const version = `v${year}.${(dateTime.getMonth() + 1).toString().padStart(2, "0")}.${day.toString().padStart(2, "0")}`;
+  const version = `v${year}.${monthNumber}.${parts.day}`;
   addTableRow("Version:", version);
 
   // Classification row if provided

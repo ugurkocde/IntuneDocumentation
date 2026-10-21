@@ -1,8 +1,9 @@
 import type jsPDF from "jspdf";
 
 // Drawing primitives for the evidence report design system. Geometry is in
-// millimetres, type in points. Only built-in Helvetica, solid fills, lines,
-// circles and rounded rectangles are used so every viewer renders the same.
+// millimetres, type in points. Only built-in fonts (Helvetica unless a
+// document registers another with setFontFamily), solid fills, lines, circles
+// and rounded rectangles are used so every viewer renders the same.
 
 // Math.sin and Math.cos may differ in the last bit between CPUs, and jsPDF
 // writes coordinates at full precision. Rounding to 0.0001 mm keeps PDF bytes
@@ -60,6 +61,94 @@ export const TONES: Record<
   info: { text: [0, 51, 102], fill: [234, 241, 249] },
 };
 
+export function hexToRgb(
+  hex: string | undefined,
+  fallback: RgbColor,
+): RgbColor {
+  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? "");
+  if (!match?.[1] || !match[2] || !match[3]) return fallback;
+  return [
+    Number.parseInt(match[1], 16),
+    Number.parseInt(match[2], 16),
+    Number.parseInt(match[3], 16),
+  ];
+}
+
+export function mixColor(
+  color: RgbColor,
+  target: RgbColor,
+  amount: number,
+): RgbColor {
+  return [
+    Math.round(color[0] + (target[0] - color[0]) * amount),
+    Math.round(color[1] + (target[1] - color[1]) * amount),
+    Math.round(color[2] + (target[2] - color[2]) * amount),
+  ];
+}
+
+/**
+ * Calendar parts in local time, or in UTC for fixed render dates so the
+ * same input renders the same date in every time zone.
+ */
+export function dateParts(date: Date, utc = false) {
+  return {
+    year: String(utc ? date.getUTCFullYear() : date.getFullYear()),
+    month: String((utc ? date.getUTCMonth() : date.getMonth()) + 1).padStart(
+      2,
+      "0",
+    ),
+    day: String(utc ? date.getUTCDate() : date.getDate()).padStart(2, "0"),
+    hours: String(utc ? date.getUTCHours() : date.getHours()).padStart(2, "0"),
+    minutes: String(utc ? date.getUTCMinutes() : date.getMinutes()).padStart(
+      2,
+      "0",
+    ),
+    seconds: String(utc ? date.getUTCSeconds() : date.getSeconds()).padStart(
+      2,
+      "0",
+    ),
+  };
+}
+
+/** PDF date string with an explicit UTC offset. */
+export function pdfUtcDate(date: Date): string {
+  const { year, month, day, hours, minutes, seconds } = dateParts(date, true);
+  return `D:${year}${month}${day}${hours}${minutes}${seconds}+00'00'`;
+}
+
+export function fnv1a(text: string, offset: number): number {
+  let hash = offset >>> 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+/** 32 hex characters for the PDF file identifier, derived from the inputs. */
+export function deterministicFileId(seed: string): string {
+  return [0x811c9dc5, 0x01234567, 0x89abcdef, 0x5bd1e995]
+    .map((offset) => fnv1a(seed, offset).toString(16).padStart(8, "0"))
+    .join("")
+    .toUpperCase();
+}
+
+/** jsPDF 3 methods missing from the bundled type declarations. */
+interface PdfMetadataApi {
+  setCreationDate: (date: Date | string) => void;
+  setFileId: (value: string) => void;
+}
+
+/**
+ * Replaces the creation time and the random file identifier, so the same
+ * input renders the same bytes.
+ */
+export function pinPdfMetadata(doc: jsPDF, date: Date, seed: string) {
+  const metadataApi = doc as unknown as PdfMetadataApi;
+  metadataApi.setCreationDate(pdfUtcDate(date));
+  metadataApi.setFileId(deterministicFileId(seed));
+}
+
 const POINT_TO_MM = 0.3528;
 
 /** Approximate cap height in mm for Helvetica at the given point size. */
@@ -72,13 +161,27 @@ export function centredBaseline(top: number, height: number, size: number) {
   return top + height / 2 + capHeight(size) / 2;
 }
 
+// Font family per document. Helvetica unless a generator registers another
+// jsPDF font for its document, so the kit signatures stay the same.
+const FONT_FAMILIES = new WeakMap<jsPDF, string>();
+
+/** Font family setFont uses for this document; undefined restores Helvetica. */
+export function setFontFamily(doc: jsPDF, family: string | undefined) {
+  if (family) FONT_FAMILIES.set(doc, family);
+  else FONT_FAMILIES.delete(doc);
+}
+
+export function fontFamily(doc: jsPDF): string {
+  return FONT_FAMILIES.get(doc) ?? "helvetica";
+}
+
 export function setFont(
   doc: jsPDF,
   size: number,
   style: FontStyle = "normal",
   color?: RgbColor,
 ) {
-  doc.setFont("helvetica", style);
+  doc.setFont(fontFamily(doc), style);
   doc.setFontSize(size);
   if (color) doc.setTextColor(...color);
 }
@@ -143,6 +246,38 @@ export function wrapLines(
   if (!kept[maxLines - 1]?.endsWith("..."))
     kept[maxLines - 1] = `${kept[maxLines - 1]}...`;
   return kept;
+}
+
+/** Largest size from size down to minimum, in 0.5 pt steps, that fits width. */
+export function fitFontSize(
+  doc: jsPDF,
+  text: string,
+  width: number,
+  size: number,
+  minimum: number,
+  style: FontStyle = "bold",
+): number {
+  let fitted = size;
+  while (fitted > minimum && textWidth(doc, text, fitted, style) > width)
+    fitted -= 0.5;
+  return fitted;
+}
+
+/** Draws pre-wrapped lines; top is the top of the first line's capitals. */
+export function drawLines(
+  doc: jsPDF,
+  lines: readonly string[],
+  x: number,
+  top: number,
+  fontSize: number,
+  style: FontStyle,
+  color: RgbColor,
+  lineHeight: number,
+) {
+  setFont(doc, fontSize, style, color);
+  lines.forEach((line, index) => {
+    doc.text(line, x, top + capHeight(fontSize) + index * lineHeight);
+  });
 }
 
 /** Uppercase label with letter spacing. Never use it for searchable text. */

@@ -48,4 +48,18 @@ describe("runExport", () => {
       { audience: "desktop" },
     );
   });
+
+  it("names the signed in tenant by its shortened id only", async () => {
+    await runExport(
+      vi.fn(),
+      { format: "pdf", target: TENANT_TARGET, tenantId: "1a2b3c4d-0000-1111-2222-333344445555" },
+      () => undefined,
+    );
+    expect(mocks.pdf).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tenantLabel: "1a2b3c4d..." }),
+      { audience: "desktop" },
+    );
+    await runExport(vi.fn(), { format: "pdf", target: TENANT_TARGET, tenantId: null }, () => undefined);
+    expect(mocks.pdf.mock.lastCall?.[0]).not.toHaveProperty("tenantLabel");
+  });
 });

@@ -170,6 +170,10 @@ export function useExportHandler({
             : undefined,
         policyDeviceStatus: configurations?.policyDeviceStatus,
         branding: brandingOptions,
+        // The document names the tenant by a shortened id only.
+        ...(accounts[0]?.tenantId
+          ? { tenantLabel: `${accounts[0].tenantId.slice(0, 8)}...` }
+          : {}),
         includeComplianceEvidence: options?.includeComplianceEvidence ?? true,
       };
 

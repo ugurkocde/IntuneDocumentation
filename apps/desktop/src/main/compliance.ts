@@ -72,7 +72,11 @@ import type {
   PolicyDeviceStatusView,
 } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
+import { tenantLabelOf } from "../shared/tenant-label";
 import { getCollectionOwner, getLastCollection } from "./collect";
+
+// Shared with the renderer, which names the tenant in documentation exports.
+export { tenantLabelOf };
 
 type Collection = NonNullable<ReturnType<typeof getLastCollection>>;
 
@@ -493,11 +497,6 @@ export async function complianceView(
     request.frameworkId,
     context,
   );
-}
-
-// Reports and baselines name the tenant by a shortened id only.
-export function tenantLabelOf(tenantId: string | null): string | undefined {
-  return tenantId ? `${tenantId.slice(0, 8)}...` : undefined;
 }
 
 function yieldToEventLoop(): Promise<void> {

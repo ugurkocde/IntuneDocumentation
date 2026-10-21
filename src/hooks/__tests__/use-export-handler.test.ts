@@ -8,8 +8,11 @@ const resolveExportData = vi.fn(async (data: Record<string, unknown>) => ({
   deviceCounts: {},
 }));
 
+const msal = vi.hoisted(() => ({
+  accounts: [] as Array<{ tenantId?: string }>,
+}));
 vi.mock("@azure/msal-react", () => ({
-  useMsal: () => ({ instance: {}, accounts: [] }),
+  useMsal: () => ({ instance: {}, accounts: msal.accounts }),
 }));
 vi.mock("~/lib/id-token", () => ({ getIdToken: vi.fn() }));
 vi.mock("~/lib/client-export-resolver", () => ({ resolveExportData }));
@@ -55,7 +58,22 @@ function render(includeCA: boolean) {
 }
 
 describe("web full export data", () => {
-  beforeEach(() => resolveExportData.mockClear());
+  beforeEach(() => {
+    resolveExportData.mockClear();
+    msal.accounts = [];
+  });
+
+  it("names the signed in tenant by its shortened id only", async () => {
+    await render(true).handleExport("pdf-detailed");
+    expect(resolveExportData.mock.calls[0]?.[0]).not.toHaveProperty(
+      "tenantLabel",
+    );
+    msal.accounts = [{ tenantId: "1a2b3c4d-0000-1111-2222-333344445555" }];
+    await render(true).handleExport("pdf-detailed");
+    expect(resolveExportData.mock.calls[1]?.[0]).toMatchObject({
+      tenantLabel: "1a2b3c4d...",
+    });
+  });
 
   it("passes Entra tenant policies and the device status annex to the generator", async () => {
     const result = await render(true).handleExport("pdf-detailed");

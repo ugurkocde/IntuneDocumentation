@@ -51,6 +51,11 @@ export interface DetailedExportData {
   groupNames?: Map<string, string>;
   deviceCounts?: Record<string, number>;
   branding?: BrandingOptions;
+  /**
+   * Shortened id of the signed in tenant, for example "1a2b3c4d...", shown on
+   * the cover and in the running header. Absent when the tenant is unknown.
+   */
+  tenantLabel?: string;
   includeComplianceEvidence?: boolean;
   /**
    * Opt in: documents part of a tenant, such as a single configuration or a
@@ -84,7 +89,13 @@ export interface ExportGenerationResult {
   successfulPolicies: number;
 }
 
-export function analyzeConfigurations(data: DetailedExportData) {
+export type ConfigurationAnalytics = ReturnType<typeof analyzeConfigurations>;
+
+/** now is the reference time for the recent and stale counts. */
+export function analyzeConfigurations(
+  data: DetailedExportData,
+  now: Date = new Date(),
+) {
   const allConfigs = data.sections?.length
     ? data.sections.flatMap((section) => section.items)
     : [
@@ -220,7 +231,6 @@ export function analyzeConfigurations(data: DetailedExportData) {
     }
   });
 
-  const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);

@@ -29,16 +29,22 @@ import {
   centredBaseline,
   chipWidth,
   clampLine,
+  dateParts,
   drawCard,
   drawChip,
   drawDonut,
   drawEyebrow,
   drawKpiTile,
+  drawLines as drawTextLines,
   drawMarker,
   drawPill,
   drawRule,
   drawStackedBar,
+  fitFontSize as fitTextSize,
+  fnv1a,
+  mixColor,
   pillMetrics,
+  pinPdfMetadata,
   setFont,
   textWidth,
   wrapLines,
@@ -47,6 +53,24 @@ import {
   type RgbColor,
   type Tone,
 } from "./pdf-kit";
+import {
+  brandingTheme,
+  drawCoverBackground,
+  drawCoverFooter,
+  drawCoverHeadline,
+  drawCoverMasthead,
+  drawCoverTenantBlock,
+  drawDocumentControlGrid,
+  drawPageTitle as drawChromePageTitle,
+  drawRunningChrome,
+  drawSectionHeading as drawChromeSectionHeading,
+  drawTableHeader,
+  drawToc,
+  drawZebraRow,
+  layoutToc,
+  pageFrame,
+  tableHeaderLines,
+} from "./pdf-chrome";
 import jsPDF from "jspdf";
 import type { BrandingOptions } from "~/types/branding";
 import type { DetailedExportData } from "../configuration-analyzer";
@@ -149,19 +173,6 @@ interface ReportStrings {
   manualComment: string;
   pageNumber: (page: number, total: number) => string;
   fileFrameworkLabels: Record<ComplianceFrameworkId, string>;
-}
-
-/** jsPDF 3 methods missing from the bundled type declarations. */
-interface PdfMetadataApi {
-  setCreationDate: (date: Date | string) => void;
-  setFileId: (value: string) => void;
-}
-
-interface ImagePropertiesProvider {
-  getImageProperties: (dataUrl: string) => {
-    width: number;
-    height: number;
-  };
 }
 
 const STRINGS: Record<Locale, ReportStrings> = {
@@ -684,51 +695,11 @@ function translateAssessmentLimitation(text: string): string {
   return translations[text] ?? text;
 }
 
-/**
- * Calendar parts in local time, or in UTC for fixed render dates so the
- * same input renders the same date in every time zone.
- */
-function dateParts(date: Date, utc = false) {
-  return {
-    year: String(utc ? date.getUTCFullYear() : date.getFullYear()),
-    month: String((utc ? date.getUTCMonth() : date.getMonth()) + 1).padStart(
-      2,
-      "0",
-    ),
-    day: String(utc ? date.getUTCDate() : date.getDate()).padStart(2, "0"),
-    hours: String(utc ? date.getUTCHours() : date.getHours()).padStart(2, "0"),
-    minutes: String(utc ? date.getUTCMinutes() : date.getMinutes()).padStart(
-      2,
-      "0",
-    ),
-    seconds: String(utc ? date.getUTCSeconds() : date.getSeconds()).padStart(
-      2,
-      "0",
-    ),
-  };
-}
-
-/** PDF date string with an explicit UTC offset. */
-function pdfUtcDate(date: Date): string {
-  const { year, month, day, hours, minutes, seconds } = dateParts(date, true);
-  return `D:${year}${month}${day}${hours}${minutes}${seconds}+00'00'`;
-}
-
 function formatReportDate(date: Date, locale: Locale, utc = false): string {
   const { year, month, day } = dateParts(date, utc);
   return locale === "de"
     ? `${day}.${month}.${year}`
     : `${year}-${month}-${day}`;
-}
-
-function hexToRgb(hex: string | undefined, fallback: RgbColor): RgbColor {
-  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? "");
-  if (!match?.[1] || !match[2] || !match[3]) return fallback;
-  return [
-    Number.parseInt(match[1], 16),
-    Number.parseInt(match[2], 16),
-    Number.parseInt(match[3], 16),
-  ];
 }
 
 function localIsoDate(date: Date, utc = false): string {
@@ -789,23 +760,6 @@ function reportSuffix(seed?: string): string {
     }
   }
   return suffix;
-}
-
-function fnv1a(text: string, offset: number): number {
-  let hash = offset >>> 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
-}
-
-/** 32 hex characters for the PDF file identifier, derived from the inputs. */
-function deterministicFileId(seed: string): string {
-  return [0x811c9dc5, 0x01234567, 0x89abcdef, 0x5bd1e995]
-    .map((offset) => fnv1a(seed, offset).toString(16).padStart(8, "0"))
-    .join("")
-    .toUpperCase();
 }
 
 function defaultReportId(
@@ -1644,14 +1598,6 @@ export function complianceReportFileName(
 
 const REGISTRY_KEY_COLLATOR = new Intl.Collator("en");
 
-function mixColor(color: RgbColor, target: RgbColor, amount: number): RgbColor {
-  return [
-    Math.round(color[0] + (target[0] - color[0]) * amount),
-    Math.round(color[1] + (target[1] - color[1]) * amount),
-    Math.round(color[2] + (target[2] - color[2]) * amount),
-  ];
-}
-
 const CONTROL_STATUS_TONES: Record<ControlStatus, Tone> = {
   evidenceFound: "found",
   partialEvidence: "supporting",
@@ -1746,10 +1692,12 @@ export async function generateComplianceReportPDF(
   const strings = STRINGS[locale];
   const layout = LAYOUT[locale];
   const branding = options.branding ?? data.branding;
-  const primaryColor = hexToRgb(branding?.colors?.primary, PALETTE.navy);
-  const secondaryColor = hexToRgb(branding?.colors?.secondary, PALETTE.blue);
-  const accentColor = hexToRgb(branding?.colors?.accent, PALETTE.green);
-  const textColor = hexToRgb(branding?.colors?.text, PALETTE.ink);
+  const theme = brandingTheme(branding);
+  const {
+    primary: primaryColor,
+    secondary: secondaryColor,
+    text: textColor,
+  } = theme;
   const primaryTint = mixColor(primaryColor, PALETTE.white, 0.92);
 
   const manifest = await createEvidenceManifest(data);
@@ -1966,21 +1914,15 @@ export async function generateComplianceReportPDF(
     author: branding?.companyName ?? strings.footer,
     subject: `${framework.framework.name} ${framework.framework.version}`,
   });
-  if (deterministicSeed !== undefined) {
-    const metadataApi = doc as unknown as PdfMetadataApi;
-    metadataApi.setCreationDate(pdfUtcDate(generatedAt));
-    metadataApi.setFileId(
-      deterministicFileId(`${deterministicSeed}|${reportId}`),
-    );
-  }
+  if (deterministicSeed !== undefined)
+    pinPdfMetadata(doc, generatedAt, `${deterministicSeed}|${reportId}`);
 
-  const pageWidth = doc.internal.pageSize.width;
-  const pageHeight = doc.internal.pageSize.height;
-  const margin = 15;
-  const right = pageWidth - margin;
-  const contentWidth = pageWidth - margin * 2;
-  const contentTop = 21;
-  const contentBottom = 276;
+  const frame = pageFrame(doc, {
+    margin: 15,
+    contentTop: 21,
+    contentBottom: 276,
+  });
+  const { margin, right, contentWidth, contentTop, contentBottom } = frame;
   let yPosition = contentTop;
   const tocEntries: TocEntry[] = [];
   const controlPages = new Map<string, number>();
@@ -2018,12 +1960,7 @@ export async function generateComplianceReportPDF(
     size: number,
     minimum: number,
     style: FontStyle = "bold",
-  ): number => {
-    let fitted = size;
-    while (fitted > minimum && textWidth(doc, text, fitted, style) > width)
-      fitted -= 0.5;
-    return fitted;
-  };
+  ): number => fitTextSize(doc, text, width, size, minimum, style);
 
   const addContentPage = () => {
     doc.addPage();
@@ -2044,12 +1981,7 @@ export async function generateComplianceReportPDF(
     style: FontStyle,
     color: RgbColor,
     lineHeight: number,
-  ) => {
-    setFont(doc, fontSize, style, color);
-    lines.forEach((line, index) => {
-      doc.text(line, x, top + capHeight(fontSize) + index * lineHeight);
-    });
-  };
+  ) => drawTextLines(doc, lines, x, top, fontSize, style, color, lineHeight);
 
   const drawWrappedText = (
     text: string,
@@ -2085,42 +2017,23 @@ export async function generateComplianceReportPDF(
   ) => {
     if (options.record !== false)
       tocEntries.push({ title, page: currentPage(), level: 0 });
-    drawEyebrow(doc, eyebrow, margin, yPosition + 2.4, {
-      color: secondaryColor,
+    yPosition = drawChromePageTitle(doc, theme, frame, yPosition, {
+      eyebrow,
+      title,
+      lead: options.lead,
+      size: options.size,
     });
-    const size = fitFontSize(title, contentWidth, options.size ?? 20, 12);
-    setFont(doc, size, "bold", primaryColor);
-    doc.text(title, margin, yPosition + 4.5 + capHeight(size) + 1.2);
-    yPosition += 6 + capHeight(size) + 2.5;
-    if (options.lead) {
-      const lines = wrap(options.lead, 150, 8.8);
-      drawLines(
-        lines,
-        margin,
-        yPosition + 0.5,
-        8.8,
-        "normal",
-        PALETTE.muted,
-        4,
-      );
-      yPosition += lines.length * 4 + 1;
-    }
-    yPosition += 4;
   };
 
   const drawSectionHeading = (text: string, small?: string) => {
-    const baseline = yPosition + capHeight(10.5);
-    setFont(doc, 10.5, "bold", primaryColor);
-    doc.text(
-      clampLine(doc, text, small ? 110 : contentWidth, 10.5, "bold"),
-      margin,
-      baseline,
+    yPosition = drawChromeSectionHeading(
+      doc,
+      theme,
+      frame,
+      yPosition,
+      text,
+      small,
     );
-    if (small) {
-      setFont(doc, 7, "normal", PALETTE.muted);
-      doc.text(small, right, baseline, { align: "right" });
-    }
-    yPosition += 6.5;
   };
 
   const drawControlContinuationCaption = (controlId: string) => {
@@ -2226,104 +2139,13 @@ export async function generateComplianceReportPDF(
   const groups = buildControlGroups(options.frameworkId, controls);
 
   // ---------------------------------------------------------------- Cover
-  const bandHeight = 134;
-  doc.setFillColor(...primaryColor);
-  doc.rect(0, 0, pageWidth, bandHeight, "F");
-  const ringSoft = mixColor(primaryColor, secondaryColor, 0.16);
-  const ringStrong = mixColor(primaryColor, secondaryColor, 0.4);
-  const ringX = 173;
-  const ringY = 55;
-  doc.setDrawColor(...ringSoft);
-  doc.setLineWidth(0.6);
-  doc.circle(ringX, ringY, 70, "S");
-  doc.circle(ringX, ringY, 38, "S");
-  drawDonut(
-    doc,
-    ringX,
-    ringY,
-    56,
-    10,
-    [{ value: coverageFraction, color: ringStrong }],
-    1,
-    ringSoft,
-  );
+  drawCoverBackground(doc, theme, frame, { ringFraction: coverageFraction });
 
-  // Product mark and name.
-  doc.setFillColor(...secondaryColor);
-  doc.roundedRect(margin, 14, 6.5, 6.5, 1.4, 1.4, "F");
-  doc.setFillColor(...PALETTE.white);
-  [
-    [15.5, 3.9],
-    [16.9, 3],
-    [18.3, 2.2],
-  ].forEach(([barY, barWidth]) =>
-    doc.roundedRect(
-      margin + 1.3,
-      barY ?? 0,
-      barWidth ?? 0,
-      0.7,
-      0.35,
-      0.35,
-      "F",
-    ),
-  );
-  doc.setFillColor(...accentColor);
-  doc.circle(margin + 6.5 - 1.85, 14 + 6.5 - 1.85, 0.75, "F");
-  setFont(doc, 9.5, "bold", PALETTE.white);
-  doc.text(layout.productName, margin + 9, 18.7);
-
-  let coverRightTop = 13;
-  const logoDataUrl = branding?.logo?.dataUrl;
-  let logoDrawn = false;
-  if (logoDataUrl) {
-    try {
-      const properties = (
-        doc as unknown as ImagePropertiesProvider
-      ).getImageProperties(logoDataUrl);
-      const ratio = properties.height / Math.max(properties.width, 1);
-      let width = Math.min(branding?.logo?.width ?? 36, 44);
-      let height = branding?.logo?.height ?? width * ratio;
-      if (height > 14) {
-        width = (width * 14) / height;
-        height = 14;
-      }
-      const boxWidth = width + 5;
-      const boxHeight = height + 4;
-      doc.setFillColor(...PALETTE.white);
-      doc.roundedRect(
-        right - boxWidth,
-        coverRightTop,
-        boxWidth,
-        boxHeight,
-        1.5,
-        1.5,
-        "F",
-      );
-      const format = /image\/(jpe?g)/i.test(logoDataUrl) ? "JPEG" : "PNG";
-      doc.addImage(
-        logoDataUrl,
-        format,
-        right - boxWidth + 2.5,
-        coverRightTop + 2,
-        width,
-        height,
-      );
-      coverRightTop += boxHeight + 3;
-      logoDrawn = true;
-    } catch {
-      logoDrawn = false;
-    }
-  }
-  if (!logoDrawn && branding?.companyName) {
-    setFont(doc, 9.5, "bold", PALETTE.white);
-    doc.text(
-      clampLine(doc, branding.companyName, 80, 9.5, "bold"),
-      right,
-      18.7,
-      { align: "right" },
-    );
-    coverRightTop = 24;
-  }
+  const coverRightTop = drawCoverMasthead(doc, theme, frame, {
+    productName: layout.productName,
+    logo: branding?.logo,
+    companyName: branding?.companyName,
+  });
   if (isExcerpt) {
     const tagSize = 6.2;
     const tagWidth =
@@ -2342,28 +2164,6 @@ export async function generateComplianceReportPDF(
     );
   }
 
-  doc.setFillColor(...accentColor);
-  doc.roundedRect(margin, 48.5, 14, 1.2, 0.6, 0.6, "F");
-  setFont(doc, 8.5, "bold", PALETTE.coverAccentText);
-  doc.text(
-    clampLine(doc, strings.title, contentWidth, 8.5, "bold"),
-    margin,
-    56.5,
-  );
-  const coverTitleSize = fitFontSize(shortName, contentWidth, 36, 24);
-  setFont(doc, coverTitleSize, "bold", PALETTE.white);
-  const coverTitleLines = wrap(
-    shortName,
-    contentWidth,
-    coverTitleSize,
-    "bold",
-    2,
-  );
-  coverTitleLines.forEach((line, index) =>
-    doc.text(line, margin, 70 + index * coverTitleSize * 0.42),
-  );
-  const coverTitleBottom =
-    70 + (coverTitleLines.length - 1) * coverTitleSize * 0.42;
   // The subtitle adds what the short title leaves out (edition, revision,
   // target level); the full framework name is in the document control grid.
   const coverSubtitle =
@@ -2372,44 +2172,20 @@ export async function generateComplianceReportPDF(
       : options.frameworkId === "iso-27001-2022"
         ? "Annex A"
         : framework.framework.version;
-  const displaySize = fitFontSize(coverSubtitle, contentWidth, 13, 8, "normal");
-  setFont(doc, displaySize, "normal", PALETTE.coverMutedText);
-  doc.text(coverSubtitle, margin, coverTitleBottom + 10);
-  const leadLines = wrap(strings.coverLead, 150, 9, "normal", 2);
-  drawLines(
-    leadLines,
-    margin,
-    coverTitleBottom + 13.5,
-    9,
-    "normal",
-    PALETTE.coverAccentText,
-    4,
-  );
+  drawCoverHeadline(doc, theme, frame, {
+    eyebrow: strings.title,
+    title: shortName,
+    subtitle: coverSubtitle,
+    lead: strings.coverLead,
+  });
 
-  const coverRule = mixColor(primaryColor, PALETTE.white, 0.17);
-  drawRule(doc, margin, 104, right, coverRule, 0.25);
-  if (metadata.tenantLabel) {
-    drawEyebrow(doc, layout.coverTenant, margin, 110.5, {
-      color: PALETTE.coverAccentText,
-    });
-    setFont(doc, 18, "bold", PALETTE.white);
-    doc.text(
-      clampLine(doc, metadata.tenantLabel, 110, 18, "bold"),
-      margin,
-      118.5,
-    );
-  }
-  const coverFacts: Array<[string, string]> = [
-    [strings.generatedOn, formatReportDate(generatedAt, locale, fixedDate)],
-    [strings.documentControlLabels[7], classification],
-  ];
-  coverFacts.forEach(([label, value], index) => {
-    const baseline = 113.5 + index * 5;
-    setFont(doc, 8, "bold", PALETTE.white);
-    const valueWidth = doc.getTextWidth(value);
-    doc.text(value, right, baseline, { align: "right" });
-    setFont(doc, 8, "normal", PALETTE.coverMutedText);
-    doc.text(label, right - valueWidth - 1.4, baseline, { align: "right" });
+  drawCoverTenantBlock(doc, theme, frame, {
+    tenantEyebrow: layout.coverTenant,
+    tenant: metadata.tenantLabel,
+    facts: [
+      [strings.generatedOn, formatReportDate(generatedAt, locale, fixedDate)],
+      [strings.documentControlLabels[7], classification],
+    ],
   });
 
   // Donut card and counts.
@@ -2508,73 +2284,25 @@ export async function generateComplianceReportPDF(
     3.5,
   );
 
-  // Document control grid: only rows with values.
+  // Document control grid: only rows with values. The framework cell spans
+  // two columns so its full name stays one run.
   const controlLabels = strings.documentControlLabels;
-  const controlRows: Array<readonly [string, string | undefined]> = [
-    [layout.frameworkLabel, frameworkDisplay],
-    [controlLabels[0], metadata.tenantLabel],
-    [controlLabels[1], metadata.preparedFor],
-    [controlLabels[2], metadata.preparedBy],
-    [controlLabels[3], metadata.contact],
-    [controlLabels[4], reportId],
-    [controlLabels[5], revision],
-    [controlLabels[6], COMPLIANCE_RULESET_VERSION],
-    [controlLabels[7], classification],
-    [strings.generatedOn, formatReportDate(generatedAt, locale, fixedDate)],
-  ];
-  const visibleControlRows = controlRows.filter(
-    (row): row is readonly [string, string] => Boolean(row[1]),
-  );
-  const gridTop = 222;
-  drawEyebrow(doc, layout.documentControl, margin, gridTop + 2.4, {
-    color: secondaryColor,
-  });
-  drawRule(doc, margin, gridTop + 5, right, primaryColor, 0.4);
-  const cellWidth = contentWidth / 4;
-  // The framework cell spans two columns so its full name stays one run.
-  const gridRows: Array<Array<{ label: string; value: string; span: number }>> =
-    [];
-  for (const [label, value] of visibleControlRows) {
-    const span = label === layout.frameworkLabel ? 2 : 1;
-    const current = gridRows[gridRows.length - 1];
-    const used = current?.reduce((sum, cell) => sum + cell.span, 0) ?? 4;
-    if (!current || used + span > 4) gridRows.push([{ label, value, span }]);
-    else current.push({ label, value, span });
-  }
-  let gridRowTop = gridTop + 5;
-  for (const rowCells of gridRows) {
-    const cellLines = rowCells.map(({ value, span }) =>
-      wrap(value, cellWidth * span - 3, 8.4, "bold", 3),
-    );
-    const rowHeight = Math.max(
-      13,
-      Math.max(...cellLines.map((lines) => lines.length)) * 3.6 + 9.4,
-    );
-    let cellX = margin;
-    rowCells.forEach(({ label, span }, cellIndex) => {
-      setFont(doc, 6.3, "bold", PALETTE.muted);
-      doc.text(
-        clampLine(doc, label, cellWidth * span - 3, 6.3, "bold"),
-        cellX,
-        gridRowTop + 5,
-      );
-      drawLines(
-        cellLines[cellIndex] ?? [],
-        cellX,
-        gridRowTop + 7.2,
-        8.4,
-        "bold",
-        textColor,
-        3.6,
-      );
-      cellX += cellWidth * span;
-    });
-    gridRowTop += rowHeight;
-    drawRule(doc, margin, gridRowTop, right);
-  }
-  setFont(doc, 6.5, "normal", PALETTE.muted);
-  doc.text(strings.footer, margin, 287);
-  doc.text(layout.coverFootRight, right, 287, { align: "right" });
+  drawDocumentControlGrid(doc, theme, frame, 222, layout.documentControl, [
+    { label: layout.frameworkLabel, value: frameworkDisplay, span: 2 },
+    { label: controlLabels[0], value: metadata.tenantLabel },
+    { label: controlLabels[1], value: metadata.preparedFor },
+    { label: controlLabels[2], value: metadata.preparedBy },
+    { label: controlLabels[3], value: metadata.contact },
+    { label: controlLabels[4], value: reportId },
+    { label: controlLabels[5], value: revision },
+    { label: controlLabels[6], value: COMPLIANCE_RULESET_VERSION },
+    { label: controlLabels[7], value: classification },
+    {
+      label: strings.generatedOn,
+      value: formatReportDate(generatedAt, locale, fixedDate),
+    },
+  ]);
+  drawCoverFooter(doc, frame, strings.footer, layout.coverFootRight);
 
   // ---------------------------------------------- Disclaimer and contents
   let tocPage = 0;
@@ -3684,11 +3412,7 @@ export async function generateComplianceReportPDF(
         const { control } = row;
         const top = yPosition;
         const rowMiddle = top + row.height / 2;
-        if (rowIndex % 2 === 1) {
-          doc.setFillColor(...PALETTE.zebra);
-          doc.rect(margin, top, contentWidth, row.height, "F");
-        }
-        drawRule(doc, margin, top + row.height, right);
+        drawZebraRow(doc, frame, top, row.height, rowIndex);
         drawChip(doc, margin + 1.5, rowMiddle - 2.2, control.control.id, "id", {
           size: 6.6,
           minWidth: 9.6,
@@ -3905,10 +3629,9 @@ export async function generateComplianceReportPDF(
         addContentPage();
         drawHeader();
       }
-      if (rowIndex % 2 === 1) {
-        doc.setFillColor(...PALETTE.zebra);
-        doc.rect(margin, yPosition, contentWidth, row.height, "F");
-      }
+      drawZebraRow(doc, frame, yPosition, row.height, rowIndex, {
+        rule: false,
+      });
       row.cells.forEach((lines, index) => {
         setFont(doc, 7.4, index === 0 ? "bold" : "normal", textColor);
         lines.forEach((line, lineIndex) =>
@@ -5579,17 +5302,16 @@ export async function generateComplianceReportPDF(
       yPosition += 6;
     };
     const drawHeader = () => {
-      order.forEach((headerIndex, index) => {
-        drawEyebrow(
-          doc,
-          strings.appendixHeaders[headerIndex],
-          (columnX[index] ?? margin) + 1.5,
-          yPosition + 3.2,
-          { color: PALETTE.muted, size: 5.6, charSpace: 0.2 },
-        );
-      });
-      drawRule(doc, margin, yPosition + 5.2, right, primaryColor, 0.4);
-      yPosition += headerHeight;
+      yPosition = drawTableHeader(
+        doc,
+        theme,
+        frame,
+        yPosition,
+        order.map((headerIndex, index) => ({
+          x: columnX[index] ?? margin,
+          lines: [strings.appendixHeaders[headerIndex]],
+        })),
+      );
     };
 
     const firstRow = rows[0];
@@ -5615,12 +5337,14 @@ export async function generateComplianceReportPDF(
       const unassignedCounter =
         evidence.verdict === "disabled" &&
         evidence.assignment.state === "notAssigned";
-      if (assignedCounter) doc.setFillColor(255, 239, 239);
-      else if (unassignedCounter) doc.setFillColor(255, 247, 230);
-      else if (rowIndex % 2 === 1) doc.setFillColor(...PALETTE.zebra);
-      else doc.setFillColor(...PALETTE.white);
-      doc.rect(margin, yPosition, contentWidth, row.height, "F");
-      drawRule(doc, margin, yPosition + row.height, right);
+      drawZebraRow(doc, frame, yPosition, row.height, rowIndex, {
+        solid: true,
+        fill: assignedCounter
+          ? [255, 239, 239]
+          : unassignedCounter
+            ? [255, 247, 230]
+            : undefined,
+      });
 
       row.cells.forEach((lines, index) => {
         const x = (columnX[index] ?? margin) + 1.5;
@@ -5716,37 +5440,12 @@ export async function generateComplianceReportPDF(
     );
     // Header words wrap within their column, so long labels such as "Not
     // applicable" or "Nicht anwendbar" never run into the next column.
-    const headerSize = 5.6;
-    const headerSpace = 0.2;
-    const headerLines = annex.headers.map((header, index) => {
-      const fits = (text: string) =>
-        textWidth(doc, text.toUpperCase(), headerSize, "bold", headerSpace) <=
-        (widths[index] ?? 0) - 2.5;
-      const lines: string[] = [];
-      for (const word of header.split(" ")) {
-        const last = lines[lines.length - 1];
-        if (last !== undefined && fits(`${last} ${word}`))
-          lines[lines.length - 1] = `${last} ${word}`;
-        else lines.push(word);
-      }
-      return lines;
-    });
-    const headerRows = Math.max(...headerLines.map((lines) => lines.length));
+    const headerColumns = annex.headers.map((header, index) => ({
+      x: columnX[index] ?? margin,
+      lines: tableHeaderLines(doc, header, widths[index] ?? 0),
+    }));
     const drawAnnexHeader = () => {
-      headerLines.forEach((lines, index) =>
-        lines.forEach((line, lineIndex) =>
-          drawEyebrow(
-            doc,
-            line,
-            (columnX[index] ?? margin) + 1.5,
-            yPosition + 3.2 + lineIndex * 2.5,
-            { color: PALETTE.muted, size: headerSize, charSpace: headerSpace },
-          ),
-        ),
-      );
-      const height = 5.6 + (headerRows - 1) * 2.5;
-      drawRule(doc, margin, yPosition + height - 0.4, right, primaryColor, 0.4);
-      yPosition += height;
+      yPosition = drawTableHeader(doc, theme, frame, yPosition, headerColumns);
     };
     drawAnnexHeader();
     const value = (count: number | null) =>
@@ -5764,10 +5463,7 @@ export async function generateComplianceReportPDF(
         addContentPage();
         drawAnnexHeader();
       }
-      if (rowIndex % 2 === 1) doc.setFillColor(...PALETTE.zebra);
-      else doc.setFillColor(...PALETTE.white);
-      doc.rect(margin, yPosition, contentWidth, height, "F");
-      drawRule(doc, margin, yPosition + height, right);
+      drawZebraRow(doc, frame, yPosition, height, rowIndex, { solid: true });
       const top = yPosition + 1.5;
       drawLines(nameLines, margin + 1.5, top, 6.9, "normal", textColor, 3);
       drawLines(
@@ -5821,78 +5517,22 @@ export async function generateComplianceReportPDF(
   // ------------------------------------------------------ Contents
   let tocPageOffset = 0;
   if (!isExcerpt) {
-    const tocContinuationEntryY = contentTop + 14;
-    const drawTocHeading = (y: number) => {
-      setFont(doc, 20, "bold", primaryColor);
-      doc.text(strings.tocHeading, margin, y + capHeight(20) + 1);
-      drawRule(doc, margin, y + capHeight(20) + 4.5, right, primaryColor, 0.4);
-    };
-    const tocRows = tocEntries.map((entry, index) => {
-      const size = entry.level === 1 ? 7.3 : 8.4;
-      const style: FontStyle = entry.level === 1 ? "normal" : "bold";
-      const lines = wrap(
-        entry.title,
-        contentWidth - (entry.level === 1 ? 20 : 14),
-        size,
-        style,
-      );
-      const gapBefore = entry.level === 0 && index > 0 ? 2 : 0;
-      return {
-        entry,
-        lines,
-        size,
-        style,
-        gapBefore,
-        height:
-          gapBefore + lines.length * 3.6 + (entry.level === 0 ? 3.4 : 1.4),
-        pageOffset: 0,
-        y: 0,
-      };
-    });
-    let tocY = tocStartY + 14;
-    for (const row of tocRows) {
-      if (tocY + row.height > contentBottom && tocY > tocContinuationEntryY) {
-        tocPageOffset += 1;
-        tocY = tocContinuationEntryY;
-      }
-      row.pageOffset = tocPageOffset;
-      row.y = tocY;
-      tocY += row.height;
-    }
-
+    const { rows: tocRows, extraPages } = layoutToc(
+      doc,
+      frame,
+      tocEntries,
+      tocStartY,
+    );
+    tocPageOffset = extraPages;
     // Every recorded page moves back by the number of inserted contents pages.
     for (const entry of tocEntries) entry.page += tocPageOffset;
-    for (let offset = 1; offset <= tocPageOffset; offset += 1) {
-      doc.insertPage(tocPage + offset);
-    }
-
-    for (let offset = 0; offset <= tocPageOffset; offset += 1) {
-      // Leave the first page without a heading if no entry fits beneath it.
-      if (offset === 0 && (tocRows[0]?.pageOffset ?? 0) > 0) continue;
-      doc.setPage(tocPage + offset);
-      drawTocHeading(offset === 0 ? tocStartY : contentTop);
-    }
-    for (const row of tocRows) {
-      const { entry, lines, size, style, pageOffset, gapBefore } = row;
-      doc.setPage(tocPage + pageOffset);
-      const top = row.y + gapBefore;
-      const entryX = margin + (entry.level === 1 ? 6 : 0);
-      drawLines(lines, entryX, top + 0.6, size, style, textColor, 3.6);
-      setFont(
-        doc,
-        size,
-        "bold",
-        entry.level === 1 ? PALETTE.muted : primaryColor,
-      );
-      doc.text(String(entry.page), right, top + 0.6 + capHeight(size), {
-        align: "right",
-      });
-      if (entry.level === 0)
-        drawRule(doc, margin, top + lines.length * 3.6 + 1.6, right);
-      doc.link(margin, top - 0.6, contentWidth, row.height - gapBefore, {
-        pageNumber: entry.page,
-      });
-    }
+    drawToc(doc, theme, frame, {
+      heading: strings.tocHeading,
+      tocPage,
+      startY: tocStartY,
+      rows: tocRows,
+      extraPages,
+    });
   }
 
   // Page numbers that point at control detail pages.
@@ -5914,25 +5554,12 @@ export async function generateComplianceReportPDF(
 
   addPdfOutline(doc, buildComplianceReportOutline(tocEntries));
 
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let page = 2; page <= pageCount; page += 1) {
-    doc.setPage(page);
-    setFont(doc, 6.5, "bold", primaryColor);
-    doc.text(shortName, margin, 12.4, { charSpace: 0.15 });
-    if (tenantName) {
-      setFont(doc, 6.5, "normal", PALETTE.muted);
-      doc.text(clampLine(doc, tenantName, 90, 6.5), right, 12.4, {
-        align: "right",
-      });
-    }
-    drawRule(doc, margin, 14.6, right);
-    drawRule(doc, margin, pageHeight - 14.5, right);
-    setFont(doc, 6.5, "normal", PALETTE.muted);
-    doc.text(strings.footer, margin, pageHeight - 10.6);
-    doc.text(strings.pageNumber(page, pageCount), right, pageHeight - 10.6, {
-      align: "right",
-    });
-  }
+  drawRunningChrome(doc, theme, frame, {
+    title: shortName,
+    headerRight: tenantName,
+    footer: strings.footer,
+    pageLabel: strings.pageNumber,
+  });
 
   return new Uint8Array(doc.output("arraybuffer"));
 }

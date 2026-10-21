@@ -12,8 +12,10 @@ import {
 import {
   buildManagementSummary,
   rankNextActions,
+  safeguardPolicies,
   safeguardState,
 } from "../compliance/management/management-summary";
+import { GERMAN_CAPABILITY_NAMES } from "../compliance/report-pdf";
 import {
   CONDITIONAL_ACCESS_ALTERNATIVES,
   TENANT_POLICY_CAPABILITIES,
@@ -445,7 +447,7 @@ describe("security defaults as an alternative to Conditional Access", () => {
       expect.objectContaining({
         assessmentStatus: "checked",
         result: null,
-        actualValue: "false",
+        actualValue: "Off",
       }),
     ]);
     expect(defaults.checks[0]?.reason).toContain("Not a gap");
@@ -506,7 +508,10 @@ describe("security defaults as an alternative to Conditional Access", () => {
         },
       },
     ],
-  ])("is not applicable, never set up, with %s", (_label, policy) => {
+  ])("is not applicable, never set up, with %s", (label, policy) => {
+    // An enabled policy whose strength cannot be read is a data gap for the
+    // MFA capabilities it may provide, never a safeguard to set up.
+    const unreadable = label === "an unreadable custom authentication strength";
     const assessment = assessCompliance(withCa([policy]));
     const defaults = defaultsOf(assessment);
     expect(defaults.status).toBe("noEvidence");
@@ -517,7 +522,7 @@ describe("security defaults as an alternative to Conditional Access", () => {
     expect(defaults.checks[0]).toMatchObject({
       assessmentStatus: "checked",
       result: null,
-      actualValue: "false",
+      actualValue: "Off",
     });
     const reason = defaults.checks[0]?.reason ?? "";
     expect(reason).toContain(
@@ -533,14 +538,21 @@ describe("security defaults as an alternative to Conditional Access", () => {
         (row) => row.capability.id === id,
       )!;
       expect(result.status, id).toBe("noEvidence");
-      expect(safeguardState(result), id).toBe("notConfigured");
+      expect(safeguardState(result), id).toBe(
+        unreadable ? "dataMissing" : "notConfigured",
+      );
     }
     const summary = buildManagementSummary(assessment, "nist-800-53-r5", {
       limit: 50,
     });
-    expect(summary.nextActions.map((action) => action.capabilityId)).toEqual(
-      expect.arrayContaining(["tenant-mfa-required"]),
-    );
+    if (unreadable)
+      expect(
+        summary.nextActions.map((action) => action.capabilityId),
+      ).not.toContain("tenant-mfa-required");
+    else
+      expect(summary.nextActions.map((action) => action.capabilityId)).toEqual(
+        expect.arrayContaining(["tenant-mfa-required"]),
+      );
     expectNotRecommended(assessment, false);
   });
 
@@ -890,5 +902,84 @@ describe("alternative states of a non-exclusive capability", () => {
     );
     expect(row.alternative).toBeUndefined();
     expect(row.checks[0]).toMatchObject({ result: "different" });
+  });
+});
+
+describe("readable Entra tenant policy values", () => {
+  it("states method and security defaults values in plain words, never JSON", () => {
+    const exportData = data(
+      policies({
+        authenticationMethods: methods(
+          { id: "Sms", state: "enabled", includeTargets: allUsers },
+          {
+            id: "Voice",
+            state: "enabled",
+            includeTargets: [...allUsers, { targetType: "group", id: "g2" }],
+          },
+          { id: "Email", state: "enabled", includeTargets: [] },
+        ),
+      }),
+    );
+    const actual = (id: string) =>
+      Object.fromEntries(
+        capability(exportData, id).checks.map((check) => [
+          check.settingId,
+          check.actualValue,
+        ]),
+      );
+    expect(actual(WEAK)).toEqual({
+      "authenticationMethodsPolicy/Sms": "Enabled for 1 target",
+      "authenticationMethodsPolicy/Voice": "Enabled for 2 targets",
+      "authenticationMethodsPolicy/Email": "Enabled, no users targeted",
+    });
+    expect(actual(PHISHING)).toEqual({
+      "authenticationMethodsPolicy/Fido2": "Disabled",
+      "authenticationMethodsPolicy/X509Certificate":
+        "Disabled; single-factor default mode",
+    });
+    expect(Object.values(actual(DEFAULTS))).toEqual(["Off"]);
+    for (const result of assessCapabilities(exportData))
+      if (result.capability.platform === "tenant")
+        for (const check of result.checks)
+          expect(check.actualValue ?? "").not.toMatch(/[{}"]|^(true|false)$/);
+  });
+
+  it("names the weak methods capability so it holds for an untargeted email passcode", () => {
+    const weak = TENANT_POLICY_CAPABILITIES.find((item) => item.id === WEAK)!;
+    expect(weak.name).toBe(
+      "SMS, voice call and email one-time passcode not enabled for users (Entra ID)",
+    );
+    expect(GERMAN_CAPABILITY_NAMES[WEAK]).toBe(
+      "SMS, Sprachanruf und E-Mail-Einmalcode für Benutzer nicht aktiviert (Entra ID)",
+    );
+    // Email OTP enabled without targets is the Microsoft default and matches.
+    const result = capability(
+      data(
+        policies({
+          authenticationMethods: methods({
+            id: "Email",
+            state: "enabled",
+            includeTargets: [],
+          }),
+        }),
+      ),
+      WEAK,
+    );
+    expect(result.status).toBe("enforced");
+  });
+});
+
+describe("security summary policies of tenant-wide safeguards", () => {
+  it("names the security defaults policy that was read, not No policy found", () => {
+    const assessment = assessCompliance(withCa([caPolicy("disabled")]));
+    const defaults = assessment.capabilities.find(
+      (result) => result.capability.id === DEFAULTS,
+    )!;
+    expect(defaults.alternative?.state).toBe("notCombinable");
+    expect(defaults.evidence).toEqual([]);
+    expect(safeguardState(defaults)).toBe("notCombinable");
+    expect(safeguardPolicies(defaults)).toEqual([
+      { name: "Security defaults", assigned: true },
+    ]);
   });
 });

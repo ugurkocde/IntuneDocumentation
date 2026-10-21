@@ -34,6 +34,7 @@ export {
   DORA_OUTSIDE_INTUNE_SCOPE,
   DORA_SOURCE_ATTRIBUTION,
 } from "./frameworks/dora";
+export { outsideIntuneScope } from "./outside-scope";
 export {
   DESKTOP_ONLY_FRAMEWORK_IDS,
   isDesktopOnlyFramework,

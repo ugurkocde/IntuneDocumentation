@@ -384,3 +384,14 @@ describe("ManagementPanel changes since the previous collection", () => {
     expect(mocks.changes).toHaveBeenCalledTimes(4);
   });
 });
+
+describe("ManagementPanel safeguard tile", () => {
+  it("counts safeguards set up in Intune and Entra", async () => {
+    mocks.changes.mockReturnValue(new Promise(() => {}));
+    await renderPanel();
+    expect(screen.getByText("Set up and switched on in Intune and Entra")).toBeTruthy();
+    expect(
+      screen.getByText(/8 of 12 technical safeguards are set up and switched on in Intune and Entra\./),
+    ).toBeTruthy();
+  });
+});

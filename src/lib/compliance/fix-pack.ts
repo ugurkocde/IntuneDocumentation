@@ -437,7 +437,7 @@ function blocker(result: CapabilityResult): string | null {
   if (status !== "noEvidence")
     return STATUS_REASONS[status] ?? `Status ${status} is not generated.`;
   if (checks.some((check) => check.result === "different"))
-    return "A policy sets this setting to a different value. Change that policy instead of importing a second one.";
+    return "A policy already holds this setting with a different value or leaves it not configured. Change that policy instead of importing a second one.";
   if (
     result.evidence.length ||
     !checks.length ||

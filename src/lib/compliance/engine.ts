@@ -56,7 +56,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.7";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.8";
 
 const TENANT_POLICY_FAMILY_KEYS = new Set(
   Object.values(TENANT_POLICY_FAMILIES),
@@ -266,6 +266,19 @@ function legacyValues(
     });
 }
 
+/**
+ * Plain reason for an Intune enum default that sets nothing: Microsoft Learn
+ * documents `userDefined` as the default with no intent (the device or user
+ * decides) and `notConfigured` as leaving the device default.
+ */
+function notConfiguredReason(value: unknown): string | undefined {
+  if (value === "userDefined")
+    return "Not configured in this policy: userDefined is the default with no intent, so the device or the user decides.";
+  if (value === "notConfigured")
+    return "Not configured in this policy: notConfigured leaves the device default.";
+  return undefined;
+}
+
 function evaluateConfiguration(
   config: Record<string, unknown>,
   capabilities: readonly ComplianceCapability[],
@@ -431,6 +444,12 @@ function evaluateConfiguration(
         matches = verdictsFor(values, signal);
         for (const value of [...new Set(values)]) {
           const readable = comparableValue(value, signal.enforcedWhen);
+          const unset =
+            signal.source === "graphProperty" &&
+            readable &&
+            !satisfies(value, signal.enforcedWhen)
+              ? notConfiguredReason(value)
+              : undefined;
           checks.push({
             assessmentStatus:
               readable && !prerequisiteReason ? "checked" : "unableToCheck",
@@ -445,9 +464,7 @@ function evaluateConfiguration(
             actualValue: JSON.stringify(value) ?? null,
             reason:
               prerequisiteReason ??
-              (readable
-                ? undefined
-                : "Graph returned an unsupported value shape."),
+              (readable ? unset : "Graph returned an unsupported value shape."),
             policyId,
             policyName,
             assignment,
@@ -554,6 +571,30 @@ function capabilityStatus(
 
 export function hasAssignedEvidence(status: CapabilityStatus): boolean {
   return status === "enforced" || status === "requirementAssigned";
+}
+
+/**
+ * Whether an alternative is in use or the capability cannot be combined with
+ * existing Conditional Access policies. Such a capability is no safeguard to
+ * count and no gap; an unreadable alternative (`unknown`) stays counted.
+ */
+export function excludedByAlternative(result: CapabilityResult): boolean {
+  return Boolean(result.alternative && result.alternative.state !== "unknown");
+}
+
+/**
+ * The capabilities of a control that count as safeguards: every mapped
+ * capability in scope except those excluded by an alternative. Reports,
+ * registers and the management summary use the same denominator.
+ */
+export function countedCapabilityIds(
+  control: Pick<ControlAssessment, "capabilityIds">,
+  capabilities: ReadonlyMap<string, CapabilityResult>,
+): string[] {
+  return control.capabilityIds.filter((id) => {
+    const result = capabilities.get(id);
+    return !result || !excludedByAlternative(result);
+  });
 }
 
 export function assessCapabilities(

@@ -1,4 +1,8 @@
-import { compareControlIds, hasAssignedEvidence } from "../engine";
+import {
+  compareControlIds,
+  excludedByAlternative,
+  hasAssignedEvidence,
+} from "../engine";
 import type {
   AssessmentScope,
   CapabilityResult,
@@ -70,18 +74,35 @@ function alternativeIds(
 ): Set<string> {
   return new Set(
     capabilities
-      .filter(
-        (result) =>
-          result.alternative && result.alternative.state !== "unknown",
-      )
+      .filter(excludedByAlternative)
       .map((result) => result.capability.id),
+  );
+}
+
+/**
+ * A value on a policy that can take effect could not be read, and nothing
+ * else gives the capability evidence. Unassigned (disabled or report-only)
+ * policies cannot put a safeguard in place, so their unreadable values do
+ * not count.
+ */
+function hasUnreadablePolicyValue(result: CapabilityResult): boolean {
+  return (
+    result.status === "noEvidence" &&
+    !result.alternative &&
+    result.checks.some(
+      (check) =>
+        check.assessmentStatus === "unableToCheck" &&
+        Boolean(check.policyId) &&
+        check.assignment?.state !== "notAssigned",
+    )
   );
 }
 
 function isDataGap(result: CapabilityResult): boolean {
   return (
     DATA_GAP_STATUSES.includes(result.status) ||
-    result.alternative?.state === "unknown"
+    result.alternative?.state === "unknown" ||
+    hasUnreadablePolicyValue(result)
   );
 }
 
@@ -194,6 +215,7 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
     result.capability.signals.some((signal) => signal.source === "tenantPolicy")
   )
     return "tenantSettingDiffers";
+  if (hasUnreadablePolicyValue(result)) return "dataMissing";
   switch (result.status) {
     case "enforced":
     case "requirementAssigned":
@@ -214,17 +236,38 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
   }
 }
 
-/** Distinct policies behind a safeguard, assigned ones first, then by name. */
+/**
+ * Distinct policies behind a safeguard, assigned ones first, then by name:
+ * policies with evidence, the tenant-wide Entra policy that was read, and
+ * policies whose value could not be read, so a read policy never shows as
+ * "No policy found".
+ */
 export function safeguardPolicies(
   result: CapabilityResult,
 ): { name: string; assigned: boolean }[] {
   const byId = new Map<string, { name: string; assigned: boolean }>();
-  for (const item of result.evidence) {
-    const assigned = item.assignment.state === "assigned";
-    const known = byId.get(item.policyId);
+  const add = (id: string, name: string, assigned: boolean) => {
+    const known = byId.get(id);
     if (known) known.assigned ||= assigned;
-    else byId.set(item.policyId, { name: item.policyName, assigned });
-  }
+    else byId.set(id, { name, assigned });
+  };
+  for (const item of result.evidence)
+    add(item.policyId, item.policyName, item.assignment.state === "assigned");
+  const tenantWide = result.capability.signals.some(
+    (signal) => signal.source === "tenantPolicy",
+  );
+  for (const check of result.checks)
+    if (
+      check.policyId &&
+      check.policyName &&
+      check.assessmentStatus !== "outsideScope" &&
+      (tenantWide || check.assessmentStatus === "unableToCheck")
+    )
+      add(
+        check.policyId,
+        check.policyName,
+        check.assignment?.state === "assigned",
+      );
   return [...byId.values()].sort(
     (a, b) =>
       Number(b.assigned) - Number(a.assigned) ||
@@ -257,6 +300,8 @@ export function rankNextActions(
     // or which cannot be combined with existing Conditional Access policies,
     // such as security defaults in a Conditional Access tenant.
     if (result?.alternative) continue;
+    // A value that could not be read is a data gap, not a safeguard to set up.
+    if (result && hasUnreadablePolicyValue(result)) continue;
     // A non-enforcing value only switches a protection off where the policy
     // is assigned; in an unassigned policy the protection is simply missing.
     const tier =

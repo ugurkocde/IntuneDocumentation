@@ -182,7 +182,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     date: "Date",
     heroLabel: "Safeguards in place",
     heroSentence: (inPlace, total) =>
-      `${inPlace} of ${total} technical ${total === 1 ? "safeguard is" : "safeguards are"} set up and switched on in Intune.`,
+      `${inPlace} of ${total} technical ${total === 1 ? "safeguard is" : "safeguards are"} set up and switched on in Intune and Entra.`,
     heroNotAvailable: "Not available",
     heroNotAvailableSentence:
       "None of the measures in this framework can be supported by Intune, so no figure can be given.",
@@ -252,8 +252,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         paragraphs: [],
         bullets: [
           "Measure: a requirement of the framework, for example one point of NIS2 Article 21(2) or one ISO 27001 Annex A control. Page 1 shows measures by title only.",
-          "Safeguard: a security outcome that Intune or Entra Conditional Access can set, for example BitLocker disk encryption or multifactor authentication for cloud apps. One safeguard can support several measures; the headline counts it once.",
-          "Policy setting: the value in an Intune configuration, compliance or Conditional Access policy that provides a safeguard. The table for each measure names every policy found.",
+          "Safeguard: a security outcome that Intune or Entra can set, through Conditional Access, the authentication methods policy or security defaults, for example BitLocker disk encryption or multifactor authentication for cloud apps. One safeguard can support several measures; the headline counts it once.",
+          "Policy setting: the value in an Intune configuration, compliance or Conditional Access policy, or in a tenant-wide Entra policy, that provides a safeguard. The table for each measure names every policy found.",
         ],
       },
       {
@@ -269,7 +269,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
           "Policies that are not assigned to any group, user or device. Their safeguards show as Set up, not switched on.",
           "Settings with a weaker value than the safeguard needs, or a value that switches it off.",
           "Check results of compliance policies that are not assigned.",
-          "Anything outside Intune and Entra Conditional Access, such as processes, contracts or other security products.",
+          "Anything outside Intune and Entra, such as processes, contracts or other security products.",
         ],
       },
       {
@@ -467,7 +467,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     date: "Datum",
     heroLabel: "Aktive Schutzfunktionen",
     heroSentence: (inPlace, total) =>
-      `${inPlace} von ${total} technischen ${total === 1 ? "Schutzfunktion" : "Schutzfunktionen"} ${inPlace === 1 ? "ist" : "sind"} in Intune eingerichtet und eingeschaltet.`,
+      `${inPlace} von ${total} technischen ${total === 1 ? "Schutzfunktion" : "Schutzfunktionen"} ${inPlace === 1 ? "ist" : "sind"} in Intune und Entra eingerichtet und eingeschaltet.`,
     heroNotAvailable: "Nicht verfügbar",
     heroNotAvailableSentence:
       "Keine Maßnahme dieses Frameworks lässt sich mit Intune unterstützen, daher gibt es keine Kennzahl.",
@@ -538,8 +538,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         paragraphs: [],
         bullets: [
           "Maßnahme: eine Anforderung des Frameworks, zum Beispiel ein Punkt aus NIS2 Artikel 21 Absatz 2 oder ein Control aus ISO 27001 Anhang A. Seite 1 zeigt Maßnahmen nur mit ihrem Titel.",
-          "Schutzfunktion: ein Sicherheitsergebnis, das Intune oder der bedingte Zugriff in Entra herstellen kann, zum Beispiel BitLocker-Datenträgerverschlüsselung oder mehrstufige Authentifizierung für Cloud-Apps. Eine Schutzfunktion kann mehrere Maßnahmen unterstützen; die Hauptkennzahl zählt sie einmal.",
-          "Richtlinieneinstellung: der Wert in einer Intune-Konfigurationsrichtlinie, Compliance-Richtlinie oder Richtlinie für bedingten Zugriff, der eine Schutzfunktion herstellt. Die Tabelle jeder Maßnahme nennt alle gefundenen Richtlinien.",
+          "Schutzfunktion: ein Sicherheitsergebnis, das Intune oder Entra herstellen kann, über den bedingten Zugriff, die Richtlinie für Authentifizierungsmethoden oder die Sicherheitsstandards, zum Beispiel BitLocker-Datenträgerverschlüsselung oder mehrstufige Authentifizierung für Cloud-Apps. Eine Schutzfunktion kann mehrere Maßnahmen unterstützen; die Hauptkennzahl zählt sie einmal.",
+          "Richtlinieneinstellung: der Wert in einer Intune-Konfigurationsrichtlinie, Compliance-Richtlinie oder Richtlinie für bedingten Zugriff oder in einer mandantenweiten Entra-Richtlinie, der eine Schutzfunktion herstellt. Die Tabelle jeder Maßnahme nennt alle gefundenen Richtlinien.",
         ],
       },
       {
@@ -555,7 +555,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
           "Richtlinien, die keiner Gruppe, keinem Benutzer und keinem Gerät zugewiesen sind. Ihre Schutzfunktionen erscheinen als Eingerichtet, nicht eingeschaltet.",
           "Einstellungen mit einem schwächeren Wert, als die Schutzfunktion braucht, oder mit einem Wert, der sie abschaltet.",
           "Prüfergebnisse von Compliance-Richtlinien, die nicht zugewiesen sind.",
-          "Alles außerhalb von Intune und dem bedingten Zugriff in Entra, etwa Prozesse, Verträge oder andere Sicherheitsprodukte.",
+          "Alles außerhalb von Intune und Entra, etwa Prozesse, Verträge oder andere Sicherheitsprodukte.",
         ],
       },
       {

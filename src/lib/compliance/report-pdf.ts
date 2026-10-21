@@ -5,8 +5,11 @@ import {
   CAPABILITY_STATUS_LABELS,
   CONTROL_STATUS_COLORS,
   CAPABILITY_STATUS_COLORS,
+  alternativeLabel,
   frameworkCoverageLabel,
 } from "./presentation";
+import { countedCapabilityIds } from "./engine";
+import { outsideIntuneScope } from "./outside-scope";
 import { createEvidenceManifest } from "./manifest";
 import { tenantPolicySettingId } from "./tenant-policies";
 import {
@@ -459,7 +462,7 @@ export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
   "tenant-phishing-resistant-method-enabled":
     "Phishingresistente Anmeldemethode aktiviert (Entra ID)",
   "tenant-weak-methods-disabled":
-    "SMS, Sprachanruf und E-Mail-Einmalcode deaktiviert (Entra ID)",
+    "SMS, Sprachanruf und E-Mail-Einmalcode für Benutzer nicht aktiviert (Entra ID)",
   "tenant-security-defaults-enabled":
     "Sicherheitsstandards aktiviert (Entra ID)",
   "windows-inactivity-lock": "Bildschirmsperre nach Inaktivität (Windows)",
@@ -974,6 +977,9 @@ interface LayoutStrings {
   resultLabels: Record<NonNullable<TechnicalCheck["result"]>, string>;
   notFound: string;
   unavailable: string;
+  outsideScopeEyebrow: string;
+  outsideScopeCount: (count: number) => string;
+  outsideScopeRowNote: string;
 }
 
 const LAYOUT: Record<Locale, LayoutStrings> = {
@@ -1095,6 +1101,13 @@ const LAYOUT: Record<Locale, LayoutStrings> = {
     },
     notFound: "Not found",
     unavailable: "Unavailable",
+    outsideScopeEyebrow: "Outside Intune scope",
+    outsideScopeCount: (count) =>
+      count === 1
+        ? "1 measure is outside Intune scope and needs its own assessment."
+        : `${count} measures are outside Intune scope; each needs its own assessment.`,
+    outsideScopeRowNote:
+      "Needs its own assessment; this report holds no evidence for it.",
   },
   de: {
     productName: "Intune Documentation",
@@ -1221,6 +1234,13 @@ const LAYOUT: Record<Locale, LayoutStrings> = {
     },
     notFound: "Nicht gefunden",
     unavailable: "Nicht verfügbar",
+    outsideScopeEyebrow: "Außerhalb des Intune-Umfangs",
+    outsideScopeCount: (count) =>
+      count === 1
+        ? "1 Maßnahme liegt außerhalb des Intune-Umfangs und braucht eine eigene Bewertung."
+        : `${count} Maßnahmen liegen außerhalb des Intune-Umfangs; jede braucht eine eigene Bewertung.`,
+    outsideScopeRowNote:
+      "Braucht eine eigene Bewertung; dieser Bericht enthält dafür keinen Nachweis.",
   },
 };
 
@@ -2118,8 +2138,30 @@ export async function generateComplianceReportPDF(
 
   const totalControls = controls.length;
   const frameworkCounts = statusCounts(controls);
+  // Measures without an Intune mapping, from the list the management summary
+  // uses, so both reports name the same measures.
+  const outsideMeasures = outsideIntuneScope(options.frameworkId);
+  const notEvaluatedCount = outsideMeasures.filter(
+    (measure) => measure.notEvaluated,
+  ).length;
+  const outsideCount = outsideMeasures.length - notEvaluatedCount;
+  const outsideScopeLines = [
+    ...(outsideCount > 0 ? [layout.outsideScopeCount(outsideCount)] : []),
+    ...(notEvaluatedCount > 0
+      ? [MANAGEMENT_REPORT_STRINGS[locale].notEvaluatedLine(notEvaluatedCount)]
+      : []),
+  ];
   // Same formulas as the management summary so both reports agree.
-  const metrics = computeMetrics(framework, assessment.capabilities);
+  const metrics = computeMetrics(
+    framework,
+    assessment.capabilities,
+    framework.framework.totalRequirements,
+    notEvaluatedCount,
+  );
+  // Safeguards per control, without capabilities excluded by an alternative,
+  // the same denominator as the management summary.
+  const countedIds = (control: ControlAssessment) =>
+    countedCapabilityIds(control, capabilitiesById);
   const coverageFraction =
     metrics.assessable > 0 ? metrics.withEvidence / metrics.assessable : 0;
   const coveragePercent =
@@ -2551,11 +2593,12 @@ export async function generateComplianceReportPDF(
   );
   const scopeLine =
     locale === "de"
-      ? `${framework.summary.applicableControls} im Geltungsbereich; ${framework.summary.notApplicable} außerhalb; ${framework.summary.notAssessed} unbewertet; ${framework.summary.conflicting} mit widersprüchlichen Nachweisen. Ausgewählte Zuordnungen, keine vollständige Rahmenwerksbewertung.`
-      : `${framework.summary.applicableControls} in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed policy evidence. Entries are selected mappings, not full framework coverage.`;
+      ? `${framework.summary.applicableControls} im Geltungsbereich; ${framework.summary.notApplicable} außerhalb des gewählten Geltungsbereichs; ${framework.summary.notAssessed} unbewertet; ${framework.summary.conflicting} mit widersprüchlichen Nachweisen. Ausgewählte Zuordnungen, keine vollständige Rahmenwerksbewertung.`
+      : `${framework.summary.applicableControls} in scope; ${framework.summary.notApplicable} outside the selected scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed policy evidence. Entries are selected mappings, not full framework coverage.`;
   const scopeLines = [
     ...summaryCountLines,
     ...wrap(scopeLine, heroTextWidth, 7.6),
+    ...outsideScopeLines.flatMap((line) => wrap(line, heroTextWidth, 7.6)),
   ];
   const safeguardLines =
     metrics.safeguardsTotal > 0
@@ -3626,7 +3669,7 @@ export async function generateComplianceReportPDF(
           true,
           widths[1] - 2,
         );
-        const capabilityTotal = control.capabilityIds.length;
+        const capabilityTotal = countedIds(control).length;
         const enforced = control.enforcedCapabilityIds.length;
         drawStackedBar(
           doc,
@@ -3706,15 +3749,18 @@ export async function generateComplianceReportPDF(
       });
     });
 
-    const noteLines = isExcerpt
-      ? wrap(
-          layout.excerptNote(
-            detailControls.map((item) => item.control.id).join(", "),
-          ),
-          contentWidth,
-          6.8,
-        )
-      : [];
+    const noteLines = [
+      ...(isExcerpt
+        ? wrap(
+            layout.excerptNote(
+              detailControls.map((item) => item.control.id).join(", "),
+            ),
+            contentWidth,
+            6.8,
+          )
+        : []),
+      ...outsideScopeLines.flatMap((line) => wrap(line, contentWidth, 6.8)),
+    ];
     const stripHeight = 10 + (noteLines.length ? noteLines.length * 3 + 3 : 0);
     if (yPosition + 8 + stripHeight > contentBottom) addContentPage();
     else yPosition += 8;
@@ -3853,6 +3899,35 @@ export async function generateComplianceReportPDF(
     yPosition += 6;
   };
 
+  // ------------------------------------------- Measures outside Intune scope
+  // The same list as the management summary; a sample excerpt keeps only the
+  // counts in the summary and the results overview.
+  if (!isExcerpt && outsideMeasures.length > 0) {
+    const summaryStrings = MANAGEMENT_REPORT_STRINGS[locale];
+    addContentPage();
+    drawPageTitle(
+      layout.outsideScopeEyebrow,
+      summaryStrings.outsideScopeHeading,
+      {
+        lead: [
+          summaryStrings.outsideScopeIntro,
+          ...(notEvaluatedCount > 0 ? [summaryStrings.notEvaluatedIntro] : []),
+        ].join(" "),
+      },
+    );
+    drawDataTable(
+      summaryStrings.outsideScopeHeaders,
+      outsideMeasures.map((measure) => ({
+        cells: [measure.id, measure.title[locale]],
+        note: measure.notEvaluated
+          ? summaryStrings.notEvaluatedNote
+          : layout.outsideScopeRowNote,
+      })),
+      [36, contentWidth - 36],
+      ["left", "left"],
+    );
+  }
+
   // ------------------------------------------------------ Data basis
   if (!isExcerpt) {
     addContentPage();
@@ -3960,8 +4035,16 @@ export async function generateComplianceReportPDF(
     drawSectionHeading(strings.collectionHeading);
     drawWrappedText(
       locale === "de"
-        ? `Erhoben: ${assessment.provenance.collectedAt ?? "unbekannt"}; Regelwerk ${assessment.provenance.rulesetVersion}. Gerätezustand nicht erhoben; tatsächlicher Zugriff nicht geprüft.`
-        : `Collected: ${assessment.provenance.collectedAt ?? "unknown"}; ruleset ${assessment.provenance.rulesetVersion}. Device state not collected; effective access unverified.`,
+        ? `Erhoben: ${assessment.provenance.collectedAt ?? "unbekannt"}; Regelwerk ${assessment.provenance.rulesetVersion}. ${
+            assessment.provenance.policyStatusSummary === "collected"
+              ? "Der Zustand einzelner Geräte wird nicht bewertet; Intune-Statuszusammenfassungen je Richtlinie wurden nur als Kontext erhoben. Tatsächlicher Zugriff nicht geprüft."
+              : "Gerätezustand nicht erhoben; tatsächlicher Zugriff nicht geprüft."
+          }`
+        : `Collected: ${assessment.provenance.collectedAt ?? "unknown"}; ruleset ${assessment.provenance.rulesetVersion}. ${
+            assessment.provenance.policyStatusSummary === "collected"
+              ? "Per device state is not assessed; Intune status summaries per policy were collected as context only. Effective access unverified."
+              : "Device state not collected; effective access unverified."
+          }`,
       { fontSize: 8, lineHeight: 3.7, after: 1.5 },
     );
     drawWrappedText(
@@ -4189,7 +4272,11 @@ export async function generateComplianceReportPDF(
     lastRowIndex: number;
   } => {
     const blocks: FlowBlock[] = [];
-    const statusLabel = strings.capabilityStatuses[result.status];
+    // An alternative in use or a setting that cannot be combined with
+    // Conditional Access is no gap: a neutral label replaces the status.
+    const statusLabel =
+      alternativeLabel(result, locale) ??
+      strings.capabilityStatuses[result.status];
     const pillOptions = {
       tone: toneForCapabilityStatus(result.status),
       marker: markerForCapabilityStatus(result.status),
@@ -5190,7 +5277,7 @@ export async function generateComplianceReportPDF(
     doc.line(sideX - 5, headerTop + 5, sideX - 5, headerTop + headerHeight - 5);
     const sideTop = headerTop + headerHeight / 2 - 8;
     const enforced = control.enforcedCapabilityIds.length;
-    const capabilityTotal = control.capabilityIds.length;
+    const capabilityTotal = countedIds(control).length;
     const meter = layout.ofCount(enforced, capabilityTotal);
     setFont(doc, 11, "bold", primaryColor);
     doc.text(meter, sideX, sideTop + 4);
@@ -5582,18 +5669,39 @@ export async function generateComplianceReportPDF(
       (_, index) =>
         margin + widths.slice(0, index).reduce((sum, width) => sum + width, 0),
     );
+    // Header words wrap within their column, so long labels such as "Not
+    // applicable" or "Nicht anwendbar" never run into the next column.
+    const headerSize = 5.6;
+    const headerSpace = 0.2;
+    const headerLines = annex.headers.map((header, index) => {
+      const fits = (text: string) =>
+        textWidth(doc, text.toUpperCase(), headerSize, "bold", headerSpace) <=
+        (widths[index] ?? 0) - 2.5;
+      const lines: string[] = [];
+      for (const word of header.split(" ")) {
+        const last = lines[lines.length - 1];
+        if (last !== undefined && fits(`${last} ${word}`))
+          lines[lines.length - 1] = `${last} ${word}`;
+        else lines.push(word);
+      }
+      return lines;
+    });
+    const headerRows = Math.max(...headerLines.map((lines) => lines.length));
     const drawAnnexHeader = () => {
-      annex.headers.forEach((header, index) =>
-        drawEyebrow(
-          doc,
-          header,
-          (columnX[index] ?? margin) + 1.5,
-          yPosition + 3.2,
-          { color: PALETTE.muted, size: 5.6, charSpace: 0.2 },
+      headerLines.forEach((lines, index) =>
+        lines.forEach((line, lineIndex) =>
+          drawEyebrow(
+            doc,
+            line,
+            (columnX[index] ?? margin) + 1.5,
+            yPosition + 3.2 + lineIndex * 2.5,
+            { color: PALETTE.muted, size: headerSize, charSpace: headerSpace },
+          ),
         ),
       );
-      drawRule(doc, margin, yPosition + 5.2, right, primaryColor, 0.4);
-      yPosition += 5.6;
+      const height = 5.6 + (headerRows - 1) * 2.5;
+      drawRule(doc, margin, yPosition + height - 0.4, right, primaryColor, 0.4);
+      yPosition += height;
     };
     drawAnnexHeader();
     const value = (count: number | null) =>

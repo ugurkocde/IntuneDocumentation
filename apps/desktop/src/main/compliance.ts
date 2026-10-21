@@ -8,17 +8,15 @@ import {
   CYBER_ESSENTIALS,
   DEF_STAN_05_138,
   DORA,
-  DORA_OUTSIDE_INTUNE_SCOPE,
   essentialEightFramework,
-  HIPAA_OUTSIDE_INTUNE_SCOPE,
   HIPAA_SECURITY_RULE,
   ISO_27001,
   NIS2,
-  NIS2_OUTSIDE_INTUNE_SCOPE,
   NIST_800_171,
   NIST_800_171_R3,
   NIST_800_53,
   NIST_CSF,
+  outsideIntuneScope,
   SOC_2,
 } from "../../../../src/lib/compliance";
 import {
@@ -32,7 +30,6 @@ import type {
   BaselineFile,
   Crosswalk,
   ManagementSummary,
-  OutsideScopeMeasure,
 } from "../../../../src/lib/compliance/management/types";
 import { frameworkCoverageLabel } from "../../../../src/lib/compliance/presentation";
 import {
@@ -78,16 +75,6 @@ import { localDateStamp } from "../shared/dates";
 import { getCollectionOwner, getLastCollection } from "./collect";
 
 type Collection = NonNullable<ReturnType<typeof getLastCollection>>;
-
-// Unmapped measures listed in the management summary, where the framework
-// publishes them.
-const OUTSIDE_SCOPE: Partial<
-  Record<ComplianceFrameworkId, readonly OutsideScopeMeasure[]>
-> = {
-  "nis2-2022-2555": NIS2_OUTSIDE_INTUNE_SCOPE,
-  "dora-2022-2554": DORA_OUTSIDE_INTUNE_SCOPE,
-  "hipaa-security-rule": HIPAA_OUTSIDE_INTUNE_SCOPE,
-};
 
 // Order of view.frameworks. The picker order comes from the renderer's
 // FRAMEWORK_OPTIONS, which places NIS2 and DORA after ISO 27001.
@@ -323,7 +310,9 @@ export function managementSummaryFor(
   frameworkId: ComplianceFrameworkId,
 ): ManagementSummary {
   return buildManagementSummary(assessment, frameworkId, {
-    outsideScope: OUTSIDE_SCOPE[frameworkId],
+    // Unmapped measures, where the framework publishes them; the evidence
+    // report lists the same ones.
+    outsideScope: outsideIntuneScope(frameworkId),
   });
 }
 

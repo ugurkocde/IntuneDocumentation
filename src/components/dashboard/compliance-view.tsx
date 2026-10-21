@@ -33,6 +33,7 @@ import {
   displayCheckValue,
 } from "~/lib/compliance/check-results";
 import {
+  alternativeLabel,
   CAPABILITY_STATUS_LABELS,
   frameworkCoverageLabel,
 } from "~/lib/compliance/presentation";
@@ -622,7 +623,8 @@ function ControlRow({
                       )}
                   </div>
                   <span className="text-xs text-slate-600">
-                    {checkSummary(capability.checks)}
+                    {alternativeLabel(capability) ??
+                      checkSummary(capability.checks)}
                   </span>
                 </div>
                 <SettingChecks capability={capability} />

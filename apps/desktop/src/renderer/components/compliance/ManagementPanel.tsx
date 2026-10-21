@@ -523,7 +523,7 @@ export function ManagementPanel({
           </h2>
           <p className="text-petrol-600 mt-1 max-w-2xl text-xs leading-5">
             {metrics.safeguardsInPlace} of {metrics.safeguardsTotal} technical safeguards are set up and switched on
-            in Intune. A coverage figure, not an audit result.
+            in Intune and Entra. A coverage figure, not an audit result.
           </p>
           <p className="text-petrol-700 mt-1 text-xs font-medium">
             Measures with at least one safeguard:{" "}
@@ -614,7 +614,7 @@ export function ManagementPanel({
           <MetricTile
             label="Safeguards in place"
             value={`${metrics.safeguardsInPlace} of ${metrics.safeguardsTotal}`}
-            hint="Set up and switched on in Intune"
+            hint="Set up and switched on in Intune and Entra"
             active={filter === "all"}
             onClick={() => onFilterChange("all")}
           />

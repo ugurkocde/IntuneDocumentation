@@ -687,3 +687,55 @@ README lists every control.
   round did not call them again (their shape was verified earlier the same
   day, see Policy device status annex) and did not compare their policy id
   casing with Graph ids; matching ignores case.
+
+## Report and summary consistency (ruleset 2026.10.8)
+
+Corrections from the live PDF review of 21 October 2026.
+
+- **One denominator.** `countedCapabilityIds(control, capabilities)` (engine)
+  leaves out capabilities excluded by an alternative (`inUse` or
+  `notCombinable`, `excludedByAlternative`). The evidence report (overview
+  row and control detail meter), the register Controls sheet and the
+  management summary all count with it, so the report and the summary give
+  the same "N of M" for one collection. Control statuses are unchanged.
+- **Neutral labels.** `alternativeLabel` and `capabilityStatusLabel`
+  (presentation) replace the capability status of such a capability with
+  "Not needed, an alternative is set up" or "Not applicable while
+  Conditional Access policies exist" in the PDF, the register, the desktop
+  control list and the web view; no "No evidence" badge.
+- **Policies read.** `safeguardPolicies` also names the tenant-wide Entra
+  policy that was read (for example Security defaults) and any policy whose
+  value could not be read, so a read policy never shows "No policy found".
+- **Readable Entra values.** Authentication method checks report "Enabled
+  for 1 target", "Enabled, no users targeted" or "Disabled", with the
+  certificate default mode ("single-factor default mode"); security
+  defaults report "On" or "Off". Snapshots store the new text; History shows
+  one value change across the ruleset boundary. The weak methods capability
+  is named "SMS, voice call and email one-time passcode not enabled for
+  users (Entra ID)", true when Email OTP is enabled without targets.
+- **Not configured is a result.** Graph returns `null` for an unset update
+  ring deadline (`deadlineForQualityUpdatesInDays`, and
+  `deadlineGracePeriodInDays` once a deadline is set) and for an unset
+  `defenderScheduledScanTime`, and the enum default `userDefined` ("default
+  value, no intent", Microsoft Learn defenderScanType and weeklySchedule)
+  for an unset scan type or day. These are `checked` and `different` with a
+  plain reason such as "No quality update deadline is configured in this
+  update ring." A field absent from the response stays `unableToCheck`. A
+  Graph property check on `userDefined` or `notConfigured` carries the
+  reason "Not configured in this policy". Lab, GET only: the Pilot Ring and
+  the profile "DR" return exactly these shapes.
+- **Unreadable is a data gap.** A `noEvidence` capability with an
+  `unableToCheck` value on a policy that is not unassigned is
+  `dataMissing` ("Could not be read") in the summary, counts in "Safeguards
+  that could not be read" and is no next action.
+- **Measures outside Intune scope.** `outsideIntuneScope(frameworkId)`
+  (NIS2, DORA, HIPAA) feeds both the management summary and the evidence
+  report. The full report lists them on their own page, each needing its own
+  assessment, and the summary and results overview state the count; a sample
+  excerpt keeps the counts only. The summary scope line says "outside the
+  selected scope" for platform scope.
+- **Device status wording.** With Intune status summaries collected, the
+  data basis says per device state is not assessed and the summaries were
+  collected as context only.
+- **Headline.** "N of M technical safeguards are set up and switched on in
+  Intune and Entra."

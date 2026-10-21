@@ -12,6 +12,12 @@ export function policyCheckObservation(
     .toLowerCase();
   let fields: Record<string, unknown>;
   let complete: boolean;
+  // A definite reason when Graph reports a field as not configured: null for
+  // a property it returned, or the enum default userDefined (Microsoft Learn:
+  // "default value, no intent"). A field absent from the response stays
+  // unreadable.
+  let notConfigured: string | undefined;
+  const isNull = (key: string) => key in config && config[key] === null;
   if (check.startsWith("conditionalAccess")) {
     if (type !== "conditionalaccesspolicy") return;
     const grants = config.grantControls;
@@ -63,6 +69,15 @@ export function policyCheckObservation(
       ].map((key) => [key, config[key] ?? null]),
     );
     if (Object.values(fields).every((value) => value === null)) return;
+    if (isNull("deadlineForQualityUpdatesInDays"))
+      notConfigured =
+        "No quality update deadline is configured in this update ring.";
+    else if (
+      typeof fields.deadlineForQualityUpdatesInDays === "number" &&
+      isNull("deadlineGracePeriodInDays")
+    )
+      notConfigured =
+        "No grace period after the quality update deadline is configured in this update ring.";
     complete =
       [
         fields.qualityUpdatesDeferralPeriodInDays,
@@ -91,15 +106,22 @@ export function policyCheckObservation(
       time: config.defenderScheduledScanTime ?? null,
     };
     if (Object.values(fields).every((value) => value === null)) return;
+    if (fields.scan === "userDefined" || fields.day === "userDefined")
+      notConfigured =
+        "No scheduled scan is configured in this policy: the scan type or day is userDefined, the default with no intent.";
+    else if (isNull("defenderScheduledScanTime"))
+      notConfigured = "No scheduled scan time is configured in this policy.";
     complete = Object.values(fields).every(
       (value) => typeof value === "string",
     );
   }
   return {
-    complete,
+    complete: complete || notConfigured !== undefined,
     actual: JSON.stringify(fields),
-    reason: complete
-      ? "The policy does not match the stated configuration check. This is not a framework compliance verdict."
-      : "Required fields for this compound check are missing or unsupported. Review the actual values and refresh policy details.",
+    reason:
+      notConfigured ??
+      (complete
+        ? "The policy does not match the stated configuration check. This is not a framework compliance verdict."
+        : "Required fields for this compound check are missing or unsupported. Review the actual values and refresh policy details."),
   };
 }

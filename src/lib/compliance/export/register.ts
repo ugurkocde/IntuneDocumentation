@@ -4,10 +4,12 @@ import {
   CHECK_RESULT_LABELS,
   displayCheckValue,
 } from "../check-results";
-import { COMPLIANCE_DISCLAIMER } from "../engine";
+import { COMPLIANCE_DISCLAIMER, countedCapabilityIds } from "../engine";
 import {
+  ALTERNATIVE_STATE_LABELS,
   CAPABILITY_STATUS_LABELS,
   CONTROL_STATUS_LABELS,
+  capabilityStatusLabel,
 } from "../presentation";
 import type {
   AssessmentScope,
@@ -223,9 +225,7 @@ function checkRow(
     controlId,
     capabilityId: capability?.capability.id ?? "",
     capabilityName: capability?.capability.name ?? "",
-    capabilityStatus: capability
-      ? CAPABILITY_STATUS_LABELS[capability.status]
-      : "",
+    capabilityStatus: capability ? capabilityStatusLabel(capability) : "",
     checkResult: check?.result ? CHECK_RESULT_LABELS[check.result] : "",
     assessmentStatus: check ? ASSESSMENT_LABELS[check.assessmentStatus] : "",
     policyName: check?.policyName ?? "",
@@ -279,7 +279,8 @@ export function buildEvidenceRegister(
         controlId,
         controlTitle: control.control.title,
         controlStatus: CONTROL_STATUS_LABELS[control.status],
-        capabilityCount: control.capabilityIds.length,
+        // Without capabilities excluded by an alternative, as in the PDF.
+        capabilityCount: countedCapabilityIds(control, capabilities).length,
         assignedEvidence: counts.assigned,
         counterEvidence: counts.counter,
         unassignedEvidence: counts.unassigned,
@@ -466,6 +467,16 @@ function aboutSheet(
         ] as const,
     ),
   );
+  block("Capability alternative", [
+    [
+      ALTERNATIVE_STATE_LABELS.inUse.en,
+      "No gap: a capability that delivers the same safeguard is configured and assigned. Not counted in Capabilities.",
+    ],
+    [
+      ALTERNATIVE_STATE_LABELS.notCombinable.en,
+      "No gap: the setting cannot be turned on while any Conditional Access policy exists, disabled ones included. Not counted in Capabilities.",
+    ],
+  ]);
   block("Check result and assessment status", CHECK_DEFINITIONS);
   if (meta.policyStatus)
     block("Policy status", [

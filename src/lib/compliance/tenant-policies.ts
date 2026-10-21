@@ -79,7 +79,7 @@ export const TENANT_POLICY_CAPABILITIES: readonly ComplianceCapability[] = [
   {
     id: "tenant-weak-methods-disabled",
     platform: "tenant",
-    name: "SMS, voice call and email one-time passcode disabled (Entra ID)",
+    name: "SMS, voice call and email one-time passcode not enabled for users (Entra ID)",
     description:
       "The authentication methods policy does not enable SMS, voice call or email one-time passcode for any user group. Legacy per-user MFA and SSPR settings are not read.",
     caveat: CAVEAT,
@@ -208,7 +208,29 @@ interface MethodState {
   enabledForUsers: boolean;
   /** Certificate-based authentication default mode, when present. */
   mode?: unknown;
-  actual: string;
+  /** Plain text for reports, for example "Enabled for 1 target". */
+  actual: string | null;
+}
+
+const X509_MODES: Record<string, string> = {
+  x509CertificateSingleFactor: "single-factor default mode",
+  x509CertificateMultiFactor: "multifactor default mode",
+};
+
+/** Readable state of one method, never raw JSON (README "Tenant policies"). */
+function methodActual(state: string, targets: number | null, mode: unknown) {
+  const base =
+    state === "enabled"
+      ? targets === null
+        ? "Enabled, include targets not readable"
+        : targets > 0
+          ? `Enabled for ${targets} ${targets === 1 ? "target" : "targets"}`
+          : "Enabled, no users targeted"
+      : state === "disabled"
+        ? "Disabled"
+        : `State ${state}`;
+  if (mode === undefined) return base;
+  return `${base}; ${typeof mode === "string" ? (X509_MODES[mode] ?? `default mode ${mode}`) : "default mode not readable"}`;
 }
 
 function methodState(configs: unknown[], id: string): MethodState {
@@ -219,7 +241,7 @@ function methodState(configs: unknown[], id: string): MethodState {
       String((item as any).id).toLowerCase() === id.toLowerCase(),
   );
   if (!config || typeof config.state !== "string")
-    return { id, readable: false, enabledForUsers: false, actual: "null" };
+    return { id, readable: false, enabledForUsers: false, actual: null };
   const targets = Array.isArray(config.includeTargets)
     ? config.includeTargets.length
     : null;
@@ -235,11 +257,7 @@ function methodState(configs: unknown[], id: string): MethodState {
     // in Microsoft's default email OTP configuration for guests.
     enabledForUsers: config.state === "enabled" && (targets ?? 0) > 0,
     mode: x509Mode,
-    actual: JSON.stringify({
-      state: config.state,
-      includeTargets: targets,
-      ...(x509Mode !== undefined ? { defaultMode: x509Mode } : {}),
-    }),
+    actual: methodActual(config.state, targets, x509Mode),
   };
 }
 
@@ -304,7 +322,7 @@ export function evaluateTenantPolicySignals(
         result: enabled ? "matches" : "different",
         settingId,
         expectedValue: expected,
-        actualValue: JSON.stringify(enabled),
+        actualValue: enabled ? "On" : "Off",
         reason: enabled
           ? "Baseline MFA for all users. This is not phishing-resistant authentication."
           : "Security defaults are off. They are only needed when no Conditional Access policy is used, because the two cannot be combined; off is not counter-evidence.",

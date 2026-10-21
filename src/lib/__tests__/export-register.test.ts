@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assessCompliance, COMPLIANCE_DISCLAIMER } from "../compliance";
+import { countedCapabilityIds } from "../compliance/engine";
 import {
   ASSESSMENT_LABELS,
   CHECK_RESULT_LABELS,
@@ -100,7 +101,10 @@ describe("buildEvidenceRegister", () => {
     );
     framework.controls.forEach((control, index) => {
       const row = register.controls[index]!;
-      expect(row.capabilityCount).toBe(control.capabilityIds.length);
+      // Capabilities excluded by an alternative are not counted (as in the PDF).
+      expect(row.capabilityCount).toBe(
+        countedCapabilityIds(control, capabilities).length,
+      );
       const evidence = controlEvidence(control, capabilities);
       // Counter-evidence and unassigned items never count as support.
       expect(row.assignedEvidence).toBe(

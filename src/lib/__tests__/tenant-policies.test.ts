@@ -561,8 +561,13 @@ describe("security defaults as an alternative to Conditional Access", () => {
         (row) => row.capability.id === id,
       )!;
       expect(result.status, id).toBe("noEvidence");
+      // A plain MFA grant is never phishing resistant, whatever the state,
+      // so that result stays definite (round 15).
+      const definite =
+        label === "a policy without a readable state" &&
+        id === "tenant-phishing-resistant-mfa";
       expect(safeguardState(result), id).toBe(
-        unreadable ? "dataMissing" : "notConfigured",
+        unreadable && !definite ? "dataMissing" : "notConfigured",
       );
     }
     const summary = buildManagementSummary(assessment, "nist-800-53-r5", {

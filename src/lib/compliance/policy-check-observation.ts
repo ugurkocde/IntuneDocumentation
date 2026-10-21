@@ -1,6 +1,11 @@
 import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
-import { grantControlsReadable } from "./policy-checks";
+import { isDocumented } from "./documented-values";
+import {
+  AUTOMATIC_UPDATE_MODES,
+  conditionalAccessOutcome,
+  isTimeOfDay,
+} from "./policy-checks";
 
 const UNREADABLE =
   "Required fields for this compound check are missing or unsupported. Review the actual values and refresh policy details.";
@@ -41,63 +46,39 @@ export function policyCheckObservation(
     // Null: the policy has no grant controls, such as one with session
     // controls only, so it is no candidate.
     if (grants === null) return;
-    const readable = isRecord(grants) && grantControlsReadable(grants);
     const wanted =
       check === "conditionalAccessCompliantDevice" ? "compliantDevice" : "mfa";
+    const builtIn =
+      isRecord(grants) && Array.isArray(grants.builtInControls)
+        ? (grants.builtInControls as unknown[])
+        : undefined;
+    // A control Graph did not document may be the wanted one.
     const candidate =
       isRecord(grants) &&
-      ((Array.isArray(grants.builtInControls) &&
-        grants.builtInControls.includes(wanted)) ||
+      (Boolean(
+        builtIn?.some(
+          (value) =>
+            value === wanted ||
+            !isDocumented("conditionalAccessGrantControl", value),
+        ),
+      ) ||
         (wanted === "mfa" && Boolean(grants.authenticationStrength)));
     // A policy is no candidate only when its grant controls show it; one
     // whose grant controls Graph omitted is unreadable.
     if (
       !candidate &&
-      isRecord(grants) &&
-      Array.isArray(grants.builtInControls) &&
+      builtIn &&
       (wanted !== "mfa" || "authenticationStrength" in grants)
     )
       return;
-    const users = config.conditions?.users;
-    const apps = config.conditions?.applications;
     fields = {
       state: config.state,
       grantControls: grants,
       conditions: config.conditions,
     };
-    // Every target list the check reads must have been returned: an omitted
-    // one may hold the users or applications the policy applies to.
-    complete =
-      candidate &&
-      readable &&
-      ["enabled", "disabled", "enabledForReportingButNotEnforced"].includes(
-        config.state,
-      ) &&
-      ["AND", "OR"].includes(grants.operator) &&
-      ["includeUsers", "includeGroups", "includeRoles"].every((key) =>
-        Array.isArray(users?.[key]),
-      ) &&
-      Array.isArray(apps?.includeApplications) &&
-      (check !== "conditionalAccessMfaAllApps" ||
-        Array.isArray(apps?.excludeApplications));
-    if (
-      candidate &&
-      grants.authenticationStrength &&
-      !grants.builtInControls?.includes("mfa")
-    ) {
-      const strength = grants.authenticationStrength;
-      const known = [
-        "00000000-0000-0000-0000-000000000002",
-        "00000000-0000-0000-0000-000000000003",
-        "00000000-0000-0000-0000-000000000004",
-      ].includes(strength.id);
-      complete &&=
-        known ||
-        (check === "conditionalAccessPhishingResistantMfa"
-          ? Array.isArray(strength.allowedCombinations) &&
-            strength.allowedCombinations.length > 0
-          : typeof strength.requirementsSatisfied === "string");
-    }
+    // Different only when a documented value decides it; an omitted field
+    // or undocumented value it depends on leaves the policy unreadable.
+    complete = candidate && conditionalAccessOutcome(config, check) === false;
   } else if (check === "qualityUpdateDeadline") {
     if (type !== "windowsupdateforbusinessconfiguration") return;
     const keys = [
@@ -125,17 +106,25 @@ export function policyCheckObservation(
       isNull("deadlineGracePeriodInDays")
         ? 2
         : fields.deadlineGracePeriodInDays;
+    const days = [
+      fields.qualityUpdatesDeferralPeriodInDays,
+      fields.deadlineForQualityUpdatesInDays,
+      grace,
+    ];
+    const timed = days.every(
+      (value) =>
+        typeof value === "number" && Number.isInteger(value) && value >= 0,
+    );
+    const mode = fields.automaticUpdateMode;
+    // A documented manual mode, or more than 14 days without a pause, fails
+    // the check whatever other field Graph omitted.
     complete =
-      [
-        fields.qualityUpdatesDeferralPeriodInDays,
-        fields.deadlineForQualityUpdatesInDays,
-        grace,
-      ].every(
-        (value) =>
-          typeof value === "number" && Number.isInteger(value) && value >= 0,
-      ) &&
-      typeof fields.qualityUpdatesPaused === "boolean" &&
-      typeof fields.automaticUpdateMode === "string";
+      (isDocumented("automaticUpdateMode", mode) &&
+        (!AUTOMATIC_UPDATE_MODES.includes(mode as string) ||
+          (timed && typeof fields.qualityUpdatesPaused === "boolean"))) ||
+      (timed &&
+        fields.qualityUpdatesPaused === false &&
+        (days as number[]).reduce((sum, value) => sum + value, 0) > 14);
   } else {
     if (
       ![
@@ -170,9 +159,9 @@ export function policyCheckObservation(
     // A null scan time is the Defender default of 2:00 AM (Policy CSP
     // Defender ScheduleScanTime), so it is read.
     complete =
-      typeof fields.scan === "string" &&
-      typeof fields.day === "string" &&
-      (typeof fields.time === "string" || isNull("defenderScheduledScanTime"));
+      isDocumented("defenderScanType", fields.scan) &&
+      isDocumented("weeklySchedule", fields.day) &&
+      (isTimeOfDay(fields.time) || isNull("defenderScheduledScanTime"));
   }
   return {
     complete: complete || notConfigured !== undefined,

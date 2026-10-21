@@ -8,6 +8,7 @@ import type {
   TenantIdentityPolicyName,
   TenantPolicySignal,
 } from "./types";
+import { isDocumented } from "./documented-values";
 
 // Entra tenant policies are tenant-wide: they have no assignment relation, so
 // evidence carries a fixed "tenant-wide" assignment and never claims device or
@@ -232,7 +233,21 @@ function methodActual(state: string, targets: number | null, mode: unknown) {
         ? "Disabled"
         : `State ${state}`;
   if (mode === undefined) return base;
-  return `${base}; ${typeof mode === "string" ? (X509_MODES[mode] ?? `default mode ${mode}`) : "default mode not readable"}`;
+  return `${base}; ${typeof mode === "string" ? (Object.hasOwn(X509_MODES, mode) ? X509_MODES[mode] : `default mode ${mode}`) : "default mode not readable"}`;
+}
+
+// Include targets as a count of the users and groups they name, or null
+// when Graph omitted the list or returned only targets it did not document.
+function targetCount(list: unknown): number | null {
+  if (!Array.isArray(list)) return null;
+  const valid = list.filter(
+    (target) =>
+      !!target &&
+      typeof target === "object" &&
+      typeof target.id === "string" &&
+      isDocumented("authenticationMethodTargetType", target.targetType),
+  ).length;
+  return valid || !list.length ? valid : null;
 }
 
 function methodState(configs: unknown[], id: string): MethodState {
@@ -242,11 +257,20 @@ function methodState(configs: unknown[], id: string): MethodState {
       typeof item === "object" &&
       String((item as any).id).toLowerCase() === id.toLowerCase(),
   );
-  if (!config || typeof config.state !== "string")
-    return { id, readable: false, enabledForUsers: false, actual: null };
-  const targets = Array.isArray(config.includeTargets)
-    ? config.includeTargets.length
-    : null;
+  // Only a documented state is read: disabled applies to nobody whatever
+  // its targets, enabled needs readable include targets, and any other
+  // state is unknown.
+  if (!config || !isDocumented("authenticationMethodState", config.state))
+    return {
+      id,
+      readable: false,
+      enabledForUsers: false,
+      actual:
+        typeof config?.state === "string"
+          ? methodActual(config.state, null, undefined)
+          : null,
+    };
+  const targets = targetCount(config.includeTargets);
   const x509Mode =
     id === "X509Certificate"
       ? (config.authenticationModeConfiguration
@@ -254,7 +278,7 @@ function methodState(configs: unknown[], id: string): MethodState {
       : undefined;
   return {
     id,
-    readable: targets !== null,
+    readable: config.state === "disabled" || targets !== null,
     // A method enabled without include targets applies to no user group, as
     // in Microsoft's default email OTP configuration for guests.
     enabledForUsers: config.state === "enabled" && (targets ?? 0) > 0,
@@ -356,10 +380,7 @@ export function evaluateTenantPolicySignals(
         // multifactor method; single-factor default mode does not count. A
         // default mode Graph omitted or that is unknown cannot be judged.
         if (id === "X509Certificate" && state.enabledForUsers) {
-          if (
-            typeof state.mode !== "string" ||
-            !(state.mode in X509_MODES)
-          ) {
+          if (!isDocumented("x509CertificateAuthenticationMode", state.mode)) {
             state.readable = false;
             state.modeUnreadable = true;
           }
@@ -392,7 +413,7 @@ export function evaluateTenantPolicySignals(
           reason: state.modeUnreadable
             ? "Graph did not return a readable default mode for certificate-based authentication, so whether it is multifactor is unknown."
             : !state.readable
-              ? "Graph did not return a readable state and include targets for this method."
+              ? "Graph did not return a documented state, or include targets for the enabled method."
               : !state.enabledForUsers && enabled.length
                 ? `Not required: ${enabled.map((item) => item.id).join(" and ")} is enabled, and one phishing-resistant method is enough.`
                 : open
@@ -426,7 +447,7 @@ export function evaluateTenantPolicySignals(
         actualValue: state.actual,
         reason: state.readable
           ? undefined
-          : "Graph did not return a readable state and include targets for this method.",
+          : "Graph did not return a documented state, or include targets for the enabled method.",
       });
     const enabled = states.filter((state) => state.enabledForUsers);
     if (enabled.length)

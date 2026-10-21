@@ -442,11 +442,11 @@ export function diffIdentity(
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-// A setting property with a value in one snapshot that the other omits
-// under a parent it did return: Graph did not return the policy's details
-// completely on one side, so the value is unknown there, never added or
-// removed. A property returned as null is a value; one both omit is no
-// change.
+// A setting property returned in one snapshot, with a value or as null,
+// that the other omits under a parent it did return: Graph did not return
+// the policy's details completely on one side, so the value is unknown
+// there, never added or removed. A property returned as null is a value;
+// one both omit is no change.
 function omitsValue(
   a: Record<string, unknown>,
   b: Record<string, unknown>,
@@ -457,12 +457,7 @@ function omitsValue(
     [b, a],
   ] as const)
     for (const [key, value] of Object.entries(x)) {
-      if (
-        (top && METADATA_KEYS.has(key)) ||
-        value === null ||
-        value === undefined
-      )
-        continue;
+      if ((top && METADATA_KEYS.has(key)) || value === undefined) continue;
       if (!Object.hasOwn(y, key)) return true;
       const other = y[key];
       if (isObject(value) && isObject(other) && omitsValue(value, other, false))

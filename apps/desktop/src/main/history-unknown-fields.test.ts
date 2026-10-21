@@ -216,4 +216,44 @@ describe("management changes when Graph omitted a field", () => {
     const [result] = counts({ tenantIdentityPolicies: identity() }, { tenantIdentityPolicies: changed });
     expect(result!.identity).toEqual({ compared: 2, changes: 1, notCompared: 0 });
   });
+
+  // Round 15: a value Graph does not document is unknown as well.
+  it("counts an undocumented Conditional Access grant control as a collection gap", () => {
+    const unknown = mfaPolicy();
+    unknown.grantControls.builtInControls = ["mfa", "unknownFutureValue"];
+    expectGapNotChange({ conditionalAccess: [mfaPolicy()] }, { conditionalAccess: [unknown] });
+  });
+
+  it("counts an undocumented update mode as a collection gap", () => {
+    expectGapNotChange(
+      { deviceConfigurations: [ring()] },
+      { deviceConfigurations: [{ ...ring(), automaticUpdateMode: "unknownFutureValue" }] },
+    );
+  });
+
+  it.each([
+    [
+      "security defaults returned as text",
+      identity((_methods, defaults) => {
+        defaults.isEnabled = "true";
+      }),
+    ],
+    [
+      "an undocumented method state",
+      identity((methods) => {
+        method(methods, "Sms").state = "unknownFutureValue";
+      }),
+    ],
+  ])("counts %s as an Entra gap, never an Entra change", (_label, unknown) => {
+    for (const [from, to] of [
+      [identity(), unknown],
+      [unknown, identity()],
+    ]) {
+      for (const result of counts({ tenantIdentityPolicies: from }, { tenantIdentityPolicies: to })) {
+        expect(result.identity).toEqual({ compared: 2, changes: 0, notCompared: 1 });
+        expect(result.improved).toBe(0);
+        expect(result.regressed).toBe(0);
+      }
+    }
+  });
 });

@@ -8,6 +8,7 @@ import { summarizeAssignments } from "./assignments";
 import { evaluatePolicyCheck } from "./policy-checks";
 import { comparableValue, expectedValue } from "./check-results";
 import { policyCheckObservation } from "./policy-check-observation";
+import { graphPropertyValues } from "./documented-values";
 import { canonicalOmaUri } from "./oma-uri";
 import {
   buildCollectionCoverage,
@@ -490,9 +491,26 @@ function evaluateConfiguration(
               });
           }
         }
-        matches = verdictsFor(values, signal);
+        // A Graph property is read only as a documented value of its type:
+        // an Int32 is an integer in range, and an enum one of its documented
+        // values. Only readable values are evidence.
+        const documented =
+          signal.source === "graphProperty"
+            ? graphPropertyValues(signal.propertyPath)
+            : undefined;
+        const isReadable = (value: unknown) =>
+          comparableValue(value, signal.enforcedWhen) &&
+          (signal.source !== "graphProperty" ||
+            (typeof value === "number"
+              ? Number.isInteger(value) &&
+                value >= -2147483648 &&
+                value <= 2147483647
+              : typeof value !== "string" ||
+                !documented ||
+                documented.includes(value)));
+        matches = verdictsFor(values.filter(isReadable), signal);
         for (const value of [...new Set(values)]) {
-          const readable = comparableValue(value, signal.enforcedWhen);
+          const readable = isReadable(value);
           const unset =
             signal.source === "graphProperty" &&
             readable &&
@@ -513,7 +531,11 @@ function evaluateConfiguration(
             actualValue: JSON.stringify(value) ?? null,
             reason:
               prerequisiteReason ??
-              (readable ? unset : "Graph returned an unsupported value shape."),
+              (readable
+                ? unset
+                : documented && typeof value === "string"
+                  ? "Graph returned a value it does not document for this property, so it cannot be judged."
+                  : "Graph returned an unsupported value shape."),
             policyId,
             policyName,
             assignment,

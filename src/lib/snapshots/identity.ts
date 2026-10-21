@@ -5,9 +5,13 @@
 // the comparison report them on their own, outside the configuration
 // counts. A policy is compared only when both sides collected it, and a
 // setting only when both sides could read it: a field Graph omitted or
-// returned in an unsupported shape is unreadable, never an empty or removed
-// value.
+// returned in an unsupported shape or with a value it does not document is
+// unreadable, never an empty, removed or changed value.
 import type { SnapshotTenantIdentityPolicies } from "./projection";
+import {
+  isDocumented,
+  type DocumentedField,
+} from "../compliance/documented-values";
 
 export type IdentityPolicyName = "authenticationMethods" | "securityDefaults";
 
@@ -99,6 +103,8 @@ function unreadableRow(
   };
 }
 
+// A target is read only with a string id and a documented target type; the
+// registration campaign also names a documented method to register.
 function targetRows(
   policy: IdentityPolicyName,
   setting: string,
@@ -106,16 +112,31 @@ function targetRows(
   path: string[],
   list: unknown,
   groupNames: Readonly<Record<string, string>>,
+  campaign = false,
 ): IdentityRow[] {
-  if (!Array.isArray(list)) return [unreadableRow(policy, setting, name, path)];
-  return list.filter(isRecord).map((target) => {
-    const id = plain(target.id) ?? "";
-    const type = plain(target.targetType) ?? "";
+  const readable =
+    Array.isArray(list) &&
+    list.every(
+      (target) =>
+        isRecord(target) &&
+        typeof target.id === "string" &&
+        isDocumented("authenticationMethodTargetType", target.targetType) &&
+        (!campaign ||
+          !("targetedAuthenticationMethod" in target) ||
+          isDocumented(
+            "targetedAuthenticationMethod",
+            target.targetedAuthenticationMethod,
+          )),
+    );
+  if (!readable) return [unreadableRow(policy, setting, name, path)];
+  return (list as Json[]).map((target) => {
+    const id = target.id as string;
+    const type = target.targetType as string;
     const method = plain(target.targetedAuthenticationMethod);
     const all = id.toLowerCase() === "all_users";
     const label = all
       ? "All users"
-      : `${type ? `${type.charAt(0).toUpperCase()}${type.slice(1)} ` : ""}${groupNames[id] ?? id}`;
+      : `${type.charAt(0).toUpperCase()}${type.slice(1)} ${groupNames[id] ?? id}`;
     return {
       policy,
       setting,
@@ -131,23 +152,41 @@ function targetRows(
 // Compared value of an explicit null, apart from any text Graph returns.
 const NULL_VALUE = "\u0000null";
 
+// What a compared field must be to be read: one of its documented enum
+// values, or a value of its documented type.
+type Expected = DocumentedField | "boolean" | ((value: unknown) => boolean);
+
 function valueRow(
   policy: IdentityPolicyName,
   setting: string,
   name: string,
   path: string[],
   value: unknown,
+  expected: Expected,
 ): IdentityRow[] {
   // An explicit null is a value Graph returned: nothing is set.
   if (value === null)
     return [
       { policy, setting, name, path, value: NULL_VALUE, display: "Not set" },
     ];
+  const valid =
+    expected === "boolean"
+      ? typeof value === "boolean"
+      : typeof expected === "function"
+        ? expected(value)
+        : isDocumented(expected, value);
   const text = plain(value);
-  return text === null
+  return !valid || text === null
     ? [unreadableRow(policy, setting, name, path)]
     : [{ policy, setting, name, path, value: text, display: text }];
 }
+
+// Microsoft Learn: minimum 0 days, maximum 14 days.
+const snoozeDays = (value: unknown) =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= 0 &&
+  value <= 14;
 
 // Rows of every policy collected on this side.
 export function identityRows(
@@ -167,6 +206,7 @@ export function identityRows(
         "Migration state",
         [],
         methods.policyMigrationState,
+        "authenticationMethodsPolicyMigrationState",
       ),
     );
     const configurations = Array.isArray(
@@ -186,6 +226,7 @@ export function identityRows(
           "State",
           path,
           configuration.state,
+          "authenticationMethodState",
         ),
         ...targetRows(
           policy,
@@ -216,6 +257,7 @@ export function identityRows(
                 ? configuration.authenticationModeConfiguration
                     .x509CertificateAuthenticationDefaultMode
                 : undefined,
+              "x509CertificateAuthenticationMode",
             )
           : []),
       );
@@ -233,13 +275,21 @@ export function identityRows(
       : {};
     const path = ["Registration campaign"];
     rows.push(
-      ...valueRow(policy, "campaign:state", "State", path, campaign.state),
+      ...valueRow(
+        policy,
+        "campaign:state",
+        "State",
+        path,
+        campaign.state,
+        "advancedConfigState",
+      ),
       ...valueRow(
         policy,
         "campaign:snoozeDurationInDays",
         "Days users can postpone",
         path,
         campaign.snoozeDurationInDays,
+        snoozeDays,
       ),
       ...valueRow(
         policy,
@@ -247,6 +297,7 @@ export function identityRows(
         "Require registration after the allowed postponements",
         path,
         campaign.enforceRegistrationAfterAllowedSnoozes,
+        "boolean",
       ),
       ...targetRows(
         policy,
@@ -255,6 +306,7 @@ export function identityRows(
         path,
         campaign.includeTargets,
         groupNames,
+        true,
       ),
       ...targetRows(
         policy,
@@ -277,6 +329,7 @@ export function identityRows(
         "Security defaults turned on",
         [],
         defaults.isEnabled,
+        "boolean",
       ),
     );
   }

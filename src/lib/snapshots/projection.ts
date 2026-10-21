@@ -300,7 +300,11 @@ function signals() {
 }
 
 // Conditional Access fields Graph beta returns on every policy (lab tenant,
-// 21 October 2026): the state, the grant lists and the target lists.
+// 21 October 2026): the state, the grant lists and the target lists, and
+// the allowlisted fields of an authentication strength that is not null
+// (the authenticationStrengthPolicy resource returns each of them, lab
+// tenant, 21 October 2026). Each child follows its parent, so an omitted
+// strength is marked field by field under the keys real values have.
 const CA_EXPECTED_PATHS = [
   "state",
   ...[
@@ -309,6 +313,13 @@ const CA_EXPECTED_PATHS = [
     "customAuthenticationFactors",
     "termsOfUse",
     "authenticationStrength",
+    ...[
+      "id",
+      "displayName",
+      "policyType",
+      "requirementsSatisfied",
+      "allowedCombinations",
+    ].map((key) => `authenticationStrength.${key}`),
   ].map((key) => `grantControls.${key}`),
   ...["include", "exclude"].flatMap((mode) => [
     ...["Users", "Groups", "Roles"].map(
@@ -907,7 +918,9 @@ function projectIdentity(
   const methods = value.authenticationMethods;
   if (isRecord(methods)) {
     // A target list is kept only when Graph returned one, so an omitted list
-    // stays unreadable instead of reading as empty.
+    // stays unreadable instead of reading as empty. An entry that is no
+    // object is kept as an empty one, so the list stays unreadable instead
+    // of reading as one target fewer.
     const targets = (
       key: string,
       source: Json,
@@ -915,9 +928,9 @@ function projectIdentity(
     ): Json =>
       Array.isArray(source[key])
         ? {
-            [key]: (source[key] as unknown[])
-              .filter(isRecord)
-              .map((target) => pick(target, fields)),
+            [key]: (source[key] as unknown[]).map((target) =>
+              isRecord(target) ? pick(target, fields) : {},
+            ),
           }
         : {};
     out.authenticationMethods = {

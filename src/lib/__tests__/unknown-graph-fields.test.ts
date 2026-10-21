@@ -14,6 +14,8 @@ import {
   type SnapshotProjection,
 } from "../snapshots/projection";
 import { compareSettings, projectionSettings } from "../snapshots/reference";
+import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
+import { graphPropertyValues } from "../compliance/documented-values";
 
 // Round 14: a field Graph did not return is unknown. It never becomes a
 // different or missing result, evidence added or removed, or a change.
@@ -949,5 +951,701 @@ describe("Entra settings Graph omitted", () => {
           row.setting.endsWith("x509CertificateAuthenticationDefaultMode"),
         )?.status,
     ).toBe("notComparable");
+  });
+});
+
+// --- Round 15: only documented values are definite ---------------------------
+
+// A value is definite only when it is present, of the expected type and one
+// of the values Microsoft Graph documents for the field. Anything else, such
+// as unknownFutureValue, is unknown. A documented value that decides a
+// result keeps it definite, whatever unrelated field Graph omitted.
+
+describe("Conditional Access authentication strength in a reference comparison", () => {
+  const strength = () => {
+    const policy = mfaPolicy();
+    policy.grantControls.authenticationStrength = {
+      id: "00000000-0000-0000-0000-000000000002",
+      displayName: "Multifactor authentication",
+      policyType: "builtIn",
+      requirementsSatisfied: "mfa",
+      allowedCombinations: ["windowsHelloForBusiness", "fido2"],
+    };
+    return policy;
+  };
+  const compare = (
+    reference: Record<string, any>,
+    current: Record<string, any>,
+  ) =>
+    compareSettings(
+      projectionSettings(projection(data({ conditionalAccess: [reference] }))),
+      projectionSettings(projection(data({ conditionalAccess: [current] }))),
+    );
+
+  it.each([
+    [
+      "the whole strength",
+      (policy: Record<string, any>) =>
+        delete policy.grantControls.authenticationStrength,
+      ["Allowed Combinations", "Policy Type", "Requirements Satisfied"],
+    ],
+    [
+      "only requirementsSatisfied",
+      (policy: Record<string, any>) =>
+        delete policy.grantControls.authenticationStrength
+          .requirementsSatisfied,
+      ["Requirements Satisfied"],
+    ],
+  ])(
+    "is not comparable when Graph omitted %s, in both directions",
+    (_label, omit, unreadable) => {
+      const unknown = strength();
+      omit(unknown);
+      for (const [reference, current] of [
+        [strength(), unknown],
+        [unknown, strength()],
+      ]) {
+        const comparison = compare(reference!, current!);
+        expect(comparison.totals).toMatchObject({
+          different: 0,
+          missing: 0,
+          extra: 0,
+        });
+        // Each unreadable field under the key its value has.
+        expect(
+          comparison.groups
+            .flatMap((group) => group.rows)
+            .filter((row) => row.status === "notComparable")
+            .map((row) => row.setting.split(" / ").pop())
+            .sort(),
+        ).toEqual(unreadable);
+      }
+    },
+  );
+
+  it("keeps an explicit null strength definite", () => {
+    const comparison = compare(strength(), mfaPolicy());
+    expect(comparison.totals.missing).toBe(3);
+    expect(comparison.totals.notComparable).toBe(0);
+  });
+});
+
+describe("policy check fields with a value Graph does not document", () => {
+  const ringWith = (fields: Record<string, unknown>) => {
+    const policy = { ...ring(), ...fields };
+    for (const [key, value] of Object.entries(fields))
+      if (value === undefined) delete policy[key];
+    return policy;
+  };
+  const endpoint = (fields: Record<string, unknown>) => ({
+    "@odata.type": "#microsoft.graph.windows10EndpointProtectionConfiguration",
+    id: "ep",
+    displayName: "EP",
+    defenderScanType: "quick",
+    defenderScheduledScanDay: "everyday",
+    defenderScheduledScanTime: "02:00:00.0000000",
+    ...fields,
+    assignments: assigned,
+  });
+  const checkOf = (policy: Record<string, any>, id: string) =>
+    policyChecks(capability(data({ deviceConfigurations: [policy] }), id));
+
+  it.each([
+    [
+      "automaticUpdateMode",
+      ringWith({ automaticUpdateMode: "unknownFutureValue" }),
+    ],
+    [
+      "automaticUpdateMode of another type",
+      ringWith({ automaticUpdateMode: 4 }),
+    ],
+  ])("is unable to check for an undocumented %s", (_label, policy) => {
+    expect(checkOf(policy, "windows-quality-update-deadline")).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "unableToCheck",
+        result: null,
+      }),
+    ]);
+  });
+
+  it("is a collection gap in history in both directions", () => {
+    expectGapBothWays(
+      data({ deviceConfigurations: [ring()] }),
+      data({
+        deviceConfigurations: [
+          ringWith({ automaticUpdateMode: "unknownFutureValue" }),
+        ],
+      }),
+      "windows-quality-update-deadline",
+    );
+    expectGapBothWays(
+      data({ deviceConfigurations: [endpoint({})] }),
+      data({
+        deviceConfigurations: [
+          endpoint({ defenderScanType: "unknownFutureValue" }),
+        ],
+      }),
+      "windows-periodic-antimalware-scan",
+    );
+  });
+
+  it("keeps a documented manual mode definite, also with the timing omitted", () => {
+    for (const policy of [
+      ringWith({ automaticUpdateMode: "notifyDownload" }),
+      ringWith({
+        automaticUpdateMode: "notifyDownload",
+        qualityUpdatesDeferralPeriodInDays: undefined,
+        qualityUpdatesPaused: undefined,
+      }),
+    ])
+      expect(checkOf(policy, "windows-quality-update-deadline")).toEqual([
+        expect.objectContaining({
+          assessmentStatus: "checked",
+          result: "different",
+        }),
+      ]);
+  });
+
+  it("keeps a ring over 14 days definite whatever its mode", () => {
+    expect(
+      checkOf(
+        ringWith({
+          automaticUpdateMode: "unknownFutureValue",
+          deadlineForQualityUpdatesInDays: 30,
+        }),
+        "windows-quality-update-deadline",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "different",
+      }),
+    ]);
+  });
+
+  it.each([
+    ["scan type", { defenderScanType: "unknownFutureValue" }],
+    ["scan day", { defenderScheduledScanDay: "unknownFutureValue" }],
+    ["scan time", { defenderScheduledScanTime: "every night" }],
+  ])("is unable to check for an undocumented %s", (_label, fields) => {
+    expect(
+      checkOf(endpoint(fields), "windows-periodic-antimalware-scan"),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "unableToCheck",
+        result: null,
+      }),
+    ]);
+  });
+
+  it("keeps documented scan values definite", () => {
+    expect(
+      checkOf(
+        endpoint({ defenderScanType: "userDefined" }),
+        "windows-periodic-antimalware-scan",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "different",
+      }),
+    ]);
+    // A disabled scan is counter-evidence whatever the day.
+    expect(
+      checkOf(
+        endpoint({
+          defenderScanType: "disabled",
+          defenderScheduledScanDay: "unknownFutureValue",
+        }),
+        "windows-periodic-antimalware-scan",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "different",
+      }),
+    ]);
+  });
+});
+
+describe("Graph property signals with a value Graph does not document", () => {
+  const settingCheck = (policy: Record<string, any>) =>
+    policyChecks(
+      capability(
+        data({ deviceConfigurations: [policy] }),
+        "windows-automatic-updates",
+      ),
+    ).filter((check) => check.settingId === "automaticUpdateMode");
+
+  it("is unable to check, never a different value", () => {
+    expect(
+      settingCheck({ ...ring(), automaticUpdateMode: "unknownFutureValue" }),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "unableToCheck",
+        result: null,
+      }),
+    ]);
+    expectGapBothWays(
+      data({ deviceConfigurations: [ring()] }),
+      data({
+        deviceConfigurations: [
+          { ...ring(), automaticUpdateMode: "unknownFutureValue" },
+        ],
+      }),
+      "windows-automatic-updates",
+    );
+  });
+
+  it("keeps documented values definite, the not configured default included", () => {
+    for (const mode of ["notifyDownload", "userDefined"])
+      expect(settingCheck({ ...ring(), automaticUpdateMode: mode })).toEqual([
+        expect.objectContaining({
+          assessmentStatus: "checked",
+          result: "different",
+        }),
+      ]);
+  });
+
+  it("documents every enum value a Graph property signal expects", () => {
+    for (const capabilityDefinition of COMPLIANCE_CAPABILITIES)
+      for (const signal of capabilityDefinition.signals) {
+        if (signal.source !== "graphProperty") continue;
+        const expected = [signal.enforcedWhen, signal.disabledWhen].flatMap(
+          (expectation) =>
+            !expectation
+              ? []
+              : expectation.kind === "equals"
+                ? [expectation.value]
+                : expectation.kind === "oneOf"
+                  ? [...expectation.values]
+                  : [],
+        );
+        const strings = expected.filter((value) => typeof value === "string");
+        if (!strings.length) continue;
+        const documented = graphPropertyValues(signal.propertyPath);
+        expect(documented, signal.propertyPath).toBeDefined();
+        // The enforcing values must be documented; the disabled ones of a
+        // shared expectation may name a member of a sibling enum.
+        const enforcing =
+          signal.enforcedWhen.kind === "equals"
+            ? [signal.enforcedWhen.value]
+            : signal.enforcedWhen.kind === "oneOf"
+              ? signal.enforcedWhen.values
+              : [];
+        for (const value of enforcing)
+          expect(documented, `${signal.propertyPath} ${value}`).toContain(
+            value,
+          );
+      }
+  });
+});
+
+describe("Graph property numbers outside their documented type", () => {
+  it.each([14.5, 3_000_000_000])(
+    "is unable to check %s minutes, and no evidence",
+    (minutes) => {
+      const result = capability(
+        data({
+          compliancePolicies: [
+            { ...compliance(), passwordMinutesOfInactivityBeforeLock: minutes },
+          ],
+        }),
+        "windows-inactivity-lock",
+      );
+      expect(policyChecks(result)).toEqual([
+        expect.objectContaining({
+          assessmentStatus: "unableToCheck",
+          result: null,
+        }),
+      ]);
+      expect(result.evidence).toEqual([]);
+    },
+  );
+
+  it("keeps an Int32 value definite", () => {
+    const result = capability(
+      data({
+        compliancePolicies: [
+          { ...compliance(), passwordMinutesOfInactivityBeforeLock: 15 },
+        ],
+      }),
+      "windows-inactivity-lock",
+    );
+    expect(policyChecks(result)).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "matches",
+      }),
+    ]);
+    expect(result.evidence).toHaveLength(1);
+  });
+});
+
+describe("Conditional Access grants with a value Graph does not document", () => {
+  const grants = (controls: Record<string, unknown>) => {
+    const policy = mfaPolicy();
+    Object.assign(policy.grantControls, controls);
+    return policy;
+  };
+  const checksOf = (policy: Record<string, any>, id: string) =>
+    policyChecks(capability(data({ conditionalAccess: [policy] }), id));
+  const custom = (strength: Record<string, unknown>) => ({
+    builtInControls: [],
+    authenticationStrength: { id: "custom-strength", ...strength },
+  });
+
+  it.each([
+    [
+      "an OR control",
+      grants({ builtInControls: ["mfa", "unknownFutureValue"] }),
+      "tenant-mfa-required",
+    ],
+    [
+      "a strength requirement",
+      grants(custom({ requirementsSatisfied: "unknownFutureValue" })),
+      "tenant-mfa-required",
+    ],
+    [
+      "an omitted strength requirement next to MFA",
+      grants({
+        builtInControls: ["mfa"],
+        authenticationStrength: { id: "custom-strength" },
+      }),
+      "tenant-mfa-required",
+    ],
+    [
+      "an allowed combination",
+      grants(custom({ allowedCombinations: ["fido2", "unknownFutureValue"] })),
+      "tenant-phishing-resistant-mfa",
+    ],
+  ])("is unable to check for %s", (_label, policy, id) => {
+    expect(checksOf(policy, id)).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "unableToCheck",
+        result: null,
+      }),
+    ]);
+  });
+
+  it("is a collection gap in history in both directions", () => {
+    expectGapBothWays(
+      data({ conditionalAccess: [mfaPolicy()] }),
+      data({
+        conditionalAccess: [
+          grants({ builtInControls: ["mfa", "unknownFutureValue"] }),
+        ],
+      }),
+      "tenant-mfa-required",
+    );
+  });
+
+  it("keeps a result a documented value decides definite", () => {
+    // Under OR, a compliant device alternative bypasses MFA whatever the
+    // undocumented control is.
+    expect(
+      checksOf(
+        grants({
+          builtInControls: ["mfa", "compliantDevice", "unknownFutureValue"],
+        }),
+        "tenant-mfa-required",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "different",
+      }),
+    ]);
+    // Under AND, MFA is required whatever else is.
+    expect(
+      checksOf(
+        grants({
+          operator: "AND",
+          builtInControls: ["mfa", "unknownFutureValue"],
+        }),
+        "tenant-mfa-required",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "matches",
+      }),
+    ]);
+    // A built-in strength that is not phishing resistant needs no list.
+    expect(
+      checksOf(
+        grants({
+          builtInControls: [],
+          authenticationStrength: {
+            id: "00000000-0000-0000-0000-000000000002",
+          },
+        }),
+        "tenant-phishing-resistant-mfa",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "different",
+      }),
+    ]);
+    expect(
+      checksOf(
+        grants(custom({ allowedCombinations: ["password,sms"] })),
+        "tenant-phishing-resistant-mfa",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "different",
+      }),
+    ]);
+  });
+
+  it("keeps a disabled policy definite when a target list is omitted", () => {
+    const policy = mfaPolicy();
+    policy.state = "disabled";
+    delete policy.conditions.users.includeGroups;
+    expect(checksOf(policy, "tenant-mfa-required")).toEqual([
+      expect.objectContaining({
+        assessmentStatus: "checked",
+        result: "different",
+      }),
+    ]);
+  });
+});
+
+describe("Entra method states Graph does not document", () => {
+  const methodsPolicy = (edit?: (configs: Record<string, any>[]) => void) => {
+    const configs: Record<string, any>[] = [
+      {
+        id: "Fido2",
+        state: "disabled",
+        includeTargets: allUsers,
+        excludeTargets: [],
+      },
+      {
+        id: "Sms",
+        state: "disabled",
+        includeTargets: allUsers,
+        excludeTargets: [],
+      },
+      {
+        id: "Voice",
+        state: "disabled",
+        includeTargets: allUsers,
+        excludeTargets: [],
+      },
+      { id: "Email", state: "enabled", includeTargets: [], excludeTargets: [] },
+      {
+        id: "X509Certificate",
+        state: "disabled",
+        includeTargets: allUsers,
+        excludeTargets: [],
+        authenticationModeConfiguration: {
+          x509CertificateAuthenticationDefaultMode:
+            "x509CertificateSingleFactor",
+        },
+      },
+    ];
+    edit?.(configs);
+    return {
+      ...data(),
+      tenantIdentityPolicies: {
+        status: {
+          authenticationMethods: "collected",
+          securityDefaults: "collected",
+        },
+        authenticationMethods: { authenticationMethodConfigurations: configs },
+        securityDefaults: { isEnabled: false },
+      },
+    } as DetailedExportData;
+  };
+  const find = (configs: Record<string, any>[], id: string) =>
+    configs.find((entry) => entry.id === id)!;
+  const rows = (exportData: DetailedExportData, capabilityId: string) =>
+    capability(exportData, capabilityId).checks.map((check) => [
+      check.settingId.split("/").pop(),
+      check.assessmentStatus,
+      check.result,
+    ]);
+
+  it("is unable to check for an undocumented state, also with targets", () => {
+    const unknown = methodsPolicy((configs) => {
+      find(configs, "Sms").state = "unknownFutureValue";
+    });
+    expect(rows(unknown, "tenant-weak-methods-disabled")).toContainEqual([
+      "Sms",
+      "unableToCheck",
+      null,
+    ]);
+    expect(
+      capability(unknown, "tenant-weak-methods-disabled").evidence,
+    ).toEqual([]);
+    expectGapBothWays(methodsPolicy(), unknown, "tenant-weak-methods-disabled");
+  });
+
+  it("keeps a documented disabled state definite without targets", () => {
+    const omitted = methodsPolicy((configs) => {
+      for (const id of ["Sms", "Fido2", "X509Certificate"])
+        delete find(configs, id).includeTargets;
+    });
+    expect(rows(omitted, "tenant-weak-methods-disabled")).toEqual([
+      ["Sms", "checked", "matches"],
+      ["Voice", "checked", "matches"],
+      ["Email", "checked", "matches"],
+    ]);
+    expect(rows(omitted, "tenant-phishing-resistant-method-enabled")).toEqual([
+      ["Fido2", "checked", "different"],
+      ["X509Certificate", "checked", "different"],
+    ]);
+  });
+
+  it("is unable to check an enabled method without readable targets", () => {
+    for (const edit of [
+      (config: Record<string, any>) => delete config.includeTargets,
+      (config: Record<string, any>) => {
+        config.includeTargets = [{ targetType: "unknownFutureValue", id: "x" }];
+      },
+    ]) {
+      const unknown = methodsPolicy((configs) => {
+        find(configs, "Fido2").state = "enabled";
+        edit(find(configs, "Fido2"));
+        find(configs, "X509Certificate").state = "unknownFutureValue";
+      });
+      expect(rows(unknown, "tenant-phishing-resistant-method-enabled")).toEqual(
+        [
+          ["Fido2", "unableToCheck", null],
+          ["X509Certificate", "unableToCheck", null],
+        ],
+      );
+    }
+  });
+});
+
+describe("Entra settings with a value Graph does not document", () => {
+  const cases: Array<
+    [string, DetailedExportData["tenantIdentityPolicies"], string]
+  > = [
+    [
+      "security defaults returned as text",
+      (() => {
+        const policies = identity()!;
+        policies.securityDefaults = { isEnabled: "true" };
+        return policies;
+      })(),
+      "Security defaults turned on",
+    ],
+    [
+      "an undocumented method state",
+      identity((methods) => {
+        method(methods, "Sms").state = "unknownFutureValue";
+      }),
+      "SMS: State",
+    ],
+    [
+      "an undocumented default mode",
+      identity((methods) => {
+        method(methods, "X509Certificate").authenticationModeConfiguration = {
+          x509CertificateAuthenticationDefaultMode: "unknownFutureValue",
+        };
+      }),
+      "Certificate-based authentication: Default authentication mode",
+    ],
+    [
+      "an undocumented target type",
+      identity((methods) => {
+        method(methods, "Sms").includeTargets = [
+          { targetType: "unknownFutureValue", id: "all_users" },
+        ];
+      }),
+      "SMS: Include target",
+    ],
+    [
+      "a target that is no object",
+      identity((methods) => {
+        method(methods, "Sms").includeTargets = [...allUsers, "group-1"];
+      }),
+      "SMS: Include target",
+    ],
+    [
+      "a snooze duration out of range",
+      identity((methods) => {
+        methods.registrationEnforcement.authenticationMethodsRegistrationCampaign.snoozeDurationInDays = 99;
+      }),
+      "Registration campaign: Days users can postpone",
+    ],
+  ];
+
+  it.each(cases)(
+    "never reads %s as a change, in both directions",
+    (_label, unknown, setting) => {
+      const definite = identityProjection(identity());
+      const other = identityProjection(unknown);
+      for (const [from, to, side] of [
+        [definite, other, "to"],
+        [other, definite, "from"],
+      ] as const) {
+        const diff = diffIdentity(from, to);
+        expect(diff.changes).toEqual([]);
+        expect(diff.total).toBe(0);
+        expect(diff.notCompared).toEqual([
+          expect.objectContaining({
+            side,
+            settings: [expect.stringContaining(setting)],
+          }),
+        ]);
+      }
+    },
+  );
+
+  it("keeps documented values comparable, in another casing where Graph uses one", () => {
+    const campaign = identity((methods) => {
+      methods.policyMigrationState = "migrationInProgress";
+      methods.registrationEnforcement.authenticationMethodsRegistrationCampaign.includeTargets =
+        [
+          {
+            targetType: "group",
+            id: "all_users",
+            targetedAuthenticationMethod: "FIDO2",
+          },
+        ];
+    });
+    const diff = diffIdentity(
+      identityProjection(identity()),
+      identityProjection(campaign),
+    );
+    expect(diff.notCompared).toEqual([]);
+    expect(diff.changes.map((change) => change.key)).toEqual([
+      expect.stringContaining("policyMigrationState"),
+      expect.stringContaining("campaign:includeTargets"),
+    ]);
+  });
+});
+
+describe("policy changes with a null property Graph omitted", () => {
+  it("does not compare the policy instead of hiding the gap, in both directions", () => {
+    const unset = projection(
+      data({
+        compliancePolicies: [{ ...compliance(), bitLockerEnabled: null }],
+      }),
+    );
+    const policy = compliance();
+    delete policy.bitLockerEnabled;
+    const omitted = projection(data({ compliancePolicies: [policy] }));
+    for (const [from, to] of [
+      [unset, omitted],
+      [omitted, unset],
+    ]) {
+      const diff = diffSnapshots(from!, to!);
+      expect(diff.totals).toMatchObject({
+        settingChanges: 0,
+        notComparedItems: 1,
+      });
+    }
+    // Null on both sides is no change and no gap.
+    expect(diffSnapshots(unset, unset).totals).toMatchObject({
+      settingChanges: 0,
+      notComparedItems: 0,
+    });
   });
 });

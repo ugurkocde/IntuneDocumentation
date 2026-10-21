@@ -1,15 +1,17 @@
-// Renders IntuneDocumentation-Sample.pdf, the public sample of the
-// documentation export (served by src/app/api/pdf/sample/route.ts), from the
-// fictional Contoso demo tenant. The render date is fixed, so the same code
-// and fixture always write the same bytes.
+// Renders the documentation export of the fictional Contoso demo tenant
+// for local checks of the design. The render date is fixed, so the same
+// code and fixture always write the same bytes.
 //
-// Run: npm run build:documentation-sample
-// Smoke test elsewhere: SAMPLE_PDF_OUT=/tmp/sample.pdf npm run build:documentation-sample
+// The published IntuneDocumentation-Sample.pdf (served by
+// src/app/api/pdf/sample/route.ts) is not this file: it is a ten page
+// excerpt of a lab tenant export (cover, Tenant Overview and Settings
+// Catalog pages), with every page that holds personal data, the full tenant
+// id or third party benchmark names left out. The landing and docs images
+// are pages 1, 2 and 5 of it at 707 x 1000 pixels, for example:
+//   pdftoppm -png -singlefile -f 1 -l 1 -scale-to-x 707 -scale-to-y 1000 IntuneDocumentation-Sample.pdf public/landing/report-cover
 //
-// The docs screenshots are pages 1 (cover) and 3 (Executive Summary) of the
-// file, at their existing 707 x 1000 pixels:
-//   pdftoppm -png -singlefile -f 1 -l 1 -scale-to-x 707 -scale-to-y 1000 IntuneDocumentation-Sample.pdf apps/docs/public/images/web/report-cover
-//   pdftoppm -png -singlefile -f 3 -l 3 -scale-to-x 707 -scale-to-y 1000 IntuneDocumentation-Sample.pdf apps/docs/public/images/web/report-summary
+// Run: npm run build:documentation-sample (writes /tmp/documentation-sample.pdf)
+// Other path: SAMPLE_PDF_OUT=/path/sample.pdf npm run build:documentation-sample
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -23,7 +25,7 @@ process.env.TZ = "UTC";
 
 const outFile = path.resolve(
   process.env.SAMPLE_PDF_OUT ??
-    path.join(process.cwd(), "IntuneDocumentation-Sample.pdf"),
+    "/tmp/documentation-sample.pdf",
 );
 
 async function main() {

@@ -505,8 +505,8 @@ function CauseBlock({ cause }: { cause: CapabilityChange }) {
       </p>
       {cause.notCompared && (
         <p className="mt-1 text-xs leading-5 text-amber-800">
-          Not compared: this capability could not be assessed in one of the two collections, usually because data
-          was missing. This is not evidence added or removed.
+          Not compared: this capability could not be fully assessed in at least one of the two collections, usually
+          because data was missing. This is not evidence added or removed.
         </p>
       )}
       {rows.length > 0 && <ul className="text-petrol-800 mt-1.5 space-y-1 text-xs leading-5">{rows}</ul>}

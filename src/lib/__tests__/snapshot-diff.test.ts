@@ -701,6 +701,73 @@ describe("diffAssessments", () => {
     }
   });
 
+  it("does not compare evidence of a capability whose assignments stayed unknown", () => {
+    const bitlocker = (policyId: string) => ({
+      policyId,
+      policyName: policyId,
+      settingId: "device_vendor_msft_bitlocker_requiredeviceencryption",
+      observedValue: "device_vendor_msft_bitlocker_requiredeviceencryption_1",
+      verdict: "enforced" as const,
+      assignment: "unknown" as const,
+    });
+    // BitLocker assignments are unreadable in both collections; one policy's
+    // settings could not be read the second time. FileVault moves the control.
+    const assessment = (complete: boolean): StoredAssessment => ({
+      rulesetVersion: "2026.10.7",
+      generatedAt: "2026-10-18T10:00:00Z",
+      scope: {},
+      capabilities: [
+        {
+          id: "windows-disk-encryption",
+          name: "BitLocker",
+          platform: "windows",
+          status: "assignmentUnknown",
+          evidence: complete ? [bitlocker("bitlocker-a"), bitlocker("bitlocker-b")] : [bitlocker("bitlocker-a")],
+          checks: [],
+        },
+        {
+          id: "macos-disk-encryption",
+          name: "FileVault",
+          platform: "macOS",
+          status: complete ? "enforced" : "assignmentUnknown",
+          evidence: [],
+          checks: [],
+        },
+      ] as StoredAssessment["capabilities"],
+      frameworks: [
+        {
+          id: "nist",
+          name: "NIST",
+          version: "1",
+          summary: {} as StoredAssessment["frameworks"][number]["summary"],
+          controls: [
+            {
+              id: "SC-28",
+              title: "Protection of information at rest",
+              status: complete ? "partialEvidence" : "notAssessed",
+              capabilityIds: ["windows-disk-encryption", "macos-disk-encryption"],
+            },
+          ],
+        },
+      ] as StoredAssessment["frameworks"],
+    });
+    for (const [from, to] of [
+      [true, false],
+      [false, true],
+    ] as const) {
+      const causes = diffAssessments(assessment(from), assessment(to)).frameworks[0]!.changes[0]!.causes;
+      const windows = causes.find((cause) => cause.capabilityId === "windows-disk-encryption")!;
+      expect(windows).toMatchObject({
+        before: "assignmentUnknown",
+        after: "assignmentUnknown",
+        notCompared: true,
+        evidenceAdded: [],
+        evidenceRemoved: [],
+      });
+      expect(causes.find((cause) => cause.capabilityId === "macos-disk-encryption")!.notCompared).toBe(true);
+    }
+  });
+
   it("caps causes and values", () => {
     const before = contoso();
     const after = contoso();

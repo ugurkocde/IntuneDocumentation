@@ -627,8 +627,8 @@ export interface CapabilityChange {
   evidenceAdded: EvidenceRef[];
   evidenceRemoved: EvidenceRef[];
   checksChanged: CheckChange[];
-  // The capability could not be assessed in one of the two collections, for
-  // example a policy that could not be read. Its evidence and checks are not
+  // The capability could not be assessed in at least one of the two
+  // collections, for example a policy that could not be read. Its evidence and checks are not
   // compared, so a collection gap never reads as evidence added or removed.
   notCompared: boolean;
 }
@@ -760,8 +760,9 @@ function capabilityChange(
     !checksChanged.length
   )
     return null;
-  const notCompared =
-    before !== after && (UNAVAILABLE.has(before) || UNAVAILABLE.has(after));
+  // Also when the status stayed unavailable: the evidence read on each side
+  // is incomplete, so its differences are not changes in the tenant.
+  const notCompared = UNAVAILABLE.has(before) || UNAVAILABLE.has(after);
   return {
     capabilityId: id,
     name: (b ?? a)?.name ?? id,

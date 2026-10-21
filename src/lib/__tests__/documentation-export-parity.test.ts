@@ -293,3 +293,16 @@ describe("documentation export parity", () => {
     expect(text).not.toMatch(/ - /);
   });
 });
+
+describe("running header title", () => {
+  it("is the same in PDF and Word", async () => {
+    const docx = await generateDetailedDOCX(CONTOSO_TENANT as never);
+    const zip = await JSZip.loadAsync(docx.buffer);
+    const headers = await Promise.all(
+      Object.keys(zip.files)
+        .filter((name) => /^word\/header\d*\.xml$/.test(name))
+        .map((name) => zip.file(name)!.async("string")),
+    );
+    expect(headers.join("")).toContain("Microsoft Intune Configuration Documentation");
+  });
+});

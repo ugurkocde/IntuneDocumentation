@@ -55,7 +55,7 @@ export function ReportShowcase() {
             inverted
             eyebrow="What you get"
             title="A report a reviewer can actually read."
-            lead="Every setting with its value and description, grouped by policy, with an executive summary that surfaces unassigned and stale configurations."
+            lead="Every setting with its value and description, grouped by policy, with an executive summary of what is assigned, not assigned and not modified in 90 days."
           />
           <ul className="mt-10 grid gap-x-8 gap-y-7 sm:grid-cols-2">
             {features.map(({ icon: Icon, title, desc }) => (

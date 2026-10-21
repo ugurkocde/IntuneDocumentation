@@ -46,13 +46,13 @@ function ReportPreview() {
       />
       <Image
         src={reportSummary}
-        alt="Executive summary page with key metrics, assignment coverage, and potential gaps"
+        alt="Executive summary page with configurations per policy type, assignment counts and platform coverage"
         sizes="(min-width: 1024px) 320px, 60vw"
         className="ring-petrol-950/8 shadow-soft absolute top-0 right-0 w-[60%] rotate-2 rounded-lg ring-1"
         priority
       />
       <p className="text-petrol-700 border-petrol-950/8 shadow-card absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full border bg-white px-4 py-2 text-xs font-semibold whitespace-nowrap">
-        Real export from a sample tenant
+        Export of a sample tenant
       </p>
     </div>
   );

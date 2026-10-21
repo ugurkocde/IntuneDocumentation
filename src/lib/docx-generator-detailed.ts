@@ -314,9 +314,13 @@ export async function generateDetailedDOCX(
       console.warn("Failed to add header logo:", e);
     }
   }
+  // Same running title as the PDF.
+  const runningTitle =
+    scope?.title ||
+    `${branding?.coverPage?.title || "Microsoft Intune"} Configuration Documentation`;
   const contentHeader = runningHeader(
     theme,
-    titleText,
+    runningTitle,
     branding?.header?.enabled && branding.header.text
       ? branding.header.text
       : data.tenantLabel,

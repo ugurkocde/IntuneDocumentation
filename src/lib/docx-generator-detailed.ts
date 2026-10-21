@@ -4,34 +4,23 @@ import {
   frameworkCoverageLabel,
 } from "./compliance/presentation";
 import {
-  AlignmentType,
-  BorderStyle,
   Document,
-  Footer,
-  Header,
   HeadingLevel,
   ImageRun,
   Packer,
-  PageNumber,
   Paragraph,
   ShadingType,
-  Tab,
-  TabStopPosition,
-  TabStopType,
-  Table,
-  TableCell,
-  TableLayoutType,
+  type Table,
   Bookmark,
   BookmarkStart,
   BookmarkEnd,
-  InternalHyperlink,
-  TableRow,
   TextRun,
-  WidthType,
   SectionType,
+  BorderStyle,
 } from "docx";
 import {
   analyzeConfigurations,
+  type ConfigurationAnalytics,
   type DetailedExportData,
   type PolicyExportError,
   type ExportGenerationResult,
@@ -56,31 +45,31 @@ import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
 } from "./conditional-access-report";
+import {
+  COVER_PAGE_MARGINS,
+  contentsRow,
+  coverFooter,
+  coverLogoSize,
+  coverTable,
+  dataTable,
+  eyebrowParagraph,
+  glancePage,
+  headerLogoSize,
+  imageSize,
+  mmToPixels,
+  paragraphStyles,
+  runningFooter,
+  runningHeader,
+  wordTheme,
+  WORD_PALETTE,
+} from "./docx-design";
+import { buildGlanceModel } from "./documentation-glance";
 
 // ---------------------------------------------------------------------------
 // Helper utilities
 // ---------------------------------------------------------------------------
 
-/** Strip leading # from hex color; default to navy if missing. */
-function hexToDocx(hex: string | undefined): string {
-  if (!hex) return "003366";
-  return hex.replace(/^#/, "") || "003366";
-}
-
-/** Map the branding font family name to a Word-compatible font name. */
-function mapFont(family?: string): string {
-  switch (family) {
-    case "times":
-      return "Times New Roman";
-    case "courier":
-      return "Courier New";
-    case "helvetica":
-    default:
-      return "Calibri";
-  }
-}
-
-/** Format a date string (or now) into "30 Mar 2026 - 15:43". */
+/** Format a date string (or now) into "30 Mar 2026 · 15:43". */
 function formatDocDate(dateStr?: string): string {
   const d = dateStr ? new Date(dateStr) : new Date();
   if (isNaN(d.getTime())) return "Unknown";
@@ -103,7 +92,7 @@ function formatDocDate(dateStr?: string): string {
   const year = d.getFullYear();
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${day} ${mon} ${year} - ${hh}:${mm}`;
+  return `${day} ${mon} ${year} · ${hh}:${mm}`;
 }
 
 /** Replace raw group IDs with resolved names inside an assignment text. */
@@ -135,104 +124,21 @@ function versionString(): string {
 // Reusable table builder
 // ---------------------------------------------------------------------------
 
-// Text width of the default A4 page with 1 inch margins, in twips. Tables get
-// explicit grid column widths and a fixed layout; without them the grid is
-// written as 100 twip columns, which LibreOffice, QuickLook and Google Docs
-// render as unreadably narrow columns.
-const CONTENT_WIDTH_TWIPS = 11906 - 2 * 1440;
-
-function gridColumns(totalTwips: number, percentages: number[]): number[] {
-  return percentages.map((pct) => Math.floor((totalTwips * pct) / 100));
-}
-
 /**
- * Create a styled table with a primary-colored header row and alternating
- * row shading.
+ * Data table in the export design: primary header row, zebra rows and fixed
+ * column widths (see dataTable).
  */
 function createSettingsTable(
   headers: string[],
   rows: string[][],
   branding?: BrandingOptions,
+  percentages?: number[],
 ): Table {
-  const primary = hexToDocx(branding?.colors?.primary);
-  const fontName = mapFont(branding?.fonts?.family);
-  const bodySizeHp = (branding?.fonts?.bodySize ?? 11) * 2; // half-points
-
-  // Determine column widths -- distribute evenly
-  const colPct = Math.floor(100 / headers.length);
-
-  const headerRow = new TableRow({
-    tableHeader: true,
-    children: headers.map(
-      (h) =>
-        new TableCell({
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: h,
-                  bold: true,
-                  color: "FFFFFF",
-                  font: fontName,
-                  size: bodySizeHp,
-                }),
-              ],
-              alignment: AlignmentType.LEFT,
-            }),
-          ],
-          shading: { type: ShadingType.SOLID, color: primary, fill: primary },
-          width: { size: colPct, type: WidthType.PERCENTAGE },
-        }),
-    ),
-  });
-
-  const dataRows = rows.map((cells, idx) => {
-    const isEven = idx % 2 === 0;
-    const shadeFill = isEven ? "F5F5F5" : "FFFFFF";
-    return new TableRow({
-      children: cells.map(
-        (cell) =>
-          new TableCell({
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: cell ?? "",
-                    font: fontName,
-                    size: bodySizeHp,
-                  }),
-                ],
-              }),
-            ],
-            shading: {
-              type: ShadingType.SOLID,
-              color: shadeFill,
-              fill: shadeFill,
-            },
-            width: { size: colPct, type: WidthType.PERCENTAGE },
-          }),
-      ),
-    });
-  });
-
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    columnWidths: gridColumns(
-      CONTENT_WIDTH_TWIPS,
-      headers.map(() => 100 / headers.length),
-    ),
-    layout: TableLayoutType.FIXED,
-    rows: [headerRow, ...dataRows],
-    borders: {
-      top: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
-      bottom: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
-      left: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
-      right: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
-      insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
-      insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
-    },
-  });
+  return dataTable(wordTheme(branding), headers, rows, percentages);
 }
+
+/** Setting, value and description columns, as wide as in the PDF. */
+const SETTING_COLUMNS = [28, 36, 36];
 
 // ---------------------------------------------------------------------------
 // Image helpers
@@ -243,11 +149,6 @@ function extractBase64(dataUrl: string): string {
   const commaIdx = dataUrl.indexOf(",");
   if (commaIdx >= 0) return dataUrl.slice(commaIdx + 1);
   return dataUrl;
-}
-
-/** ImageRun expects pixels and converts them to EMUs internally. */
-function mmToPixels(mm: number): number {
-  return (mm * 96) / 25.4;
 }
 
 // docx creates a new ID counter for each Bookmark, so every default ID is 1.
@@ -284,14 +185,15 @@ export async function generateDetailedDOCX(
   let totalPolicies = 0;
   let successfulPolicies = 0;
 
-  // Extract branding with fallbacks
+  // Branding over the evidence report palette, font and sizes.
   const branding = data.branding;
-  const primaryHex = hexToDocx(branding?.colors?.primary);
-  const secondaryHex = hexToDocx(branding?.colors?.secondary);
-  const textHex = hexToDocx(branding?.colors?.text);
-  const fontName = mapFont(branding?.fonts?.family);
-  const headerSizeHp = (branding?.fonts?.headerSize ?? 14) * 2;
-  const bodySizeHp = (branding?.fonts?.bodySize ?? 11) * 2;
+  const theme = wordTheme(branding);
+  const primaryHex = theme.primary;
+  const secondaryHex = theme.secondary;
+  const textHex = theme.text;
+  const fontName = theme.font;
+  const headerSizeHp = theme.headerSizeHp;
+  const bodySizeHp = theme.bodySizeHp;
 
   const companyName = branding?.companyName ?? "";
   const department = branding?.department ?? "";
@@ -307,488 +209,190 @@ export async function generateDetailedDOCX(
   const sections: any[] = [];
 
   // ===== 1. COVER PAGE =====
-  const coverChildren: (Paragraph | Table)[] = [];
-
-  // Top-left company name
-  if (companyName) {
-    coverChildren.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: companyName,
-            color: "888888",
-            font: fontName,
-            size: 20,
-          }),
-        ],
-        alignment: AlignmentType.LEFT,
-        spacing: { after: 0 },
-      }),
-    );
-  }
-
-  // Top-right department
-  if (department) {
-    coverChildren.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: department,
-            color: "888888",
-            font: fontName,
-            size: 20,
-          }),
-        ],
-        alignment: AlignmentType.RIGHT,
-        spacing: { after: 200 },
-      }),
-    );
-  }
-
-  // Classification badge
+  // As in the PDF, the notice belongs to the footer and shows only with it.
+  const confidentialityNotice = branding?.footer?.enabled
+    ? branding.footer.confidentialityNotice || undefined
+    : undefined;
   const classification = branding?.metadata?.classification;
-  let classText = "AUDIT READY";
-  let classColor = "00A652"; // green
-  if (classification) {
-    switch (classification) {
-      case "confidential":
-        classText = "CONFIDENTIAL";
-        classColor = "CC0000";
-        break;
-      case "restricted":
-        classText = "RESTRICTED";
-        classColor = "CC0000";
-        break;
-      case "internal":
-        classText = "INTERNAL";
-        classColor = "CC8800";
-        break;
-      case "public":
-        classText = "PUBLIC";
-        classColor = "00A652";
-        break;
-    }
-  }
-
-  coverChildren.push(
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: classText,
-          bold: true,
-          color: classColor,
-          font: fontName,
-          size: 22,
-        }),
-      ],
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 600, after: 200 },
-    }),
-  );
-
-  // Logo on cover
-  if (branding?.logo?.dataUrl && branding.logo.position === "cover") {
-    try {
-      const logoBase64 = extractBase64(branding.logo.dataUrl);
-      const logoW = branding.logo.width ?? 60;
-      const logoH = branding.logo.height ?? 60;
-      coverChildren.push(
-        new Paragraph({
-          children: [
-            new ImageRun({
-              data: logoBase64,
-              transformation: {
-                width: mmToPixels(logoW),
-                height: mmToPixels(logoH),
-              },
-            }),
-          ],
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 400, after: 400 },
-        }),
-      );
-    } catch (e) {
-      console.warn("Failed to add cover logo:", e);
-    }
-  }
-
-  // Main title
+  const classificationLabel = classification
+    ? classification.charAt(0).toUpperCase() + classification.slice(1)
+    : undefined;
   const titleText =
     scope?.title || branding?.coverPage?.title || "Microsoft Intune";
-  coverChildren.push(
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: titleText,
-          bold: true,
-          color: primaryHex,
-          font: fontName,
-          size: 56,
-        }),
-      ],
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 400, after: 100 },
-    }),
-  );
 
-  // Subtitle
-  coverChildren.push(
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: "Configuration Documentation",
-          color: "888888",
-          font: fontName,
-          size: 36,
-        }),
-      ],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
-    }),
-  );
-
-  if (scope?.subtitle) {
-    coverChildren.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: scope.subtitle,
-            color: "787878",
-            font: fontName,
-            size: bodySizeHp + 2,
-          }),
-        ],
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 400 },
-      }),
-    );
+  let coverLogo:
+    | { data: string; widthMm: number; heightMm: number }
+    | undefined;
+  if (branding?.logo?.dataUrl && branding.logo.position === "cover") {
+    const logoBase64 = extractBase64(branding.logo.dataUrl);
+    coverLogo = {
+      data: logoBase64,
+      ...coverLogoSize(branding.logo, imageSize(logoBase64)),
+    };
   }
 
-  // Custom text
-  if (branding?.coverPage?.customText) {
-    coverChildren.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text: branding.coverPage.customText,
-            font: fontName,
-            size: bodySizeHp,
-            color: textHex,
-          }),
-        ],
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 400 },
-      }),
-    );
-  }
-
-  // Metadata table
-  const metaRows: string[][] = [];
-  const orgLine = [companyName, department].filter(Boolean).join(" - ");
-  if (orgLine) metaRows.push(["Organization", orgLine]);
-  const authorName = branding?.coverPage?.author || branding?.metadata?.author;
-  if (authorName) metaRows.push(["Prepared by", authorName]);
-  if (branding?.contactEmail) metaRows.push(["Contact", branding.contactEmail]);
-  if (branding?.website) metaRows.push(["Website", branding.website]);
-  metaRows.push(["Generated", formatDocDate()]);
-  metaRows.push(["Version", versionString()]);
-  if (classification) {
-    metaRows.push([
-      "Classification",
-      classification.charAt(0).toUpperCase() + classification.slice(1),
-    ]);
-  }
-
-  if (metaRows.length > 0) {
-    coverChildren.push(
-      new Table({
-        width: { size: 60, type: WidthType.PERCENTAGE },
-        columnWidths: gridColumns((CONTENT_WIDTH_TWIPS * 60) / 100, [35, 65]),
-        layout: TableLayoutType.FIXED,
-        rows: metaRows.map(
-          ([label, value]) =>
-            new TableRow({
-              children: [
-                new TableCell({
-                  children: [
-                    new Paragraph({
-                      children: [
-                        new TextRun({
-                          text: label ?? "",
-                          bold: true,
-                          font: fontName,
-                          size: bodySizeHp,
-                          color: primaryHex,
-                        }),
-                      ],
-                    }),
-                  ],
-                  width: { size: 35, type: WidthType.PERCENTAGE },
-                  shading: {
-                    type: ShadingType.SOLID,
-                    color: "F5F5F5",
-                    fill: "F5F5F5",
-                  },
-                  borders: {
-                    top: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                    bottom: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                    left: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                    right: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                  },
-                }),
-                new TableCell({
-                  children: [
-                    new Paragraph({
-                      children: [
-                        new TextRun({
-                          text: value ?? "",
-                          font: fontName,
-                          size: bodySizeHp,
-                        }),
-                      ],
-                    }),
-                  ],
-                  width: { size: 65, type: WidthType.PERCENTAGE },
-                  borders: {
-                    top: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                    bottom: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                    left: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                    right: {
-                      style: BorderStyle.SINGLE,
-                      size: 1,
-                      color: "DDDDDD",
-                    },
-                  },
-                }),
-              ],
-            }),
-        ),
-        alignment: AlignmentType.CENTER,
-        borders: {
-          top: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-          bottom: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-          left: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-          right: { style: BorderStyle.SINGLE, size: 1, color: "DDDDDD" },
-          insideHorizontal: {
-            style: BorderStyle.SINGLE,
-            size: 1,
-            color: "DDDDDD",
-          },
-          insideVertical: {
-            style: BorderStyle.SINGLE,
-            size: 1,
-            color: "DDDDDD",
-          },
-        },
-      }),
-    );
-  }
+  // Only a real collection time is shown; the export time is not one.
+  const collectedAt =
+    data.collectedAt && !isNaN(new Date(data.collectedAt).getTime())
+      ? formatDocDate(data.collectedAt)
+      : undefined;
+  const coverFacts: Array<[string, string]> = [
+    ...(collectedAt
+      ? [["Data collected", collectedAt] as [string, string]]
+      : []),
+    ["Generated", formatDocDate()],
+    ...(classificationLabel
+      ? [["Classification", classificationLabel] as [string, string]]
+      : []),
+  ];
 
   sections.push({
     properties: {
       titlePage: true,
       type: SectionType.NEXT_PAGE,
+      page: { margin: COVER_PAGE_MARGINS },
     },
-    children: coverChildren,
+    footers: {
+      first: coverFooter(
+        theme,
+        "Generated with Intune Documentation (intunedocumentation.com)",
+        confidentialityNotice,
+      ),
+    },
+    children: [
+      coverTable(theme, {
+        productName: "Intune Documentation",
+        eyebrow: "Intune Configuration Export",
+        title: titleText,
+        subtitle: scope?.subtitle || "Configuration Documentation",
+        description:
+          branding?.coverPage?.subtitle ||
+          "Comprehensive export of Intune policies, profiles, and assignments",
+        tenantEyebrow: "Tenant",
+        tenant: data.tenantLabel,
+        facts: coverFacts,
+        logo: coverLogo,
+        companyName: companyName || undefined,
+        note: branding?.coverPage?.customText,
+        controlHeading: "Document control",
+        control: [
+          {
+            label: "Organization",
+            value: [companyName, department].filter(Boolean).join(" / "),
+          },
+          {
+            label: "Prepared by",
+            value: branding?.coverPage?.author || branding?.metadata?.author,
+          },
+          { label: "Contact", value: branding?.contactEmail },
+          { label: "Website", value: branding?.website },
+          { label: "Tenant", value: data.tenantLabel },
+          { label: "Version", value: versionString() },
+          { label: "Classification", value: classificationLabel },
+        ],
+      }),
+    ],
   });
 
   // -----------------------------------------------------------------------
-  // Build shared headers / footers for subsequent pages
+  // Running header and footer of the content pages
   // -----------------------------------------------------------------------
-  const buildHeader = (): Header | undefined => {
-    if (!branding?.header?.enabled && !branding?.logo) return undefined;
-
-    const headerChildren: Paragraph[] = [];
-
-    // Build a single paragraph with left text and right logo via tab stops
-    const runs: (TextRun | ImageRun | Tab)[] = [];
-
-    if (branding?.header?.text) {
-      runs.push(
-        new TextRun({
-          text: branding.header.text,
-          font: fontName,
-          size: 18,
-          color: "888888",
-        }),
+  let headerLogo: ImageRun | undefined;
+  if (
+    (branding?.header?.includeLogo || branding?.logo?.position === "header") &&
+    branding?.logo?.dataUrl
+  ) {
+    try {
+      const logoBase64 = extractBase64(branding.logo.dataUrl);
+      const { widthMm, heightMm } = headerLogoSize(
+        branding.logo,
+        imageSize(logoBase64),
       );
+      headerLogo = new ImageRun({
+        data: logoBase64,
+        transformation: {
+          width: mmToPixels(widthMm),
+          height: mmToPixels(heightMm),
+        },
+      });
+    } catch (e) {
+      console.warn("Failed to add header logo:", e);
     }
-
-    if (
-      (branding?.header?.includeLogo ||
-        branding?.logo?.position === "header") &&
-      branding?.logo?.dataUrl
-    ) {
-      try {
-        const logoBase64 = extractBase64(branding.logo.dataUrl);
-        const logoW = Math.min(branding.logo.width ?? 15, 25);
-        const logoH = Math.min(branding.logo.height ?? 15, 25);
-        if (runs.length > 0) {
-          runs.push(new Tab());
-        }
-        runs.push(
-          new ImageRun({
-            data: logoBase64,
-            transformation: {
-              width: mmToPixels(logoW),
-              height: mmToPixels(logoH),
-            },
-          }),
-        );
-      } catch (e) {
-        console.warn("Failed to add header logo:", e);
-      }
-    }
-
-    if (runs.length > 0) {
-      headerChildren.push(
-        new Paragraph({
-          children: runs,
-          tabStops: [
-            {
-              type: TabStopType.RIGHT,
-              position: TabStopPosition.MAX,
-            },
-          ],
-        }),
-      );
-    }
-
-    if (headerChildren.length === 0) return undefined;
-    return new Header({ children: headerChildren });
-  };
-
-  const buildFooter = (): Footer | undefined => {
-    const footerRuns: (TextRun | Tab)[] = [];
-
-    // Left: footer text
-    if (branding?.footer?.enabled && branding.footer.text) {
-      footerRuns.push(
-        new TextRun({
-          text: branding.footer.text,
-          font: fontName,
-          size: 16,
-          color: "888888",
-        }),
-      );
-    }
-
-    // Center: page number
-    footerRuns.push(new Tab());
-    footerRuns.push(
-      new TextRun({
-        children: ["Page ", PageNumber.CURRENT, " of ", PageNumber.TOTAL_PAGES],
-        font: fontName,
-        size: 16,
-        color: "888888",
-      }),
-    );
-
-    // Right: confidentiality notice
-    if (branding?.footer?.confidentialityNotice) {
-      footerRuns.push(new Tab());
-      footerRuns.push(
-        new TextRun({
-          text: branding.footer.confidentialityNotice,
-          font: fontName,
-          size: 14,
-          color: "AAAAAA",
-          italics: true,
-        }),
-      );
-    }
-
-    return new Footer({
-      children: [
-        new Paragraph({
-          children: footerRuns,
-          tabStops: [
-            { type: TabStopType.CENTER, position: TabStopPosition.MAX / 2 },
-            { type: TabStopType.RIGHT, position: TabStopPosition.MAX },
-          ],
-        }),
-      ],
-    });
-  };
-
-  const defaultHeader = buildHeader();
-  const defaultFooter = buildFooter();
+  }
+  const contentHeader = runningHeader(
+    theme,
+    titleText,
+    branding?.header?.enabled && branding.header.text
+      ? branding.header.text
+      : data.tenantLabel,
+    headerLogo,
+  );
+  const contentFooter = runningFooter(
+    theme,
+    branding?.footer?.enabled && branding.footer.text
+      ? branding.footer.text
+      : "Generated with Intune Documentation",
+    confidentialityNotice,
+  );
 
   const spacers = new WeakSet<Paragraph>();
   const contentsEntries: { title: string; anchor: string }[] = [];
   let contentsChildren: Paragraph[] | undefined;
   let bookmarkId = 0;
 
-  // Helper: wrap children in a content section (with page break, header, footer)
+  // Helper: wrap children in a content section on a new page. Only the first
+  // content section carries the running header and footer; later sections
+  // inherit them, so the package holds one header and one footer part.
+  let chromeAttached = false;
   const pushContentSection = (children: (Paragraph | Table)[]) => {
     while (
       children.length &&
       spacers.has(children[children.length - 1] as Paragraph)
     )
       children.pop();
-    const sectionProps: any = {
-      type: SectionType.NEXT_PAGE,
-    };
-    if (defaultHeader) sectionProps.headers = { default: defaultHeader };
-    if (defaultFooter) sectionProps.footers = { default: defaultFooter };
-
     sections.push({
-      properties: sectionProps,
+      properties: { type: SectionType.NEXT_PAGE },
+      ...(chromeAttached
+        ? {}
+        : {
+            headers: { default: contentHeader },
+            footers: { default: contentFooter },
+          }),
       children,
     });
+    chromeAttached = true;
   };
 
-  // Helper: create a Heading 1 paragraph
-  const heading1 = (text: string): Paragraph => {
+  // Helper: numbered eyebrow and a Heading 1 title with its contents anchor
+  const heading1 = (text: string, group = "Configuration"): Paragraph[] => {
     const anchor = `section_${contentsEntries.length + 1}`;
-    if (text !== "Table of Contents")
-      contentsEntries.push({ title: text, anchor });
-    return new Paragraph({
-      children: [
-        new SectionBookmark(
-          anchor,
-          ++bookmarkId,
-          new TextRun({
-            text,
-            bold: true,
-            color: primaryHex,
-            font: fontName,
-            size: headerSizeHp + 8,
-          }),
-        ),
-      ],
-      heading: HeadingLevel.HEADING_1,
-      keepNext: true,
-      spacing: { before: 240, after: 120 },
-    });
+    contentsEntries.push({ title: text, anchor });
+    return [
+      eyebrowParagraph(
+        theme,
+        `${String(contentsEntries.length).padStart(2, "0")}  ${group}`,
+      ),
+      new Paragraph({
+        children: [
+          new SectionBookmark(
+            anchor,
+            ++bookmarkId,
+            new TextRun({
+              text,
+              color: primaryHex,
+              font: fontName,
+              size: headerSizeHp + 12,
+            }),
+          ),
+        ],
+        heading: HeadingLevel.HEADING_1,
+        keepNext: true,
+        border: {
+          bottom: { style: BorderStyle.SINGLE, size: 8, color: primaryHex },
+        },
+        spacing: { before: 0, after: 200 },
+      }),
+    ];
   };
 
   // Helper: create a Heading 2 paragraph
@@ -804,7 +408,8 @@ export async function generateDetailedDOCX(
         }),
       ],
       heading: HeadingLevel.HEADING_2,
-      spacing: { before: 200, after: 80 },
+      keepNext: true,
+      spacing: { before: 280, after: 80 },
     });
 
   // Helper: create a Heading 3 paragraph
@@ -820,6 +425,7 @@ export async function generateDetailedDOCX(
         }),
       ],
       heading: HeadingLevel.HEADING_3,
+      keepNext: true,
       spacing: { before: 160, after: 60 },
     });
 
@@ -840,7 +446,7 @@ export async function generateDetailedDOCX(
           text,
           font: fontName,
           size: bodySizeHp - 2,
-          color: "888888",
+          color: WORD_PALETTE.muted,
         }),
       ],
       spacing: { after: 40 },
@@ -853,40 +459,59 @@ export async function generateDetailedDOCX(
     return paragraph;
   };
 
-  // ===== 2. TABLE OF CONTENTS =====
+  let analytics: ConfigurationAnalytics | undefined;
+  if (!compactScope && branding?.documentSettings?.includeAnalytics !== false) {
+    try {
+      analytics = analyzeConfigurations(data);
+    } catch (e) {
+      console.error("Error analyzing configurations:", e);
+    }
+  }
+
+  // ===== 2. AT A GLANCE =====
+  if (analytics) {
+    try {
+      pushContentSection(glancePage(theme, buildGlanceModel(data, analytics)));
+    } catch (e) {
+      console.error("Error generating the at a glance page:", e);
+    }
+  }
+
+  // ===== 3. TABLE OF CONTENTS =====
   if (
     !compactScope &&
     branding?.documentSettings?.includeTableOfContents !== false
   ) {
     contentsChildren = [
+      eyebrowParagraph(theme, "Contents"),
       new Paragraph({
-        text: "Table of Contents",
+        children: [
+          new TextRun({
+            text: "Table of Contents",
+            color: primaryHex,
+            font: fontName,
+            size: headerSizeHp + 12,
+          }),
+        ],
         heading: HeadingLevel.HEADING_1,
-        spacing: { before: 240, after: 120 },
+        border: {
+          bottom: { style: BorderStyle.SINGLE, size: 8, color: primaryHex },
+        },
+        spacing: { before: 0, after: 200 },
       }),
     ];
     pushContentSection(contentsChildren);
   }
 
-  // ===== 3. EXECUTIVE SUMMARY =====
-  if (!compactScope && branding?.documentSettings?.includeAnalytics !== false) {
+  // ===== 4. EXECUTIVE SUMMARY =====
+  if (analytics) {
     try {
-      const analytics = analyzeConfigurations(data);
       const summaryChildren: (Paragraph | Table)[] = [];
 
-      summaryChildren.push(heading1("Executive Summary"));
+      summaryChildren.push(...heading1("Executive Summary", "Overview"));
       summaryChildren.push(spacer());
 
-      // Key metrics table (3 columns)
-      const coveragePercent =
-        analytics.assignmentApplicableConfigs > 0
-          ? Math.round(
-              (analytics.assignedConfigs /
-                analytics.assignmentApplicableConfigs) *
-                100,
-            )
-          : 0;
-
+      // Key metrics table
       summaryChildren.push(
         createSettingsTable(
           [
@@ -914,67 +539,38 @@ export async function generateDetailedDOCX(
             `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from assignment coverage.`,
           ),
         );
-      // Assignment coverage
-      let coverageColor = "00A652"; // green
-      if (coveragePercent < 50) coverageColor = "CC0000";
-      else if (coveragePercent < 80) coverageColor = "CC8800";
-
+      // Assigned share over the configurations that take assignments.
       summaryChildren.push(
         new Paragraph({
           children: [
             new TextRun({
-              text: "Assignment Coverage: ",
+              text: "Assigned share: ",
               bold: true,
               font: fontName,
               size: bodySizeHp,
             }),
             new TextRun({
-              text: `${coveragePercent}%`,
-              bold: true,
+              text:
+                analytics.assignmentApplicableConfigs > 0
+                  ? `${Math.round((analytics.assignedConfigs / analytics.assignmentApplicableConfigs) * 100)}% (${analytics.assignedConfigs} of ${analytics.assignmentApplicableConfigs} ${analytics.assignmentApplicableConfigs === 1 ? "configuration that takes" : "configurations that take"} assignments)`
+                  : "n/a (no configuration takes assignments)",
               font: fontName,
-              size: bodySizeHp + 4,
-              color: coverageColor,
+              size: bodySizeHp,
             }),
           ],
-          spacing: { after: 120 },
+          spacing: { after: 60 },
         }),
       );
-
-      // Potential gaps
-      if (analytics.unassignedConfigs > 0 || analytics.staleConfigs > 0) {
+      summaryChildren.push(
+        metaText("Unknown assignments are not counted as assigned."),
+      );
+      if (analytics.staleConfigs > 0)
         summaryChildren.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: "Potential Gaps",
-                bold: true,
-                font: fontName,
-                size: bodySizeHp + 2,
-                color: "CC8800",
-              }),
-            ],
-            spacing: { before: 120, after: 60 },
-          }),
+          bodyText(
+            `Not modified in 90 days or more: ${analytics.staleConfigs} configuration(s).`,
+          ),
         );
-
-        const gapRows: string[][] = [];
-        if (analytics.unassignedConfigs > 0) {
-          gapRows.push([
-            "Unassigned Policies",
-            `${analytics.unassignedConfigs} configuration(s) have no group assignment`,
-          ]);
-        }
-        if (analytics.staleConfigs > 0) {
-          gapRows.push([
-            "Stale Configurations",
-            `${analytics.staleConfigs} configuration(s) not modified in 90+ days`,
-          ]);
-        }
-        summaryChildren.push(
-          createSettingsTable(["Gap", "Details"], gapRows, branding),
-        );
-        summaryChildren.push(spacer());
-      }
+      summaryChildren.push(spacer());
 
       // Configuration inventory by type
       summaryChildren.push(heading2("Configuration Inventory"));
@@ -1054,7 +650,9 @@ export async function generateDetailedDOCX(
       const statusLabels = CONTROL_STATUS_LABELS;
       const statusRank = CONTROL_STATUS_ORDER;
 
-      complianceChildren.push(heading1("Compliance Evidence Preview"));
+      complianceChildren.push(
+        ...heading1("Compliance Evidence Preview", "Compliance evidence"),
+      );
       complianceChildren.push(
         bodyText(
           "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
@@ -1116,7 +714,7 @@ export async function generateDetailedDOCX(
               text: complianceAssessment.disclaimer,
               font: fontName,
               size: bodySizeHp - 2,
-              color: "6E6E6E",
+              color: WORD_PALETTE.muted,
               italics: true,
             }),
           ],
@@ -1160,7 +758,7 @@ export async function generateDetailedDOCX(
         .join(" · "),
     ]);
     pushContentSection([
-      heading1("Collection Warnings"),
+      ...heading1("Collection Warnings", "Collection"),
       bodyText(
         "The following resources were only partially collected or were unavailable. Successful sibling resources remain in this document.",
       ),
@@ -1241,7 +839,7 @@ export async function generateDetailedDOCX(
   // ===== 4. SETTINGS CATALOG =====
   if (data.settingsCatalog?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Settings Catalog Policies"));
+    sectionChildren.push(...heading1("Settings Catalog Policies"));
 
     for (const policy of data.settingsCatalog) {
       totalPolicies++;
@@ -1276,6 +874,7 @@ export async function generateDetailedDOCX(
                 ["Setting", "Value", "Description"],
                 formatted.map((s) => [s.name, s.value, s.description ?? ""]),
                 branding,
+                SETTING_COLUMNS,
               ),
             );
           } else {
@@ -1301,7 +900,7 @@ export async function generateDetailedDOCX(
   // ===== 5. DEVICE CONFIGURATIONS =====
   if (data.deviceConfigurations?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Device Configurations"));
+    sectionChildren.push(...heading1("Device Configurations"));
 
     for (const config of data.deviceConfigurations) {
       totalPolicies++;
@@ -1320,6 +919,7 @@ export async function generateDetailedDOCX(
                 ["Setting", "Value", "Description"],
                 cat.settings.map((s) => [s.name, s.value, s.description ?? ""]),
                 branding,
+                SETTING_COLUMNS,
               ),
             );
           }
@@ -1341,7 +941,7 @@ export async function generateDetailedDOCX(
   // ===== 6. ADMINISTRATIVE TEMPLATES =====
   if (data.administrativeTemplates?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Administrative Templates"));
+    sectionChildren.push(...heading1("Administrative Templates"));
 
     for (const template of data.administrativeTemplates) {
       totalPolicies++;
@@ -1394,7 +994,7 @@ export async function generateDetailedDOCX(
   // ===== 7. COMPLIANCE POLICIES =====
   if (data.compliancePolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Compliance Policies"));
+    sectionChildren.push(...heading1("Compliance Policies"));
 
     for (const policy of data.compliancePolicies) {
       totalPolicies++;
@@ -1411,7 +1011,7 @@ export async function generateDetailedDOCX(
               ["Rule", "Value"],
               rules.map((r) => [
                 `${r.rule} (${r.category})`,
-                `${r.value} -- ${r.action}`,
+                `${r.value} (Action: ${r.action})`,
               ]),
               branding,
             ),
@@ -1436,7 +1036,7 @@ export async function generateDetailedDOCX(
   // ===== 8. APP PROTECTION POLICIES =====
   if (data.appProtectionPolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("App Protection Policies"));
+    sectionChildren.push(...heading1("App Protection Policies"));
 
     for (const policy of data.appProtectionPolicies) {
       totalPolicies++;
@@ -1592,7 +1192,7 @@ export async function generateDetailedDOCX(
   // ===== 9. SECURITY BASELINES =====
   if (data.securityBaselines?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Security Baselines"));
+    sectionChildren.push(...heading1("Security Baselines"));
 
     for (const baseline of data.securityBaselines) {
       totalPolicies++;
@@ -1619,6 +1219,7 @@ export async function generateDetailedDOCX(
               ["Setting", "Value", "Description"],
               cat.settings.map((s) => [s.name, s.value, s.description ?? ""]),
               branding,
+              SETTING_COLUMNS,
             ),
           );
         }
@@ -1642,7 +1243,7 @@ export async function generateDetailedDOCX(
     (data.scripts?.windows?.length ?? 0) + (data.scripts?.macOS?.length ?? 0);
   if (scriptsTotal > 0) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Scripts"));
+    sectionChildren.push(...heading1("Scripts"));
 
     // Windows scripts
     if (data.scripts?.windows?.length) {
@@ -1713,8 +1314,8 @@ export async function generateDetailedDOCX(
                   spacing: { after: 0 },
                   shading: {
                     type: ShadingType.SOLID,
-                    color: "F5F5F5",
-                    fill: "F5F5F5",
+                    color: WORD_PALETTE.panel,
+                    fill: WORD_PALETTE.panel,
                   },
                 }),
               );
@@ -1801,8 +1402,8 @@ export async function generateDetailedDOCX(
                   spacing: { after: 0 },
                   shading: {
                     type: ShadingType.SOLID,
-                    color: "F5F5F5",
-                    fill: "F5F5F5",
+                    color: WORD_PALETTE.panel,
+                    fill: WORD_PALETTE.panel,
                   },
                 }),
               );
@@ -1827,7 +1428,7 @@ export async function generateDetailedDOCX(
   // ===== 11. APP CONFIGURATION POLICIES =====
   if (data.appConfigurations?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("App Configuration Policies"));
+    sectionChildren.push(...heading1("App Configuration Policies"));
 
     for (const config of data.appConfigurations) {
       totalPolicies++;
@@ -1972,7 +1573,7 @@ export async function generateDetailedDOCX(
   // ===== 12. WINDOWS UPDATE POLICIES =====
   if (data.windowsUpdatePolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Windows Update Policies"));
+    sectionChildren.push(...heading1("Windows Update Policies"));
 
     for (const policy of data.windowsUpdatePolicies) {
       totalPolicies++;
@@ -2090,7 +1691,7 @@ export async function generateDetailedDOCX(
   // ===== 13. ENROLLMENT CONFIGURATIONS =====
   if (data.enrollmentConfigurations?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Enrollment Configurations"));
+    sectionChildren.push(...heading1("Enrollment Configurations"));
 
     for (const config of data.enrollmentConfigurations) {
       totalPolicies++;
@@ -2193,7 +1794,7 @@ export async function generateDetailedDOCX(
   // ===== 14. CONDITIONAL ACCESS POLICIES =====
   if (data.conditionalAccessPolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(heading1("Conditional Access Policies"));
+    sectionChildren.push(...heading1("Conditional Access Policies"));
 
     for (const policy of data.conditionalAccessPolicies) {
       totalPolicies++;
@@ -2218,12 +1819,7 @@ export async function generateDetailedDOCX(
                 text: stateLabel,
                 font: fontName,
                 size: bodySizeHp,
-                color:
-                  stateLabel === "Enabled"
-                    ? "00A652"
-                    : stateLabel === "Disabled"
-                      ? "CC0000"
-                      : "CC8800",
+                color: textHex,
               }),
             ],
             spacing: { after: 80 },
@@ -2282,7 +1878,7 @@ export async function generateDetailedDOCX(
   );
   for (const sourceSection of additionalSections) {
     const sectionChildren: (Paragraph | Table)[] = [
-      heading1(sourceSection.label),
+      ...heading1(sourceSection.label, "Additional configuration"),
     ];
     if (sourceSection.endpoint) {
       sectionChildren.push(
@@ -2332,28 +1928,14 @@ export async function generateDetailedDOCX(
   // -----------------------------------------------------------------------
   // Build the Document
   // -----------------------------------------------------------------------
-  // A populated section index works immediately in Word and previewers,
-  // without relying on the reader to recalculate a TOC field.
+  // Each contents row links to its section bookmark without a TOC field, so
+  // the links work in every viewer. The PAGEREF page numbers are filled in
+  // when the viewer updates fields (LibreOffice on open, Word on update or
+  // print); viewers without field support show the rows without numbers.
   if (contentsChildren) {
-    for (const entry of contentsEntries)
-      contentsChildren.push(
-        new Paragraph({
-          children: [
-            new InternalHyperlink({
-              anchor: entry.anchor,
-              children: [
-                new TextRun({
-                  text: entry.title,
-                  font: fontName,
-                  size: bodySizeHp,
-                  color: primaryHex,
-                }),
-              ],
-            }),
-          ],
-          spacing: { after: 120 },
-        }),
-      );
+    contentsEntries.forEach((entry, index) =>
+      contentsChildren?.push(contentsRow(entry.title, entry.anchor, index)),
+    );
   }
   const doc = new Document({
     title:
@@ -2378,12 +1960,12 @@ export async function generateDetailedDOCX(
         heading1: {
           run: {
             font: fontName,
-            size: headerSizeHp + 8,
-            bold: true,
+            size: headerSizeHp + 12,
+            bold: false,
             color: primaryHex,
           },
           paragraph: {
-            spacing: { before: 240, after: 120 },
+            spacing: { before: 0, after: 200 },
           },
         },
         heading2: {
@@ -2409,6 +1991,7 @@ export async function generateDetailedDOCX(
           },
         },
       },
+      paragraphStyles: paragraphStyles(theme),
     },
     sections,
   });

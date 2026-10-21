@@ -84,7 +84,7 @@ describe("detailed PDF with a multi page table of contents", () => {
 
     // Footers follow the final page order.
     pages.slice(1).forEach((text, index) => {
-      expect(text).toContain(`(Page ${index + 2}) Tj`);
+      expect(text).toContain(`(Page ${index + 2} of ${pages.length}) Tj`);
     });
   });
 

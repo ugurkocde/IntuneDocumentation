@@ -8,15 +8,17 @@ const LOGO_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
 
 describe("Word cover logos", () => {
+  // The cover box takes at most 44 x 14 mm, as in the evidence report, and
+  // keeps the logo's aspect ratio: the 1 x 1 pixel image is square.
   it.each([
-    { name: "default", dimensions: {}, widthMm: 60, heightMm: 60 },
+    { name: "default", dimensions: {}, widthMm: 14, heightMm: 14 },
     {
       name: "custom",
       dimensions: { width: 60, height: 30 },
-      widthMm: 60,
-      heightMm: 30,
+      widthMm: 28,
+      heightMm: 14,
     },
-  ])("preserves the $name logo's physical dimensions", async (options) => {
+  ])("fits the $name logo into the cover box", async (options) => {
     const data: DetailedExportData = {
       settingsCatalog: [],
       deviceConfigurations: [],

@@ -161,6 +161,7 @@ describe("detailed documents with a compact document scope", () => {
     const data = single();
     const full = estimatePdfPageCount({ ...data, documentScope: undefined });
     const compact = estimatePdfPageCount(data);
-    expect(full.pages - compact.pages).toBe(3);
+    // The full export adds the contents and the tenant overview.
+    expect(full.pages - compact.pages).toBe(2);
   });
 });

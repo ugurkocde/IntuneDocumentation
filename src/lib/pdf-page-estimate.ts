@@ -19,20 +19,21 @@ export interface PdfPageEstimate {
 }
 
 // Layout figures of the detailed A4 export, calibrated against generated
-// documents including a real 853 item tenant. Table text is 8 pt, so a
-// setting name wraps after roughly 30 characters and a value or description
-// after roughly 42.
-const PAGE_CAPACITY_MM = 225;
-const POLICY_HEADER_MM = 30;
-const CATEGORY_HEADER_MM = 6.5;
-const TABLE_HEADER_MM = 8;
+// documents including a real 853 item tenant and recalibrated for the
+// evidence report layout. Table text is 8 pt, so a setting name wraps after
+// roughly 30 characters and a value or description after roughly 42.
+const PAGE_CAPACITY_MM = 242;
+const POLICY_HEADER_MM = 29;
+const CATEGORY_HEADER_MM = 6;
+const TABLE_HEADER_MM = 6.4;
 const EMPTY_TABLE_MM = 6;
-const TABLE_LINE_MM = 4;
-const MIN_ROW_MM = 8;
+const TABLE_LINE_MM = 3.6;
+const ROW_PADDING_MM = 3.2;
+const DESCRIPTION_LINE_MM = 4;
 const NAME_COLUMN_CHARS = 30;
 const TEXT_COLUMN_CHARS = 42;
 const DESCRIPTION_LINE_CHARS = 95;
-const FIXED_PAGES = 4; // cover, contents, tenant overview and inventory
+const FIXED_PAGES = 3; // cover, contents and the tenant overview
 const COMPACT_FIXED_PAGES = 1; // a compact scoped export has only the cover
 const COMPLIANCE_PREVIEW_PAGES = 3;
 
@@ -80,8 +81,7 @@ function settingCount(policy: unknown): number {
 
 function wrappedLines(text: unknown, charsPerLine: number): number {
   if (text === null || text === undefined || text === "") return 1;
-  const value =
-    typeof text === "string" ? text : (JSON.stringify(text) ?? "");
+  const value = typeof text === "string" ? text : (JSON.stringify(text) ?? "");
   return value
     .split("\n")
     .reduce(
@@ -100,7 +100,7 @@ function tableMm(rows: readonly TableRow[]): number {
       wrappedLines(row.value, TEXT_COLUMN_CHARS),
       row.description ? wrappedLines(row.description, TEXT_COLUMN_CHARS) : 1,
     );
-    mm += Math.max(MIN_ROW_MM, lines * TABLE_LINE_MM + TABLE_LINE_MM);
+    mm += lines * TABLE_LINE_MM + ROW_PADDING_MM;
   }
   return mm;
 }
@@ -128,7 +128,7 @@ function policyMm(policy: unknown, layout: Layout): number {
     POLICY_HEADER_MM +
     (typeof record.description === "string" && record.description
       ? wrappedLines(record.description, DESCRIPTION_LINE_CHARS) *
-          TABLE_LINE_MM +
+          DESCRIPTION_LINE_MM +
         2
       : 0);
   if (layout === "catalog") return header + tableMm(catalogRows(record));
@@ -158,7 +158,10 @@ export function estimatePdfPageCount(
 ): PdfPageEstimate {
   const sections: Array<{ items: unknown[]; layout: Layout }> = [
     { items: data.settingsCatalog, layout: "catalog" as const },
-    { items: data.deviceConfigurations, layout: "deviceConfiguration" as const },
+    {
+      items: data.deviceConfigurations,
+      layout: "deviceConfiguration" as const,
+    },
     ...[
       data.administrativeTemplates,
       data.compliancePolicies,

@@ -267,14 +267,10 @@ export function drawCoverHeadline(
   );
   setFont(doc, subtitleSize, "normal", PALETTE.coverMutedText);
   doc.text(options.subtitle, margin, titleBottom + 10);
-  const leadLines = wrapLines(
-    doc,
-    options.lead,
-    150,
-    9,
-    "normal",
-    options.leadMaxLines ?? 2,
-  );
+  // An empty lead leaves room for a longer title.
+  const leadLines = options.lead
+    ? wrapLines(doc, options.lead, 150, 9, "normal", options.leadMaxLines ?? 2)
+    : [];
   drawLines(
     doc,
     leadLines,
@@ -631,12 +627,15 @@ export function drawToc<T extends TocItem>(
     startY: number;
     rows: readonly TocRow<T>[];
     extraPages: number;
+    /** Draws under the contents on each inserted page, such as a watermark. */
+    onInsertPage?: (page: number) => void;
   },
 ) {
   const { margin, right, contentWidth } = frame;
   const { tocPage, rows, extraPages } = options;
   for (let offset = 1; offset <= extraPages; offset += 1) {
     doc.insertPage(tocPage + offset);
+    options.onInsertPage?.(tocPage + offset);
   }
   for (let offset = 0; offset <= extraPages; offset += 1) {
     // Leave the first page without a heading if no entry fits beneath it.
@@ -686,7 +685,11 @@ export function drawRunningChrome(
     /** Clamps the title to this width when given. */
     titleMaxWidth?: number;
     headerRight?: string;
+    /** Moves the header note left by this many mm, for a header logo. */
+    headerRightInset?: number;
     footer: string;
+    /** Moves the footer text right by this many mm, for a footer logo. */
+    footerInset?: number;
     footerCentre?: string;
     pageLabel: (page: number, pageCount: number) => string;
     firstPage?: number;
@@ -707,14 +710,21 @@ export function drawRunningChrome(
     );
     if (options.headerRight) {
       setFont(doc, 6.5, "normal", PALETTE.muted);
-      doc.text(clampLine(doc, options.headerRight, 90, 6.5), right, 12.4, {
-        align: "right",
-      });
+      doc.text(
+        clampLine(doc, options.headerRight, 90, 6.5),
+        right - (options.headerRightInset ?? 0),
+        12.4,
+        { align: "right" },
+      );
     }
     drawRule(doc, margin, 14.6, right);
     drawRule(doc, margin, pageHeight - 14.5, right);
     setFont(doc, 6.5, "normal", PALETTE.muted);
-    doc.text(options.footer, margin, pageHeight - 10.6);
+    doc.text(
+      options.footer,
+      margin + (options.footerInset ?? 0),
+      pageHeight - 10.6,
+    );
     if (options.footerCentre)
       doc.text(
         clampLine(doc, options.footerCentre, 70, 6.5),

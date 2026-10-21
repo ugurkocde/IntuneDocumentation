@@ -166,6 +166,24 @@ describe("pdf chrome", () => {
     expect(titleBottom).toBeCloseTo(70 + 2 * 24 * 0.42, 6);
   });
 
+  it("leaves out an empty cover lead", () => {
+    const doc = newDoc();
+    const { titleBottom, bottom } = drawCoverHeadline(
+      doc,
+      brandingTheme(undefined),
+      pageFrame(doc),
+      {
+        eyebrow: "Intune Configuration Export",
+        title: "Title",
+        subtitle: "Configuration Documentation",
+        lead: "",
+      },
+    );
+    const [page] = readPdfPageTexts(bytes(doc));
+    expect(page).not.toContain("() Tj");
+    expect(bottom).toBeCloseTo(titleBottom + 13.5, 6);
+  });
+
   it("splits table header labels at words that do not fit", () => {
     const doc = newDoc();
     expect(tableHeaderLines(doc, "Not applicable", 18.4)).toEqual([
@@ -215,6 +233,73 @@ describe("pdf chrome", () => {
       .toString("latin1")
       .match(/\/Subtype \/Link/g);
     expect(links).toHaveLength(entries.length);
+  });
+
+  it("draws on inserted contents pages before their rows", () => {
+    const doc = newDoc();
+    doc.addPage();
+    for (let page = 0; page < 5; page += 1) doc.addPage();
+    const frame = pageFrame(doc);
+    const entries = Array.from(
+      { length: 60 },
+      (_, index): TocItem => ({
+        title: `Entry ${index + 1}`,
+        page: 3,
+        level: 0,
+      }),
+    );
+    const { rows, extraPages } = layoutToc(doc, frame, entries, 21);
+    expect(extraPages).toBeGreaterThan(0);
+    const inserted: number[] = [];
+    drawToc(doc, brandingTheme(undefined), frame, {
+      heading: "Contents",
+      tocPage: 2,
+      startY: 21,
+      rows,
+      extraPages,
+      onInsertPage: (page) => {
+        inserted.push(page);
+        doc.text("Mark", 20, 150);
+      },
+    });
+    expect(inserted).toEqual(
+      Array.from({ length: extraPages }, (_, index) => 3 + index),
+    );
+    const pages = readPdfPageTexts(bytes(doc));
+    const page = pages[2] ?? "";
+    expect(page.indexOf("(Mark) Tj")).toBeGreaterThanOrEqual(0);
+    expect(page.indexOf("(Mark) Tj")).toBeLessThan(
+      page.indexOf("(Contents) Tj"),
+    );
+  });
+
+  it("insets the header note and footer text for logos", () => {
+    const xOf = (inset: number, label: string) => {
+      const doc = newDoc();
+      doc.addPage();
+      drawRunningChrome(doc, brandingTheme(undefined), pageFrame(doc), {
+        title: "Title",
+        headerRight: "Header note",
+        headerRightInset: inset,
+        footer: "Footer text",
+        footerInset: inset,
+        pageLabel: (page, count) => `Page ${page} of ${count}`,
+      });
+      const page = readPdfPageTexts(bytes(doc))[1] ?? "";
+      const match = new RegExp(
+        `(-?[\\d.]+) -?[\\d.]+ Td\\n\\(${label}\\) Tj`,
+      ).exec(page);
+      return Number(match?.[1]);
+    };
+    const mm = 72 / 25.4;
+    expect(xOf(10, "Footer text") - xOf(0, "Footer text")).toBeCloseTo(
+      10 * mm,
+      3,
+    );
+    expect(xOf(0, "Header note") - xOf(12, "Header note")).toBeCloseTo(
+      12 * mm,
+      3,
+    );
   });
 
   it("numbers running pages from the second page", () => {

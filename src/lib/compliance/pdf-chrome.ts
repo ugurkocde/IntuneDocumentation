@@ -137,7 +137,13 @@ export function drawCoverMasthead(
   doc: jsPDF,
   theme: PdfTheme,
   frame: PdfFrame,
-  options: { productName: string; logo?: CoverLogo; companyName?: string },
+  options: {
+    productName: string;
+    logo?: CoverLogo;
+    companyName?: string;
+    /** Fit the logo keeping its image ratio (documentation export). */
+    keepLogoRatio?: boolean;
+  },
 ): number {
   const { margin, right } = frame;
   doc.setFillColor(...theme.secondary);
@@ -171,12 +177,25 @@ export function drawCoverMasthead(
       const properties = (
         doc as unknown as ImagePropertiesProvider
       ).getImageProperties(logoDataUrl);
-      // A height alone keeps the image ratio rather than a 36 mm width.
-      const { widthMm: width, heightMm: height } = fitLogo(
-        options.logo ?? {},
-        properties,
-        COVER_LOGO_BOX,
-      );
+      let width: number;
+      let height: number;
+      if (options.keepLogoRatio) {
+        // A height alone keeps the image ratio rather than a 36 mm width.
+        ({ widthMm: width, heightMm: height } = fitLogo(
+          options.logo ?? {},
+          properties,
+          COVER_LOGO_BOX,
+        ));
+      } else {
+        // The compliance report's original sizing, kept byte for byte.
+        const ratio = properties.height / Math.max(properties.width, 1);
+        width = Math.min(options.logo?.width ?? 36, 44);
+        height = options.logo?.height ?? width * ratio;
+        if (height > 14) {
+          width = (width * 14) / height;
+          height = 14;
+        }
+      }
       const boxWidth = width + 5;
       const boxHeight = height + 4;
       doc.setFillColor(...PALETTE.white);
@@ -343,6 +362,38 @@ export interface DocumentControlCell {
  * Eyebrow heading, primary rule and a four column grid of label and value
  * cells, values wrapped to three lines. Returns the bottom of the last row.
  */
+/** Height drawDocumentControlGrid uses for these cells, from its top. */
+export function documentControlGridHeight(
+  doc: jsPDF,
+  frame: PdfFrame,
+  cells: readonly DocumentControlCell[],
+): number {
+  const cellWidth = frame.contentWidth / 4;
+  let height = 5;
+  for (const row of documentControlRows(cells)) {
+    const lines = row.map(({ value, span }) =>
+      wrapLines(doc, value, cellWidth * span - 3, 8.4, "bold", 3),
+    );
+    height += Math.max(
+      13,
+      Math.max(...lines.map((item) => item.length)) * 3.6 + 9.4,
+    );
+  }
+  return height;
+}
+
+function documentControlRows(cells: readonly DocumentControlCell[]) {
+  const rows: Array<Array<{ label: string; value: string; span: number }>> = [];
+  for (const { label, value, span = 1 } of cells) {
+    if (!value) continue;
+    const current = rows[rows.length - 1];
+    const used = current?.reduce((sum, cell) => sum + cell.span, 0) ?? 4;
+    if (!current || used + span > 4) rows.push([{ label, value, span }]);
+    else current.push({ label, value, span });
+  }
+  return rows;
+}
+
 export function drawDocumentControlGrid(
   doc: jsPDF,
   theme: PdfTheme,
@@ -355,14 +406,7 @@ export function drawDocumentControlGrid(
   drawEyebrow(doc, heading, margin, top + 2.4, { color: theme.secondary });
   drawRule(doc, margin, top + 5, right, theme.primary, 0.4);
   const cellWidth = contentWidth / 4;
-  const rows: Array<Array<{ label: string; value: string; span: number }>> = [];
-  for (const { label, value, span = 1 } of cells) {
-    if (!value) continue;
-    const current = rows[rows.length - 1];
-    const used = current?.reduce((sum, cell) => sum + cell.span, 0) ?? 4;
-    if (!current || used + span > 4) rows.push([{ label, value, span }]);
-    else current.push({ label, value, span });
-  }
+  const rows = documentControlRows(cells);
   let rowTop = top + 5;
   for (const rowCells of rows) {
     const cellLines = rowCells.map(({ value, span }) =>

@@ -4,6 +4,7 @@ import {
   applyTheme,
   brandingTheme,
   drawCoverHeadline,
+  drawCoverMasthead,
   drawDocumentControlGrid,
   drawRunningChrome,
   drawToc,
@@ -319,5 +320,37 @@ describe("pdf chrome", () => {
     expect(pages[2]).toContain("(Page 3 of 3) Tj");
     expect(pages[2]).toContain("(Confidential) Tj");
     expect(pages[2]).toContain("(1a2b3c4d...) Tj");
+  });
+});
+
+describe("cover masthead logo sizing", () => {
+  const SQUARE_PNG =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNgSDvDsCyIgcE47f///wAekQXBjgK93AAAAABJRU5ErkJggg==";
+  // Width and height in points of the image drawn on the page.
+  const imageSize = (doc: jsPDF) => {
+    const page = /([\d.]+) 0 0 ([\d.]+) [\d.]+ [\d.]+ cm\n\/I\d+ Do/.exec(
+      doc.output(),
+    );
+    return page ? [Number(page[1]), Number(page[2])] : null;
+  };
+  const draw = (keepLogoRatio?: boolean) => {
+    const doc = newDoc();
+    drawCoverMasthead(doc, brandingTheme(undefined), pageFrame(doc), {
+      productName: "Intune Documentation",
+      logo: { dataUrl: SQUARE_PNG, height: 10 },
+      ...(keepLogoRatio ? { keepLogoRatio } : {}),
+    });
+    return imageSize(doc);
+  };
+  const mm = 72 / 25.4;
+
+  it("keeps the compliance report's original size for a height only logo", () => {
+    expect(draw()?.map((value) => Math.round(value / mm))).toEqual([36, 10]);
+  });
+
+  it("keeps the image ratio for the documentation export", () => {
+    expect(draw(true)?.map((value) => Math.round(value / mm))).toEqual([
+      10, 10,
+    ]);
   });
 });

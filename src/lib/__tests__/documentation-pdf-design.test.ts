@@ -267,6 +267,55 @@ describe("documentation PDF layout", () => {
     });
   });
 
+  it("keeps the cover document control clear of a long notice", async () => {
+    const sentence =
+      "This document contains confidential configuration details of the managed estate and is intended only for the named recipients. ";
+    for (const repeat of [1, 4, 8, 12]) {
+      const notice = sentence.repeat(repeat).trim();
+      const { pages } = await render(
+        contoso({
+          branding: {
+            ...branding("cover"),
+            // Helvetica and long values wrap the document control rows
+            // tallest.
+            fonts: undefined,
+            companyName: "Fabrikam Holding International Limited",
+            contactEmail: "endpoint-platform-team@fabrikam-holding.example",
+            website: "https://intranet.fabrikam-holding.example/endpoint",
+            department: "Workplace Engineering and Endpoint Platform",
+            metadata: { author: "Jane Doe", classification: "confidential" },
+            footer: {
+              enabled: true,
+              text: "Fabrikam Workplace Engineering",
+              confidentialityNotice: notice,
+            },
+          },
+        }),
+      );
+      const [cover = "", ...rest] = pages;
+      const coverRuns = runs(cover);
+      const noticeRuns = coverRuns.filter(
+        (run) => run.text.length >= 8 && notice.includes(run.text),
+      );
+      if (noticeRuns.length) {
+        // Printed on the cover: whole, and below every other cover text.
+        expect(noticeRuns.map((run) => run.text).join(" ")).toBe(notice);
+        const noticeTop =
+          Math.max(...noticeRuns.map((run) => run.y)) + 6.5 * 0.7;
+        for (const run of coverRuns)
+          if (!noticeRuns.includes(run) && run.y > FOOTER_RULE)
+            expect(run.y, run.text).toBeGreaterThan(noticeTop);
+      }
+      // Every content page prints the whole notice.
+      for (const page of rest) {
+        const lines = runs(page).filter(
+          (run) => run.text.length >= 8 && notice.includes(run.text),
+        );
+        expect(lines.map((run) => run.text).join(" ")).toBe(notice);
+      }
+    }
+  });
+
   it("states the configurations not modified in 90 days or more", async () => {
     const data = contoso();
     const { staleConfigs } = analyzeConfigurations(data, RENDER_DATE);

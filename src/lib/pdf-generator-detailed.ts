@@ -36,6 +36,7 @@ import {
   drawCoverBackground,
   drawCoverFooter,
   drawCoverHeadline,
+  documentControlGridHeight,
   drawCoverMasthead,
   drawCoverTenantBlock,
   drawDocumentControlGrid,
@@ -694,6 +695,7 @@ export async function generateDetailedPDF(
   const coverLogo = logoPosition === "cover" ? logoImage : null;
   drawCoverMasthead(doc, theme, frame, {
     productName: PRODUCT_NAME,
+    keepLogoRatio: true,
     ...(coverLogo
       ? {
           logo: {
@@ -878,34 +880,48 @@ export async function generateDetailedPDF(
     );
   }
 
+  const controlCells = [
+    {
+      label: "Organization",
+      value:
+        [branding?.companyName, branding?.department]
+          .filter(Boolean)
+          .join(" / ") || undefined,
+    },
+    {
+      label: "Prepared by",
+      value: branding?.metadata?.author || branding?.coverPage?.author,
+    },
+    { label: "Contact", value: branding?.contactEmail },
+    { label: "Website", value: branding?.website },
+    { label: "Tenant", value: data.tenantLabel },
+    { label: "Version", value: version },
+    { label: "Classification", value: classificationLabel },
+  ];
+  // The grid moves up to stay clear of a long confidentiality notice. When
+  // even that would reach the glance or the tenant block, the cover leaves
+  // the notice out; every other page still prints it in full.
+  const controlDefaultTop = showAnalytics ? 224 : 144;
+  const controlFloor = showAnalytics ? 226 : 144;
+  const controlHeight = documentControlGridHeight(doc, frame, controlCells);
+  const noticeTop = footerLayout.noticeLines.length
+    ? footerLayout.contentBottom
+    : frame.pageHeight;
+  const controlTop = Math.min(controlDefaultTop, noticeTop - 2 - controlHeight);
+  const coverNotice =
+    footerLayout.noticeLines.length > 0 &&
+    controlTop >= Math.min(controlFloor, controlDefaultTop);
   drawDocumentControlGrid(
     doc,
     theme,
     frame,
-    showAnalytics ? 224 : 144,
+    coverNotice ? controlTop : controlDefaultTop,
     "Document control",
-    [
-      {
-        label: "Organization",
-        value:
-          [branding?.companyName, branding?.department]
-            .filter(Boolean)
-            .join(" / ") || undefined,
-      },
-      {
-        label: "Prepared by",
-        value: branding?.metadata?.author || branding?.coverPage?.author,
-      },
-      { label: "Contact", value: branding?.contactEmail },
-      { label: "Website", value: branding?.website },
-      { label: "Tenant", value: data.tenantLabel },
-      { label: "Version", value: version },
-      { label: "Classification", value: classificationLabel },
-    ],
+    controlCells,
   );
   drawCoverFooter(doc, frame, DOCUMENT_PRODUCT_LINE, DOCUMENT_SOURCE_NOTE);
   // The confidentiality notice shows on the cover too, as in Word.
-  drawFooterNotice(doc, frame, footerLayout);
+  if (coverNotice) drawFooterNotice(doc, frame, footerLayout);
 
   // === TABLE OF CONTENTS ===
   // Check if ToC is enabled (default to true if not specified)

@@ -515,6 +515,45 @@ describe("Word design helpers", () => {
     const long = coverTitle(`${"Very long configuration name ".repeat(8)}end`);
     expect(long.sizeHp).toBe(48);
     expect(long.text.endsWith("...")).toBe(true);
-    expect(long.text.length).toBeLessThanOrEqual(96);
+    expect(long.lines).toBe(3);
+  });
+
+  it("keeps a title of wide letters within three lines of the band", () => {
+    // 96 capital W wrapped to five lines in LibreOffice before.
+    const wide = coverTitle("W".repeat(96));
+    expect(wide.lines).toBeLessThanOrEqual(3);
+    expect(wide.text.endsWith("...")).toBe(true);
+    expect(wide.text.length).toBeLessThan(96);
+    // A short title of wide letters no longer claims one line at 36 pt.
+    expect(coverTitle("W".repeat(20)).sizeHp).toBeLessThan(72);
+  });
+
+  it("leaves a notice too long for the cover off it and prints it on content pages", async () => {
+    const notice =
+      "Confidential configuration record for named recipients only. "
+        .repeat(140)
+        .trim();
+    const { buffer } = await generateDetailedDOCX({
+      ...structuredClone(CONTOSO_TENANT),
+      branding: {
+        companyName: "Fabrikam",
+        footer: {
+          enabled: true,
+          text: "Fabrikam",
+          confidentialityNotice: notice,
+        },
+      },
+    } as never);
+    const zip = await JSZip.loadAsync(buffer);
+    const parts = await Promise.all(
+      Object.keys(zip.files)
+        .filter((name) => /^word\/footer\d*\.xml$/.test(name))
+        .map(async (name) =>
+          (await zip.file(name)!.async("string")).includes("named recipients"),
+        ),
+    );
+    // The cover footer leaves it out, the content footer keeps it.
+    expect(parts.filter(Boolean).length).toBe(1);
+    expect(parts.length).toBe(2);
   });
 });

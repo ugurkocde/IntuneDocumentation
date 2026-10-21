@@ -318,19 +318,85 @@ export interface CoverContent {
   control: ReadonlyArray<{ label: string; value: string | undefined }>;
 }
 
+// Approximate glyph widths in em for a proportional sans font, generous for
+// wide letters, so the estimate never wraps fewer lines than Word does.
+function glyphEm(char: string): number {
+  if ("WM@%".includes(char)) return 1;
+  if ("mw".includes(char)) return 0.9;
+  if (/[A-Z0-9#&]/.test(char)) return 0.75;
+  if (" .,:;'|!()[]{}iljtfr-".includes(char)) return 0.34;
+  return 0.6;
+}
+
+const emWidth = (text: string) =>
+  [...text].reduce((sum, char) => sum + glyphEm(char), 0);
+
+/** Lines the text wraps to at this capacity in em, breaking long words. */
+function wrapEm(text: string, capacity: number): string[] {
+  const lines: string[] = [];
+  let current = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (emWidth(candidate) <= capacity) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = "";
+    let rest = word;
+    while (emWidth(rest) > capacity) {
+      let cut = 1;
+      while (cut < rest.length && emWidth(rest.slice(0, cut + 1)) <= capacity)
+        cut += 1;
+      lines.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    current = rest;
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 /**
- * Title size in half points, text clamped to three lines and a generous line
- * count estimate: one line holds about 34 characters at 24 pt in Courier.
+ * Title size in half points and text that wraps to at most three lines in
+ * the cover band, measured with generous glyph widths so a title of wide
+ * letters cannot push the tenant block out of the band.
  */
 export function coverTitle(title: string): {
   text: string;
   sizeHp: number;
   lines: number;
 } {
-  if (title.length <= 20) return { text: title, sizeHp: 72, lines: 1 };
-  if (title.length <= 28) return { text: title, sizeHp: 56, lines: 1 };
-  const text = clampText(title, 96);
-  return { text, sizeHp: 48, lines: Math.min(3, Math.ceil(text.length / 34)) };
+  // Usable band width in points, with a safety margin for wider fonts.
+  const capacity = (sizeHp: number) =>
+    ((COVER_INNER / 20) * 0.9) / (sizeHp / 2);
+  for (const sizeHp of [72, 56])
+    if (wrapEm(title, capacity(sizeHp)).length === 1)
+      return { text: title, sizeHp, lines: 1 };
+  const sizeHp = 48;
+  const lines = wrapEm(title, capacity(sizeHp));
+  if (lines.length <= 3) return { text: title, sizeHp, lines: lines.length };
+  let last = lines[2]!;
+  while (last && emWidth(`${last}...`) > capacity(sizeHp))
+    last = last.slice(0, -1);
+  return {
+    text: `${lines.slice(0, 2).join(" ")} ${last.trimEnd()}...`,
+    sizeHp,
+    lines: 3,
+  };
+}
+
+/**
+ * Whether the cover's lower row can make room for the notice. When it
+ * cannot, the cover leaves the notice out; every other page prints it.
+ */
+export function coverNoticeFits(notice: string | undefined): boolean {
+  if (!notice) return true;
+  return (
+    COVER_LOWER_HEIGHT -
+      Math.ceil(notice.length / COVER_NOTICE_LINE_CHARS) * COVER_NOTICE_LINE >=
+    3000
+  );
 }
 
 // Cover band positions in twips from the top of the page, as in the report:

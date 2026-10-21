@@ -52,6 +52,7 @@ import {
   COVER_PAGE_MARGINS,
   contentsRow,
   coverFooter,
+  coverNoticeFits,
   coverLogoSize,
   coverTable,
   coverTitle,
@@ -201,6 +202,10 @@ export async function generateDetailedDOCX(
   const confidentialityNotice = branding?.footer?.enabled
     ? branding.footer.confidentialityNotice || undefined
     : undefined;
+  // A notice too long for the cover stays off it; content pages print it.
+  const coverNotice = coverNoticeFits(confidentialityNotice)
+    ? confidentialityNotice
+    : undefined;
   const classification = branding?.metadata?.classification;
   const classificationLabel = classification
     ? classification.charAt(0).toUpperCase() + classification.slice(1)
@@ -244,7 +249,7 @@ export async function generateDetailedDOCX(
         theme,
         DOCUMENT_PRODUCT_LINE,
         DOCUMENT_SOURCE_NOTE,
-        confidentialityNotice,
+        coverNotice,
       ),
     },
     children: [
@@ -268,7 +273,7 @@ export async function generateDetailedDOCX(
         logo: coverLogo,
         companyName: companyName || undefined,
         note: branding?.coverPage?.customText,
-        footerNotice: confidentialityNotice,
+        footerNotice: coverNotice,
         controlHeading: "Document control",
         control: [
           {

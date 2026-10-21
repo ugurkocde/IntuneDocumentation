@@ -167,8 +167,9 @@ type ChangeSide = Pick<SnapshotProjection, "collectedAt" | "partial" | "tenantId
 // Counts and control status changes of one framework for the management
 // panel and report. No policy names or values, like the rest of the report.
 // Entra identity settings are tenant-wide, so they are counted on their own.
-// A control moving to or from notAssessed is a collection gap, not evidence
-// gained or lost, so it is counted apart.
+// A control moving to or from notAssessed, or whose mapped capabilities
+// missed data in either collection, is a collection gap, not evidence gained
+// or lost, so it is counted apart.
 export function managementChanges(
   from: ChangeSide,
   to: ChangeSide,
@@ -179,13 +180,28 @@ export function managementChanges(
   const framework = compared.assessments.frameworks.find(
     (entry) => entry.id === frameworkId,
   );
-  const controls = (framework?.changes ?? []).map((change) => ({
+  const changes = framework?.changes ?? [];
+  const controls = changes.map((change) => ({
     id: change.controlId,
     before: change.before,
     after: change.after,
   }));
-  const assessed = controls.filter(
-    (control) => ASSESSABLE.has(control.before) && ASSESSABLE.has(control.after),
+  // A side is a verdict on complete data, or a gap: not assessed, or a
+  // verdict on a collection that missed data a mapped capability reads.
+  const side = (status: ControlStatus | null, missing: boolean) =>
+    ASSESSABLE.has(status) && !missing
+      ? "assessed"
+      : status === "notAssessed" || ASSESSABLE.has(status)
+        ? "gap"
+        : "other";
+  const sides = changes.map((change) => ({
+    before: change.before,
+    after: change.after,
+    from: side(change.before, change.incomplete.before),
+    to: side(change.after, change.incomplete.after),
+  }));
+  const assessed = sides.filter(
+    (control) => control.from === "assessed" && control.to === "assessed",
   );
   return {
     since: from.collectedAt,
@@ -213,11 +229,11 @@ export function managementChanges(
       (control) => HAS_EVIDENCE.has(control.before) && !HAS_EVIDENCE.has(control.after),
     ).length,
     collectionGaps: {
-      opened: controls.filter(
-        (control) => ASSESSABLE.has(control.before) && control.after === "notAssessed",
+      opened: sides.filter(
+        (control) => control.from !== "other" && control.to === "gap",
       ).length,
-      closed: controls.filter(
-        (control) => control.before === "notAssessed" && ASSESSABLE.has(control.after),
+      closed: sides.filter(
+        (control) => control.from === "gap" && control.to === "assessed",
       ).length,
     },
     rulesetChanged: compared.assessments.rulesetChanged,

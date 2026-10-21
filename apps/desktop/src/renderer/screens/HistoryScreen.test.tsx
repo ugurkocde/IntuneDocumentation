@@ -184,6 +184,7 @@ function view(request: HistoryDiffRequest, overrides: Partial<HistoryDiffView> =
                 before: "evidenceFound",
                 after: "noEvidence",
                 mappingChanged: false,
+                incomplete: { before: false, after: false },
                 causes: [
                   {
                     capabilityId: "windows-disk-encryption",

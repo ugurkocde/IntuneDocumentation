@@ -66,6 +66,7 @@ describe("historyDiffView", () => {
     after: "evidenceFound" as const,
     causes: [],
     mappingChanged: false,
+    incomplete: { before: false, after: false },
   });
   const compared: ComparedSnapshots = {
     snapshots: {
@@ -150,13 +151,19 @@ describe("previousSnapshot", () => {
 });
 
 describe("managementChanges", () => {
-  const change = (controlId: string, before: string | null, after: string | null) => ({
+  const change = (
+    controlId: string,
+    before: string | null,
+    after: string | null,
+    incomplete = { before: false, after: false },
+  ) => ({
     controlId,
     title: controlId,
     before: before as never,
     after: after as never,
     causes: [],
     mappingChanged: false,
+    incomplete,
   });
   const compared: ComparedSnapshots = {
     snapshots: {
@@ -249,6 +256,34 @@ describe("managementChanges", () => {
       "missing",
     );
     expect(result).toMatchObject({ controls: [], improved: 0, regressed: 0, partial: false });
+  });
+
+  it("counts a status move on an incomplete collection as a collection gap", () => {
+    const one = (changes: ReturnType<typeof change>[]): ComparedSnapshots => ({
+      ...compared,
+      assessments: { ...compared.assessments, frameworks: [{ id: "nist", name: "NIST", changes }] },
+    });
+    const side = (collectedAt: string) => ({ collectedAt, partial: false });
+    const run = (item: ReturnType<typeof change>) =>
+      managementChanges(side("2026-10-10T10:00:00Z"), side("2026-10-18T10:00:00Z"), one([item]), "nist");
+    // The disabling BitLocker policy failed with HTTP 403: the conflict is hidden.
+    expect(
+      run(change("SC-28", "conflictingEvidence", "partialEvidence", { before: false, after: true })),
+    ).toMatchObject({ improved: 0, regressed: 0, collectionGaps: { opened: 1, closed: 0 } });
+    // Read again: the conflict returns without a tenant change.
+    expect(
+      run(change("SC-28", "partialEvidence", "conflictingEvidence", { before: true, after: false })),
+    ).toMatchObject({ improved: 0, regressed: 0, collectionGaps: { opened: 0, closed: 1 } });
+    // Both collections complete: a real improvement.
+    expect(run(change("SC-28", "conflictingEvidence", "partialEvidence"))).toMatchObject({
+      improved: 1,
+      regressed: 0,
+      collectionGaps: { opened: 0, closed: 0 },
+    });
+    // Complete before, nothing comparable after.
+    expect(
+      run(change("SC-28", "evidenceFound", "notAssessed", { before: false, after: true })),
+    ).toMatchObject({ improved: 0, regressed: 0, collectionGaps: { opened: 1, closed: 0 } });
   });
 
   it("counts moves to and from not assessed as collection gaps, not evidence lost or gained", () => {

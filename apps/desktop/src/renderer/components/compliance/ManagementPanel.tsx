@@ -242,7 +242,7 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
   const measures = (count: number) => `${count.toLocaleString()} ${count === 1 ? "measure" : "measures"}`;
   // Moves to or from Not assessed are collection gaps, not evidence changes.
   const gaps = `Not counted as gained or lost: ${[
-    collectionGaps.opened > 0 && `${measures(collectionGaps.opened)} could not be assessed this time`,
+    collectionGaps.opened > 0 && `${measures(collectionGaps.opened)} could not be fully assessed this time`,
     collectionGaps.closed > 0 && `${measures(collectionGaps.closed)} could be assessed again`,
   ]
     .filter(Boolean)

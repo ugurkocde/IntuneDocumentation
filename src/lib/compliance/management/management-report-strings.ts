@@ -425,7 +425,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyCollectionGaps: (opened, closed) =>
       `Not counted as gained or lost evidence: ${[
         opened > 0
-          ? `${plural(opened, "measure", "measures")} could not be assessed this time`
+          ? `${plural(opened, "measure", "measures")} could not be fully assessed this time`
           : "",
         closed > 0
           ? `${plural(closed, "measure", "measures")} could be assessed again`
@@ -716,7 +716,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyCollectionGaps: (opened, closed) =>
       `Nicht als hinzugewonnene oder verlorene Nachweise gezählt: ${[
         opened > 0
-          ? `${plural(opened, "Maßnahme konnte", "Maßnahmen konnten")} diesmal nicht bewertet werden`
+          ? `${plural(opened, "Maßnahme konnte", "Maßnahmen konnten")} diesmal nicht vollständig bewertet werden`
           : "",
         closed > 0
           ? `${plural(closed, "Maßnahme konnte", "Maßnahmen konnten")} wieder bewertet werden`

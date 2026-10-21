@@ -268,7 +268,7 @@ describe("ManagementPanel changes since the previous collection", () => {
     const region = block();
     expect(within(region).getByText(/gained evidence/).textContent).toBe("0 measures gained evidence, 0 lost it.");
     expect(within(region).getByText(/Not counted as gained or lost/).textContent).toBe(
-      "Not counted as gained or lost: 1 measure could not be assessed this time and 2 measures could be assessed again, usually because data was missing from one of the two collections.",
+      "Not counted as gained or lost: 1 measure could not be fully assessed this time and 2 measures could be assessed again, usually because data was missing from one of the two collections.",
     );
   });
 

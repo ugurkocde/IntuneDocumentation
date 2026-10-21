@@ -528,6 +528,70 @@ describe("diffAssessments", () => {
     expect(change!.mappingChanged).toBe(false);
     const cause = change!.causes.find((entry) => entry.evidenceRemoved.length)!;
     expect(cause.before).not.toBe(cause.after);
+    // Both collections were complete, so the deletion is a real change.
+    expect(cause.notCompared).toBe(false);
+    expect(change!.incomplete).toEqual({ before: false, after: false });
+  });
+
+  it("does not read a policy that failed to load as evidence removed or added", () => {
+    const name = "WIN - Baseline - BitLocker";
+    const conflicting = (data: DetailedExportData) => {
+      const list = items(data, "settingsCatalog");
+      const enforcing = list.find((item) => item.name === name)!;
+      // A second assigned policy that turns device encryption off.
+      const disabling = JSON.parse(
+        JSON.stringify(enforcing)
+          .replaceAll(String(enforcing.id), "bitlocker-off")
+          .replaceAll(name, "WIN - BitLocker off")
+          .replaceAll("requiredeviceencryption_1", "requiredeviceencryption_0"),
+      ) as Item;
+      list.push(disabling);
+      return data;
+    };
+    const complete = conflicting(contoso());
+    const failed = conflicting(contoso());
+    const list = items(failed, "settingsCatalog");
+    list.splice(
+      list.findIndex((item) => item.id === "bitlocker-off"),
+      1,
+    );
+    // The disabling policy's settings returned HTTP 403 in this collection.
+    failed.fetchErrors = [
+      {
+        policyId: "bitlocker-off",
+        policyName: "WIN - BitLocker off",
+        policyType: "settingsCatalog",
+        familyKey: "settingsCatalog",
+        error: "Forbidden",
+        statusCode: 403,
+      },
+    ] as DetailedExportData["fetchErrors"];
+    for (const [from, to] of [
+      [complete, failed],
+      [failed, complete],
+    ] as const) {
+      const changes = diffAssessments(
+        snap(from).assessment,
+        snap(to).assessment,
+      ).frameworks.flatMap((framework) => framework.changes);
+      const encryption = changes.filter((change) =>
+        change.causes.some(
+          (cause) => cause.capabilityId === "windows-disk-encryption",
+        ),
+      );
+      expect(encryption.length).toBeGreaterThan(0);
+      for (const change of changes) {
+        expect(change.incomplete.before || change.incomplete.after).toBe(true);
+        for (const cause of change.causes) {
+          expect(cause.evidenceRemoved).toEqual([]);
+          expect(cause.evidenceAdded).toEqual([]);
+        }
+      }
+      const cause = encryption[0]!.causes.find(
+        (entry) => entry.capabilityId === "windows-disk-encryption",
+      )!;
+      expect(cause.notCompared).toBe(true);
+    }
   });
 
   it("flags a ruleset change and a changed control mapping", () => {
@@ -847,6 +911,7 @@ describe("readable names for control evidence", () => {
             notCompared: false,
           },
         ],
+        incomplete: { before: false, after: false },
       },
     ];
     const labelled = labelControlChanges(changes, definitionLabels(snap(withDefinitions())));

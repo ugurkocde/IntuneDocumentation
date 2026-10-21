@@ -642,6 +642,9 @@ export interface ControlStatusChange {
   causes: CapabilityChange[];
   // The capabilities mapped to the control differ, as after a ruleset update.
   mappingChanged: boolean;
+  // A mapped capability could not be fully assessed in the older or newer
+  // collection, so the status move is no evidence gained or lost.
+  incomplete: { before: boolean; after: boolean };
 }
 
 export interface FrameworkChanges {
@@ -708,6 +711,23 @@ const UNAVAILABLE: ReadonlySet<CapabilityStatus | null> = new Set<
   CapabilityStatus | null
 >(["collectionIncomplete", "assignmentUnknown"]);
 
+// The data to assess the capability was missing from this collection: an
+// unavailable status, or the unableToCheck check the engine adds under the
+// capability's own id when a source it reads was incomplete or not collected.
+// That check is also present when the evidence that was read still decides
+// the status, as when a failed policy hid a conflicting setting.
+function incomplete(capability: StoredCapability | undefined): boolean {
+  return (
+    !!capability &&
+    (UNAVAILABLE.has(capability.status) ||
+      capability.checks.some(
+        (check) =>
+          check.settingId === capability.id &&
+          check.assessmentStatus === "unableToCheck",
+      ))
+  );
+}
+
 function capabilityChange(
   id: string,
   a: StoredCapability | undefined,
@@ -760,9 +780,9 @@ function capabilityChange(
     !checksChanged.length
   )
     return null;
-  // Also when the status stayed unavailable: the evidence read on each side
-  // is incomplete, so its differences are not changes in the tenant.
-  const notCompared = UNAVAILABLE.has(before) || UNAVAILABLE.has(after);
+  // Evidence read from an incomplete collection on either side is not
+  // compared, so a collection gap never reads as a change in the tenant.
+  const notCompared = incomplete(a) || incomplete(b);
   return {
     capabilityId: id,
     name: (b ?? a)?.name ?? id,
@@ -844,6 +864,14 @@ export function diffAssessments(
             .map(causeOf)
             .filter((cause): cause is CapabilityChange => cause !== null),
           mappingChanged: fromIds !== toIds,
+          incomplete: {
+            before: (a?.capabilityIds ?? []).some((capability) =>
+              incomplete(fromCapabilities.get(capability)),
+            ),
+            after: (b?.capabilityIds ?? []).some((capability) =>
+              incomplete(toCapabilities.get(capability)),
+            ),
+          },
         });
       }
       return { id: framework.id, name: framework.name, changes };

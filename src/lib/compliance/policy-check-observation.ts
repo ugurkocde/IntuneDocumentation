@@ -72,17 +72,18 @@ export function policyCheckObservation(
     if (isNull("deadlineForQualityUpdatesInDays"))
       notConfigured =
         "No quality update deadline is configured in this update ring.";
-    else if (
+    // With a deadline set, a null grace period is the Windows default of 2
+    // days (Policy CSP Update ConfigureDeadlineGracePeriod), so it is read.
+    const grace =
       typeof fields.deadlineForQualityUpdatesInDays === "number" &&
       isNull("deadlineGracePeriodInDays")
-    )
-      notConfigured =
-        "No grace period after the quality update deadline is configured in this update ring.";
+        ? 2
+        : fields.deadlineGracePeriodInDays;
     complete =
       [
         fields.qualityUpdatesDeferralPeriodInDays,
         fields.deadlineForQualityUpdatesInDays,
-        fields.deadlineGracePeriodInDays,
+        grace,
       ].every(
         (value) =>
           typeof value === "number" && Number.isInteger(value) && value >= 0,
@@ -109,11 +110,12 @@ export function policyCheckObservation(
     if (fields.scan === "userDefined" || fields.day === "userDefined")
       notConfigured =
         "No scheduled scan is configured in this policy: the scan type or day is userDefined, the default with no intent.";
-    else if (isNull("defenderScheduledScanTime"))
-      notConfigured = "No scheduled scan time is configured in this policy.";
-    complete = Object.values(fields).every(
-      (value) => typeof value === "string",
-    );
+    // A null scan time is the Defender default of 2:00 AM (Policy CSP
+    // Defender ScheduleScanTime), so it is read.
+    complete =
+      typeof fields.scan === "string" &&
+      typeof fields.day === "string" &&
+      (typeof fields.time === "string" || isNull("defenderScheduledScanTime"));
   }
   return {
     complete: complete || notConfigured !== undefined,

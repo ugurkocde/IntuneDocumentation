@@ -712,18 +712,19 @@ const UNAVAILABLE: ReadonlySet<CapabilityStatus | null> = new Set<
 >(["collectionIncomplete", "assignmentUnknown"]);
 
 // The data to assess the capability was missing from this collection: an
-// unavailable status, or the unableToCheck check the engine adds under the
-// capability's own id when a source it reads was incomplete or not collected.
-// That check is also present when the evidence that was read still decides
-// the status, as when a failed policy hid a conflicting setting.
+// unavailable status, or an unableToCheck check. The engine adds one under
+// the capability's own id when a source it reads was incomplete or not
+// collected, and one per policy whose value could not be read, also when the
+// evidence that was read still decides the status. An unreadable value on an
+// unassigned policy never decides a status, so it does not count.
 function incomplete(capability: StoredCapability | undefined): boolean {
   return (
     !!capability &&
     (UNAVAILABLE.has(capability.status) ||
       capability.checks.some(
         (check) =>
-          check.settingId === capability.id &&
-          check.assessmentStatus === "unableToCheck",
+          check.assessmentStatus === "unableToCheck" &&
+          check.assignment !== "notAssigned",
       ))
   );
 }

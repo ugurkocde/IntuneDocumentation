@@ -598,6 +598,48 @@ function translateEvidenceNote(value: string, locale: Locale): string {
   return GERMAN_COMPLIANCE_NOTE_TRANSLATIONS[value] ?? value;
 }
 
+/**
+ * German for the plain check values and not configured reasons the engine
+ * writes in English (tenant method states, security defaults, Intune enum
+ * defaults and update ring deadlines). Other text passes through unchanged.
+ */
+export function translateCheckText(text: string): string {
+  const exact: Record<string, string> = {
+    On: "Ein",
+    Off: "Aus",
+    "No quality update deadline is configured in this update ring.":
+      "In diesem Updatering ist keine Frist für Qualitätsupdates konfiguriert.",
+    "No scheduled scan is configured in this policy: the scan type or day is userDefined, the default with no intent.":
+      "In dieser Richtlinie ist keine geplante Überprüfung konfiguriert: Art oder Tag der Überprüfung steht auf userDefined, dem Standard ohne Vorgabe.",
+    "Not configured in this policy: userDefined is the default with no intent, so the device or the user decides.":
+      "In dieser Richtlinie nicht konfiguriert: userDefined ist der Standard ohne Vorgabe, daher entscheidet das Gerät oder der Benutzer.",
+    "Not configured in this policy: notConfigured leaves the device default.":
+      "In dieser Richtlinie nicht konfiguriert: notConfigured belässt den Gerätestandard.",
+  };
+  if (exact[text]) return exact[text];
+  const method =
+    /^(Enabled for (\d+) targets?|Enabled, no users targeted|Enabled, include targets not readable|Disabled)(; (single-factor default mode|multifactor default mode|default mode not readable))?$/.exec(
+      text,
+    );
+  if (!method) return text;
+  const count = Number(method[2]);
+  const state = method[2]
+    ? `Aktiviert für ${count} ${count === 1 ? "Ziel" : "Ziele"}`
+    : {
+        "Enabled, no users targeted": "Aktiviert, keine Benutzer als Ziel",
+        "Enabled, include targets not readable": "Aktiviert, Ziele nicht lesbar",
+        Disabled: "Deaktiviert",
+      }[method[1]!];
+  const mode = method[4]
+    ? {
+        "single-factor default mode": "Standardmodus Einzelfaktor",
+        "multifactor default mode": "Standardmodus Mehrfaktor",
+        "default mode not readable": "Standardmodus nicht lesbar",
+      }[method[4]]
+    : undefined;
+  return mode ? `${state}; ${mode}` : state!;
+}
+
 function translateAssessmentLimitation(text: string): string {
   const sourceGap =
     /^(\w+): (not collected|collection incomplete)\. Refresh the policies to retry collection\. See collection coverage for the API error details\.$/.exec(
@@ -4446,7 +4488,10 @@ export async function generateComplianceReportPDF(
         const expectedLong = expectedText.length > longValue;
         const actualLabelled =
           check.actualValue === null ? null : labelledValue(check.actualValue);
-        const actualValue = actualLabelled?.label ?? null;
+        const actualValue =
+          actualLabelled && locale === "de"
+            ? translateCheckText(actualLabelled.label)
+            : (actualLabelled?.label ?? null);
         const actualMissing = actualValue === null;
         const actualLong = (actualValue?.length ?? 0) > longValue;
         // Labels lead; the raw option id stays visible, small and muted.
@@ -4521,7 +4566,7 @@ export async function generateComplianceReportPDF(
         const reasonLines = check.reason
           ? wrap(
               locale === "de"
-                ? check.reason.replaceAll(
+                ? translateCheckText(check.reason).replaceAll(
                     "Settings Catalog",
                     "Einstellungskatalog",
                   )

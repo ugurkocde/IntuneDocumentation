@@ -9,6 +9,10 @@ import {
 import { generateFixPack } from "../compliance/fix-pack";
 import { MANAGEMENT_REPORT_STRINGS } from "../compliance/management/management-report-strings";
 import type { CapabilityResult } from "../compliance/types";
+import { generateComplianceReportPDF, translateCheckText } from "../compliance/report-pdf";
+import { diffAssessments } from "../snapshots/diff";
+import { extractPdfStreamText } from "./helpers/pdf-text";
+import { compactAssessment, type StoredAssessment } from "../snapshots/projection";
 
 // Graph returns null for an unset deadline or scan time and the enum default
 // userDefined ("default value, no intent", Microsoft Learn) for an unset scan
@@ -89,16 +93,24 @@ describe("values Graph reports as not configured", () => {
     expect(result.status).toBe("noEvidence");
   });
 
-  it("reads a null grace period with a deadline as no grace period configured", () => {
-    const result = capability(
+  it("uses the Windows default grace period of 2 days when a deadline has none", () => {
+    // Policy CSP Update ConfigureDeadlineGracePeriod: default 2 days.
+    const within = capability(
       data([{ ...pilotRing, deadlineForQualityUpdatesInDays: 2 }]),
       "windows-quality-update-deadline",
     );
-    expect(policyChecks(result)[0]).toMatchObject({
+    expect(within.status).toBe("enforced");
+    expect(within.evidence[0]?.observedValue).toBe(
+      "Quality update deferral 0d + deadline 2d + grace 2d (Windows default, no grace period configured) = 4d; paused: false",
+    );
+    const beyond = capability(
+      data([{ ...pilotRing, deadlineForQualityUpdatesInDays: 13 }]),
+      "windows-quality-update-deadline",
+    );
+    expect(beyond.status).toBe("noEvidence");
+    expect(policyChecks(beyond)[0]).toMatchObject({
       assessmentStatus: "checked",
       result: "different",
-      reason:
-        "No grace period after the quality update deadline is configured in this update ring.",
     });
   });
 
@@ -119,7 +131,8 @@ describe("values Graph reports as not configured", () => {
     );
   });
 
-  it("reads a null scan time with a schedule as no scan time configured", () => {
+  it("uses the Defender default scan time when a schedule has none", () => {
+    // Policy CSP Defender ScheduleScanTime: default 120 minutes, 2:00 AM.
     const result = capability(
       data([
         {
@@ -130,11 +143,10 @@ describe("values Graph reports as not configured", () => {
       ]),
       "windows-periodic-antimalware-scan",
     );
-    expect(policyChecks(result)[0]).toMatchObject({
-      assessmentStatus: "checked",
-      result: "different",
-      reason: "No scheduled scan time is configured in this policy.",
-    });
+    expect(result.status).toBe("enforced");
+    expect(result.evidence[0]?.observedValue).toBe(
+      "quick; everyday; 02:00:00 (Defender default, no time configured)",
+    );
   });
 
   it("explains a userDefined diagnostic data level in plain words", () => {
@@ -242,5 +254,97 @@ describe("safeguard headline wording", () => {
       "Safeguard: a security outcome that Intune or Entra can set, through Conditional Access, the authentication methods policy or security defaults",
     );
     expect(guide).not.toContain("Intune or Entra Conditional Access can set");
+  });
+});
+
+describe("policies named for a safeguard left not configured", () => {
+  it("names the update ring and the restriction profile instead of No policy found", () => {
+    expect(
+      safeguardPolicies(
+        capability(data([pilotRing]), "windows-quality-update-deadline"),
+      ),
+    ).toEqual([{ name: "Pilot Ring", assigned: true }]);
+    expect(
+      safeguardPolicies(
+        capability(data([restrictions]), "windows-periodic-antimalware-scan"),
+      ),
+    ).toEqual([{ name: "DR", assigned: true }]);
+  });
+});
+
+describe("history for a value that could not be read", () => {
+  const configured = {
+    ...pilotRing,
+    deadlineForQualityUpdatesInDays: 2,
+    deadlineGracePeriodInDays: 0,
+  };
+  // Graph did not return the deadline in the second collection.
+  const unreadable: Partial<typeof configured> = { ...configured };
+  delete unreadable.deadlineForQualityUpdatesInDays;
+  const stored = (ring: Record<string, unknown>) =>
+    compactAssessment(assessCompliance(data([ring])));
+  const deadlineCauses = (from: StoredAssessment, to: StoredAssessment) =>
+    diffAssessments(from, to).frameworks.flatMap((framework) =>
+      framework.changes.flatMap((change) =>
+        change.causes
+          .filter((cause) => cause.capabilityId === "windows-quality-update-deadline")
+          .map((cause) => ({ change, cause })),
+      ),
+    );
+
+  it("never reads an unreadable deadline on an assigned ring as evidence removed or added", () => {
+    for (const [from, to, side] of [
+      [configured, unreadable, "after"],
+      [unreadable, configured, "before"],
+    ] as const) {
+      const found = deadlineCauses(stored(from), stored(to));
+      expect(found.length).toBeGreaterThan(0);
+      for (const { change, cause } of found) {
+        expect(cause).toMatchObject({
+          notCompared: true,
+          evidenceAdded: [],
+          evidenceRemoved: [],
+        });
+        expect(change.incomplete[side]).toBe(true);
+      }
+    }
+  });
+
+  it("still compares a ring that is not assigned", () => {
+    const off = (ring: Record<string, unknown>) => ({ ...ring, assignments: [] });
+    const assessment = stored(off(unreadable));
+    const check = assessment.capabilities
+      .find((item) => item.id === "windows-quality-update-deadline")!
+      .checks.find((item) => item.policyId === "ring-pilot")!;
+    expect(check).toMatchObject({
+      assessmentStatus: "unableToCheck",
+      assignment: "notAssigned",
+    });
+    for (const { cause } of deadlineCauses(stored(off(configured)), assessment))
+      expect(cause.notCompared).toBe(false);
+  });
+});
+
+describe("German report text for plain check values and not configured reasons", () => {
+  it("translates method states, security defaults and not configured reasons", () => {
+    expect(translateCheckText("Enabled for 1 target")).toBe("Aktiviert für 1 Ziel");
+    expect(translateCheckText("Enabled for 3 targets; single-factor default mode")).toBe(
+      "Aktiviert für 3 Ziele; Standardmodus Einzelfaktor",
+    );
+    expect(translateCheckText("Enabled, no users targeted")).toBe("Aktiviert, keine Benutzer als Ziel");
+    expect(translateCheckText("Disabled")).toBe("Deaktiviert");
+    expect(translateCheckText("Off")).toBe("Aus");
+    expect(translateCheckText("Other text")).toBe("Other text");
+  });
+
+  it("prints the update ring and scan reasons in German in a German report", async () => {
+    const text = extractPdfStreamText(
+      await generateComplianceReportPDF(data([pilotRing, restrictions]), {
+        frameworkId: "bsi-it-grundschutz",
+      }),
+    );
+    expect(text).toContain("In diesem Updatering ist keine Frist");
+    expect(text).not.toContain("No quality update deadline is configured");
+    expect(text).not.toContain("No scheduled scan is configured");
   });
 });

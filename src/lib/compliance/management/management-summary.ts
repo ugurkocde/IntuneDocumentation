@@ -238,8 +238,9 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
 
 /**
  * Distinct policies behind a safeguard, assigned ones first, then by name:
- * policies with evidence, the tenant-wide Entra policy that was read, and
- * policies whose value could not be read, so a read policy never shows as
+ * policies with evidence and every policy a check read, such as the
+ * tenant-wide Entra policy, a policy that leaves the setting not configured
+ * and one whose value could not be read, so a read policy never shows as
  * "No policy found".
  */
 export function safeguardPolicies(
@@ -253,15 +254,11 @@ export function safeguardPolicies(
   };
   for (const item of result.evidence)
     add(item.policyId, item.policyName, item.assignment.state === "assigned");
-  const tenantWide = result.capability.signals.some(
-    (signal) => signal.source === "tenantPolicy",
-  );
   for (const check of result.checks)
     if (
       check.policyId &&
       check.policyName &&
-      check.assessmentStatus !== "outsideScope" &&
-      (tenantWide || check.assessmentStatus === "unableToCheck")
+      check.assessmentStatus !== "outsideScope"
     )
       add(
         check.policyId,

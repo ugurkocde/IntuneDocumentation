@@ -53,14 +53,25 @@ export function evaluatePolicyCheck(
       ].includes(day)
     )
       return;
+    // Graph returns null when no scan time is set; Defender then runs the
+    // scheduled scan at its default time, 2:00 AM (Policy CSP Defender
+    // ScheduleScanTime, default 120 minutes past midnight).
+    const defaultTime =
+      "defenderScheduledScanTime" in config &&
+      config.defenderScheduledScanTime === null;
     if (
-      typeof config.defenderScheduledScanTime !== "string" ||
-      !/^\d{2}:\d{2}:\d{2}/.test(config.defenderScheduledScanTime)
+      !defaultTime &&
+      (typeof config.defenderScheduledScanTime !== "string" ||
+        !/^\d{2}:\d{2}:\d{2}/.test(config.defenderScheduledScanTime))
     )
       return;
     return {
       verdict: "enforced",
-      observed: `${scan}; ${day}; ${config.defenderScheduledScanTime}`,
+      observed: `${scan}; ${day}; ${
+        defaultTime
+          ? "02:00:00 (Defender default, no time configured)"
+          : config.defenderScheduledScanTime
+      }`,
     };
   }
   if (check === "qualityUpdateDeadline") {
@@ -68,8 +79,15 @@ export function evaluatePolicyCheck(
     const {
       qualityUpdatesDeferralPeriodInDays: deferral,
       deadlineForQualityUpdatesInDays: deadline,
-      deadlineGracePeriodInDays: grace,
     } = config;
+    // Graph returns null when no grace period is set; with a deadline set,
+    // Windows then uses its default grace period of 2 days (Policy CSP Update
+    // ConfigureDeadlineGracePeriod).
+    const defaultGrace =
+      typeof deadline === "number" &&
+      "deadlineGracePeriodInDays" in config &&
+      config.deadlineGracePeriodInDays === null;
+    const grace = defaultGrace ? 2 : config.deadlineGracePeriodInDays;
     if (
       ![deferral, deadline, grace].every(
         (value) =>
@@ -93,7 +111,9 @@ export function evaluatePolicyCheck(
     if (!paused && days > 14) return;
     return {
       verdict: paused ? "disabled" : "enforced",
-      observed: `Quality update deferral ${deferral}d + deadline ${deadline}d + grace ${grace}d = ${days}d; paused: ${paused}`,
+      observed: `Quality update deferral ${deferral}d + deadline ${deadline}d + grace ${grace}d${
+        defaultGrace ? " (Windows default, no grace period configured)" : ""
+      } = ${days}d; paused: ${paused}`,
     };
   }
   if (type !== "conditionalaccesspolicy") return;

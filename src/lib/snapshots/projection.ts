@@ -80,6 +80,9 @@ export interface StoredCheck {
   assessmentStatus: TechnicalCheck["assessmentStatus"];
   result: TechnicalCheck["result"];
   actualValue: string | null;
+  // Assignment state of the policy checked, when the check names one.
+  // Absent in snapshots saved before ruleset 2026.10.8.
+  assignment?: "assigned" | "notAssigned" | "unknown";
 }
 
 export interface StoredCapability {
@@ -985,6 +988,7 @@ export function compactAssessment(
         assessmentStatus: check.assessmentStatus,
         result: check.result,
         actualValue: storedActualValue(check),
+        ...(check.assignment ? { assignment: check.assignment.state } : {}),
       })),
     })),
     frameworks: assessment.frameworks.map((framework) => {

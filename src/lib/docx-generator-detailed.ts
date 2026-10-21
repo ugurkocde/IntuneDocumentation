@@ -38,7 +38,10 @@ import {
 } from "./configuration-parser";
 import type { BrandingOptions } from "~/types/branding";
 import { normalizeDocx } from "./docx-compatibility";
-import { REDACTED_VALUE } from "./intune-policy-registry";
+import {
+  ADDITIONAL_FAMILY_LABELS,
+  REDACTED_VALUE,
+} from "./intune-policy-registry";
 import { assessCompliance, compareControlIds } from "./compliance";
 import { withoutDesktopOnlyFrameworks } from "./compliance/framework-availability";
 import {
@@ -51,6 +54,7 @@ import {
   coverFooter,
   coverLogoSize,
   coverTable,
+  coverTitle,
   dataTable,
   eyebrowParagraph,
   glancePage,
@@ -63,37 +67,19 @@ import {
   wordTheme,
   WORD_PALETTE,
 } from "./docx-design";
-import { buildGlanceModel } from "./documentation-glance";
+import {
+  DOCUMENT_PRODUCT_LINE,
+  DOCUMENT_SOURCE_NOTE,
+  buildGlanceModel,
+  formatDocumentDate,
+  plural,
+  summaryNotes,
+} from "./documentation-glance";
+import { dateParts } from "./compliance/pdf-kit";
 
 // ---------------------------------------------------------------------------
 // Helper utilities
 // ---------------------------------------------------------------------------
-
-/** Format a date string (or now) into "30 Mar 2026 · 15:43". */
-function formatDocDate(dateStr?: string): string {
-  const d = dateStr ? new Date(dateStr) : new Date();
-  if (isNaN(d.getTime())) return "Unknown";
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  const day = String(d.getDate()).padStart(2, "0");
-  const mon = months[d.getMonth()] ?? "Jan";
-  const year = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${day} ${mon} ${year} · ${hh}:${mm}`;
-}
 
 /** Replace raw group IDs with resolved names inside an assignment text. */
 function enhanceAssignmentText(
@@ -109,15 +95,6 @@ function enhanceAssignmentText(
     });
   }
   return text;
-}
-
-/** Build a version string from the current date: "v2026.03.30". */
-function versionString(): string {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `v${yyyy}.${mm}.${dd}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +152,11 @@ export interface DetailedDocxOptions {
    * to keep every framework.
    */
   audience?: "desktop" | "web";
+  /**
+   * Fixed render time for the generated date, the version and the age of
+   * configurations, read in UTC as in the PDF export.
+   */
+  renderDate?: Date;
 }
 
 export async function generateDetailedDOCX(
@@ -184,6 +166,12 @@ export async function generateDetailedDOCX(
   const errors: PolicyExportError[] = [];
   let totalPolicies = 0;
   let successfulPolicies = 0;
+  const generatedAt = options.renderDate
+    ? new Date(options.renderDate.getTime())
+    : new Date();
+  // Fixed render dates read calendar fields in UTC, as in the PDF.
+  const fixedDate = options.renderDate !== undefined;
+  const formatDate = (value?: string) => formatDocumentDate(value, fixedDate);
 
   // Branding over the evidence report palette, font and sizes.
   const branding = data.branding;
@@ -232,15 +220,14 @@ export async function generateDetailedDOCX(
   }
 
   // Only a real collection time is shown; the export time is not one.
-  const collectedAt =
-    data.collectedAt && !isNaN(new Date(data.collectedAt).getTime())
-      ? formatDocDate(data.collectedAt)
-      : undefined;
+  const collectedAt = formatDate(data.collectedAt);
+  const { year, month, day } = dateParts(generatedAt, fixedDate);
+  const version = `v${year}.${month}.${day}`;
   const coverFacts: Array<[string, string]> = [
     ...(collectedAt
       ? [["Data collected", collectedAt] as [string, string]]
       : []),
-    ["Generated", formatDocDate()],
+    ["Generated", formatDocumentDate(generatedAt, fixedDate) ?? ""],
     ...(classificationLabel
       ? [["Classification", classificationLabel] as [string, string]]
       : []),
@@ -255,7 +242,8 @@ export async function generateDetailedDOCX(
     footers: {
       first: coverFooter(
         theme,
-        "Generated with Intune Documentation (intunedocumentation.com)",
+        DOCUMENT_PRODUCT_LINE,
+        DOCUMENT_SOURCE_NOTE,
         confidentialityNotice,
       ),
     },
@@ -265,15 +253,22 @@ export async function generateDetailedDOCX(
         eyebrow: "Intune Configuration Export",
         title: titleText,
         subtitle: scope?.subtitle || "Configuration Documentation",
+        // As in the PDF: a single configuration reads "Configuration
+        // Documentation" here, and a three line title leaves no room.
         description:
-          branding?.coverPage?.subtitle ||
-          "Comprehensive export of Intune policies, profiles, and assignments",
+          coverTitle(titleText).lines > 2
+            ? ""
+            : scope?.subtitle
+              ? "Configuration Documentation"
+              : branding?.coverPage?.subtitle ||
+                "Comprehensive export of Intune policies, profiles, and assignments",
         tenantEyebrow: "Tenant",
         tenant: data.tenantLabel,
         facts: coverFacts,
         logo: coverLogo,
         companyName: companyName || undefined,
         note: branding?.coverPage?.customText,
+        footerNotice: confidentialityNotice,
         controlHeading: "Document control",
         control: [
           {
@@ -282,12 +277,12 @@ export async function generateDetailedDOCX(
           },
           {
             label: "Prepared by",
-            value: branding?.coverPage?.author || branding?.metadata?.author,
+            value: branding?.metadata?.author || branding?.coverPage?.author,
           },
           { label: "Contact", value: branding?.contactEmail },
           { label: "Website", value: branding?.website },
           { label: "Tenant", value: data.tenantLabel },
-          { label: "Version", value: versionString() },
+          { label: "Version", value: version },
           { label: "Classification", value: classificationLabel },
         ],
       }),
@@ -331,7 +326,7 @@ export async function generateDetailedDOCX(
     theme,
     branding?.footer?.enabled && branding.footer.text
       ? branding.footer.text
-      : "Generated with Intune Documentation",
+      : DOCUMENT_PRODUCT_LINE,
     confidentialityNotice,
   );
 
@@ -363,8 +358,9 @@ export async function generateDetailedDOCX(
     chromeAttached = true;
   };
 
-  // Helper: numbered eyebrow and a Heading 1 title with its contents anchor
-  const heading1 = (text: string, group = "Configuration"): Paragraph[] => {
+  // Helper: numbered eyebrow with the family label, as in the PDF, and a
+  // Heading 1 title with its contents anchor
+  const heading1 = (text: string, group: string): Paragraph[] => {
     const anchor = `section_${contentsEntries.length + 1}`;
     contentsEntries.push({ title: text, anchor });
     return [
@@ -462,16 +458,18 @@ export async function generateDetailedDOCX(
   let analytics: ConfigurationAnalytics | undefined;
   if (!compactScope && branding?.documentSettings?.includeAnalytics !== false) {
     try {
-      analytics = analyzeConfigurations(data);
+      analytics = analyzeConfigurations(data, generatedAt);
     } catch (e) {
       console.error("Error analyzing configurations:", e);
     }
   }
 
+  const glance = analytics ? buildGlanceModel(data, analytics) : undefined;
+
   // ===== 2. AT A GLANCE =====
-  if (analytics) {
+  if (glance) {
     try {
-      pushContentSection(glancePage(theme, buildGlanceModel(data, analytics)));
+      pushContentSection(glancePage(theme, glance));
     } catch (e) {
       console.error("Error generating the at a glance page:", e);
     }
@@ -504,22 +502,17 @@ export async function generateDetailedDOCX(
   }
 
   // ===== 4. EXECUTIVE SUMMARY =====
-  if (analytics) {
+  if (analytics && glance) {
     try {
       const summaryChildren: (Paragraph | Table)[] = [];
 
-      summaryChildren.push(...heading1("Executive Summary", "Overview"));
+      summaryChildren.push(...heading1("Executive Summary", "Tenant Overview"));
       summaryChildren.push(spacer());
 
       // Key metrics table
       summaryChildren.push(
         createSettingsTable(
-          [
-            "Total Configurations",
-            "Assigned Policies",
-            "Unassigned",
-            "Unknown",
-          ],
+          ["Total configurations", "Assigned", "Not assigned", "Unknown"],
           [
             [
               String(analytics.totalConfigs),
@@ -533,13 +526,8 @@ export async function generateDetailedDOCX(
       );
       summaryChildren.push(spacer());
 
-      if (analytics.assignmentNotApplicableConfigs)
-        summaryChildren.push(
-          bodyText(
-            `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from assignment coverage.`,
-          ),
-        );
-      // Assigned share over the configurations that take assignments.
+      // Assigned share over the configurations that take assignments, n/a
+      // when no assignment is known, as on the glance page.
       summaryChildren.push(
         new Paragraph({
           children: [
@@ -551,9 +539,11 @@ export async function generateDetailedDOCX(
             }),
             new TextRun({
               text:
-                analytics.assignmentApplicableConfigs > 0
-                  ? `${Math.round((analytics.assignedConfigs / analytics.assignmentApplicableConfigs) * 100)}% (${analytics.assignedConfigs} of ${analytics.assignmentApplicableConfigs} ${analytics.assignmentApplicableConfigs === 1 ? "configuration that takes" : "configurations that take"} assignments)`
-                  : "n/a (no configuration takes assignments)",
+                glance.assignedShare !== null
+                  ? `${Math.round(glance.assignedShare * 100)}% (${glance.assigned} of ${plural(glance.assignmentApplicable, "configuration that takes", "configurations that take")} assignments)`
+                  : glance.assignmentApplicable === 0
+                    ? "n/a (no configuration takes assignments)"
+                    : `n/a (the assignments of ${plural(glance.assignmentApplicable, "configuration", "configurations")} could not be read)`,
               font: fontName,
               size: bodySizeHp,
             }),
@@ -564,12 +554,8 @@ export async function generateDetailedDOCX(
       summaryChildren.push(
         metaText("Unknown assignments are not counted as assigned."),
       );
-      if (analytics.staleConfigs > 0)
-        summaryChildren.push(
-          bodyText(
-            `Not modified in 90 days or more: ${analytics.staleConfigs} configuration(s).`,
-          ),
-        );
+      for (const note of summaryNotes(analytics))
+        summaryChildren.push(bodyText(note));
       summaryChildren.push(spacer());
 
       // Configuration inventory by type
@@ -581,9 +567,9 @@ export async function generateDetailedDOCX(
             inventoryRows.push([
               label,
               String(total),
-              notApplicable === total ? "N/A" : String(assigned),
-              notApplicable === total ? "N/A" : String(unassigned),
-              notApplicable === total ? "N/A" : String(unknown),
+              notApplicable === total ? "n/a" : String(assigned),
+              notApplicable === total ? "n/a" : String(unassigned),
+              notApplicable === total ? "n/a" : String(unknown),
             ]);
           }
         },
@@ -592,7 +578,7 @@ export async function generateDetailedDOCX(
       if (inventoryRows.length > 0) {
         summaryChildren.push(
           createSettingsTable(
-            ["Policy Type", "Total", "Assigned", "Unassigned", "Unknown"],
+            ["Policy type", "Total", "Assigned", "Not assigned", "Unknown"],
             inventoryRows,
             branding,
           ),
@@ -778,16 +764,10 @@ export async function generateDetailedDOCX(
     const parts: Paragraph[] = [];
 
     // Created / Modified dates
-    if (policy.createdDateTime) {
-      parts.push(metaText(`Created: ${formatDocDate(policy.createdDateTime)}`));
-    }
-    if (policy.lastModifiedDateTime) {
-      parts.push(
-        metaText(
-          `Last Modified: ${formatDocDate(policy.lastModifiedDateTime)}`,
-        ),
-      );
-    }
+    const created = formatDate(policy.createdDateTime);
+    if (created) parts.push(metaText(`Created: ${created}`));
+    const modified = formatDate(policy.lastModifiedDateTime);
+    if (modified) parts.push(metaText(`Last Modified: ${modified}`));
 
     // Assignments
     const rawAssignment = parseAssignments(
@@ -839,7 +819,9 @@ export async function generateDetailedDOCX(
   // ===== 4. SETTINGS CATALOG =====
   if (data.settingsCatalog?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Settings Catalog Policies"));
+    sectionChildren.push(
+      ...heading1("Settings Catalog Policies", "Device configuration"),
+    );
 
     for (const policy of data.settingsCatalog) {
       totalPolicies++;
@@ -900,7 +882,9 @@ export async function generateDetailedDOCX(
   // ===== 5. DEVICE CONFIGURATIONS =====
   if (data.deviceConfigurations?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Device Configurations"));
+    sectionChildren.push(
+      ...heading1("Device Configurations", "Device configuration"),
+    );
 
     for (const config of data.deviceConfigurations) {
       totalPolicies++;
@@ -941,7 +925,9 @@ export async function generateDetailedDOCX(
   // ===== 6. ADMINISTRATIVE TEMPLATES =====
   if (data.administrativeTemplates?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Administrative Templates"));
+    sectionChildren.push(
+      ...heading1("Administrative Templates", "Device configuration"),
+    );
 
     for (const template of data.administrativeTemplates) {
       totalPolicies++;
@@ -994,7 +980,9 @@ export async function generateDetailedDOCX(
   // ===== 7. COMPLIANCE POLICIES =====
   if (data.compliancePolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Compliance Policies"));
+    sectionChildren.push(
+      ...heading1("Compliance Policies", "Device compliance"),
+    );
 
     for (const policy of data.compliancePolicies) {
       totalPolicies++;
@@ -1036,7 +1024,9 @@ export async function generateDetailedDOCX(
   // ===== 8. APP PROTECTION POLICIES =====
   if (data.appProtectionPolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("App Protection Policies"));
+    sectionChildren.push(
+      ...heading1("App Protection Policies", "App management"),
+    );
 
     for (const policy of data.appProtectionPolicies) {
       totalPolicies++;
@@ -1192,7 +1182,9 @@ export async function generateDetailedDOCX(
   // ===== 9. SECURITY BASELINES =====
   if (data.securityBaselines?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Security Baselines"));
+    sectionChildren.push(
+      ...heading1("Security Baselines", "Endpoint security"),
+    );
 
     for (const baseline of data.securityBaselines) {
       totalPolicies++;
@@ -1243,7 +1235,7 @@ export async function generateDetailedDOCX(
     (data.scripts?.windows?.length ?? 0) + (data.scripts?.macOS?.length ?? 0);
   if (scriptsTotal > 0) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Scripts"));
+    sectionChildren.push(...heading1("Scripts", "Scripts"));
 
     // Windows scripts
     if (data.scripts?.windows?.length) {
@@ -1428,7 +1420,9 @@ export async function generateDetailedDOCX(
   // ===== 11. APP CONFIGURATION POLICIES =====
   if (data.appConfigurations?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("App Configuration Policies"));
+    sectionChildren.push(
+      ...heading1("App Configuration Policies", "App management"),
+    );
 
     for (const config of data.appConfigurations) {
       totalPolicies++;
@@ -1573,7 +1567,7 @@ export async function generateDetailedDOCX(
   // ===== 12. WINDOWS UPDATE POLICIES =====
   if (data.windowsUpdatePolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Windows Update Policies"));
+    sectionChildren.push(...heading1("Windows Update Policies", "Updates"));
 
     for (const policy of data.windowsUpdatePolicies) {
       totalPolicies++;
@@ -1691,7 +1685,9 @@ export async function generateDetailedDOCX(
   // ===== 13. ENROLLMENT CONFIGURATIONS =====
   if (data.enrollmentConfigurations?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Enrollment Configurations"));
+    sectionChildren.push(
+      ...heading1("Enrollment Configurations", "Enrollment"),
+    );
 
     for (const config of data.enrollmentConfigurations) {
       totalPolicies++;
@@ -1723,32 +1719,28 @@ export async function generateDetailedDOCX(
         const platformRestrictions = config.platformRestrictions;
         if (platformRestrictions) {
           const platforms = [
-            "iosRestriction",
-            "androidRestriction",
-            "androidForWorkRestriction",
-            "windowsRestriction",
-            "macOSRestriction",
-            "macRestriction",
+            ["iosRestriction", "iOS"],
+            ["androidRestriction", "Android"],
+            ["androidForWorkRestriction", "Android for Work"],
+            ["windowsRestriction", "Windows"],
+            ["macOSRestriction", "macOS"],
+            ["macRestriction", "Mac"],
           ] as const;
 
-          for (const platformKey of platforms) {
+          for (const [platformKey, platformLabel] of platforms) {
             const restriction = platformRestrictions[platformKey];
             if (!restriction) continue;
-            const platformLabel = platformKey
-              .replace("Restriction", "")
-              .replace(/([A-Z])/g, " $1")
-              .trim();
-            addIf(`${platformLabel} - Blocked`, restriction.platformBlocked);
+            addIf(`${platformLabel}: Blocked`, restriction.platformBlocked);
             addIf(
-              `${platformLabel} - Personal Devices Blocked`,
+              `${platformLabel}: Personal Devices Blocked`,
               restriction.personalDeviceEnrollmentBlocked,
             );
             addIf(
-              `${platformLabel} - Min OS Version`,
+              `${platformLabel}: Min OS Version`,
               restriction.osMinimumVersion,
             );
             addIf(
-              `${platformLabel} - Max OS Version`,
+              `${platformLabel}: Max OS Version`,
               restriction.osMaximumVersion,
             );
           }
@@ -1794,7 +1786,9 @@ export async function generateDetailedDOCX(
   // ===== 14. CONDITIONAL ACCESS POLICIES =====
   if (data.conditionalAccessPolicies?.length) {
     const sectionChildren: (Paragraph | Table)[] = [];
-    sectionChildren.push(...heading1("Conditional Access Policies"));
+    sectionChildren.push(
+      ...heading1("Conditional Access Policies", "Identity and access"),
+    );
 
     for (const policy of data.conditionalAccessPolicies) {
       totalPolicies++;
@@ -1826,18 +1820,11 @@ export async function generateDetailedDOCX(
           }),
         );
 
-        if (policy.createdDateTime) {
-          sectionChildren.push(
-            metaText(`Created: ${formatDocDate(policy.createdDateTime)}`),
-          );
-        }
-        if (policy.modifiedDateTime) {
-          sectionChildren.push(
-            metaText(
-              `Last Modified: ${formatDocDate(policy.modifiedDateTime)}`,
-            ),
-          );
-        }
+        const created = formatDate(policy.createdDateTime);
+        if (created) sectionChildren.push(metaText(`Created: ${created}`));
+        const modified = formatDate(policy.modifiedDateTime);
+        if (modified)
+          sectionChildren.push(metaText(`Last Modified: ${modified}`));
 
         if (policy.description) {
           sectionChildren.push(bodyText(policy.description));
@@ -1878,7 +1865,12 @@ export async function generateDetailedDOCX(
   );
   for (const sourceSection of additionalSections) {
     const sectionChildren: (Paragraph | Table)[] = [
-      ...heading1(sourceSection.label, "Additional configuration"),
+      ...heading1(
+        sourceSection.label,
+        ADDITIONAL_FAMILY_LABELS[
+          sourceSection.familyKey as keyof typeof ADDITIONAL_FAMILY_LABELS
+        ] ?? "Additional configuration",
+      ),
     ];
     if (sourceSection.endpoint) {
       sectionChildren.push(

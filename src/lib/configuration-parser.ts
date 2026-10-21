@@ -628,7 +628,7 @@ function parseSecurityBaselineSettingName(
   if (!definitionId) return "Unknown Setting";
 
   // Example: "device_vendor_msft_defender_configuration_enablenetworkprotection"
-  // Should become: "Defender Configuration - Enable Network Protection"
+  // Should become: "Defender Configuration › Enable Network Protection"
 
   const parts = definitionId.split("_");
 
@@ -654,7 +654,7 @@ function parseSecurityBaselineSettingName(
     const formattedCategory = formatKeyName(category);
     const formattedSetting = formatKeyName(settingName);
 
-    return `${formattedCategory} - ${formattedSetting}`;
+    return `${formattedCategory} › ${formattedSetting}`;
   }
 
   // Fallback: just format the whole thing

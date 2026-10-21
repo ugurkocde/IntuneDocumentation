@@ -11,8 +11,9 @@ If you have not collected your configuration yet, start with [Get started with t
 
 Every export is a readable report, not a data dump. It includes:
 
-- **A cover page** with your organization, the author and the generation date.
-- **An executive summary** with key metrics, assignment coverage, potential gaps such as unassigned or stale policies, a configuration inventory and platform coverage.
+- **A cover page** with the tenant, the collection and generation dates, an at a glance summary of how many configurations are assigned, not assigned or have unknown assignments, and the document control details such as organization, author and version.
+- **A table of contents** that links to every section, unless you turn it off in your branding.
+- **An executive summary** with the configurations per family and their assignment counts, how many were not modified in 90 days or more, a configuration inventory, platform coverage and the most assigned groups. Assignments that could not be read are not counted as assigned.
 - **Every selected policy** with its created and modified dates, its assignments and a table of each setting with its value and description.
 - **Assignments resolved to names.** Group targets and assignment filters are shown by name, not by ID.
 - **A compliance evidence section** that maps your configuration to frameworks, unless you turn it off.
@@ -22,7 +23,7 @@ Sensitive values such as script bodies, passwords and tokens appear as `[Redacte
 
 <Screenshot
   src="/images/web/report-cover.png"
-  alt="Cover page of a sample Intune configuration report with the organization, author, generation date and version"
+  alt="Cover page of a sample Intune configuration report with the tenant, collection and generation dates, an at a glance summary of assigned, not assigned and unknown assignments, and the document control details"
   caption="The cover page of a sample report."
   width={707}
   height={1000}
@@ -30,8 +31,8 @@ Sensitive values such as script bodies, passwords and tokens appear as `[Redacte
 
 <Screenshot
   src="/images/web/report-summary.png"
-  alt="Executive summary page with key metrics, assignment coverage, potential gaps, configuration inventory and platform coverage"
-  caption="The executive summary flags unassigned and stale configurations up front."
+  alt="Executive summary page with configurations by family, a configuration inventory, platform coverage and the top assigned groups"
+  caption="The executive summary counts the configurations per family and assignment state."
   width={707}
   height={1000}
 />
@@ -95,7 +96,7 @@ Select <Ui>Branding</Ui> in the sidebar to make the report look like your own. T
 | <Ui>Company Info</Ui> | Company name, department, contact email, website, and your company logo with its position. |
 | <Ui>Colors & Style</Ui> | Primary, secondary, accent and text colors, and the font family. |
 | <Ui>Layout</Ui> | Cover page with report title and subtitle, header and footer text, a confidentiality notice, and a watermark (PDF). |
-| <Ui>Document</Ui> | Table of contents, document title, author and classification (Public, Internal, Confidential or Restricted). |
+| <Ui>Document</Ui> | Table of contents, the analytics section (the at a glance summary and the executive summary), document title, author and classification (Public, Internal, Confidential or Restricted). |
 
 Select <Ui>Save Settings</Ui> to apply them. Your branding is saved in your browser, so it is still there next time you use the same browser. <Ui>Reset to Default</Ui> restores the original look.
 

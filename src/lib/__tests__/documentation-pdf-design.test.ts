@@ -51,6 +51,16 @@ function baselines(text: string): number[] {
   );
 }
 
+/** Text runs with their baselines in points from the page bottom. */
+function runs(text: string): Array<{ y: number; text: string }> {
+  return [...text.matchAll(/(-?[\d.]+) (-?[\d.]+) Td\n\((.*?)\) Tj/g)].map(
+    (match) => ({
+      y: Number(match[2]),
+      text: (match[3] ?? "").replace(/\\([()\\])/g, "$1"),
+    }),
+  );
+}
+
 // Body text stays above the footer rule (14.5 mm from the bottom); only the
 // footer line and the cover foot sit below it.
 const FOOTER_TEXT_MAX = 31;
@@ -215,6 +225,58 @@ describe("documentation PDF layout", () => {
     }
   });
 
+  it("prints a long notice and footer text whole, with the content above them", async () => {
+    const notice =
+      "Notice: this record describes the managed estate of the organisation and is shared with the internal audit team and the appointed external assessors only; copies outside that circle need written approval from the security office";
+    const footerText =
+      "Fabrikam Workplace Engineering, Endpoint Platform team, configuration record kept under the change process of the service desk, revision history archived for seven years";
+    const { pages } = await render(
+      contoso({
+        branding: {
+          ...branding("cover"),
+          metadata: {},
+          footer: {
+            enabled: true,
+            text: footerText,
+            confidentialityNotice: notice,
+          },
+        },
+      }),
+    );
+    const capPoints = 6.5 * 0.7;
+    pages.forEach((page, index) => {
+      const pageRuns = runs(page);
+      const noticeRuns = pageRuns.filter(
+        (run) => run.text.length >= 8 && notice.includes(run.text),
+      );
+      // Wrapped, never cut: the lines join to the whole notice.
+      expect(noticeRuns.map((run) => run.text).join(" ")).toBe(notice);
+      if (index === 0) return;
+      const footerRuns = pageRuns.filter(
+        (run) => run.y < FOOTER_RULE && footerText.includes(run.text),
+      );
+      expect(footerRuns.map((run) => run.text).join(" ")).toBe(footerText);
+      const noticeTop = Math.max(...noticeRuns.map((run) => run.y)) + capPoints;
+      for (const run of pageRuns)
+        if (
+          !noticeRuns.includes(run) &&
+          run.y > FOOTER_RULE &&
+          run.y < 297 * (72 / 25.4) - 14.6 * (72 / 25.4)
+        )
+          expect(run.y, run.text).toBeGreaterThan(noticeTop);
+    });
+  });
+
+  it("states the configurations not modified in 90 days or more", async () => {
+    const data = contoso();
+    const { staleConfigs } = analyzeConfigurations(data, RENDER_DATE);
+    expect(staleConfigs).toBeGreaterThan(1);
+    const text = (await render(data)).pages.join("\n");
+    expect(text).toContain(
+      `(Not modified in 90 days or more: ${staleConfigs} configurations.) Tj`,
+    );
+  });
+
   it("numbers every page after the cover as Page N of M", async () => {
     const { pages } = await render(contoso());
     expect(pages[0]).not.toContain("(Page 1");
@@ -303,6 +365,24 @@ describe("documentation PDF branding", () => {
       summary.indexOf("(Executive Summary) Tj"),
     );
     expect(Buffer.from(buffer).toString("latin1")).toContain("/Subtype /Image");
+  });
+
+  it("keeps the cover logo ratio when only a height is set", async () => {
+    const [cover = ""] = (
+      await render(
+        contoso({
+          branding: {
+            logo: { dataUrl: LOGO_DATA_URL, position: "cover", height: 10 },
+          },
+        }),
+      )
+    ).pages;
+    const match = /([\d.]+) 0 0 ([\d.]+) [\d.]+ [\d.]+ cm\n\/I\d+ Do/.exec(
+      cover,
+    );
+    // The 2x2 image is square: 10 mm high and 10 mm wide.
+    expect(Number(match?.[2]) / (72 / 25.4)).toBeCloseTo(10, 1);
+    expect(Number(match?.[1])).toBeCloseTo(Number(match?.[2]), 1);
   });
 
   it("puts a header or footer logo on every page after the cover", async () => {

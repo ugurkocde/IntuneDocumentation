@@ -1,6 +1,7 @@
 import type jsPDF from "jspdf";
 import type { BrandingOptions } from "~/types/branding";
 import {
+  COVER_LOGO_BOX,
   PALETTE,
   capHeight,
   clampLine,
@@ -9,6 +10,7 @@ import {
   drawLines,
   drawRule,
   fitFontSize,
+  fitLogo,
   hexToRgb,
   mixColor,
   setFont,
@@ -122,7 +124,7 @@ export interface CoverLogo {
   dataUrl: string;
   /** mm; at most 44, default 36. */
   width?: number;
-  /** mm; derived from the image ratio when absent, at most 14. */
+  /** mm; at most 14. Either dimension alone keeps the image ratio. */
   height?: number;
 }
 
@@ -169,13 +171,12 @@ export function drawCoverMasthead(
       const properties = (
         doc as unknown as ImagePropertiesProvider
       ).getImageProperties(logoDataUrl);
-      const ratio = properties.height / Math.max(properties.width, 1);
-      let width = Math.min(options.logo?.width ?? 36, 44);
-      let height = options.logo?.height ?? width * ratio;
-      if (height > 14) {
-        width = (width * 14) / height;
-        height = 14;
-      }
+      // A height alone keeps the image ratio rather than a 36 mm width.
+      const { widthMm: width, heightMm: height } = fitLogo(
+        options.logo ?? {},
+        properties,
+        COVER_LOGO_BOX,
+      );
       const boxWidth = width + 5;
       const boxHeight = height + 4;
       doc.setFillColor(...PALETTE.white);
@@ -671,6 +672,84 @@ export function drawToc<T extends TocItem>(
 
 // ---------------------------------------------------------------- Running
 
+const FOOTER_SIZE = 6.5;
+const FOOTER_LINE = 2.8;
+/** Footer lines that fit under the rule before it moves up. */
+const FOOTER_LINES_BELOW_RULE = 3;
+
+/**
+ * Footer that never drops text: the footer text wraps under the rule beside
+ * the page label, and the notice wraps across the page above the rule.
+ * contentBottom keeps the content above both.
+ */
+export interface RunningFooterLayout {
+  lines: string[];
+  noticeLines: string[];
+  /** y of the footer rule. */
+  ruleY: number;
+  contentBottom: number;
+}
+
+export function layoutRunningFooter(
+  doc: jsPDF,
+  frame: PdfFrame,
+  options: {
+    text: string;
+    /** mm left free for a footer logo. */
+    inset?: number;
+    notice?: string;
+  },
+): RunningFooterLayout {
+  const inset = options.inset ?? 0;
+  // Room for the widest page label the export can print.
+  const labelWidth = textWidth(doc, "Page 0000 of 0000", FOOTER_SIZE);
+  const lines = wrapLines(
+    doc,
+    options.text,
+    frame.contentWidth - inset - labelWidth - 4,
+    FOOTER_SIZE,
+  );
+  const noticeLines = options.notice
+    ? wrapLines(doc, options.notice, frame.contentWidth, FOOTER_SIZE)
+    : [];
+  const ruleY =
+    frame.pageHeight -
+    14.5 -
+    Math.max(0, lines.length - FOOTER_LINES_BELOW_RULE) * FOOTER_LINE;
+  const noticeTop =
+    ruleY -
+    1.6 -
+    (noticeLines.length - 1) * FOOTER_LINE -
+    capHeight(FOOTER_SIZE);
+  return {
+    lines,
+    noticeLines,
+    ruleY,
+    contentBottom: Math.min(
+      frame.contentBottom,
+      noticeLines.length ? noticeTop - 1.5 : ruleY - 2,
+    ),
+  };
+}
+
+/** The notice lines of a footer layout, centred above its rule. */
+export function drawFooterNotice(
+  doc: jsPDF,
+  frame: PdfFrame,
+  layout: RunningFooterLayout,
+) {
+  const { noticeLines, ruleY } = layout;
+  setFont(doc, FOOTER_SIZE, "normal", PALETTE.muted);
+  noticeLines.forEach((line, index) =>
+    doc.text(
+      line,
+      frame.pageWidth / 2,
+      ruleY - 1.6 - (noticeLines.length - 1 - index) * FOOTER_LINE,
+      { align: "center" },
+    ),
+  );
+}
+
 /**
  * Header (title left, a muted note right) and footer (text left, optional
  * centred note, page label right) with hairlines, on every page from
@@ -687,15 +766,21 @@ export function drawRunningChrome(
     headerRight?: string;
     /** Moves the header note left by this many mm, for a header logo. */
     headerRightInset?: number;
-    footer: string;
+    /**
+     * One line of footer text, or a layoutRunningFooter result that wraps the
+     * footer text and the notice instead of clamping them.
+     */
+    footer: string | RunningFooterLayout;
     /** Moves the footer text right by this many mm, for a footer logo. */
     footerInset?: number;
+    /** Centred notice beside a string footer, clamped to 70 mm. */
     footerCentre?: string;
     pageLabel: (page: number, pageCount: number) => string;
     firstPage?: number;
   },
 ) {
   const { margin, right, pageWidth, pageHeight } = frame;
+  const { footer } = options;
   const pageCount = doc.internal.getNumberOfPages();
   for (let page = options.firstPage ?? 2; page <= pageCount; page += 1) {
     doc.setPage(page);
@@ -718,13 +803,24 @@ export function drawRunningChrome(
       );
     }
     drawRule(doc, margin, 14.6, right);
+    if (typeof footer !== "string") {
+      drawRule(doc, margin, footer.ruleY, right);
+      drawFooterNotice(doc, frame, footer);
+      footer.lines.forEach((line, index) =>
+        doc.text(
+          line,
+          margin + (options.footerInset ?? 0),
+          footer.ruleY + 3.9 + index * FOOTER_LINE,
+        ),
+      );
+      doc.text(options.pageLabel(page, pageCount), right, footer.ruleY + 3.9, {
+        align: "right",
+      });
+      continue;
+    }
     drawRule(doc, margin, pageHeight - 14.5, right);
     setFont(doc, 6.5, "normal", PALETTE.muted);
-    doc.text(
-      options.footer,
-      margin + (options.footerInset ?? 0),
-      pageHeight - 10.6,
-    );
+    doc.text(footer, margin + (options.footerInset ?? 0), pageHeight - 10.6);
     if (options.footerCentre)
       doc.text(
         clampLine(doc, options.footerCentre, 70, 6.5),

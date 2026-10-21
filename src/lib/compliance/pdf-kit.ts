@@ -86,6 +86,55 @@ export function mixColor(
   ];
 }
 
+export interface LogoBox {
+  /** mm, used when the branding sets neither width nor height. */
+  defaultWidth: number;
+  maxWidth: number;
+  maxHeight: number;
+}
+
+/** Cover logo: 36 mm wide by default, at most 44 mm wide and 14 mm high. */
+export const COVER_LOGO_BOX: LogoBox = {
+  defaultWidth: 36,
+  maxWidth: 44,
+  maxHeight: 14,
+};
+
+/** Running header logo of the documentation export, PDF and Word. */
+export const HEADER_LOGO_BOX: LogoBox = {
+  defaultWidth: 25,
+  maxWidth: 40,
+  maxHeight: 9,
+};
+
+/**
+ * Logo size in mm within a box, keeping the aspect ratio of the branding
+ * dimensions or, without both, of the image. A single branding dimension
+ * sets the size; the image ratio gives the other one.
+ */
+export function fitLogo(
+  logo: { width?: number; height?: number },
+  intrinsic: { width: number; height: number } | undefined,
+  box: LogoBox,
+): { widthMm: number; heightMm: number } {
+  const ratio =
+    logo.width && logo.height
+      ? logo.height / logo.width
+      : intrinsic && intrinsic.width > 0 && intrinsic.height > 0
+        ? intrinsic.height / intrinsic.width
+        : 1;
+  let widthMm = Math.min(
+    logo.width || (logo.height ? logo.height / ratio : box.defaultWidth),
+    box.maxWidth,
+  );
+  let heightMm = widthMm * ratio;
+  if (heightMm > box.maxHeight) {
+    widthMm = box.maxHeight / ratio;
+    heightMm = box.maxHeight;
+  }
+  return { widthMm, heightMm };
+}
+
 /**
  * Calendar parts in local time, or in UTC for fixed render dates so the
  * same input renders the same date in every time zone.

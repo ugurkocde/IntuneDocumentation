@@ -4,7 +4,11 @@ import {
   type DetailedExportData,
 } from "../configuration-analyzer";
 import { CONTOSO_TENANT } from "../compliance/demo/contoso-tenant";
-import { buildGlanceModel } from "../documentation-glance";
+import {
+  buildGlanceModel,
+  formatDocumentDate,
+  summaryNotes,
+} from "../documentation-glance";
 
 const ALL_DEVICES = {
   target: { "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget" },
@@ -172,6 +176,49 @@ describe("buildGlanceModel", () => {
     expect(glance.configurations).toBe(1);
     expect(glance.assignmentApplicable).toBe(0);
     expect(glance.assignedShare).toBeNull();
+  });
+
+  it("has no assigned share when every assignment is unknown", () => {
+    const unknown = (id: string) => ({
+      id,
+      assignments: [],
+      collectionStatus: { assignments: "incomplete" as const },
+    });
+    const { glance } = glanceOf({
+      ...EMPTY,
+      settingsCatalog: [unknown("a"), unknown("b")],
+    });
+    expect(glance.assignmentUnknown).toBe(2);
+    expect(glance.assignmentApplicable).toBe(2);
+    expect(glance.assignedShare).toBeNull();
+  });
+
+  it("formats document dates in one style", () => {
+    expect(formatDocumentDate("2026-10-08T09:05:00Z", true)).toBe(
+      "8 Oct 2026 \u00b7 09:05",
+    );
+    expect(formatDocumentDate(new Date("2026-12-31T23:00:00Z"), true)).toBe(
+      "31 Dec 2026 \u00b7 23:00",
+    );
+    expect(formatDocumentDate("not a date", true)).toBeUndefined();
+    expect(formatDocumentDate(undefined, true)).toBeUndefined();
+  });
+
+  it("writes the summary notes with singular and plural counts", () => {
+    const notes = (stale: number, notApplicable: number) =>
+      summaryNotes({
+        ...analyzeConfigurations(EMPTY),
+        staleConfigs: stale,
+        assignmentNotApplicableConfigs: notApplicable,
+      });
+    expect(notes(0, 0)).toEqual([]);
+    expect(notes(1, 1)).toEqual([
+      "Assignment not applicable: 1 configuration; excluded from the assigned share.",
+      "Not modified in 90 days or more: 1 configuration.",
+    ]);
+    expect(notes(3, 0)).toEqual([
+      "Not modified in 90 days or more: 3 configurations.",
+    ]);
   });
 
   it("separates partial and unavailable collection and lists each once", () => {

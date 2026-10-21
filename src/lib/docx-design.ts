@@ -26,12 +26,15 @@ import {
 } from "docx";
 import type { BrandingOptions } from "~/types/branding";
 import {
+  COVER_LOGO_BOX,
+  HEADER_LOGO_BOX,
   PALETTE,
+  fitLogo,
   hexToRgb,
   mixColor,
   type RgbColor,
 } from "./compliance/pdf-kit";
-import type { DocumentationGlance } from "./documentation-glance";
+import { plural, type DocumentationGlance } from "./documentation-glance";
 
 // Word counterparts of the evidence report design (src/lib/compliance
 // pdf-kit.ts and pdf-chrome.ts): theme, cover, tiles, bars, tables, contents
@@ -116,6 +119,10 @@ export const COVER_BAND_HEIGHT = 7598;
 // Band, lower row and the section's closing paragraph stay above the cover
 // footer, so the cover never spills onto a second page.
 const COVER_LOWER_HEIGHT = 6800;
+// A confidentiality notice in the cover footer takes this much of the lower
+// row per line: about 110 characters of 6.5 pt text fit one line.
+const COVER_NOTICE_LINE = 260;
+const COVER_NOTICE_LINE_CHARS = 110;
 
 export const COVER_PAGE_MARGINS = {
   top: 0,
@@ -268,47 +275,19 @@ export function imageSize(
 }
 
 /**
- * Logo size in mm within a box, keeping the aspect ratio of the branding
- * dimensions or, without both, of the image.
- */
-function fitLogo(
-  logo: { width?: number; height?: number },
-  intrinsic: { width: number; height: number } | undefined,
-  box: { defaultWidth: number; maxWidth: number; maxHeight: number },
-): { widthMm: number; heightMm: number } {
-  const ratio =
-    logo.width && logo.height
-      ? logo.height / logo.width
-      : intrinsic && intrinsic.width > 0 && intrinsic.height > 0
-        ? intrinsic.height / intrinsic.width
-        : 1;
-  let widthMm = Math.min(
-    logo.width ?? (logo.height ? logo.height / ratio : box.defaultWidth),
-    box.maxWidth,
-  );
-  let heightMm = widthMm * ratio;
-  if (heightMm > box.maxHeight) {
-    widthMm = box.maxHeight / ratio;
-    heightMm = box.maxHeight;
-  }
-  return { widthMm, heightMm };
-}
-
-/**
  * Cover logo size in mm, as the evidence report draws it: 36 mm wide by
  * default and at most 44 mm wide and 14 mm high.
  */
 export const coverLogoSize = (
   logo: { width?: number; height?: number },
   intrinsic?: { width: number; height: number },
-) =>
-  fitLogo(logo, intrinsic, { defaultWidth: 36, maxWidth: 44, maxHeight: 14 });
+) => fitLogo(logo, intrinsic, COVER_LOGO_BOX);
 
-/** Header logo size in mm: at most 25 mm wide and 9 mm high. */
+/** Header logo size in mm, the same box as the PDF header logo. */
 export const headerLogoSize = (
   logo: { width?: number; height?: number },
   intrinsic?: { width: number; height: number },
-) => fitLogo(logo, intrinsic, { defaultWidth: 15, maxWidth: 25, maxHeight: 9 });
+) => fitLogo(logo, intrinsic, HEADER_LOGO_BOX);
 
 const MM_TWIPS = 1440 / 25.4;
 
@@ -332,6 +311,8 @@ export interface CoverContent {
   companyName?: string;
   /** Free text under the band, such as the branding cover text. */
   note?: string;
+  /** Notice of the cover footer; the lower row makes room for its lines. */
+  footerNotice?: string;
   controlHeading: string;
   /** Rows without a value are left out. */
   control: ReadonlyArray<{ label: string; value: string | undefined }>;
@@ -721,7 +702,17 @@ export function coverTable(theme: WordTheme, content: CoverContent): Table {
       }),
       // The rest of the page, with the document control near its foot.
       new TableRow({
-        height: { value: COVER_LOWER_HEIGHT, rule: HeightRule.ATLEAST },
+        height: {
+          value: Math.max(
+            3000,
+            COVER_LOWER_HEIGHT -
+              Math.ceil(
+                (content.footerNotice?.length ?? 0) / COVER_NOTICE_LINE_CHARS,
+              ) *
+                COVER_NOTICE_LINE,
+          ),
+          rule: HeightRule.ATLEAST,
+        },
         children: [
           new TableCell({
             children: lower,
@@ -741,27 +732,47 @@ export function coverTable(theme: WordTheme, content: CoverContent): Table {
   });
 }
 
-/** Product line left and an optional note right at the foot of the cover. */
+/** Centred notice above the footer line, wrapped by Word, never cut. */
+function noticeParagraph(
+  theme: WordTheme,
+  notice: string,
+  sizeHp: number,
+  indent?: { left: number; right: number },
+): Paragraph {
+  return new Paragraph({
+    style: CHROME_STYLE,
+    alignment: AlignmentType.CENTER,
+    ...(indent ? { indent } : {}),
+    spacing: { after: 60 },
+    children: [
+      run(theme, notice, { sizeHp, color: WORD_PALETTE.muted, italics: true }),
+    ],
+  });
+}
+
+/**
+ * Product line left and a note right at the foot of the cover, under the
+ * confidentiality notice when there is one, as in the PDF.
+ */
 export function coverFooter(
   theme: WordTheme,
   left: string,
-  right?: string,
+  right: string,
+  notice?: string,
 ): Footer {
+  const indent = { left: COVER_MARGIN, right: COVER_MARGIN };
   return new Footer({
     children: [
+      ...(notice ? [noticeParagraph(theme, notice, 13, indent)] : []),
       new Paragraph({
-        indent: { left: COVER_MARGIN, right: COVER_MARGIN },
+        indent,
         tabStops: [
           { type: TabStopType.RIGHT, position: PAGE_WIDTH - COVER_MARGIN },
         ],
         children: [
           run(theme, left, { sizeHp: 13, color: WORD_PALETTE.muted }),
-          ...(right
-            ? [
-                tabRun(),
-                run(theme, right, { sizeHp: 13, color: WORD_PALETTE.muted }),
-              ]
-            : []),
+          tabRun(),
+          run(theme, right, { sizeHp: 13, color: WORD_PALETTE.muted }),
         ],
       }),
     ],
@@ -953,9 +964,6 @@ export function proportionBar(
   });
 }
 
-const plural = (count: number, one: string, many: string) =>
-  `${count} ${count === 1 ? one : many}`;
-
 /** The "At a glance" page, every number from buildGlanceModel. */
 export function glancePage(
   theme: WordTheme,
@@ -1003,9 +1011,11 @@ export function glancePage(
         ),
         run(
           theme,
-          glance.assignedShare === null
-            ? "  assigned share: no configuration in this export takes assignments"
-            : `  assigned, ${glance.assigned} of ${plural(glance.assignmentApplicable, "configuration that takes", "configurations that take")} assignments`,
+          glance.assignedShare !== null
+            ? `  assigned, ${glance.assigned} of ${plural(glance.assignmentApplicable, "configuration that takes", "configurations that take")} assignments`
+            : glance.assignmentApplicable === 0
+              ? "  assigned share: no configuration in this export takes assignments"
+              : `  assigned share: the assignments of ${plural(glance.assignmentApplicable, "configuration", "configurations")} could not be read`,
           { sizeHp: theme.bodySizeHp, color: theme.text },
         ),
       ],
@@ -1265,7 +1275,10 @@ export function runningHeader(
   });
 }
 
-/** Footer text left, confidentiality notice centred, "Page X of Y" right. */
+/**
+ * Confidentiality notice centred above the rule, then footer text left and
+ * "Page X of Y" right, as in the PDF.
+ */
 export function runningFooter(
   theme: WordTheme,
   left: string,
@@ -1274,17 +1287,13 @@ export function runningFooter(
   const small = { sizeHp: 15, color: WORD_PALETTE.muted };
   return new Footer({
     children: [
+      ...(notice ? [noticeParagraph(theme, notice, small.sizeHp)] : []),
       new Paragraph({
         style: CHROME_STYLE,
-        tabStops: [
-          { type: TabStopType.CENTER, position: Math.round(CONTENT_WIDTH / 2) },
-          { type: TabStopType.RIGHT, position: CONTENT_WIDTH },
-        ],
+        tabStops: [{ type: TabStopType.RIGHT, position: CONTENT_WIDTH }],
         border: { top: { ...line(WORD_PALETTE.rule, 6), space: 4 } },
         children: [
           run(theme, left, small),
-          tabRun(),
-          ...(notice ? [run(theme, notice, { ...small, italics: true })] : []),
           tabRun(),
           new TextRun({
             children: [

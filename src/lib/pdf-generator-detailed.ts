@@ -10,12 +10,14 @@ import {
   PALETTE,
   TONES,
   capHeight,
+  HEADER_LOGO_BOX,
   clampLine,
   dateParts,
   drawCard,
   drawDonut,
   drawEyebrow,
   drawKpiTile,
+  fitLogo,
   drawLines,
   drawMarker,
   drawRule,
@@ -37,12 +39,14 @@ import {
   drawCoverMasthead,
   drawCoverTenantBlock,
   drawDocumentControlGrid,
+  drawFooterNotice,
   drawPageTitle,
   drawRunningChrome,
   drawSectionHeading,
   drawTableHeader,
   drawToc,
   drawZebraRow,
+  layoutRunningFooter,
   layoutToc,
   pageFrame,
 } from "./compliance/pdf-chrome";
@@ -63,7 +67,14 @@ import {
   type PolicyExportError,
   type ExportGenerationResult,
 } from "./configuration-analyzer";
-import { buildGlanceModel } from "./documentation-glance";
+import {
+  DOCUMENT_PRODUCT_LINE,
+  DOCUMENT_SOURCE_NOTE,
+  buildGlanceModel,
+  formatDocumentDate,
+  plural,
+  summaryNotes,
+} from "./documentation-glance";
 import {
   ADDITIONAL_FAMILY_LABELS,
   REDACTED_VALUE,
@@ -96,30 +107,8 @@ export interface DetailedPdfOptions {
 }
 
 const PRODUCT_NAME = "Intune Documentation";
-const PRODUCT_LINE =
-  "Generated with Intune Documentation (intunedocumentation.com)";
 const DEFAULT_TAGLINE =
   "Comprehensive export of Intune policies, profiles, and assignments";
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** "21 Oct 2026 · 09:00", in UTC for fixed render dates. */
-function formatDateTime(date: Date, utc: boolean): string {
-  const { year, month, day, hours, minutes } = dateParts(date, utc);
-  return `${Number(day)} ${MONTH_NAMES[Number(month) - 1]} ${year} · ${hours}:${minutes}`;
-}
 
 function controlStatusMarker(
   status: keyof typeof CONTROL_STATUS_LABELS,
@@ -131,10 +120,6 @@ function controlStatusMarker(
       : status === "conflictingEvidence" || status === "notAssessed"
         ? "triangle"
         : "outline";
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
 }
 
 export async function generateDetailedPDF(
@@ -174,6 +159,10 @@ export async function generateDetailedPDF(
   // one leaves out the summary pages.
   const scope = data.documentScope;
   const compactScope = scope?.compact === true;
+  // The glance and the Executive Summary, as in the Word export.
+  const showAnalytics =
+    !compactScope &&
+    data.branding?.documentSettings?.includeAnalytics !== false;
 
   // Branding colours over the evidence report palette, the branding font for
   // every kit and chrome call, and the branding sizes for body text.
@@ -193,24 +182,11 @@ export async function generateDetailedPDF(
   const metaFontSize = Math.max(bodyFontSize - 3, 8);
   const tableFontSize = Math.max(bodyFontSize - 3, 8);
 
-  const frame = pageFrame(doc, {
+  const grid = pageFrame(doc, {
     margin: 15,
     contentTop: 21,
     contentBottom: 276,
   });
-  const {
-    margin,
-    right,
-    contentWidth,
-    contentTop,
-    contentBottom,
-    pageWidth,
-    pageHeight,
-  } = frame;
-  const maxWidth = contentWidth;
-  let yPosition = contentTop;
-  // The policy whose content is being drawn, named on continuation pages.
-  let currentPolicy: string | undefined;
 
   const currentPage = () => doc.internal.getCurrentPageInfo().pageNumber;
 
@@ -280,7 +256,7 @@ export async function generateDetailedPDF(
         propsError,
       );
     }
-    return { dataUrl, format, aspect: width / height };
+    return { dataUrl, format, aspect: width / height, size: { width, height } };
   })();
   const logoPosition = logoImage ? branding?.logo?.position : undefined;
 
@@ -323,6 +299,47 @@ export async function generateDetailedPDF(
       console.error("Error adding logo:", err);
     }
   };
+
+  // A header logo sits right of the header note, in the same box as in the
+  // Word export; a footer logo sits left of the footer text.
+  const headerLogoSize =
+    logoImage &&
+    (logoPosition === "header" || branding?.header?.includeLogo === true)
+      ? fitLogo(branding?.logo ?? {}, logoImage.size, HEADER_LOGO_BOX)
+      : null;
+  const headerLogo = headerLogoSize
+    ? { width: headerLogoSize.widthMm, height: headerLogoSize.heightMm }
+    : null;
+  const footerLogo = logoPosition === "footer" ? logoBox(15, 5.5, 40) : null;
+  const footerInset = footerLogo ? footerLogo.width + 3 : 0;
+
+  // The footer text and the confidentiality notice wrap instead of being
+  // cut; the content stays above the notice.
+  const footerEnabled = branding?.footer?.enabled === true;
+  const footerLayout = layoutRunningFooter(doc, grid, {
+    text:
+      footerEnabled && branding?.footer?.text
+        ? branding.footer.text
+        : DOCUMENT_PRODUCT_LINE,
+    inset: footerInset,
+    notice: footerEnabled
+      ? branding?.footer?.confidentialityNotice || undefined
+      : undefined,
+  });
+  const frame = { ...grid, contentBottom: footerLayout.contentBottom };
+  const {
+    margin,
+    right,
+    contentWidth,
+    contentTop,
+    contentBottom,
+    pageWidth,
+    pageHeight,
+  } = frame;
+  const maxWidth = contentWidth;
+  let yPosition = contentTop;
+  // The policy whose content is being drawn, named on continuation pages.
+  let currentPolicy: string | undefined;
 
   // Text and logo watermarks go on each content page as it is created, so
   // the content draws over them.
@@ -475,13 +492,11 @@ export async function generateDetailedPDF(
       maxWidth,
     );
     const metaLineHeight = metaFontSize * 0.45;
+    const created = formatDocumentDate(createdDate, fixedDate);
+    const modified = formatDocumentDate(modifiedDate, fixedDate);
     const dates = [
-      createdDate
-        ? `Created: ${new Date(createdDate).toLocaleDateString()}`
-        : undefined,
-      modifiedDate
-        ? `Last Modified: ${new Date(modifiedDate).toLocaleDateString()}`
-        : undefined,
+      created ? `Created: ${created}` : undefined,
+      modified ? `Last Modified: ${modified}` : undefined,
     ].filter((part): part is string => Boolean(part));
     const headerHeight =
       3 +
@@ -667,19 +682,14 @@ export async function generateDetailedPDF(
     ? branding.metadata.classification.charAt(0).toUpperCase() +
       branding.metadata.classification.slice(1)
     : undefined;
-  const generatedText = formatDateTime(generatedAt, fixedDate);
-  const collectedDate = data.collectedAt
-    ? new Date(data.collectedAt)
-    : undefined;
-  const collectedText =
-    collectedDate && !Number.isNaN(collectedDate.getTime())
-      ? formatDateTime(collectedDate, fixedDate)
-      : undefined;
+  const generatedText = formatDocumentDate(generatedAt, fixedDate) ?? "";
+  // Only a real collection time is shown; the export time is not one.
+  const collectedText = formatDocumentDate(data.collectedAt, fixedDate);
   const { year, month, day } = dateParts(generatedAt, fixedDate);
   const version = `v${year}.${month}.${day}`;
 
   drawCoverBackground(doc, theme, frame, {
-    ringFraction: compactScope ? 0 : (glance.assignedShare ?? 0),
+    ringFraction: showAnalytics ? (glance.assignedShare ?? 0) : 0,
   });
   const coverLogo = logoPosition === "cover" ? logoImage : null;
   drawCoverMasthead(doc, theme, frame, {
@@ -751,7 +761,7 @@ export async function generateDetailedPDF(
     return `Collection: ${parts.join(", ")}.`;
   })();
 
-  if (!compactScope) {
+  if (showAnalytics) {
     const midTop = 142;
     const cardWidth = 62;
     const cardHeight = 66;
@@ -872,7 +882,7 @@ export async function generateDetailedPDF(
     doc,
     theme,
     frame,
-    compactScope ? 144 : 224,
+    showAnalytics ? 224 : 144,
     "Document control",
     [
       {
@@ -893,12 +903,9 @@ export async function generateDetailedPDF(
       { label: "Classification", value: classificationLabel },
     ],
   );
-  drawCoverFooter(
-    doc,
-    frame,
-    PRODUCT_LINE,
-    "Configuration read from Microsoft Graph",
-  );
+  drawCoverFooter(doc, frame, DOCUMENT_PRODUCT_LINE, DOCUMENT_SOURCE_NOTE);
+  // The confidentiality notice shows on the cover too, as in Word.
+  drawFooterNotice(doc, frame, footerLayout);
 
   // === TABLE OF CONTENTS ===
   // Check if ToC is enabled (default to true if not specified)
@@ -979,13 +986,8 @@ export async function generateDetailedPDF(
       drawRule(doc, margin, yPosition, right);
     }
     yPosition += 4;
-    if (analytics.assignmentNotApplicableConfigs) {
-      addText(
-        `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from the assigned share.`,
-        8,
-        "normal",
-        PALETTE.muted,
-      );
+    for (const note of summaryNotes(analytics)) {
+      addText(note, 8, "normal", PALETTE.muted);
       yPosition += 1;
     }
     addText(collectionLine, 8, "normal", PALETTE.muted);
@@ -1286,7 +1288,7 @@ export async function generateDetailedPDF(
     );
   };
 
-  if (!compactScope) addTenantOverview();
+  if (showAnalytics) addTenantOverview();
   if (data.includeComplianceEvidence !== false) {
     addComplianceOverview();
   }
@@ -1927,7 +1929,7 @@ export async function generateDetailedPDF(
           );
 
           const scriptInfo = [
-            { name: "File Name", value: script.fileName || "N/A" },
+            { name: "File Name", value: script.fileName || "n/a" },
             {
               name: "Run As",
               value: script.runAsAccount === "system" ? "System" : "User",
@@ -2018,7 +2020,7 @@ export async function generateDetailedPDF(
           );
 
           const scriptInfo = [
-            { name: "File Name", value: script.fileName || "N/A" },
+            { name: "File Name", value: script.fileName || "n/a" },
             {
               name: "Run As",
               value: script.runAsAccount === "system" ? "System" : "User",
@@ -2680,25 +2682,20 @@ export async function generateDetailedPDF(
   }
 
   // === RUNNING HEADER AND FOOTER ===
-  // Drawn last, on every page after the cover in the final page order. A
-  // header logo sits right of the header note, a footer logo left of the
-  // footer text.
-  const headerLogo = logoPosition === "header" ? logoBox(15, 9, 50) : null;
-  const footerLogo = logoPosition === "footer" ? logoBox(15, 5.5, 40) : null;
+  // Drawn last, on every page after the cover in the final page order.
   const totalPages = doc.internal.getNumberOfPages();
   for (let page = 2; page <= totalPages; page++) {
     doc.setPage(page);
     if (headerLogo)
       drawLogo(right - headerLogo.width, 13.8 - headerLogo.height, headerLogo);
     if (footerLogo)
-      drawLogo(margin, pageHeight - 11.4 - footerLogo.height / 2, footerLogo);
+      drawLogo(
+        margin,
+        footerLayout.ruleY + 3.1 - footerLogo.height / 2,
+        footerLogo,
+      );
   }
   const headerRightInset = headerLogo ? headerLogo.width + 3 : 0;
-  const footerInset = footerLogo ? footerLogo.width + 3 : 0;
-  const footerEnabled = branding?.footer?.enabled === true;
-  const footerCentre = footerEnabled
-    ? branding?.footer?.confidentialityNotice || undefined
-    : undefined;
   const runningTitle =
     scope?.title ||
     `${branding?.coverPage?.title || "Microsoft Intune"} Configuration Documentation`;
@@ -2713,16 +2710,8 @@ export async function generateDetailedPDF(
       ? clampLine(doc, headerNote, contentWidth - 94 - headerRightInset, 6.5)
       : undefined,
     headerRightInset,
-    footer: clampLine(
-      doc,
-      footerEnabled && branding?.footer?.text
-        ? branding.footer.text
-        : PRODUCT_LINE,
-      (footerCentre ? 52 : 140) - footerInset,
-      6.5,
-    ),
+    footer: footerLayout,
     footerInset,
-    footerCentre,
     pageLabel: (page, pageCount) => `Page ${page} of ${pageCount}`,
   });
 

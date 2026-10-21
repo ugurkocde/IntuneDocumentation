@@ -2,11 +2,66 @@ import type {
   ConfigurationAnalytics,
   DetailedExportData,
 } from "./configuration-analyzer";
+import { dateParts } from "./compliance/pdf-kit";
 import { ADDITIONAL_FAMILY_LABELS } from "./intune-policy-registry";
 
 // Numbers for the "At a glance" page of the documentation export. PDF and
 // Word both read this model, so the two formats always show the same counts,
-// and every count comes from analyzeConfigurations.
+// and every count comes from analyzeConfigurations. The text both formats
+// share is defined here too.
+
+export const DOCUMENT_PRODUCT_LINE =
+  "Generated with Intune Documentation (intunedocumentation.com)";
+export const DOCUMENT_SOURCE_NOTE = "Configuration read from Microsoft Graph";
+
+export const plural = (count: number, one: string, many: string) =>
+  `${count} ${count === 1 ? one : many}`;
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/**
+ * "8 Oct 2026 · 09:00", in UTC for fixed render dates; undefined when the
+ * value is missing or not a date.
+ */
+export function formatDocumentDate(
+  value: Date | string | undefined,
+  utc: boolean,
+): string | undefined {
+  if (value === undefined || value === "") return undefined;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const { year, month, day, hours, minutes } = dateParts(date, utc);
+  return `${Number(day)} ${MONTH_NAMES[Number(month) - 1]} ${year} · ${hours}:${minutes}`;
+}
+
+/** Neutral Executive Summary notes, without a severity. */
+export function summaryNotes(analytics: ConfigurationAnalytics): string[] {
+  return [
+    ...(analytics.assignmentNotApplicableConfigs
+      ? [
+          `Assignment not applicable: ${plural(analytics.assignmentNotApplicableConfigs, "configuration", "configurations")}; excluded from the assigned share.`,
+        ]
+      : []),
+    ...(analytics.staleConfigs
+      ? [
+          `Not modified in 90 days or more: ${plural(analytics.staleConfigs, "configuration", "configurations")}.`,
+        ]
+      : []),
+  ];
+}
 
 export interface GlanceFamily {
   familyKey: string;
@@ -34,7 +89,10 @@ export interface DocumentationGlance {
   assignmentUnknown: number;
   /** Configurations that have an assignment relationship. */
   assignmentApplicable: number;
-  /** assigned over assignmentApplicable; null when nothing is assignable. */
+  /**
+   * assigned over assignmentApplicable; null when no assignment is known,
+   * because nothing is assignable or every assignment is unknown.
+   */
   assignedShare: number | null;
   /** Families with configurations, in document order. */
   families: GlanceFamily[];
@@ -144,8 +202,9 @@ export function buildGlanceModel(
     notAssigned: analytics.unassignedConfigs,
     assignmentUnknown: analytics.unknownAssignmentConfigs,
     assignmentApplicable: analytics.assignmentApplicableConfigs,
+    // Only unknown assignments would show as 0%, which reads as a finding.
     assignedShare:
-      analytics.assignmentApplicableConfigs > 0
+      analytics.assignedConfigs + analytics.unassignedConfigs > 0
         ? analytics.assignedConfigs / analytics.assignmentApplicableConfigs
         : null,
     families: orderedFamilies,

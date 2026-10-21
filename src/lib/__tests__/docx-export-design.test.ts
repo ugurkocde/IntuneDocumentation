@@ -223,7 +223,7 @@ describe("Word documentation export design", () => {
       ...CONTOSO,
       collectedAt: "2026-10-08T12:00:00Z",
     });
-    expect(collected).toMatch(/Data collected\s+08 Oct 2026/);
+    expect(collected).toMatch(/Data collected\s+8 Oct 2026/);
     expect(collected).toContain("Tenantffc10f05...");
     const unknown = await coverText({
       ...CONTOSO,
@@ -289,12 +289,58 @@ describe("Word documentation export design", () => {
       .map(([, content]) => content);
     const content = footers.find((footer) => footer.includes("NUMPAGES"));
     expect(content).toBeDefined();
-    // Left text, a tab to the centred notice, a tab to the right stop, then
-    // "Page X of Y".
+    // Left text, a tab to the right stop, then "Page X of Y".
     expect(content).toContain('w:val="right"');
     const afterTabs = content!.split("<w:tab/>");
-    expect(afterTabs).toHaveLength(3);
-    expect(afterTabs[2]).toMatch(/Page .*PAGE.* of .*NUMPAGES/);
+    expect(afterTabs).toHaveLength(2);
+    expect(afterTabs[1]).toMatch(/Page .*PAGE.* of .*NUMPAGES/);
+  });
+
+  it("makes room on the cover for the lines of a long notice", async () => {
+    const lowerHeight = async (notice?: string) => {
+      const document = await documentOf({
+        ...CONTOSO,
+        branding: { footer: { enabled: true, confidentialityNotice: notice } },
+      });
+      const cover = elements(document, "tbl")[0]!;
+      const row = Array.from(cover.childNodes).filter(
+        (node) => node.nodeName === "w:tr",
+      )[1] as Element;
+      return Number(elements(row, "trHeight")[0]!.getAttributeNS(W, "val"));
+    };
+    const without = await lowerHeight();
+    const short = await lowerHeight("Internal use only");
+    const long = await lowerHeight(
+      "Shared with the audit team only. ".repeat(12),
+    );
+    // The cover stays one page: the band, the lower row and the footer fit.
+    expect(short).toBeLessThan(without);
+    expect(long).toBeLessThan(short);
+    expect(long).toBeGreaterThanOrEqual(3000);
+  });
+
+  it("gives a long confidentiality notice its own centred line above the footer", async () => {
+    const notice = `Restricted: ${"shared with the audit team only, ".repeat(6)}end of notice`;
+    const { xml } = await parts({
+      ...CONTOSO,
+      branding: { footer: { enabled: true, confidentialityNotice: notice } },
+    });
+    const footers = [...xml]
+      .filter(([name]) => /^word\/footer\d*\.xml$/.test(name))
+      .map(([, content]) => parse(content).document);
+    expect(footers).toHaveLength(2);
+    for (const footer of footers) {
+      const [first, second] = elements(footer, "p");
+      // The whole notice, centred, in a paragraph of its own.
+      expect(textOf(first!)).toBe(notice);
+      expect(elements(first!, "jc")[0]?.getAttributeNS(W, "val")).toBe(
+        "center",
+      );
+      expect(textOf(second!)).toContain(
+        "Generated with Intune Documentation (intunedocumentation.com)",
+      );
+      expect(elements(second!, "tab").length).toBeLessThanOrEqual(2);
+    }
   });
 });
 
@@ -319,7 +365,30 @@ describe("Word documentation export options", () => {
     const cover = textOf(elements(document, "tbl")[0]!);
     expect(cover).toContain("Win Ring 3");
     expect(cover).toContain("Settings Catalog");
-    expect(cover).not.toContain("Configuration Documentation");
+    // As in the PDF, the lead names the document instead of the tagline.
+    expect(cover).toContain("Configuration Documentation");
+    expect(cover).not.toContain("Comprehensive export");
+  });
+
+  it("says Not assigned and n/a and labels sections by family", async () => {
+    const text = await textOfDocument(CONTOSO);
+    expect(text).not.toContain("Unassigned");
+    expect(text).not.toContain("N/A");
+    expect(text).toContain("Not assigned");
+    expect(text).toContain("n/a");
+    const eyebrows = elements(await documentOf(CONTOSO), "p")
+      .map(textOf)
+      .filter((paragraph) => /^\d{2} {2}/.test(paragraph));
+    expect(eyebrows).toContain("01  Tenant Overview");
+    expect(
+      eyebrows.some((eyebrow) => eyebrow.endsWith("  Device configuration")),
+    ).toBe(true);
+    expect(
+      eyebrows.some((eyebrow) => eyebrow.endsWith("  Identity and access")),
+    ).toBe(true);
+    expect(
+      eyebrows.filter((eyebrow) => eyebrow.endsWith("  Configuration")),
+    ).toEqual([]);
   });
 
   it("honours includeTableOfContents and includeAnalytics", async () => {

@@ -208,6 +208,8 @@ interface MethodState {
   enabledForUsers: boolean;
   /** Certificate-based authentication default mode, when present. */
   mode?: unknown;
+  /** Enabled for users, but the default mode could not be read. */
+  modeUnreadable?: boolean;
   /** Plain text for reports, for example "Enabled for 1 target". */
   actual: string | null;
 }
@@ -351,12 +353,23 @@ export function evaluateTenantPolicySignals(
       const states = ["Fido2", "X509Certificate"].map((id) => {
         const state = methodState(configs, id);
         // Certificate-based authentication is phishing resistant only as a
-        // multifactor method; single-factor default mode does not count.
-        if (id === "X509Certificate" && state.enabledForUsers)
+        // multifactor method; single-factor default mode does not count. A
+        // default mode Graph omitted or that is unknown cannot be judged.
+        if (id === "X509Certificate" && state.enabledForUsers) {
+          if (
+            typeof state.mode !== "string" ||
+            !(state.mode in X509_MODES)
+          ) {
+            state.readable = false;
+            state.modeUnreadable = true;
+          }
           state.enabledForUsers = state.mode === "x509CertificateMultiFactor";
+        }
         return state;
       });
       const enabled = states.filter((state) => state.enabledForUsers);
+      // Without an enabled method, an unreadable one leaves the result open.
+      const open = !enabled.length && states.some((state) => !state.readable);
       for (const state of states)
         checks.push({
           ...base,
@@ -366,7 +379,7 @@ export function evaluateTenantPolicySignals(
           result: state.readable
             ? state.enabledForUsers
               ? "matches"
-              : enabled.length
+              : enabled.length || open
                 ? null
                 : "different"
             : null,
@@ -376,11 +389,15 @@ export function evaluateTenantPolicySignals(
               ? "Enabled for at least one user group"
               : "Enabled for at least one user group with multifactor default mode",
           actualValue: state.actual,
-          reason: !state.readable
-            ? "Graph did not return a readable state and include targets for this method."
-            : !state.enabledForUsers && enabled.length
-              ? `Not required: ${enabled.map((item) => item.id).join(" and ")} is enabled, and one phishing-resistant method is enough.`
-              : undefined,
+          reason: state.modeUnreadable
+            ? "Graph did not return a readable default mode for certificate-based authentication, so whether it is multifactor is unknown."
+            : !state.readable
+              ? "Graph did not return a readable state and include targets for this method."
+              : !state.enabledForUsers && enabled.length
+                ? `Not required: ${enabled.map((item) => item.id).join(" and ")} is enabled, and one phishing-resistant method is enough.`
+                : open
+                  ? "Not concluded: another phishing-resistant method could not be read."
+                  : undefined,
         });
       // Disabled methods are not counter-evidence: Windows Hello for Business
       // is phishing resistant and is not part of this policy.

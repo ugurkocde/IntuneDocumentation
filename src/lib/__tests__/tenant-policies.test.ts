@@ -16,6 +16,8 @@ import {
   safeguardState,
 } from "../compliance/management/management-summary";
 import { GERMAN_CAPABILITY_NAMES } from "../compliance/report-pdf";
+import { diffAssessments } from "../snapshots/diff";
+import { compactAssessment } from "../snapshots/projection";
 import {
   CONDITIONAL_ACCESS_ALTERNATIVES,
   TENANT_POLICY_CAPABILITIES,
@@ -981,5 +983,67 @@ describe("security summary policies of tenant-wide safeguards", () => {
     expect(safeguardPolicies(defaults)).toEqual([
       { name: "Security defaults", assigned: true },
     ]);
+  });
+});
+
+describe("certificate-based authentication with an unreadable default mode", () => {
+  const unreadableMode = methods({
+    id: "X509Certificate",
+    state: "enabled",
+    authenticationModeConfiguration: {},
+  });
+  const multifactor = methods({
+    id: "X509Certificate",
+    state: "enabled",
+    authenticationModeConfiguration: {
+      x509CertificateAuthenticationDefaultMode: "x509CertificateMultiFactor",
+    },
+  });
+
+  it("is unable to check and claims no different result", () => {
+    const result = capability(
+      data(policies({ authenticationMethods: unreadableMode })),
+      PHISHING,
+    );
+    const x509 = result.checks.find((check) =>
+      check.settingId.endsWith("/X509Certificate"),
+    )!;
+    expect(x509).toMatchObject({
+      assessmentStatus: "unableToCheck",
+      result: null,
+    });
+    expect(x509.reason).toContain("default mode");
+    expect(result.checks.some((check) => check.result === "different")).toBe(
+      false,
+    );
+  });
+
+  it("is a collection gap in history in both directions, never evidence removed or added", () => {
+    const stored = (authenticationMethods: Record<string, unknown>) =>
+      compactAssessment(
+        assessCompliance(data(policies({ authenticationMethods }))),
+      );
+    for (const [from, to, side] of [
+      [multifactor, unreadableMode, "after"],
+      [unreadableMode, multifactor, "before"],
+    ] as const) {
+      const changes = diffAssessments(stored(from), stored(to)).frameworks
+        .flatMap((framework) => framework.changes)
+        .filter((change) =>
+          change.causes.some((cause) => cause.capabilityId === PHISHING),
+        );
+      expect(changes.length).toBeGreaterThan(0);
+      for (const change of changes) {
+        expect(change.incomplete[side]).toBe(true);
+        const cause = change.causes.find(
+          (item) => item.capabilityId === PHISHING,
+        )!;
+        expect(cause).toMatchObject({
+          notCompared: true,
+          evidenceAdded: [],
+          evidenceRemoved: [],
+        });
+      }
+    }
   });
 });

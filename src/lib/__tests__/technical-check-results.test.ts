@@ -170,7 +170,7 @@ describe("independent assessment and configuration results", () => {
         state: "enabledForReportingButNotEnforced",
         grantControls: { operator: "AND", builtInControls: ["mfa"] },
         conditions: {
-          users: { includeUsers: ["All"] },
+          users: { includeUsers: ["All"], includeGroups: [], includeRoles: [] },
           applications: { includeApplications: ["All"] },
         },
       } as any,

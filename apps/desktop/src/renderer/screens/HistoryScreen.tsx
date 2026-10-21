@@ -397,8 +397,11 @@ function IdentityChanges({ identity }: { identity: IdentityDiff }) {
           <p>They were not read in one of the snapshots, so changes there are not shown.</p>
           <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
             {identity.notCompared.map((entry) => (
-              <li key={entry.policy}>
-                <span className="font-semibold">{entry.label}</span>: not read in {SIDE_TEXT[entry.side]}
+              <li key={`${entry.policy}-${entry.side}`} className="break-words">
+                <span className="font-semibold">{entry.label}</span>:{" "}
+                {entry.settings
+                  ? `${entry.settings.join(", ")} not readable in ${SIDE_TEXT[entry.side]}`
+                  : `not read in ${SIDE_TEXT[entry.side]}`}
               </li>
             ))}
           </ul>

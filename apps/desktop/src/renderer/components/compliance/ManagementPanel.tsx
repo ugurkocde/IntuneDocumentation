@@ -325,7 +325,7 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
             {policies.notComparedItems > 0 &&
               `${policies.notComparedItems.toLocaleString()} ${policies.notComparedItems === 1 ? "policy was" : "policies were"} not compared. `}
             {identity.notCompared > 0 &&
-              `${identity.notCompared.toLocaleString()} Entra identity ${identity.notCompared === 1 ? "policy was" : "policies were"} not compared. `}
+              `${identity.notCompared.toLocaleString()} Entra identity ${identity.notCompared === 1 ? "policy was" : "policies were"} not fully compared. `}
             Changes there are not counted.
           </span>
         </p>

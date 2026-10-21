@@ -14,6 +14,7 @@ import {
   type IdentityPolicyName,
 } from "./identity";
 import {
+  omittedFields,
   snapshotItemLabel,
   type SnapshotItem,
   type SnapshotProjection,
@@ -41,6 +42,8 @@ export const REFERENCE_MAX_SETTINGS = 100_000;
 export const REFERENCE_MAX_VALUE = 1000;
 
 const REDACTED = "[Redacted]";
+// Marks a field Graph omitted while a reference row is built; never stored.
+const OMITTED = "[Not returned by Graph]";
 const SEPARATOR = "\u0000";
 // Setting ids that name a secret, matched as the last word as the collector
 // does; their values are never stored, also when a collection kept one.
@@ -189,25 +192,44 @@ function markSecrets(value: unknown, depth = 0): unknown {
   return out;
 }
 
+function setPath(target: Json, path: string, value: unknown): void {
+  const segments = path.split(".");
+  let current = target;
+  for (const segment of segments.slice(0, -1)) {
+    if (!isRecord(current[segment])) current[segment] = {};
+    current = current[segment] as Json;
+  }
+  current[segments[segments.length - 1]!] = value;
+}
+
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
 function itemRows(
-  sectionKey: string,
-  sectionLabel: string,
+  section: { key: string; familyKey: string; label: string },
   item: SnapshotItem,
 ): ReferenceSetting[] {
+  const { key: sectionKey, label: sectionLabel } = section;
   const data = markSecrets(item.data) as Json;
   const platform = platformOf(data);
   const catalog = isCatalog(data);
   const policy = snapshotItemLabel({ label: sectionLabel }, item);
-  const rows = flattenItemSettings(sectionKey, data)
+  // A field Graph omitted is unknown: it is filled with a marker, so its
+  // rows get the ids real values would have and read as not comparable
+  // rather than missing or extra.
+  const omitted = omittedFields(section.familyKey, data);
+  const filled = omitted.length ? structuredClone(data) : data;
+  for (const path of omitted) setPath(filled, path, OMITTED);
+  const rows = flattenItemSettings(sectionKey, filled)
     .filter((row) => !(ID_FAMILIES.has(sectionKey) && OBJECT_ID.test(row.value)))
     .map((row) => {
     const id = row.definitionId ?? row.name;
     const setting = catalog ? id : [...row.path, id].join(" / ");
-    const redacted = row.value.includes(REDACTED) || SECRET_SETTING.test(id);
+    const redacted =
+      row.value.includes(REDACTED) ||
+      row.value.includes(OMITTED) ||
+      SECRET_SETTING.test(id);
     const entry: ReferenceSetting = {
       platform,
       family: sectionKey,
@@ -292,7 +314,7 @@ export function projectionSettings(projection: SnapshotProjection): SettingSet {
     }
     families.push(family);
     for (const item of section.items) {
-      settings.push(...itemRows(section.key, section.label, item));
+      settings.push(...itemRows(section, item));
     }
   }
   return {
@@ -310,7 +332,9 @@ const IDENTITY_POLICIES = Object.keys(
 
 // The identity policies collected in the snapshot as settings rows. Targets
 // that name a group or user of the tenant mean nothing elsewhere, so they
-// are not comparable; "All users" is.
+// are not comparable; "All users" is. A setting Graph did not return
+// readably carries no value either, so it is not comparable rather than
+// missing or extra.
 export function identitySettings(
   projection: Pick<SnapshotProjection, "tenantIdentityPolicies">,
 ): ReferenceIdentity {
@@ -328,7 +352,7 @@ export function identitySettings(
       setting: row.setting,
       name: row.name,
       ...(row.path.length ? { path: [...row.path] } : {}),
-      ...(row.tenantObject
+      ...(row.tenantObject || row.unreadable
         ? { redacted: true as const }
         : { value: row.display.slice(0, REFERENCE_MAX_VALUE) }),
       policy: IDENTITY_POLICY_LABELS[row.policy],

@@ -1,6 +1,6 @@
 // Pure comparison of two stored snapshots of one tenant: configuration
 // changes per policy and control status changes from the stored assessments.
-import { flattenItemSettings } from "../settings-flatten";
+import { flattenItemSettings, METADATA_KEYS } from "../settings-flatten";
 import type { CapabilityStatus, ControlStatus } from "../compliance/types";
 import {
   IDENTITY_POLICY_LABELS,
@@ -316,22 +316,62 @@ function assignmentChanges(
   return changes;
 }
 
+type IdentityEntry = {
+  row: IdentityRow;
+  values: Map<string, string>;
+  unreadable: boolean;
+};
+
 // One value per key: the values of a target list in a stable order, so a
 // reordered list is no change.
 function identityValues(
   rows: readonly IdentityRow[],
-): Map<string, { row: IdentityRow; values: Map<string, string> }> {
-  const out = new Map<
-    string,
-    { row: IdentityRow; values: Map<string, string> }
-  >();
+): Map<string, IdentityEntry> {
+  const out = new Map<string, IdentityEntry>();
   for (const row of rows) {
     const key = `${row.policy}${OCCURRENCE}${row.setting}`;
     let entry = out.get(key);
-    if (!entry) out.set(key, (entry = { row, values: new Map() }));
-    entry.values.set(row.value, row.display);
+    if (!entry)
+      out.set(key, (entry = { row, values: new Map(), unreadable: false }));
+    if (row.unreadable) entry.unreadable = true;
+    else entry.values.set(row.value, row.display);
   }
   return out;
+}
+
+// Settings unreadable on either side, by policy and by the side that could
+// not read them. They are reported as not compared, never as changed.
+function unreadableSettings(
+  a: ReadonlyMap<string, IdentityEntry>,
+  b: ReadonlyMap<string, IdentityEntry>,
+): { keys: Set<string>; notCompared: IdentityNotCompared[] } {
+  const keys = new Set<string>();
+  const groups = new Map<
+    string,
+    IdentityNotCompared & { settings: string[] }
+  >();
+  for (const key of new Set([...a.keys(), ...b.keys()])) {
+    const from = a.get(key)?.unreadable ?? false;
+    const to = b.get(key)?.unreadable ?? false;
+    if (!from && !to) continue;
+    keys.add(key);
+    const { row } = (a.get(key) ?? b.get(key))!;
+    const side = from && to ? "both" : from ? "from" : "to";
+    const group = `${row.policy}${OCCURRENCE}${side}`;
+    let entry = groups.get(group);
+    if (!entry)
+      groups.set(
+        group,
+        (entry = {
+          policy: row.policy,
+          label: IDENTITY_POLICY_LABELS[row.policy],
+          side,
+          settings: [],
+        }),
+      );
+    entry.settings.push([...row.path, row.name].join(": "));
+  }
+  return { keys, notCompared: [...groups.values()] };
 }
 
 function shown(values: Map<string, string>): string {
@@ -358,9 +398,10 @@ export function diffIdentity(
   const b = identityValues(
     keep(identityRows(to.tenantIdentityPolicies, groupNames)),
   );
+  const unreadable = unreadableSettings(a, b);
   const changes: IdentityChange[] = [];
   const push = (
-    { row }: { row: IdentityRow },
+    { row }: IdentityEntry,
     key: string,
     change: IdentityChange["change"],
     before: string | null,
@@ -377,6 +418,7 @@ export function diffIdentity(
       after,
     });
   for (const [key, entry] of b) {
+    if (unreadable.keys.has(key)) continue;
     const old = a.get(key);
     const after = shown(entry.values);
     if (!old) push(entry, key, "added", null, after);
@@ -388,8 +430,45 @@ export function diffIdentity(
     }
   }
   for (const [key, entry] of a)
-    if (!b.has(key)) push(entry, key, "removed", shown(entry.values), null);
-  return { changes, notCompared, total: changes.length };
+    if (!b.has(key) && !unreadable.keys.has(key))
+      push(entry, key, "removed", shown(entry.values), null);
+  return {
+    changes,
+    notCompared: [...notCompared, ...unreadable.notCompared],
+    total: changes.length,
+  };
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+// A setting property with a value in one snapshot that the other omits
+// under a parent it did return: Graph did not return the policy's details
+// completely on one side, so the value is unknown there, never added or
+// removed. A property returned as null is a value; one both omit is no
+// change.
+function omitsValue(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  top = true,
+): boolean {
+  for (const [x, y] of [
+    [a, b],
+    [b, a],
+  ] as const)
+    for (const [key, value] of Object.entries(x)) {
+      if (
+        (top && METADATA_KEYS.has(key)) ||
+        value === null ||
+        value === undefined
+      )
+        continue;
+      if (!Object.hasOwn(y, key)) return true;
+      const other = y[key];
+      if (isObject(value) && isObject(other) && omitsValue(value, other, false))
+        return true;
+    }
+  return false;
 }
 
 function byId(section: SnapshotSection): Map<string, SnapshotItem> {
@@ -471,7 +550,11 @@ export function diffSnapshots(
         policies.push(change(item, "added"));
         continue;
       }
-      if (old.incomplete || item.incomplete) {
+      if (
+        old.incomplete ||
+        item.incomplete ||
+        omitsValue(old.data, item.data)
+      ) {
         notComparedItems.push({
           sectionKey: key,
           sectionLabel: label,

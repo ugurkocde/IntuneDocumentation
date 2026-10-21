@@ -418,7 +418,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       "Tenant-wide settings of the authentication methods policy and security defaults, counted apart from the policies above.",
     historyIdentityRow: "Entra identity setting changes",
     historyIdentityNotCompared: (policies) =>
-      `Not compared because one of the two collections did not read them: ${plural(policies, "Entra identity policy", "Entra identity policies")}.`,
+      `Not compared, fully or in part, because one of the two collections did not read them: ${plural(policies, "Entra identity policy", "Entra identity policies")}.`,
     historyControlsHeading: "Measures whose status changed",
     historyMovement: (improved, regressed) =>
       `${plural(improved, "measure", "measures")} gained configuration or partial evidence, ${regressed} lost it.`,
@@ -709,7 +709,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       "Mandantenweite Einstellungen der Richtlinie für Authentifizierungsmethoden und der Sicherheitsstandards, getrennt von den Richtlinien oben gezählt.",
     historyIdentityRow: "Geänderte Entra-Identitätseinstellungen",
     historyIdentityNotCompared: (policies) =>
-      `Nicht verglichen, weil eine der beiden Erfassungen sie nicht gelesen hat: ${plural(policies, "Entra-Identitätsrichtlinie", "Entra-Identitätsrichtlinien")}.`,
+      `Ganz oder teilweise nicht verglichen, weil eine der beiden Erfassungen sie nicht gelesen hat: ${plural(policies, "Entra-Identitätsrichtlinie", "Entra-Identitätsrichtlinien")}.`,
     historyControlsHeading: "Maßnahmen mit geändertem Status",
     historyMovement: (improved, regressed) =>
       `${plural(improved, "Maßnahme hat", "Maßnahmen haben")} Konfigurationsnachweise oder teilweise Nachweise hinzugewonnen, ${plural(regressed, "hat", "haben")} sie verloren.`,

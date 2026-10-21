@@ -245,16 +245,15 @@ export function contentDigest(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-// Fields the compound policy checks read, by normalized @odata.type.
+// Fields the compound policy checks read, by normalized @odata.type. Each
+// type has one of the two scan day properties (Graph beta schema).
 const POLICY_CHECK_FIELDS: Readonly<Record<string, readonly string[]>> = {
   windows10generalconfiguration: [
     "defenderSystemScanSchedule",
-    "defenderScheduledScanDay",
     "defenderScanType",
     "defenderScheduledScanTime",
   ],
   windows10endpointprotectionconfiguration: [
-    "defenderSystemScanSchedule",
     "defenderScheduledScanDay",
     "defenderScanType",
     "defenderScheduledScanTime",
@@ -298,6 +297,53 @@ function signals() {
   }
   engineSignals = { paths, omaUris };
   return engineSignals;
+}
+
+// Conditional Access fields Graph beta returns on every policy (lab tenant,
+// 21 October 2026): the state, the grant lists and the target lists.
+const CA_EXPECTED_PATHS = [
+  "state",
+  ...[
+    "operator",
+    "builtInControls",
+    "customAuthenticationFactors",
+    "termsOfUse",
+    "authenticationStrength",
+  ].map((key) => `grantControls.${key}`),
+  ...["include", "exclude"].flatMap((mode) => [
+    ...["Users", "Groups", "Roles"].map(
+      (target) => `conditions.users.${mode}${target}`,
+    ),
+    `conditions.applications.${mode}Applications`,
+  ]),
+];
+
+/**
+ * The paths of fields a stored policy lacks although Graph returns them for
+ * its family or template type (null when not set): their values are
+ * unknown. A field under a parent returned as null is not configured, so it
+ * is not listed.
+ */
+export function omittedFields(familyKey: string, data: Json): string[] {
+  const type = normalizeOdataType(data["@odata.type"]);
+  const paths =
+    familyKey === "conditionalAccessPolicies"
+      ? CA_EXPECTED_PATHS
+      : [
+          ...new Set([
+            ...(POLICY_CHECK_FIELDS[type] ?? []),
+            ...(signals().paths.get(type) ?? []),
+          ]),
+        ];
+  return paths.filter((path) => {
+    let current: unknown = data;
+    for (const segment of path.split(".")) {
+      if (current === null) return false;
+      if (!isRecord(current) || !Object.hasOwn(current, segment)) return true;
+      current = current[segment];
+    }
+    return false;
+  });
 }
 
 function isRecord(value: unknown): value is Json {
@@ -436,6 +482,22 @@ function setPath(target: Json, path: string, value: unknown): void {
     current = current[segment] as Json;
   });
   current[segments[segments.length - 1]!] = value;
+}
+
+// The value at path, or the first parent on the way that is null.
+function nullablePath(
+  source: unknown,
+  path: string,
+): { path: string; value: unknown } {
+  const segments = path.split(".");
+  let current = source;
+  for (const [index, segment] of segments.entries()) {
+    if (current === null && index > 0)
+      return { path: segments.slice(0, index).join("."), value: null };
+    if (!isRecord(current)) return { path, value: undefined };
+    current = current[segment];
+  }
+  return { path, value: current };
 }
 
 function getPath(source: unknown, path: string): unknown {
@@ -754,8 +816,11 @@ function projectItem(
     if (value !== undefined) data[key] = value;
   }
   for (const path of signals().paths.get(odataType) ?? []) {
-    const value = plainValue(getPath(raw, path));
-    if (value !== undefined) setPath(data, path, value);
+    // A parent Graph returned as null (not configured) is kept as null, so
+    // the restored policy does not read as one that omitted the property.
+    const found = nullablePath(raw, path);
+    const value = plainValue(found.value);
+    if (value !== undefined) setPath(data, found.path, value);
   }
 
   for (const key of Object.keys(FINGERPRINT_LABELS)) {
@@ -841,35 +906,43 @@ function projectIdentity(
   if (errors) out.errors = errors;
   const methods = value.authenticationMethods;
   if (isRecord(methods)) {
-    const targets = (list: unknown) =>
-      Array.isArray(list)
-        ? list
-            .filter(isRecord)
-            .map((target) => pick(target, ["targetType", "id"]))
-        : [];
+    // A target list is kept only when Graph returned one, so an omitted list
+    // stays unreadable instead of reading as empty.
+    const targets = (
+      key: string,
+      source: Json,
+      fields: readonly string[] = ["targetType", "id"],
+    ): Json =>
+      Array.isArray(source[key])
+        ? {
+            [key]: (source[key] as unknown[])
+              .filter(isRecord)
+              .map((target) => pick(target, fields)),
+          }
+        : {};
     out.authenticationMethods = {
       ...pick(methods, ["policyMigrationState"]),
-      authenticationMethodConfigurations: (Array.isArray(
-        methods.authenticationMethodConfigurations,
-      )
-        ? methods.authenticationMethodConfigurations
-        : []
-      )
-        .filter(isRecord)
-        .map((configuration) => ({
-          ...pick(configuration, ["@odata.type", "id", "state"]),
-          includeTargets: targets(configuration.includeTargets),
-          excludeTargets: targets(configuration.excludeTargets),
-          // The X.509 default mode the engine reports with the method.
-          ...(isRecord(configuration.authenticationModeConfiguration)
-            ? {
-                authenticationModeConfiguration: pick(
-                  configuration.authenticationModeConfiguration,
-                  ["x509CertificateAuthenticationDefaultMode"],
-                ),
-              }
-            : {}),
-        })),
+      ...(Array.isArray(methods.authenticationMethodConfigurations)
+        ? {
+            authenticationMethodConfigurations:
+              methods.authenticationMethodConfigurations
+                .filter(isRecord)
+                .map((configuration) => ({
+                  ...pick(configuration, ["@odata.type", "id", "state"]),
+                  ...targets("includeTargets", configuration),
+                  ...targets("excludeTargets", configuration),
+                  // The X.509 default mode the engine reports with the method.
+                  ...(isRecord(configuration.authenticationModeConfiguration)
+                    ? {
+                        authenticationModeConfiguration: pick(
+                          configuration.authenticationModeConfiguration,
+                          ["x509CertificateAuthenticationDefaultMode"],
+                        ),
+                      }
+                    : {}),
+                })),
+          }
+        : {}),
     };
     // The registration campaign, compared by the change report (fields
     // checked against Graph beta in the lab tenant, 2026-10-18).
@@ -885,19 +958,12 @@ function projectIdentity(
             "snoozeDurationInDays",
             "enforceRegistrationAfterAllowedSnoozes",
           ]),
-          includeTargets: (Array.isArray(campaign.includeTargets)
-            ? campaign.includeTargets
-            : []
-          )
-            .filter(isRecord)
-            .map((target) =>
-              pick(target, [
-                "targetType",
-                "id",
-                "targetedAuthenticationMethod",
-              ]),
-            ),
-          excludeTargets: targets(campaign.excludeTargets),
+          ...targets("includeTargets", campaign, [
+            "targetType",
+            "id",
+            "targetedAuthenticationMethod",
+          ]),
+          ...targets("excludeTargets", campaign),
         },
       };
   }

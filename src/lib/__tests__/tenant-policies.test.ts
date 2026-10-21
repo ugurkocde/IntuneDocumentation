@@ -338,6 +338,17 @@ describe("Entra tenant policy signals", () => {
   });
 });
 
+// The lists Graph beta returns on every policy (lab tenant, 21 October 2026).
+const caUsers = (includeUsers: string[]) => ({
+  includeUsers,
+  includeGroups: [],
+  includeRoles: [],
+});
+const caApps = (includeApplications: string[]) => ({
+  includeApplications,
+  excludeApplications: [],
+});
+
 function caPolicy(
   state: string,
   grantControls: Record<string, unknown> = {
@@ -350,10 +361,16 @@ function caPolicy(
     displayName: `CA ${state}`,
     state,
     conditions: {
-      users: { includeUsers: ["All"] },
-      applications: { includeApplications: ["All"] },
+      users: caUsers(["All"]),
+      applications: caApps(["All"]),
     },
-    grantControls,
+    grantControls: {
+      builtInControls: [],
+      customAuthenticationFactors: [],
+      termsOfUse: [],
+      authenticationStrength: null,
+      ...grantControls,
+    },
   };
 }
 
@@ -460,9 +477,9 @@ describe("security defaults as an alternative to Conditional Access", () => {
 
   it("does not name MFA for all apps for a plain MFA policy on one app", () => {
     const policy = caPolicy("enabled");
-    policy.conditions.applications = {
-      includeApplications: ["00000002-0000-0ff1-ce00-000000000000"],
-    };
+    policy.conditions.applications = caApps([
+      "00000002-0000-0ff1-ce00-000000000000",
+    ]);
     const defaults = defaultsOf(assessCompliance(withCa([policy])));
     expect(defaults.alternative).toEqual({
       state: "inUse",
@@ -505,15 +522,19 @@ describe("security defaults as an alternative to Conditional Access", () => {
       {
         ...caPolicy("enabled"),
         conditions: {
-          users: { includeUsers: ["None"] },
-          applications: { includeApplications: ["All"] },
+          users: caUsers(["None"]),
+          applications: caApps(["All"]),
         },
       },
     ],
   ])("is not applicable, never set up, with %s", (label, policy) => {
-    // An enabled policy whose strength cannot be read is a data gap for the
-    // MFA capabilities it may provide, never a safeguard to set up.
-    const unreadable = label === "an unreadable custom authentication strength";
+    // An enabled policy whose strength or state cannot be read is a data gap
+    // for the MFA capabilities it may provide, never a safeguard to set up.
+    // A state Graph omitted leaves whether the policy applies unknown.
+    const unreadable = [
+      "an unreadable custom authentication strength",
+      "a policy without a readable state",
+    ].includes(label);
     const assessment = assessCompliance(withCa([policy]));
     const defaults = defaultsOf(assessment);
     expect(defaults.status).toBe("noEvidence");
@@ -747,9 +768,9 @@ describe("security defaults as an alternative to Conditional Access", () => {
 
   it("names only readable enforcing alternatives next to an unreadable strength", () => {
     const mfa = caPolicy("enabled");
-    mfa.conditions.applications = {
-      includeApplications: ["00000002-0000-0ff1-ce00-000000000000"],
-    };
+    mfa.conditions.applications = caApps([
+      "00000002-0000-0ff1-ce00-000000000000",
+    ]);
     const unreadable = {
       ...caPolicy("enabled", {
         operator: "AND",

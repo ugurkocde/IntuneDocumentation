@@ -316,8 +316,8 @@ describe("ManagementPanel changes since the previous collection", () => {
     const region = block();
     expect(within(region).getByText(/No policy, setting, assignment or control status changed/)).toBeTruthy();
     expect(within(region).queryByText(/Entra identity setting or/)).toBeNull();
-    expect(within(region).getByText(/Entra identity policy was not compared/).textContent).toBe(
-      "1 Entra identity policy was not compared. Changes there are not counted.",
+    expect(within(region).getByText(/Entra identity policy was not fully compared/).textContent).toBe(
+      "1 Entra identity policy was not fully compared. Changes there are not counted.",
     );
   });
 

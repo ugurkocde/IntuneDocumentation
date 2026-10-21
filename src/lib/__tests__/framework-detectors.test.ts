@@ -250,7 +250,8 @@ function ca(grants: Record<string, unknown>): Record<string, any> {
     state: "enabled",
     conditions: {
       users: { includeUsers: ["All"] },
-      applications: { includeApplications: ["All"] },
+      // Graph beta returns the exclusion list, empty when unset.
+      applications: { includeApplications: ["All"], excludeApplications: [] },
     },
     grantControls: { operator: "AND", ...grants },
   };

@@ -551,6 +551,18 @@ const deviceConfigurations = [
     appLockerApplicationControl: "enforceComponentsAndStoreApps",
     bitLockerEncryptDevice: false,
     defenderOfficeMacroCodeAllowWin32ImportsType: "userDefined",
+    // Graph returns every property of the profile; these are left unset.
+    defenderAllowBehaviorMonitoring: false,
+    defenderAllowIntrusionPreventionSystem: false,
+    deviceGuardEnableVirtualizationBasedSecurity: false,
+    defenderPreventCredentialStealingType: "userDefined",
+    defenderOfficeAppsLaunchChildProcessType: "userDefined",
+    defenderOfficeAppsExecutableContentCreationOrLaunchType: "userDefined",
+    defenderOfficeAppsOtherProcessInjectionType: "userDefined",
+    defenderAdobeReaderLaunchChildProcess: "userDefined",
+    defenderScanType: "userDefined",
+    defenderScheduledScanDay: "userDefined",
+    defenderScheduledScanTime: null,
     deviceGuardLocalSystemAuthorityCredentialGuardSettings: "notConfigured",
     firewallProfileDomain: null,
     firewallProfilePrivate: null,
@@ -640,6 +652,7 @@ const compliancePolicies = [
       passwordBlockSimple: false,
       passwordRequiredToUnlockFromIdle: false,
       passwordMinimumLength: null,
+      passwordMinutesOfInactivityBeforeLock: null,
       passwordRequiredType: "deviceDefault",
       requireHealthyDeviceReport: false,
       osMinimumVersion: "10.0.22631",
@@ -705,6 +718,7 @@ const compliancePolicies = [
     {
       passwordRequired: false,
       passwordBlockSimple: false,
+      passwordMinutesOfInactivityBeforeLock: null,
       passwordRequiredType: "deviceDefault",
       osMinimumVersion: null,
       osMaximumVersion: null,
@@ -1034,6 +1048,21 @@ const tenantIdentityPolicies: DetailedExportData["tenantIdentityPolicies"] = {
     lastModifiedDateTime: "2026-09-02T08:15:00Z",
     policyVersion: "1.5",
     policyMigrationState: "migrationComplete",
+    registrationEnforcement: {
+      authenticationMethodsRegistrationCampaign: {
+        snoozeDurationInDays: 1,
+        enforceRegistrationAfterAllowedSnoozes: true,
+        state: "default",
+        excludeTargets: [],
+        includeTargets: [
+          {
+            id: "all_users",
+            targetType: "group",
+            targetedAuthenticationMethod: "microsoftAuthenticator",
+          },
+        ],
+      },
+    },
     authenticationMethodConfigurations: [
       {
         "@odata.type":

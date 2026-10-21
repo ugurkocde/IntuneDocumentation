@@ -29,7 +29,7 @@ export interface FlatSettingRow {
 const NOT_CONFIGURED = "Not configured";
 
 // Item level metadata the documentation never lists as a setting.
-const METADATA_KEYS = new Set([
+export const METADATA_KEYS: ReadonlySet<string> = new Set([
   "@odata.type",
   "@odata.context",
   "id",

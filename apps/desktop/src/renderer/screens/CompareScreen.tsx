@@ -104,7 +104,7 @@ function statusDescription(status: Filter, kind: SourceKind): string {
     case "extra":
       return `Set in this tenant, not in ${noun}.`;
     case "notComparable":
-      return "A value is secret or not kept, so it cannot be compared.";
+      return "A value is secret, not kept or not readable, so it cannot be compared.";
     case "matching":
       return "The same values in both, whichever policies set them.";
   }

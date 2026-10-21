@@ -458,9 +458,21 @@ describe("compound detectors and legacy representations", () => {
         {
           id: "ca",
           state,
-          grantControls: { operator, builtInControls },
+          // Every list Graph beta returns (lab tenant, 21 October 2026).
+          grantControls: {
+            operator,
+            builtInControls,
+            customAuthenticationFactors: [],
+            termsOfUse: [],
+            authenticationStrength: null,
+          },
           conditions: {
-            users: { includeUsers: ["All"], excludeGroups: ["emergency"] },
+            users: {
+              includeUsers: ["All"],
+              includeGroups: [],
+              includeRoles: [],
+              excludeGroups: ["emergency"],
+            },
             applications: { includeApplications: ["All"] },
           },
         },

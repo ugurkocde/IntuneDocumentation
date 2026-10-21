@@ -728,6 +728,22 @@ Corrections from the live PDF review of 21 October 2026.
   `unableToCheck` value on a policy that is not unassigned is
   `dataMissing` ("Could not be read") in the summary, counts in "Safeguards
   that could not be read" and is no next action.
+- **Omitted is unknown.** Graph beta returns every template property (null
+  when not set), every Conditional Access grant and target list
+  (`authenticationStrength` null when unset) and every authentication method
+  field (lab, GET only, 21 October 2026). A property, list or state it
+  omitted is `unableToCheck`, never `different`, `missing` or
+  counter-evidence: a Conditional Access state other than enabled, disabled
+  or report-only is an unknown assignment; an OR grant without every list
+  and `authenticationStrength` is no evidence; an omitted app exclusion list
+  is not "no exclusions"; an update ring, scan profile or custom profile
+  whose relevant fields are all omitted is unable to check. The snapshot
+  keeps an omitted Entra target list absent, apart from an empty one, and a
+  null parent property as null. History does not compare a policy whose
+  setting property one snapshot omitted, and lists an Entra setting that
+  one side could not read as not compared, outside the change counts; a
+  reference comparison marks either as not comparable. Explicit nulls and
+  documented not configured enums stay definite.
 - **Measures outside Intune scope.** `outsideIntuneScope(frameworkId)`
   (NIS2, DORA, HIPAA) feeds both the management summary and the evidence
   report. The full report lists them on their own page, each needing its own

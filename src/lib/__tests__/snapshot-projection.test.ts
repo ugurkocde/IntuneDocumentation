@@ -513,7 +513,7 @@ describe("projectSnapshot", () => {
             id: "Sms",
             state: "enabled",
             includeTargets: [{ targetType: "group", id: "all_users" }],
-            excludeTargets: [],
+            // The collection omitted excludeTargets, so none is invented.
           },
         ],
         registrationEnforcement: {

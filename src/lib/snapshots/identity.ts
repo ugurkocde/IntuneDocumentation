@@ -3,7 +3,10 @@
 // the registration campaign) and the security defaults state. They are
 // tenant-wide settings, not configuration policies, so the history diff and
 // the comparison report them on their own, outside the configuration
-// counts. A policy is compared only when both sides collected it.
+// counts. A policy is compared only when both sides collected it, and a
+// setting only when both sides could read it: a field Graph omitted or
+// returned in an unsupported shape is unreadable, never an empty or removed
+// value.
 import type { SnapshotTenantIdentityPolicies } from "./projection";
 
 export type IdentityPolicyName = "authenticationMethods" | "securityDefaults";
@@ -46,6 +49,9 @@ export interface IdentityRow {
   // The target is a directory object of this tenant (a group or user id),
   // so it means nothing in another tenant.
   tenantObject?: true;
+  // Graph omitted the field or returned an unsupported shape on this side,
+  // so the setting is not compared. Value and display are empty.
+  unreadable?: true;
 }
 
 type Json = Record<string, unknown>;
@@ -60,12 +66,37 @@ function plain(value: unknown): string | null {
   return null;
 }
 
-// Whether the policy was read on this side.
+// Whether the policy was read on this side: collected, and for the
+// authentication methods policy with its method configurations, which the
+// engine also needs to read it.
 export function identityCollected(
   identity: SnapshotTenantIdentityPolicies | undefined,
   policy: IdentityPolicyName,
 ): boolean {
-  return identity?.status?.[policy] === "collected";
+  const data = identity?.[policy];
+  return (
+    identity?.status?.[policy] === "collected" &&
+    isRecord(data) &&
+    (policy !== "authenticationMethods" ||
+      Array.isArray(data.authenticationMethodConfigurations))
+  );
+}
+
+function unreadableRow(
+  policy: IdentityPolicyName,
+  setting: string,
+  name: string,
+  path: string[],
+): IdentityRow {
+  return {
+    policy,
+    setting,
+    name,
+    path,
+    value: "",
+    display: "",
+    unreadable: true,
+  };
 }
 
 function targetRows(
@@ -76,7 +107,7 @@ function targetRows(
   list: unknown,
   groupNames: Readonly<Record<string, string>>,
 ): IdentityRow[] {
-  if (!Array.isArray(list)) return [];
+  if (!Array.isArray(list)) return [unreadableRow(policy, setting, name, path)];
   return list.filter(isRecord).map((target) => {
     const id = plain(target.id) ?? "";
     const type = plain(target.targetType) ?? "";
@@ -97,6 +128,9 @@ function targetRows(
   });
 }
 
+// Compared value of an explicit null, apart from any text Graph returns.
+const NULL_VALUE = "\u0000null";
+
 function valueRow(
   policy: IdentityPolicyName,
   setting: string,
@@ -104,9 +138,14 @@ function valueRow(
   path: string[],
   value: unknown,
 ): IdentityRow[] {
+  // An explicit null is a value Graph returned: nothing is set.
+  if (value === null)
+    return [
+      { policy, setting, name, path, value: NULL_VALUE, display: "Not set" },
+    ];
   const text = plain(value);
   return text === null
-    ? []
+    ? [unreadableRow(policy, setting, name, path)]
     : [{ policy, setting, name, path, value: text, display: text }];
 }
 
@@ -164,60 +203,68 @@ export function identityRows(
           configuration.excludeTargets,
           groupNames,
         ),
-        ...valueRow(
-          policy,
-          `${base}:x509CertificateAuthenticationDefaultMode`,
-          "Default authentication mode",
-          path,
-          isRecord(configuration.authenticationModeConfiguration)
-            ? configuration.authenticationModeConfiguration
-                .x509CertificateAuthenticationDefaultMode
-            : undefined,
-        ),
+        // Only certificate-based authentication has a default mode. A mode
+        // configuration Graph omitted or returned as null holds no readable
+        // mode, as the engine reads it (tenant-policies.ts).
+        ...(id.toLowerCase() === "x509certificate"
+          ? valueRow(
+              policy,
+              `${base}:x509CertificateAuthenticationDefaultMode`,
+              "Default authentication mode",
+              path,
+              isRecord(configuration.authenticationModeConfiguration)
+                ? configuration.authenticationModeConfiguration
+                    .x509CertificateAuthenticationDefaultMode
+                : undefined,
+            )
+          : []),
       );
     }
     // Graph beta: registrationEnforcement.authenticationMethodsRegistrationCampaign
-    // (checked in the lab tenant, 2026-10-18). Read when the snapshot kept it.
+    // (checked in the lab tenant, 2026-10-18 and 2026-10-21).
     const enforcement = isRecord(methods.registrationEnforcement)
       ? methods.registrationEnforcement
       : {};
-    const campaign = enforcement.authenticationMethodsRegistrationCampaign;
-    if (isRecord(campaign)) {
-      const path = ["Registration campaign"];
-      rows.push(
-        ...valueRow(policy, "campaign:state", "State", path, campaign.state),
-        ...valueRow(
-          policy,
-          "campaign:snoozeDurationInDays",
-          "Days users can postpone",
-          path,
-          campaign.snoozeDurationInDays,
-        ),
-        ...valueRow(
-          policy,
-          "campaign:enforceRegistrationAfterAllowedSnoozes",
-          "Require registration after the allowed postponements",
-          path,
-          campaign.enforceRegistrationAfterAllowedSnoozes,
-        ),
-        ...targetRows(
-          policy,
-          "campaign:includeTargets",
-          "Include target",
-          path,
-          campaign.includeTargets,
-          groupNames,
-        ),
-        ...targetRows(
-          policy,
-          "campaign:excludeTargets",
-          "Exclude target",
-          path,
-          campaign.excludeTargets,
-          groupNames,
-        ),
-      );
-    }
+    // A campaign Graph omitted leaves each of its settings unreadable.
+    const campaign = isRecord(
+      enforcement.authenticationMethodsRegistrationCampaign,
+    )
+      ? enforcement.authenticationMethodsRegistrationCampaign
+      : {};
+    const path = ["Registration campaign"];
+    rows.push(
+      ...valueRow(policy, "campaign:state", "State", path, campaign.state),
+      ...valueRow(
+        policy,
+        "campaign:snoozeDurationInDays",
+        "Days users can postpone",
+        path,
+        campaign.snoozeDurationInDays,
+      ),
+      ...valueRow(
+        policy,
+        "campaign:enforceRegistrationAfterAllowedSnoozes",
+        "Require registration after the allowed postponements",
+        path,
+        campaign.enforceRegistrationAfterAllowedSnoozes,
+      ),
+      ...targetRows(
+        policy,
+        "campaign:includeTargets",
+        "Include target",
+        path,
+        campaign.includeTargets,
+        groupNames,
+      ),
+      ...targetRows(
+        policy,
+        "campaign:excludeTargets",
+        "Exclude target",
+        path,
+        campaign.excludeTargets,
+        groupNames,
+      ),
+    );
   }
   if (identityCollected(identity, "securityDefaults")) {
     const defaults = isRecord(identity!.securityDefaults)
@@ -239,8 +286,11 @@ export function identityRows(
 export interface IdentityNotCompared {
   policy: IdentityPolicyName;
   label: string;
-  // Which side did not collect it.
+  // Which side did not collect it, or could not read the settings.
   side: "from" | "to" | "both";
+  // Set when the policy was read on both sides but these settings were not
+  // readable on one of them, so only they were not compared.
+  settings?: string[];
 }
 
 // Policies collected on both sides, and the others with the side that lacks

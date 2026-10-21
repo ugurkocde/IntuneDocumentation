@@ -95,7 +95,7 @@ If the evidence rules changed between the two snapshots, a warning says so: some
 
 ### Partial snapshots are not compared where they failed
 
-A snapshot from an incomplete collection is marked partial. Families whose collection failed are excluded from the comparison and shown as not compared, under <Ui>Some families were not compared</Ui>. A gap in the data never reads as a removed policy or a missing setting.
+A snapshot from an incomplete collection is marked partial. Families whose collection failed are excluded from the comparison and shown as not compared, under <Ui>Some families were not compared</Ui>. A gap in the data never reads as a removed policy or a missing setting. The same holds for the Entra tenant settings: a setting Microsoft Graph did not return in one of the snapshots is listed under <Ui>Some Entra settings were not compared</Ui> and is not counted as a change.
 
 The management summary uses the same comparison. See [Changes since the previous collection](/desktop/management-report#changes-since).
 

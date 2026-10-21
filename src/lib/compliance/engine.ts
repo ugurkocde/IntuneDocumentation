@@ -94,9 +94,13 @@ export function normalizeOdataType(value: unknown): string {
     .toLowerCase();
 }
 
+// Null when Graph returned the property or a parent of it as null (not
+// configured), undefined when it omitted one or returned an unsupported
+// shape.
 function resolvePropertyPath(config: unknown, path: string): unknown {
   let current: unknown = config;
   for (const segment of path.split(".")) {
+    if (current === null) return null;
     if (!current || typeof current !== "object") return undefined;
     current = (current as Record<string, unknown>)[segment];
   }
@@ -304,7 +308,14 @@ function evaluateConfiguration(
   const note = compliancePolicyNote(config);
   if (kind === "accessPolicy") {
     const ca = config as any;
-    assignment.state = ca.state === "enabled" ? "assigned" : "notAssigned";
+    // Only a documented state decides whether the policy applies. A state
+    // Graph omitted or did not document is unknown, never not assigned.
+    assignment.state =
+      ca.state === "enabled"
+        ? "assigned"
+        : ["disabled", "enabledForReportingButNotEnforced"].includes(ca.state)
+          ? "notAssigned"
+          : "unknown";
     assignment.targets = [
       `Users: ${JSON.stringify(ca.conditions?.users ?? {})}`,
       `Applications: ${JSON.stringify(ca.conditions?.applications ?? {})}`,
@@ -396,7 +407,25 @@ function evaluateConfiguration(
             continue;
           settingId = signal.propertyPath;
           const value = resolvePropertyPath(config, settingId);
-          if (value === undefined || value === null) continue;
+          // Graph returns every property of a template resource, null when
+          // not configured. One it omitted is unknown, so it is no check
+          // result and never reads as removed evidence.
+          if (value === undefined) {
+            checks.push({
+              assessmentStatus: "unableToCheck",
+              result: null,
+              settingId,
+              expectedValue: expectedValue(signal),
+              actualValue: null,
+              reason:
+                "Graph did not return this property for the policy. Refresh policy details.",
+              policyId,
+              policyName,
+              assignment,
+            });
+            continue;
+          }
+          if (value === null) continue;
           // Template resources such as compliance policies and device
           // restrictions return every boolean; false is the "Not configured"
           // default, not a configured value, so it is neither a check result
@@ -413,6 +442,26 @@ function evaluateConfiguration(
             ? `${signal.settingId}/${signal.presentationId}`
             : signal.settingId;
           values = legacyValues(config, signal);
+          // Graph returns the custom OMA-URI rows on every custom profile
+          // (checked in the lab tenant, 21 October 2026); without them, the
+          // profile's values are unknown, not absent.
+          if (
+            signal.source === "omaUri" &&
+            !Array.isArray(config.omaSettings) &&
+            odataType === "windows10customconfiguration"
+          )
+            checks.push({
+              assessmentStatus: "unableToCheck",
+              result: null,
+              settingId,
+              expectedValue: expectedValue(signal),
+              actualValue: null,
+              reason:
+                "Graph did not return the custom OMA-URI settings of this profile. Refresh policy details.",
+              policyId,
+              policyName,
+              assignment,
+            });
           if (
             signal.source === "administrativeTemplate" &&
             signal.presentationId &&

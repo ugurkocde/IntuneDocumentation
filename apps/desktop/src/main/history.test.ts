@@ -210,6 +210,8 @@ describe("managementChanges", () => {
   it("summarizes counts and the selected framework's control changes", () => {
     const read = (securityDefaults: "collected" | "failed") => ({
       status: { authenticationMethods: "collected", securityDefaults },
+      authenticationMethods: { authenticationMethodConfigurations: [] },
+      ...(securityDefaults === "collected" ? { securityDefaults: { isEnabled: false } } : {}),
     }) as SnapshotProjection["tenantIdentityPolicies"];
     const result = managementChanges(
       { collectedAt: "2026-10-10T10:00:00Z", partial: false, tenantIdentityPolicies: read("failed") },

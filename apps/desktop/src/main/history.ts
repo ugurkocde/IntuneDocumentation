@@ -219,7 +219,8 @@ export function managementChanges(
     identity: {
       compared: identityCompleteness(from.tenantIdentityPolicies, to.tenantIdentityPolicies).compared.length,
       changes: identity.total,
-      notCompared: identity.notCompared.length,
+      // Policies not read, or with settings not readable, on either side.
+      notCompared: new Set(identity.notCompared.map((entry) => entry.policy)).size,
     },
     controls,
     improved: assessed.filter(

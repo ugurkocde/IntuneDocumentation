@@ -6,6 +6,22 @@ export interface PolicyCheckResult {
   observed: string;
 }
 
+/**
+ * Whether Graph returned the grant lists that decide a Conditional Access
+ * check. Under OR, every alternative must require the capability, so an
+ * omitted list or authenticationStrength may hide one that does not. Under
+ * AND, an omitted list only adds requirements.
+ */
+export function grantControlsReadable(controls: Record<string, any>): boolean {
+  return (
+    controls.operator !== "OR" ||
+    (Array.isArray(controls.builtInControls) &&
+      Array.isArray(controls.customAuthenticationFactors) &&
+      Array.isArray(controls.termsOfUse) &&
+      "authenticationStrength" in controls)
+  );
+}
+
 /** Compound checks must be satisfied by one policy, never unrelated policies. */
 export function evaluatePolicyCheck(
   config: Record<string, any>,
@@ -119,6 +135,11 @@ export function evaluatePolicyCheck(
   if (type !== "conditionalaccesspolicy") return;
   const controls = config.grantControls;
   if (!controls || !["AND", "OR"].includes(controls.operator)) return;
+  // Graph beta returns every grant list and authenticationStrength (null
+  // when unset), checked in the lab tenant on 21 October 2026. One it
+  // omitted may hold an OR alternative that does not require the
+  // capability, so it is never read as empty.
+  if (!grantControlsReadable(controls)) return;
   const builtIn = Array.isArray(controls.builtInControls)
     ? controls.builtInControls
     : [];
@@ -165,8 +186,13 @@ export function evaluatePolicyCheck(
             : required === "mfa" && requiresMfa,
         ]
       : []),
-    ...(controls.customAuthenticationFactors ?? []).map(() => false),
-    ...(controls.termsOfUse ?? []).map(() => false),
+    ...(Array.isArray(controls.customAuthenticationFactors)
+      ? controls.customAuthenticationFactors
+      : []
+    ).map(() => false),
+    ...(Array.isArray(controls.termsOfUse) ? controls.termsOfUse : []).map(
+      () => false,
+    ),
   ];
   // AND needs at least one relevant enforced grant; every OR alternative must
   // require the capability. MFA OR compliant-device is never evidence of MFA.
@@ -179,9 +205,12 @@ export function evaluatePolicyCheck(
     return;
   if (check === "conditionalAccessMfaAllApps") {
     const apps = config.conditions?.applications;
+    // An omitted exclusion list is unknown, not empty.
     if (
-      !apps?.includeApplications?.includes("All") ||
-      (apps.excludeApplications?.length ?? 0) > 0
+      !Array.isArray(apps?.includeApplications) ||
+      !apps.includeApplications.includes("All") ||
+      !Array.isArray(apps.excludeApplications) ||
+      apps.excludeApplications.length > 0
     )
       return;
   }

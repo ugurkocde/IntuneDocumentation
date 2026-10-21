@@ -67,7 +67,7 @@ export interface ManagementReportChanges {
     compared: number;
     /** Identity settings added, removed or changed in those policies. */
     changes: number;
-    /** Identity policies not read in one or both collections. */
+    /** Identity policies not read, or with settings not readable, in one or both collections. */
     notCompared: number;
   };
   /** Controls of this framework whose status changed, in control order. */

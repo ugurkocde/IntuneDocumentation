@@ -300,6 +300,10 @@ describe("compliance report PDF", () => {
           displayName: "Unmapped unassigned configuration",
           "@odata.type":
             "#microsoft.graph.macOSEndpointProtectionConfiguration",
+          // The other properties the engine reads, returned as not set.
+          fileVaultEnabled: false,
+          firewallEnabled: false,
+          gatekeeperAllowedAppSource: null,
           ...unassignedSettings,
           assignments: [],
         },

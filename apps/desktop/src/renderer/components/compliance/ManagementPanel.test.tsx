@@ -99,6 +99,7 @@ function changes(overrides: Partial<ManagementReportChanges> = {}): ManagementRe
     ],
     improved: 3,
     regressed: 1,
+    collectionGaps: { opened: 0, closed: 0 },
     rulesetChanged: false,
     fromRuleset: "2026.10.3",
     toRuleset: "2026.10.3",
@@ -250,6 +251,33 @@ describe("ManagementPanel changes since the previous collection", () => {
     notComparedFamilies: 0,
     notComparedItems: 0,
   };
+
+  it("lists collection gaps apart from evidence gained or lost", async () => {
+    mocks.changes.mockResolvedValue({
+      state: "ready",
+      changes: changes({
+        policies: unchanged,
+        controls: [{ id: "IA-2", before: "partialEvidence", after: "notAssessed" }],
+        improved: 0,
+        regressed: 0,
+        collectionGaps: { opened: 1, closed: 2 },
+      }),
+    });
+    await renderPanel();
+    await settle();
+    const region = block();
+    expect(within(region).getByText(/gained evidence/).textContent).toBe("0 measures gained evidence, 0 lost it.");
+    expect(within(region).getByText(/Not counted as gained or lost/).textContent).toBe(
+      "Not counted as gained or lost: 1 measure could not be assessed this time and 2 measures could be assessed again, usually because data was missing from one of the two collections.",
+    );
+  });
+
+  it("shows no collection gap line without gaps", async () => {
+    mocks.changes.mockResolvedValue({ state: "ready", changes: changes() });
+    await renderPanel();
+    await settle();
+    expect(within(block()).queryByText(/Not counted as gained or lost/)).toBeNull();
+  });
 
   it("shows an Entra identity change even when no policy or control changed", async () => {
     mocks.changes.mockResolvedValue({

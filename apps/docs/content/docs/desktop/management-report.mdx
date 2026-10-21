@@ -110,7 +110,7 @@ If a baseline is rejected, the message tells you what to do. See [Baseline file 
 With [local history](/desktop/history) on, the management summary also shows what changed in the tenant itself, not only how the numbers moved. Under the tiles, <Ui>Changes since</Ui> compares the current collection with the previous snapshot of this tenant on this computer:
 
 - **Policy changes.** Counts for policies added, removed, renamed and changed, plus the number of setting changes and assignment changes behind them.
-- **Control changes.** How many measures gained evidence and how many lost it, with the first control status changes listed and their status before and after.
+- **Control changes.** How many measures gained evidence and how many lost it, with the first control status changes listed and their status before and after. Only measures assessed in both collections count. A measure that could not be assessed in one of the two, usually because data such as an Entra policy could not be read, is listed apart and never counted as gained or lost.
 
 The same section is included in the exported management report, in English and German. The full detail behind every count is in [History](/desktop/history#compare).
 

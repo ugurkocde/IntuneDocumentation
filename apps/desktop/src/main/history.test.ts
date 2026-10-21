@@ -233,6 +233,7 @@ describe("managementChanges", () => {
       ],
       improved: 1,
       regressed: 1,
+      collectionGaps: { opened: 0, closed: 0 },
       rulesetChanged: true,
       fromRuleset: "1",
       toRuleset: "2",
@@ -248,6 +249,43 @@ describe("managementChanges", () => {
       "missing",
     );
     expect(result).toMatchObject({ controls: [], improved: 0, regressed: 0, partial: false });
+  });
+
+  it("counts moves to and from not assessed as collection gaps, not evidence lost or gained", () => {
+    const gaps = (changes: ReturnType<typeof change>[]): ComparedSnapshots => ({
+      ...compared,
+      assessments: { ...compared.assessments, frameworks: [{ id: "nist", name: "NIST", changes }] },
+    });
+    const side = (collectedAt: string) => ({ collectedAt, partial: false });
+    // Security defaults read in the first collection, HTTP 403 in the second.
+    const lost = managementChanges(
+      side("2026-10-10T10:00:00Z"),
+      side("2026-10-18T10:00:00Z"),
+      gaps([change("IA-2", "partialEvidence", "notAssessed"), change("IA-5", "evidenceFound", "notAssessed")]),
+      "nist",
+    );
+    expect(lost).toMatchObject({ improved: 0, regressed: 0, collectionGaps: { opened: 2, closed: 0 } });
+    expect(lost.controls).toHaveLength(2);
+    // Read again in the next collection: no false improvement.
+    const recovered = managementChanges(
+      side("2026-10-18T10:00:00Z"),
+      side("2026-10-19T10:00:00Z"),
+      gaps([change("IA-2", "notAssessed", "partialEvidence"), change("AC-2", "noEvidence", "evidenceFound")]),
+      "nist",
+    );
+    expect(recovered).toMatchObject({ improved: 1, regressed: 0, collectionGaps: { opened: 0, closed: 1 } });
+    // Mapping and scope changes are neither evidence nor collection gaps.
+    const other = managementChanges(
+      side("2026-10-18T10:00:00Z"),
+      side("2026-10-19T10:00:00Z"),
+      gaps([
+        change("AC-3", null, "evidenceFound"),
+        change("AC-4", "evidenceFound", "notApplicable"),
+        change("AC-5", "notAssessed", null),
+      ]),
+      "nist",
+    );
+    expect(other).toMatchObject({ improved: 0, regressed: 0, collectionGaps: { opened: 0, closed: 0 } });
   });
 });
 

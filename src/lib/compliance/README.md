@@ -449,7 +449,7 @@ and choices were read using seven scoped, read-only Graph beta requests on
 8 September 2026 and are stored in additional-verified-settings.json; no tenant
 policy data was saved. Only DeviceManagementConfiguration.Read.All was needed.
 
-## Screen lock, DORA, Entra tenant policies and device status (ruleset 2026.10.4)
+## Screen lock, DORA, Entra tenant policies and device status (since ruleset 2026.10.4)
 
 ### Screen lock after inactivity
 
@@ -513,10 +513,11 @@ app always reads them; the website only when Conditional Access is included.
 The authorization policy is not read (ruleset 2026.10.6): user consent and
 guest invitation settings have no honest control mapping, and a denied read
 would mark the identity collection partial for nothing. Older collections and
-snapshots that contain it stay readable; the field and its status are ignored. They are stored on
-the collection as `tenantIdentityPolicies` with a status per policy
-(`collected`, `permissionDenied`, `failed`, `skipped`) and never in `sections`,
-so configuration counts, search, classification and the documentation export
+snapshots that contain it stay readable; the field and its status are ignored.
+The policies that are read are stored on the collection as
+`tenantIdentityPolicies` with a status per policy (`collected`,
+`permissionDenied`, `failed`, `skipped`) and never in `sections`, so
+configuration counts, search, classification and the documentation export
 are unchanged.
 
 `tenantPolicy` signals have their own evaluation (`tenant-policies.ts`):

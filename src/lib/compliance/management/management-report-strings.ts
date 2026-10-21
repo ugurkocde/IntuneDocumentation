@@ -47,6 +47,9 @@ export interface ManagementReportStrings {
   // No measure gained or lost evidence; policies or Entra settings may
   // still have changed, so the words name measures.
   historyNoChange: string;
+  // No measure gained or lost evidence, but some could be assessed in one of
+  // the two collections only, so they were not compared.
+  historyGapsOnly: string;
   historyDetail: (since: string) => string;
   measuresHeading: string;
   measuresCaption: string;
@@ -146,6 +149,7 @@ export interface ManagementReportStrings {
   historyIdentityNotCompared: (policies: number) => string;
   historyControlsHeading: string;
   historyMovement: (improved: number, regressed: number) => string;
+  historyCollectionGaps: (opened: number, closed: number) => string;
   historyControlHeaders: readonly [string, string, string, string];
   historyNoControlChanges: string;
   controlStatuses: Record<ControlStatus, string>;
@@ -202,6 +206,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyValue: (improved, regressed) =>
       `+${improved} / -${regressed} measures`,
     historyNoChange: "No change in measures",
+    historyGapsOnly: "Some measures not compared",
     historyDetail: (since) => `since ${since} (history)`,
     measuresHeading: "Measures",
     measuresCaption: "Safeguards in place per measure",
@@ -417,6 +422,17 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyControlsHeading: "Measures whose status changed",
     historyMovement: (improved, regressed) =>
       `${plural(improved, "measure", "measures")} gained configuration or partial evidence, ${regressed} lost it.`,
+    historyCollectionGaps: (opened, closed) =>
+      `Not counted as gained or lost evidence: ${[
+        opened > 0
+          ? `${plural(opened, "measure", "measures")} could not be assessed this time`
+          : "",
+        closed > 0
+          ? `${plural(closed, "measure", "measures")} could be assessed again`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" and ")}, usually because data was missing from one of the two collections.`,
     historyControlHeaders: ["Measure", "Title", "Before", "Now"],
     historyNoControlChanges: "No measure changed its status.",
     controlStatuses: {
@@ -475,6 +491,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyValue: (improved, regressed) =>
       `+${improved} / -${regressed} Maßnahmen`,
     historyNoChange: "Maßnahmen unverändert",
+    historyGapsOnly: "Einige Maßnahmen nicht verglichen",
     historyDetail: (since) => `seit ${since} (Verlauf)`,
     measuresHeading: "Maßnahmen",
     measuresCaption: "Aktive Schutzfunktionen je Maßnahme",
@@ -696,6 +713,17 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     historyControlsHeading: "Maßnahmen mit geändertem Status",
     historyMovement: (improved, regressed) =>
       `${plural(improved, "Maßnahme hat", "Maßnahmen haben")} Konfigurationsnachweise oder teilweise Nachweise hinzugewonnen, ${plural(regressed, "hat", "haben")} sie verloren.`,
+    historyCollectionGaps: (opened, closed) =>
+      `Nicht als hinzugewonnene oder verlorene Nachweise gezählt: ${[
+        opened > 0
+          ? `${plural(opened, "Maßnahme konnte", "Maßnahmen konnten")} diesmal nicht bewertet werden`
+          : "",
+        closed > 0
+          ? `${plural(closed, "Maßnahme konnte", "Maßnahmen konnten")} wieder bewertet werden`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" und ")}, meist weil in einer der beiden Erfassungen Daten fehlten.`,
     historyControlHeaders: ["Maßnahme", "Titel", "Vorher", "Jetzt"],
     historyNoControlChanges: "Keine Maßnahme hat ihren Status geändert.",
     controlStatuses: {

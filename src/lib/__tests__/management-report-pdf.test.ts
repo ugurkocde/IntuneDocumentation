@@ -712,6 +712,7 @@ function createChanges(
     ],
     improved: 2,
     regressed: 1,
+    collectionGaps: { opened: 0, closed: 0 },
     rulesetChanged: true,
     fromRuleset: "2026.09.1",
     toRuleset: "2026.10.2",
@@ -965,6 +966,28 @@ describe.each(["en", "de"] as const)(
       const text = pages[historyPage(pages) - 1]?.text ?? "";
       expect(text).toContain(strings.historyNoControlChanges);
       expect(text).not.toContain(strings.historyControlHeaders[3]);
+    });
+
+    it("reports collection gaps apart and never counts them on page 1", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            delta: undefined,
+            changes: createChanges({
+              controls: [{ id: "IA-2", before: "partialEvidence", after: "notAssessed" }],
+              improved: 0,
+              regressed: 0,
+              collectionGaps: { opened: 1, closed: 0 },
+            }),
+          }),
+        ),
+      );
+      expect(pages[0]?.text).toContain(strings.historyGapsOnly);
+      expect(pages[0]?.text).not.toContain(strings.historyValue(0, 1));
+      expect(pages[0]?.text).not.toContain(strings.historyNoChange);
+      const text = pages[historyPage(pages) - 1]?.text ?? "";
+      expect(text).toContain(strings.historyMovement(0, 0));
+      expect(text).toContain(strings.historyCollectionGaps(1, 0).slice(0, 30));
     });
 
     it("scopes the page 1 no change wording to measures when only policies and Entra settings changed", async () => {

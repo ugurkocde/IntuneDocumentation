@@ -220,7 +220,7 @@ function ChangeCount({ value, label }: { value: number; label: string }) {
 }
 
 function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
-  const { policies, controls, identity } = changes;
+  const { policies, controls, identity, collectionGaps } = changes;
   const counts = [
     { label: "Policies added", value: policies.added },
     { label: "Policies removed", value: policies.removed },
@@ -240,6 +240,13 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
   const notCompared = policies.notComparedFamilies + policies.notComparedItems;
   const hidden = controls.length - SHOWN_CONTROL_CHANGES;
   const measures = (count: number) => `${count.toLocaleString()} ${count === 1 ? "measure" : "measures"}`;
+  // Moves to or from Not assessed are collection gaps, not evidence changes.
+  const gaps = `Not counted as gained or lost: ${[
+    collectionGaps.opened > 0 && `${measures(collectionGaps.opened)} could not be assessed this time`,
+    collectionGaps.closed > 0 && `${measures(collectionGaps.closed)} could be assessed again`,
+  ]
+    .filter(Boolean)
+    .join(" and ")}, usually because data was missing from one of the two collections.`;
   return (
     <>
       <p className="text-petrol-600 mt-1 text-xs leading-5">
@@ -268,6 +275,12 @@ function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
           <p className="text-petrol-800 mt-3 text-xs leading-5 font-medium">
             {measures(changes.improved)} gained evidence, {changes.regressed.toLocaleString()} lost it.
           </p>
+          {(collectionGaps.opened > 0 || collectionGaps.closed > 0) && (
+            <p className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{gaps}</span>
+            </p>
+          )}
           {controls.length > 0 && (
             <div className="mt-2">
               <p className="text-petrol-600 text-[10px] font-bold tracking-[0.1em] uppercase">

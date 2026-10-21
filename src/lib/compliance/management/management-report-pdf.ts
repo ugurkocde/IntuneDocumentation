@@ -77,10 +77,24 @@ export interface ManagementReportChanges {
     before: ControlStatus | null;
     after: ControlStatus | null;
   }[];
-  /** Controls that gained configuration or partial evidence. */
+  /**
+   * Controls assessed in both collections that gained configuration or
+   * partial evidence.
+   */
   improved: number;
-  /** Controls that lost configuration or partial evidence. */
+  /** Controls assessed in both collections that lost it. */
   regressed: number;
+  /**
+   * Controls that moved between an assessed status and notAssessed, usually
+   * because data was missing from one collection. Never counted as gained or
+   * lost evidence.
+   */
+  collectionGaps: {
+    /** Assessed before, not assessed now. */
+    opened: number;
+    /** Not assessed before, assessed now. */
+    closed: number;
+  };
   rulesetChanged: boolean;
   fromRuleset: string;
   toRuleset: string;
@@ -499,10 +513,14 @@ export async function generateManagementReportPDF(
       // stand in for the comparison.
       if (!delta && changes)
         return {
+          // Collection gaps are never counted as gained or lost evidence.
           value:
-            changes.improved === 0 && changes.regressed === 0
-              ? strings.historyNoChange
-              : strings.historyValue(changes.improved, changes.regressed),
+            changes.improved !== 0 || changes.regressed !== 0
+              ? strings.historyValue(changes.improved, changes.regressed)
+              : changes.collectionGaps.opened > 0 ||
+                  changes.collectionGaps.closed > 0
+                ? strings.historyGapsOnly
+                : strings.historyNoChange,
           detail: strings.historyDetail(
             formatDate(changes.since, strings, "numeric"),
           ),
@@ -1389,9 +1407,17 @@ export async function generateManagementReportPDF(
     }
 
     subheading(strings.historyControlsHeading);
+    const { opened, closed } = changes.collectionGaps;
     paragraph(strings.historyMovement(changes.improved, changes.regressed), {
-      after: 3,
+      after: opened > 0 || closed > 0 ? 1.5 : 3,
     });
+    if (opened > 0 || closed > 0)
+      paragraph(strings.historyCollectionGaps(opened, closed), {
+        size: 8,
+        style: "italic",
+        color: WARNING,
+        after: 3,
+      });
     const statusLabel = (status: ControlStatus | null) =>
       status === null ? strings.notMapped : strings.controlStatuses[status];
     if (changes.controls.length === 0)

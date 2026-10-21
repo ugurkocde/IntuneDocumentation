@@ -150,11 +150,25 @@ const HAS_EVIDENCE: ReadonlySet<ControlStatus | null> = new Set<ControlStatus | 
   "partialEvidence",
 ]);
 
+// Statuses that are a verdict on collected configuration. notAssessed means
+// the data was missing (a failed or incomplete collection, unknown
+// assignments) or no check covers the control; notApplicable means outside
+// the selected scope; null means not mapped in that assessment. Evidence is
+// only gained or lost between two verdicts.
+const ASSESSABLE: ReadonlySet<ControlStatus | null> = new Set<ControlStatus | null>([
+  "evidenceFound",
+  "partialEvidence",
+  "noEvidence",
+  "conflictingEvidence",
+]);
+
 type ChangeSide = Pick<SnapshotProjection, "collectedAt" | "partial" | "tenantIdentityPolicies">;
 
 // Counts and control status changes of one framework for the management
 // panel and report. No policy names or values, like the rest of the report.
 // Entra identity settings are tenant-wide, so they are counted on their own.
+// A control moving to or from notAssessed is a collection gap, not evidence
+// gained or lost, so it is counted apart.
 export function managementChanges(
   from: ChangeSide,
   to: ChangeSide,
@@ -170,6 +184,9 @@ export function managementChanges(
     before: change.before,
     after: change.after,
   }));
+  const assessed = controls.filter(
+    (control) => ASSESSABLE.has(control.before) && ASSESSABLE.has(control.after),
+  );
   return {
     since: from.collectedAt,
     until: to.collectedAt,
@@ -189,12 +206,20 @@ export function managementChanges(
       notCompared: identity.notCompared.length,
     },
     controls,
-    improved: controls.filter(
+    improved: assessed.filter(
       (control) => !HAS_EVIDENCE.has(control.before) && HAS_EVIDENCE.has(control.after),
     ).length,
-    regressed: controls.filter(
+    regressed: assessed.filter(
       (control) => HAS_EVIDENCE.has(control.before) && !HAS_EVIDENCE.has(control.after),
     ).length,
+    collectionGaps: {
+      opened: controls.filter(
+        (control) => ASSESSABLE.has(control.before) && control.after === "notAssessed",
+      ).length,
+      closed: controls.filter(
+        (control) => control.before === "notAssessed" && ASSESSABLE.has(control.after),
+      ).length,
+    },
     rulesetChanged: compared.assessments.rulesetChanged,
     fromRuleset: compared.assessments.fromRuleset,
     toRuleset: compared.assessments.toRuleset,

@@ -513,6 +513,11 @@ describe("Different only with a readable observed value", () => {
     ],
   ];
 
+  unreadable.push(
+    ["an integer above the Int32 range", simpleInteger(LENGTH, 2147483648)],
+    ["an integer below the Int32 range", simpleInteger(LENGTH, -2147483649)],
+  );
+
   for (const [label, instance] of unreadable)
     it(`is Review with ${label}`, () => {
       const run = assess([tenantPolicy({ settings: [instance] })]);
@@ -522,6 +527,30 @@ describe("Different only with a readable observed value", () => {
         "unreadableValue",
       ]);
     });
+
+  it("reads the Int32 bounds as readable integers", () => {
+    for (const value of [2147483647, -2147483648])
+      expect(
+        statusOf(
+          assess([tenantPolicy({ settings: [simpleInteger(LENGTH, value)] })]),
+          LENGTH,
+        ),
+      ).toEqual(["Different", "Fail", undefined]);
+  });
+
+  it("treats a pack integer outside the Int32 range as unreadable and drafts nothing", () => {
+    for (const value of [2147483648, -2147483649]) {
+      const target = pack([{ settings: [simpleInteger(LENGTH, value)] }]);
+      const run = assess([tenantPolicy({ settings: [] })], {}, target);
+      expect(run.collection.complete).toBe(true);
+      expect(statusOf(run, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "packValueUnreadable",
+      ]);
+      expect(generateBenchmarkDrafts(run, target).drafts).toEqual([]);
+    }
+  });
 
   it("is Different with a readable integer that differs, and Present when it matches", () => {
     expect(
@@ -1366,7 +1395,11 @@ describe("review round fixes", () => {
         },
       ],
     );
-    const malformed = [{}, { "@odata.type": "#microsoft.graph.synthetic" }];
+    const malformed = [
+      {},
+      { "@odata.type": "#microsoft.graph.synthetic" },
+      { ...leaf("empty"), settingDefinitionId: "" },
+    ];
     const run = (child: Record<string, unknown>) =>
       assess(
         [

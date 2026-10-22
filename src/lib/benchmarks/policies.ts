@@ -157,7 +157,11 @@ export function comparable(value: Json): Json {
 }
 
 function isInstance(value: unknown): value is SettingInstance {
-  return record(value) && typeof value.settingDefinitionId === "string";
+  return (
+    record(value) &&
+    typeof value.settingDefinitionId === "string" &&
+    value.settingDefinitionId !== ""
+  );
 }
 
 /** True when a setting instance nests child setting instances, as group setting collections do. */
@@ -236,7 +240,8 @@ function readableSimple(value: unknown): boolean {
     return (
       typeof value.value === "number" &&
       Number.isInteger(value.value) &&
-      Math.abs(value.value) <= 2 ** 31
+      value.value >= -2147483648 &&
+      value.value <= 2147483647
     );
   return false;
 }

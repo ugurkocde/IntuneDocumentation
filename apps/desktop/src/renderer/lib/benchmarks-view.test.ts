@@ -109,6 +109,19 @@ describe("drafts and exceptions", () => {
       "8",
       "9",
     ]);
+    expect(
+      differingSettingIds(syntheticAssessment({ count: 12, basis: "settings" })).map((id) => id.split("_").pop()),
+    ).toEqual(["2", "3", "8", "9"]);
+  });
+
+  it("offers the nested child a recommendation checks, not its root, in recommendation mode", () => {
+    const assessment = syntheticAssessment({ count: 2 });
+    const differs = assessment.recommendations.find((item) => item.result === "Fail")!;
+    const root = assessment.settings.find((finding) => finding.key === differs.findingKeys[0])!.settingId;
+    const child = `${root}_synthetic_child`;
+    differs.settings = differs.settings.map((setting) => ({ ...setting, id: child }));
+    expect(differingSettingIds(assessment)).toEqual([child]);
+    expect(differingSettingIds({ ...assessment, basis: "settings" })).toEqual([root]);
   });
 });
 

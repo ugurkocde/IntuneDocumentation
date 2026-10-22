@@ -203,8 +203,13 @@ const isRedacted = (value: unknown) =>
   value === REDACTED_VALUE ||
   (Array.isArray(value) && value.some((item) => item === REDACTED_VALUE));
 
+// Every child entry must be a setting instance: a malformed entry has no
+// definition path, so its parent is unreadable instead of the child absent.
+const readableChildList = (children: unknown) =>
+  Array.isArray(children) && children.every(isInstance);
+
 function readableChildren(value: RecordJson): boolean {
-  return value.children === undefined || Array.isArray(value.children);
+  return value.children === undefined || readableChildList(value.children);
 }
 
 function readableChoice(value: unknown): boolean {
@@ -237,7 +242,7 @@ function readableSimple(value: unknown): boolean {
 }
 
 const readableGroup = (value: unknown) =>
-  record(value) && Array.isArray(value.children);
+  record(value) && readableChildList(value.children);
 
 const everyEntry = (value: unknown, check: (entry: unknown) => boolean) =>
   Array.isArray(value) && value.every(check);

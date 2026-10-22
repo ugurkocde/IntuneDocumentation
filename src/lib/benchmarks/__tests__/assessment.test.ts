@@ -1280,6 +1280,95 @@ describe("review round fixes", () => {
     ).toEqual(["Different", "Fail", undefined]);
   });
 
+  describe("a malformed child entry is unreadable at its parent", () => {
+    const GROUP = "synthetic_bench_malformed";
+    const leaf = (id: string) => choice(`${GROUP}_${id}`, "on");
+    const target = pack(
+      [
+        {
+          settings: [
+            groupCollection(GROUP, [[leaf("one"), leaf("two")]]),
+            choice(ALPHA, "1", [leaf("choice")]),
+          ],
+        },
+      ],
+      [
+        {
+          id: "4.1",
+          title: "Synthetic nested child",
+          level: 1,
+          settings: [`${GROUP}_two`],
+        },
+        {
+          id: "4.2",
+          title: "Synthetic choice child",
+          level: 1,
+          settings: [`${GROUP}_choice`],
+        },
+        {
+          id: "4.3",
+          title: "Synthetic root",
+          level: 1,
+          settings: [GROUP],
+        },
+      ],
+    );
+    const malformed = [{}, { "@odata.type": "#microsoft.graph.synthetic" }];
+    const run = (child: Record<string, unknown>) =>
+      assess(
+        [
+          tenantPolicy({
+            settings: [
+              groupCollection(GROUP, [[leaf("one"), child]]),
+              choice(ALPHA, "1", [child]),
+            ],
+          }),
+        ],
+        {},
+        target,
+      );
+
+    it("makes a root result Review, never Missing or Different, on a complete collection", () => {
+      for (const child of malformed) {
+        const result = run(child);
+        expect(result.collection.complete).toBe(true);
+        expect(statusOf(result, GROUP)).toEqual([
+          "Review",
+          "Review",
+          "unreadableValue",
+        ]);
+        expect(statusOf(result, ALPHA)).toEqual([
+          "Review",
+          "Review",
+          "unreadableValue",
+        ]);
+        expect(
+          result.recommendations.find((item) => item.id === "4.3")?.result,
+        ).toBe("Review");
+      }
+    });
+
+    it("makes a nested child recommendation Review, never Fail", () => {
+      for (const child of malformed)
+        expect(
+          run(child)
+            .recommendations.filter((item) => item.id !== "4.3")
+            .map((item) => [item.id, item.result]),
+        ).toEqual([
+          ["4.1", "Review"],
+          ["4.2", "Review"],
+        ]);
+      // A readable child still decides on its own.
+      expect(
+        run(leaf("two")).recommendations.map((item) => [item.id, item.result]),
+      ).toEqual([
+        ["4.1", "Pass"],
+        ["4.2", "Fail"],
+        ["4.3", "Pass"],
+      ]);
+    });
+  });
+
   it("does not read a sibling id that extends another id with a dot as its child", () => {
     const GROUP = "synthetic.bench.payload";
     const target = pack(

@@ -204,8 +204,14 @@ export function missingSettings(assessment: BenchmarkAssessment): number {
 }
 
 // Setting ids whose result is Differs: the only results an exception credits.
+// The headline looks exceptions up by the ids a recommendation checks, which
+// may be nested children of a root, so recommendation mode offers those.
 export function differingSettingIds(assessment: BenchmarkAssessment): string[] {
-  return [
-    ...new Set(assessment.settings.filter((finding) => finding.result === "Fail").map((finding) => finding.settingId)),
-  ].sort(numeric);
+  const ids =
+    assessment.basis === "recommendations"
+      ? assessment.recommendations
+          .filter((item) => item.result === "Fail")
+          .flatMap((item) => item.settings.filter((setting) => setting.result === "Fail").map((setting) => setting.id))
+      : assessment.settings.filter((finding) => finding.result === "Fail").map((finding) => finding.settingId);
+  return [...new Set(ids)].sort(numeric);
 }

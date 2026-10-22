@@ -3,6 +3,7 @@ import type {
   AppInfo,
   AppSettings,
   AuthStatus,
+  BenchmarkAvailability,
   CollectProgress,
   ComplianceFrameworkId,
   FullCollectionSummary,
@@ -21,6 +22,7 @@ export type Screen =
   | "portfolio"
   | "section"
   | "compliance"
+  | "benchmarks"
   | "export"
   | "license"
   | "settings";
@@ -106,6 +108,9 @@ export interface AppState {
   selection: Record<string, SelectedItem>;
   exportState: ExportState;
   compliance: ComplianceState;
+  // CIS Benchmarks: "internal" only while main confirms the signed licence
+  // claim; anything else, including no answer yet, is coming soon.
+  benchmarks: BenchmarkAvailability["state"];
 }
 
 export interface SettingsSearchState {
@@ -151,4 +156,5 @@ export type Action =
   | { type: "select"; items: SelectedItem[]; selected: boolean }
   | { type: "clearSelection" }
   | { type: "complianceScope"; scope: AssessmentScope }
-  | { type: "complianceReport"; patch: Partial<ComplianceReportState> };
+  | { type: "complianceReport"; patch: Partial<ComplianceReportState> }
+  | { type: "benchmarks"; availability: BenchmarkAvailability["state"] };

@@ -98,6 +98,22 @@ export function createInitialState(): AppState {
     selection: {},
     exportState: initialExportState,
     compliance: { scope: {}, report: initialComplianceReport },
+    benchmarks: "comingSoon",
+  };
+}
+
+// Without the benchmarks claim the Benchmarks screen is never shown.
+function withBenchmarks(
+  state: AppState,
+  availability: AppState["benchmarks"],
+): AppState {
+  return {
+    ...state,
+    benchmarks: availability,
+    screen:
+      availability !== "internal" && state.screen === "benchmarks"
+        ? "compliance"
+        : state.screen,
   };
 }
 
@@ -132,7 +148,10 @@ export function reducer(state: AppState, action: Action): AppState {
     case "navigate":
       return {
         ...state,
-        screen: action.screen,
+        screen:
+          action.screen === "benchmarks" && state.benchmarks !== "internal"
+            ? "compliance"
+            : action.screen,
         activeFamilyKey:
           action.screen === "section"
             ? (action.familyKey ?? state.activeFamilyKey)
@@ -148,8 +167,19 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, sidebarOpen: action.open };
     case "settings":
       return { ...state, settings: action.settings };
-    case "auth":
-      return { ...state, auth: action.auth };
+    case "auth": {
+      // Signing out or another account closes CIS Benchmarks until main
+      // confirms the claim for the new state.
+      const before = state.auth;
+      const after = action.auth;
+      const same =
+        Boolean(after?.signedIn) &&
+        Boolean(before?.signedIn) &&
+        after?.account === before?.account &&
+        after?.tenantId === before?.tenantId;
+      const next = { ...state, auth: action.auth };
+      return same ? next : withBenchmarks(next, "comingSoon");
+    }
     case "license":
       return { ...state, license: action.license };
     case "update":
@@ -282,6 +312,8 @@ export function reducer(state: AppState, action: Action): AppState {
           report: { ...state.compliance.report, ...action.patch },
         },
       };
+    case "benchmarks":
+      return withBenchmarks(state, action.availability);
     default:
       return state;
   }

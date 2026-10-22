@@ -1,5 +1,8 @@
 import type { IpcMainInvokeEvent } from "electron";
 import { promises as fs } from "node:fs";
+import { validateStoredRun, type StoredBenchmarkRun } from "../../../../src/lib/benchmarks/history";
+import { portfolioBenchmarks, portfolioRows, type PortfolioEntry } from "../../../../src/lib/benchmarks/portfolio";
+import { benchmarkTrend, compareRuns, driftSignals } from "../../../../src/lib/benchmarks/trend";
 import { scopeKeyOf } from "../../../../src/lib/compliance/management/management-summary";
 import type { ComplianceAssessment } from "../../../../src/lib/compliance/types";
 import {
@@ -23,6 +26,10 @@ import {
   type SettingSet,
 } from "../../../../src/lib/snapshots/reference";
 import type {
+  BenchmarkHistoryRequest,
+  BenchmarkHistoryView,
+  BenchmarkPortfolioRequest,
+  BenchmarkPortfolioView,
   CompareSource,
   CompareTenant,
   CompareView,
@@ -99,6 +106,8 @@ export interface HistoryIpcDeps {
     | "clear"
     | "hasData"
     | "fingerprinter"
+    | "update"
+    | "benchmarkRunSnapshots"
   >;
   readSettings(): Promise<AppSettings>;
   writeSettings(input: Partial<AppSettings>): Promise<AppSettings>;
@@ -117,6 +126,8 @@ export interface HistoryIpcDeps {
 }
 
 export const NEEDS_REFERENCE = "Load a reference file first.";
+// Runs kept on one snapshot: one per benchmark, version and level.
+export const MAX_RUNS_PER_SNAPSHOT = 24;
 const ACCOUNT_CHANGED =
   "The signed in account changed while the file was opened. Open it again.";
 export const ACCOUNT_SWITCHED =
@@ -168,6 +179,29 @@ function shortLabel(tenantId: string): string {
   return tenantLabelOf(tenantId) ?? tenantId;
 }
 
+const sameSeries = (a: Pick<StoredBenchmarkRun, "benchmark" | "version" | "level">, b: typeof a) =>
+  a.benchmark === b.benchmark && a.version === b.version && a.level === b.level;
+
+// The valid stored runs of a snapshot; snapshots saved before benchmark runs
+// existed have none. A run that fails the strict schema is never used.
+export function snapshotRuns(projection: Pick<SnapshotProjection, "benchmarks">): StoredBenchmarkRun[] {
+  return (Array.isArray(projection.benchmarks) ? projection.benchmarks : []).flatMap((run) => {
+    try {
+      return [validateStoredRun(run)];
+    } catch {
+      return [];
+    }
+  });
+}
+
+// The runs of a snapshot with one run added: it replaces the run of the same
+// benchmark, version and level, and only the newest runs are kept.
+export function withRun(runs: readonly StoredBenchmarkRun[], run: StoredBenchmarkRun): StoredBenchmarkRun[] {
+  return [...runs.filter((entry) => !sameSeries(entry, run)), run]
+    .sort(compareRuns)
+    .slice(-MAX_RUNS_PER_SNAPSHOT);
+}
+
 export function registerHistoryIpc(deps: HistoryIpcDeps) {
   const { handle, store, license } = deps;
   const now = deps.now ?? (() => new Date());
@@ -185,6 +219,9 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     object,
     { fingerprint: SnapshotFingerprint | null; projection: SnapshotProjection }
   >();
+  // Stored benchmark runs by tenant and snapshot id, so trend and portfolio
+  // decrypt a snapshot once per session.
+  const storedRuns = new Map<string, StoredBenchmarkRun[]>();
 
   // Signed in, licensed, and the signed in tenant, with the session
   // generation from before the first await. Every account change resets the
@@ -325,6 +362,150 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
   function invalidate(): void {
     historyDiff = null;
     changes = null;
+    storedRuns.clear();
+  }
+
+  // ---- Benchmark runs -------------------------------------------------------
+  // Called by the benchmarks handlers after their gate (benchmarks.ts), for
+  // the owner and tenant they checked.
+
+  async function runsOf(session: Session, tenant: string, id: string): Promise<StoredBenchmarkRun[]> {
+    const key = `${tenant}|${id}`;
+    const cached = storedRuns.get(key);
+    if (cached) return cached;
+    const runs = snapshotRuns(current(session, await store.read(tenant, id)));
+    storedRuns.set(key, runs);
+    return runs;
+  }
+
+  // With history on, adds the stored form of a run to the snapshot of the
+  // collection it assessed. False when history is off or unavailable, or no
+  // snapshot of that collection is stored (history was off when it was
+  // collected, or its save failed). The run is validated strictly first, so
+  // nothing but ids, result codes and the digest is ever written.
+  async function recordBenchmarkRun(
+    owner: string,
+    tenant: string,
+    collectedAt: string,
+    input: StoredBenchmarkRun,
+  ): Promise<boolean> {
+    const session = { owner, tenant, started: generation };
+    const run = validateStoredRun(input);
+    const settings = current(session, await deps.readSettings());
+    if (!settings.keepHistory || store.unavailableReason()) return false;
+    const entry = current(session, await store.list(tenant)).find((item) => item.collectedAt === collectedAt);
+    if (!entry) return false;
+    const updated = await store.update(
+      tenant,
+      entry.id,
+      (projection) => ({ ...projection, benchmarks: withRun(snapshotRuns(projection), run) }),
+      () => isCurrent(session),
+    );
+    storedRuns.delete(`${tenant}|${entry.id}`);
+    if (!updated) return false;
+    deps.log("info", "benchmark run stored", { results: run.results.length });
+    deps.notifyHistoryChanged();
+    return current(session, true);
+  }
+
+  async function benchmarkHistory(
+    owner: string,
+    tenant: string,
+    request: BenchmarkHistoryRequest | null,
+  ): Promise<BenchmarkHistoryView> {
+    const session = { owner, tenant, started: generation };
+    const enabled = current(session, await deps.readSettings()).keepHistory;
+    const empty = { enabled, trend: [], drift: [], runs: [] };
+    const reason = store.unavailableReason();
+    if (reason) return { ...empty, available: false, reason };
+    let runs: StoredBenchmarkRun[] = [];
+    try {
+      for (const snapshot of current(session, await store.benchmarkRunSnapshots(tenant))) {
+        runs.push(...(await runsOf(session, tenant, snapshot.id)));
+      }
+    } catch (error) {
+      if (error instanceof HistoryUnavailableError || error instanceof HistoryLockedError) {
+        return { ...empty, available: false, reason: error.message };
+      }
+      throw error;
+    }
+    runs = runs.sort(compareRuns);
+    const trend = benchmarkTrend(runs);
+    return current(session, {
+      enabled,
+      available: true,
+      reason: null,
+      trend,
+      drift: driftSignals(trend),
+      runs: request ? runs.filter((run) => sameSeries(run, request)) : [],
+    });
+  }
+
+  // MSP plan only. Per stored tenant, only the snapshots holding the newest
+  // run of each benchmark, version and level are decrypted.
+  async function benchmarkPortfolio(
+    owner: string,
+    tenant: string,
+    request: BenchmarkPortfolioRequest | null,
+  ): Promise<BenchmarkPortfolioView> {
+    const session = { owner, tenant, started: generation };
+    await license.requireMspPlan(tenant);
+    stillCurrent(session);
+    const empty = { benchmarks: [], selected: null, rows: [] };
+    const reason = store.unavailableReason();
+    if (reason) return { ...empty, available: false, reason };
+    let entries: PortfolioEntry[];
+    try {
+      const tenants = current(session, await store.tenants());
+      const snapshots = current(session, await store.benchmarkRunSnapshots());
+      entries = [];
+      for (const stored of tenants) {
+        const newest = new Map<string, { id: string; assessedAt: string }>();
+        for (const snapshot of snapshots.filter((item) => item.tenantId === stored.tenantId)) {
+          for (const key of snapshot.runs) {
+            const series = JSON.stringify([key.benchmark, key.version, key.level]);
+            const best = newest.get(series);
+            if (!best || Date.parse(key.assessedAt) > Date.parse(best.assessedAt)) {
+              newest.set(series, { id: snapshot.id, assessedAt: key.assessedAt });
+            }
+          }
+        }
+        const entry: PortfolioEntry = {
+          tenantId: stored.tenantId,
+          tenantName: stored.label ?? shortLabel(stored.tenantId),
+        };
+        try {
+          const runs: StoredBenchmarkRun[] = [];
+          for (const id of new Set([...newest.values()].map((item) => item.id))) {
+            runs.push(...(await runsOf(session, stored.tenantId, id)));
+          }
+          entry.runs = runs;
+        } catch (error) {
+          if (error instanceof HistoryUnavailableError || error instanceof HistoryLockedError) throw error;
+          stillCurrent(session);
+          entry.error = "The stored benchmark runs of this tenant could not be read.";
+        }
+        entries.push(entry);
+      }
+    } catch (error) {
+      if (error instanceof HistoryUnavailableError || error instanceof HistoryLockedError) {
+        return { ...empty, available: false, reason: error.message };
+      }
+      throw error;
+    }
+    const benchmarks = portfolioBenchmarks(entries);
+    const selected = request
+      ? (benchmarks.find((item) => item.benchmark === request.benchmark && item.version === request.version) ??
+        null)
+      : (benchmarks[0] ?? null);
+    const pick = selected ? { benchmark: selected.benchmark, version: selected.version } : null;
+    return current(session, {
+      available: true,
+      reason: null,
+      benchmarks,
+      selected: pick,
+      rows: pick ? portfolioRows(entries, pick).map((row) => ({ ...row, current: row.tenantId === tenant })) : [],
+    });
   }
 
   // ---- History --------------------------------------------------------------
@@ -609,6 +790,11 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
   return {
     // The management report's change section, for the signed in owner.
     changesFor,
+    // Benchmark runs: stored on the assessed collection's snapshot, trend
+    // and drift of the signed in tenant, and the MSP portfolio.
+    recordBenchmarkRun,
+    benchmarkHistory,
+    benchmarkPortfolio,
     // A snapshot was saved or removed: comparisons are made again.
     invalidate,
     // Sign out, settings changes and resets: also drops a loaded reference.

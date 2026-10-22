@@ -672,18 +672,28 @@ export function fixPackReadme(
   ].join("\r\n");
 }
 
+/**
+ * ZIP of README.txt and one pretty printed JSON file per draft, in the given
+ * order. A fixed date keeps the archive byte-identical for the same input.
+ */
+export async function buildDraftZip(
+  readme: string,
+  drafts: ReadonlyArray<{ fileName: string; json: unknown }>,
+): Promise<Uint8Array> {
+  const zip = new JSZip();
+  const date = new Date("2026-01-01T00:00:00Z");
+  zip.file("README.txt", readme, { date });
+  for (const draft of drafts)
+    zip.file(draft.fileName, `${JSON.stringify(draft.json, null, 2)}\n`, {
+      date,
+    });
+  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
 /** ZIP with one JSON file per policy and README.txt. */
 export async function buildFixPackZip(
   pack: FixPack,
   assessment: Pick<ComplianceAssessment, "generatedAt" | "provenance">,
 ): Promise<Uint8Array> {
-  const zip = new JSZip();
-  // A fixed date keeps the archive byte-identical for the same input.
-  const date = new Date("2026-01-01T00:00:00Z");
-  zip.file("README.txt", fixPackReadme(pack, assessment), { date });
-  for (const policy of pack.policies)
-    zip.file(policy.fileName, `${JSON.stringify(policy.json, null, 2)}\n`, {
-      date,
-    });
-  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  return buildDraftZip(fixPackReadme(pack, assessment), pack.policies);
 }

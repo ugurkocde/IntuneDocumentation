@@ -1,4 +1,8 @@
 import type { IpcMainInvokeEvent } from "electron";
+import { assessBenchmark } from "../../../../src/lib/benchmarks/assessment";
+import { exportBenchmark } from "../../../../src/lib/benchmarks/export";
+import { packDigest, summarizeRun, type StoredBenchmarkRun } from "../../../../src/lib/benchmarks/history";
+import type { BenchmarkCollection } from "../../../../src/lib/benchmarks/tenant-settings";
 import {
   parseBenchmarkIdentity,
   parseCatalog,
@@ -16,7 +20,12 @@ import {
   type BenchmarkException,
   type BenchmarkExceptionsRequest,
   type BenchmarkExportFormat,
+  type BenchmarkHistoryRequest,
+  type BenchmarkHistoryView,
+  type BenchmarkPortfolioRequest,
+  type BenchmarkPortfolioView,
 } from "../shared/ipc-types";
+import { answerExceptions, type BenchmarkExceptionStore } from "./benchmark-exceptions";
 import type { LicenseService } from "./license";
 
 // CIS Benchmarks handlers, internal only until the CIS agreement covers this
@@ -71,11 +80,14 @@ export interface BenchmarkWork {
     pack: BenchmarkPack;
     list: RecommendationList | null;
   }): Promise<BenchmarkAssessmentView>;
-  // Readiness PDF, CSV, JSON or draft policies of an assessment.
+  // Readiness PDF, CSV, JSON or draft policies of an assessment, with the
+  // pack it was made from and, for the PDF, the delivered benchmark name.
   exportBenchmark(input: {
     owner: string;
     tenantId: string;
     assessment: BenchmarkAssessmentView;
+    pack: BenchmarkPack;
+    benchmarkName: string | null;
     format: BenchmarkExportFormat;
   }): Promise<{ fileName: string; bytes: Uint8Array }>;
   benchmarkExceptions(input: {
@@ -83,6 +95,100 @@ export interface BenchmarkWork {
     tenantId: string;
     request: BenchmarkExceptionsRequest;
   }): Promise<BenchmarkException[]>;
+  // Trend and drift of the stored runs, and the runs of one series.
+  benchmarkHistory(input: {
+    owner: string;
+    tenantId: string;
+    request: BenchmarkHistoryRequest | null;
+  }): Promise<BenchmarkHistoryView>;
+  // Stored headlines per tenant; checks the MSP plan itself.
+  benchmarkPortfolio(input: {
+    owner: string;
+    tenantId: string;
+    request: BenchmarkPortfolioRequest | null;
+  }): Promise<BenchmarkPortfolioView>;
+}
+
+// What the work needs from main.
+export interface BenchmarkWorkDeps {
+  // The owner's last collection; null without one or when another owner
+  // collected it.
+  collectionFor(owner: string): (BenchmarkCollection & { collectedAt?: string }) | null;
+  exceptions: Pick<BenchmarkExceptionStore, "list" | "set" | "remove">;
+  // Still the account that asked; exception writes are dropped otherwise.
+  isCurrent(owner: string, tenantId: string): boolean;
+  // Adds the stored run to the snapshot of the collection it assessed, once
+  // that snapshot is saved; false when it is not stored (history off).
+  recordRun(owner: string, tenantId: string, collectedAt: string, run: StoredBenchmarkRun): Promise<boolean>;
+  history: {
+    benchmarkHistory(
+      owner: string,
+      tenantId: string,
+      request: BenchmarkHistoryRequest | null,
+    ): Promise<BenchmarkHistoryView>;
+    benchmarkPortfolio(
+      owner: string,
+      tenantId: string,
+      request: BenchmarkPortfolioRequest | null,
+    ): Promise<BenchmarkPortfolioView>;
+  };
+  tenantLabel(tenantId: string): string | undefined;
+  log(level: "info" | "warn", message: string, detail?: LogDetail): void;
+}
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : "unknown");
+
+// The engine, the exports, the exceptions store and history behind the
+// handlers. The assessment applies the tenant's exceptions to the adjusted
+// headline (without them when they cannot be read) and, with history on,
+// its stored form goes onto the snapshot of the assessed collection; a run
+// that cannot be stored leaves the assessment as it is. Only reasons are
+// logged, never content.
+export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
+  const exceptionsOf = (tenantId: string, purpose: string) =>
+    deps.exceptions.list(tenantId).catch((error: unknown) => {
+      deps.log("warn", "benchmark exceptions not read", { purpose, message: errorText(error) });
+      return [];
+    });
+  return {
+    async assessBenchmark({ owner, tenantId, pack, list }) {
+      const collection = deps.collectionFor(owner);
+      if (!collection) throw new Error("Collect tenant data first.");
+      const assessment = assessBenchmark(collection, pack, {
+        ...(list ? { list } : {}),
+        exceptions: await exceptionsOf(tenantId, "assess"),
+      });
+      if (collection.collectedAt) {
+        try {
+          const run = summarizeRun(assessment, await packDigest(pack));
+          await deps.recordRun(owner, tenantId, collection.collectedAt, run);
+        } catch (error) {
+          deps.log("warn", "benchmark run not stored", { message: errorText(error) });
+        }
+      }
+      return assessment;
+    },
+    // Exactly what was assessed: the same pack, and the stored exceptions of
+    // the assessed benchmark, version and level (the PDF lists them).
+    async exportBenchmark({ tenantId, assessment, pack, benchmarkName, format }) {
+      const exceptions = (await exceptionsOf(tenantId, "export")).filter(
+        (entry) =>
+          entry.benchmark === assessment.benchmark &&
+          entry.version === assessment.version &&
+          entry.level === assessment.level,
+      );
+      return exportBenchmark(assessment, format, {
+        tenantLabel: deps.tenantLabel(tenantId),
+        ...(benchmarkName ? { benchmarkName } : {}),
+        pack,
+        exceptions,
+      });
+    },
+    benchmarkExceptions: ({ owner, tenantId, request }) =>
+      answerExceptions(deps.exceptions, tenantId, request, () => deps.isCurrent(owner, tenantId)),
+    benchmarkHistory: ({ owner, tenantId, request }) => deps.history.benchmarkHistory(owner, tenantId, request),
+    benchmarkPortfolio: ({ owner, tenantId, request }) => deps.history.benchmarkPortfolio(owner, tenantId, request),
+  };
 }
 
 export interface BenchmarksDeps {
@@ -255,6 +361,18 @@ function text(value: unknown, field: string, max: number): string {
   return value.trim();
 }
 
+// No request means none: every series of the tenant, or the default one.
+export function parseHistoryRequest(input: unknown): BenchmarkHistoryRequest | null {
+  return input === undefined || input === null ? null : parseBenchmarkIdentity(input);
+}
+
+export function parsePortfolioRequest(input: unknown): BenchmarkPortfolioRequest | null {
+  if (input === undefined || input === null) return null;
+  const raw = typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const { benchmark, version } = parseBenchmarkIdentity({ benchmark: raw.benchmark, version: raw.version, level: 1 });
+  return { benchmark, version };
+}
+
 export function parseExceptionsRequest(input: unknown): BenchmarkExceptionsRequest {
   const raw = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
   const identity = parseBenchmarkIdentity(raw);
@@ -268,8 +386,8 @@ export function parseExceptionsRequest(input: unknown): BenchmarkExceptionsReque
     action: "set",
     ...identity,
     settingId,
-    owner: text(raw.owner, "owner", 200),
-    reason: text(raw.reason, "reason", 1000),
+    owner: text(raw.owner, "owner", 100),
+    reason: text(raw.reason, "reason", 500),
     expiresOn,
   };
 }
@@ -282,7 +400,7 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
   const client = contentClient(deps);
   // Packs and lists by tenant, benchmark, version (and level for packs).
   const content = new Map<string, BenchmarkPack | RecommendationList | null>();
-  let last: { tenant: string; owner: string; view: BenchmarkAssessmentView } | null = null;
+  let last: { tenant: string; owner: string; view: BenchmarkAssessmentView; pack: BenchmarkPack } | null = null;
   // Bumped by every purge, so a fetch that was running is never cached or
   // returned after it.
   let generation = 0;
@@ -354,6 +472,22 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
   const list = (tenant: string, identity: BenchmarkIdentity) =>
     cached(tenant, `list|${identity.benchmark}|${identity.version}`, (token) => client.list(identity, token));
 
+  // The delivered catalog name for the readiness PDF title; the PDF names the
+  // benchmark by its id when the catalog cannot be read.
+  async function benchmarkName(tenant: string, identity: BenchmarkIdentity): Promise<string | null> {
+    try {
+      const catalog = await fetched(tenant, (token) => client.catalog(token));
+      return (
+        catalog.benchmarks.find((entry) => entry.id === identity.benchmark && entry.version === identity.version)
+          ?.name ?? null
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message === BENCHMARKS_COMING_SOON || message === BENCHMARK_ACCOUNT_CHANGED) throw error;
+      return null;
+    }
+  }
+
   // After the gate: the sign in and the licence, as for the fix pack. A
   // licence refresh may drop the claim, so the gate is checked again.
   async function licensed(tenant: string): Promise<string> {
@@ -391,15 +525,11 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const owner = await licensed(tenant);
     const assessBenchmark = deps.work?.assessBenchmark ?? notAvailable();
     return deps.track(async () => {
+      const delivered = await pack(tenant, identity);
       const view = await current(tenant, async () =>
-        assessBenchmark({
-          owner,
-          tenantId: tenant,
-          pack: await pack(tenant, identity),
-          list: await list(tenant, identity),
-        }),
+        assessBenchmark({ owner, tenantId: tenant, pack: delivered, list: await list(tenant, identity) }),
       );
-      last = { tenant, owner, view };
+      last = { tenant, owner, view, pack: delivered };
       return view;
     });
   });
@@ -409,11 +539,21 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const { format, confirmed } = parseExport(input);
     const owner = await licensed(tenant);
     const exportBenchmark = deps.work?.exportBenchmark ?? notAvailable();
-    const assessment = last && last.tenant === tenant && last.owner === owner ? last.view : null;
-    if (!assessment) throw new Error(BENCHMARK_ASSESS_FIRST);
+    const held = last && last.tenant === tenant && last.owner === owner ? last : null;
+    if (!held) throw new Error(BENCHMARK_ASSESS_FIRST);
     if (format === "drafts" && !confirmed) throw new Error(BENCHMARK_CONFIRM_DRAFTS);
+    const { view: assessment, pack: delivered } = held;
     const file = await deps.track(() =>
-      current(tenant, () => exportBenchmark({ owner, tenantId: tenant, assessment, format })),
+      current(tenant, async () =>
+        exportBenchmark({
+          owner,
+          tenantId: tenant,
+          assessment,
+          pack: delivered,
+          benchmarkName: format === "pdf" ? await benchmarkName(tenant, assessment) : null,
+          format,
+        }),
+      ),
     );
     deps.log("info", "benchmark export", { format });
     return deps.saveFile(file.fileName, file.bytes);
@@ -425,6 +565,22 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const owner = await licensed(tenant);
     const benchmarkExceptions = deps.work?.benchmarkExceptions ?? notAvailable();
     return current(tenant, () => benchmarkExceptions({ owner, tenantId: tenant, request }));
+  });
+
+  deps.handle("benchmarks:history", async (_event, input): Promise<BenchmarkHistoryView> => {
+    const tenant = await requireBenchmarks();
+    const request = parseHistoryRequest(input);
+    const owner = await licensed(tenant);
+    const benchmarkHistory = deps.work?.benchmarkHistory ?? notAvailable();
+    return deps.track(() => current(tenant, () => benchmarkHistory({ owner, tenantId: tenant, request })));
+  });
+
+  deps.handle("benchmarks:portfolio", async (_event, input): Promise<BenchmarkPortfolioView> => {
+    const tenant = await requireBenchmarks();
+    const request = parsePortfolioRequest(input);
+    const owner = await licensed(tenant);
+    const benchmarkPortfolio = deps.work?.benchmarkPortfolio ?? notAvailable();
+    return deps.track(() => current(tenant, () => benchmarkPortfolio({ owner, tenantId: tenant, request })));
   });
 
   return {

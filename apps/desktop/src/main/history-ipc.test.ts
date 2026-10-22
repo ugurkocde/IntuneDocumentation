@@ -58,7 +58,9 @@ vi.mock("./logger", () => ({ log: () => undefined, errorText: String }));
 
 const { LicenseService, MSP_PLAN_REQUIRED } = await import("./license");
 const { KEY_LOCKED, SnapshotStore, UNAVAILABLE_REASONS } = await import("./snapshots");
-const { registerHistoryIpc, NEEDS_REFERENCE, ACCOUNT_SWITCHED } = await import("./history-ipc");
+const { registerHistoryIpc, NEEDS_REFERENCE, ACCOUNT_SWITCHED, MAX_RUNS_PER_SNAPSHOT, snapshotRuns, withRun } =
+  await import("./history-ipc");
+const { storedRun } = await import("../../../../src/lib/benchmarks/__tests__/fixtures");
 
 const TENANT = "11111111-2222-3333-4444-555555555555";
 const OTHER = "99999999-8888-7777-6666-555555555555";
@@ -767,5 +769,153 @@ describe("account switches while a mutation is queued", () => {
     const other = (await h.store.tenants()).find((entry) => entry.tenantId === OTHER);
     expect(other).toMatchObject({ label: null, snapshots: 1 });
     expect(h.notified).not.toHaveBeenCalled();
+  });
+});
+
+describe("benchmark runs in history", () => {
+  const T1 = "2026-10-10T10:00:00Z";
+  const T2 = "2026-10-12T10:00:00Z";
+  // A synthetic stored run; the assessment titles never reach it.
+  const run = (assessedAt: string, pass: number, fail: number, extra = {}) => storedRun(assessedAt, pass, fail, extra);
+
+  async function withSnapshots(plan: Plan = "msp") {
+    const h = harness(plan);
+    const first = (await h.store.save(TENANT, projectionOf(contoso(T1)), h.guard()))!;
+    const second = (await h.store.save(TENANT, projectionOf(contoso(T2)), h.guard()))!;
+    return { h, first, second };
+  }
+
+  it("stores a validated run on the snapshot of the assessed collection, one per benchmark, version and level", async () => {
+    const { h, first, second } = await withSnapshots();
+    const a = run("2026-10-10T11:00:00.000Z", 9, 1);
+    await expect(h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, a)).resolves.toBe(true);
+    expect((await h.store.read(TENANT, first.id)).benchmarks).toEqual([a]);
+    expect((await h.store.read(TENANT, second.id)).benchmarks).toBeUndefined();
+    // Assessing the same collection again replaces the run of that series.
+    const again = run("2026-10-10T12:00:00.000Z", 10, 0);
+    const level2 = run("2026-10-10T12:30:00.000Z", 1, 1, { level: 2 });
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, again);
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, level2);
+    expect((await h.store.read(TENANT, first.id)).benchmarks).toEqual([again, level2]);
+    expect(await h.store.list(TENANT)).toHaveLength(2);
+    expect(h.notified).toHaveBeenCalledTimes(3);
+  });
+
+  it("stores nothing with history off, or without a snapshot of the assessed collection", async () => {
+    const { h, first } = await withSnapshots();
+    await expect(h.ipc.recordBenchmarkRun(OWNER, TENANT, "2026-10-11T10:00:00Z", run(T1, 1, 0))).resolves.toBe(false);
+    h.settings.keepHistory = false;
+    await expect(h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, run(T1, 1, 0))).resolves.toBe(false);
+    expect((await h.store.read(TENANT, first.id)).benchmarks).toBeUndefined();
+    expect(await h.store.benchmarkRunSnapshots()).toEqual([]);
+  });
+
+  it("refuses a run with titles or any other extra field before anything is written", async () => {
+    const { h, first } = await withSnapshots();
+    const titled = { ...run(T1, 1, 0), title: "Synthetic recommendation title" };
+    await expect(h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, titled)).rejects.toThrow("unknown field: title");
+    const freeText = run(T1, 1, 0);
+    freeText.results[0]![0] = "Synthetic recommendation title";
+    await expect(h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, freeText)).rejects.toThrow("invalid result 1");
+    expect((await h.store.read(TENANT, first.id)).benchmarks).toBeUndefined();
+  });
+
+  it("drops a run when the account changed while it was queued", async () => {
+    const { h, first } = await withSnapshots();
+    const update = h.store.update.bind(h.store);
+    vi.spyOn(h.store, "update").mockImplementationOnce(async (...args) => {
+      h.env.signedIn = OTHER;
+      return update(...args);
+    });
+    await expect(h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, run(T1, 1, 0))).resolves.toBe(false);
+    expect((await h.store.read(TENANT, first.id)).benchmarks).toBeUndefined();
+  });
+
+  it("ignores stored runs that fail the strict schema, so old or altered snapshots still load", () => {
+    expect(snapshotRuns({})).toEqual([]);
+    const good = run(T1, 1, 0);
+    expect(snapshotRuns({ benchmarks: [good, { ...good, title: "Synthetic" } as never, "x" as never] })).toEqual([good]);
+    const many = Array.from({ length: MAX_RUNS_PER_SNAPSHOT + 3 }, (_, index) =>
+      run(`2026-10-10T11:${String(index).padStart(2, "0")}:00.000Z`, 1, 0, { version: `1.0.${index}` }),
+    );
+    const kept = many.reduce((runs: ReturnType<typeof run>[], entry) => withRun(runs, entry), []);
+    expect(kept).toHaveLength(MAX_RUNS_PER_SNAPSHOT);
+    expect(kept.at(-1)).toEqual(many.at(-1));
+  });
+
+  it("gives trend, drift and the runs of one series over the stored snapshots, empty for old snapshots", async () => {
+    const { h } = await withSnapshots("pro");
+    const empty = await h.ipc.benchmarkHistory(OWNER, TENANT, null);
+    expect(empty).toEqual({ enabled: true, available: true, reason: null, trend: [], drift: [], runs: [] });
+    const a = run("2026-10-10T11:00:00.000Z", 19, 1);
+    const b = run("2026-10-12T11:00:00.000Z", 17, 3);
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T2, b);
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, a);
+    const view = await h.ipc.benchmarkHistory(OWNER, TENANT, { benchmark: "synthetic-bench", version: "1.0.0", level: 1 });
+    expect(view.trend.map((point) => [point.assessedAt, point.rate, point.comparison])).toEqual([
+      [a.assessedAt, 0.95, "first"],
+      [b.assessedAt, 0.85, "compared"],
+    ]);
+    expect(view.drift).toEqual([expect.objectContaining({ kind: "below-bar", previousRate: 0.95, currentRate: 0.85 })]);
+    expect(view.runs).toEqual([a, b]);
+    const other = await h.ipc.benchmarkHistory(OWNER, TENANT, { benchmark: "synthetic-bench", version: "1.0.0", level: 2 });
+    expect(other.runs).toEqual([]);
+    // History off keeps showing runs stored before.
+    h.settings.keepHistory = false;
+    expect((await h.ipc.benchmarkHistory(OWNER, TENANT, null)).trend).toHaveLength(2);
+  });
+
+  it("refuses the portfolio below the MSP plan", async () => {
+    const { h } = await withSnapshots("pro");
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, run(T1, 1, 0));
+    const read = vi.spyOn(h.store, "read");
+    await expect(h.ipc.benchmarkPortfolio(OWNER, TENANT, null)).rejects.toThrow(MSP_PLAN_REQUIRED);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("builds the MSP portfolio from the newest stored run of each level per tenant", async () => {
+    const { h } = await withSnapshots("msp");
+    await h.store.save(OTHER, projectionOf(contoso("2026-10-11T10:00:00Z")), h.guard());
+    await h.store.save(
+      "aaaaaaaa-0000-0000-0000-000000000003",
+      projectionOf(contoso("2026-10-11T10:00:00Z")),
+      h.guard(),
+    );
+    await h.store.setLabel(OTHER, "Fabrikam", () => true);
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, run("2026-10-10T11:00:00.000Z", 1, 1));
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T2, run("2026-10-12T11:00:00.000Z", 3, 1));
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T2, run("2026-10-12T11:30:00.000Z", 1, 0, { level: 2 }));
+    // Another tenant's run, stored while it was signed in.
+    const [otherSnapshot] = await h.store.list(OTHER);
+    await h.store.update(
+      OTHER,
+      otherSnapshot!.id,
+      (projection) => ({ ...projection, benchmarks: [run("2026-10-11T11:00:00.000Z", 1, 0)] }),
+      () => true,
+    );
+    const view = await h.ipc.benchmarkPortfolio(OWNER, TENANT, null);
+    expect(view.selected).toEqual({ benchmark: "synthetic-bench", version: "1.0.0" });
+    expect(view.benchmarks).toEqual([{ benchmark: "synthetic-bench", version: "1.0.0", tenants: 2 }]);
+    expect(
+      view.rows.map((row) => [row.tenantName, row.current, row.levels.map((level) => [level.level, level.rate])]),
+    ).toEqual([
+      ["Fabrikam", false, [[1, 1]]],
+      ["11111111...", true, [[1, 0.75], [2, 1]]],
+      ["aaaaaaaa...", false, []],
+    ]);
+    const unknown = await h.ipc.benchmarkPortfolio(OWNER, TENANT, { benchmark: "synthetic-bench", version: "2.0.0" });
+    expect(unknown).toMatchObject({ selected: null, rows: [] });
+  });
+
+  it("is reset with the session: a portfolio or trend of the previous account is never returned", async () => {
+    const { h } = await withSnapshots("msp");
+    await h.ipc.recordBenchmarkRun(OWNER, TENANT, T1, run(T1.replace("Z", ".000Z"), 1, 0));
+    const benchmarkRunSnapshots = h.store.benchmarkRunSnapshots.bind(h.store);
+    vi.spyOn(h.store, "benchmarkRunSnapshots").mockImplementation(async (...args) => {
+      h.ipc.reset();
+      return benchmarkRunSnapshots(...args);
+    });
+    await expect(h.ipc.benchmarkHistory(OWNER, TENANT, null)).rejects.toThrow(ACCOUNT_SWITCHED);
+    await expect(h.ipc.benchmarkPortfolio(OWNER, TENANT, null)).rejects.toThrow(ACCOUNT_SWITCHED);
   });
 });

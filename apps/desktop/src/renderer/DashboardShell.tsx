@@ -3,6 +3,7 @@ import { CollectionStatusToast } from "./components/collection/CollectionStatusT
 import { SnapshotNotSavedNotice } from "./components/collection/SnapshotNotSavedNotice";
 import { Sidebar } from "./components/layout/Sidebar";
 import { isMac } from "./lib/ipc";
+import { BenchmarksScreen } from "./screens/BenchmarksScreen";
 import { CompareScreen } from "./screens/CompareScreen";
 import { ComplianceScreen } from "./screens/ComplianceScreen";
 import { ExportScreen } from "./screens/ExportScreen";
@@ -41,6 +42,7 @@ export function DashboardShell() {
             {screen === "portfolio" && <PortfolioScreen />}
             {screen === "section" && <SectionDetailScreen />}
             {screen === "compliance" && <ComplianceScreen />}
+            {screen === "benchmarks" && <BenchmarksScreen />}
             {screen === "export" && <ExportScreen />}
             {screen === "license" && <LicenseScreen />}
             {screen === "settings" && <SettingsScreen />}

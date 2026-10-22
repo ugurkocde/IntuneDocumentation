@@ -634,3 +634,96 @@ describe("SnapshotStore tenants and labels", () => {
   });
 });
 
+
+describe("SnapshotStore benchmark runs", () => {
+  const run = (assessedAt: string, level: 1 | 2 = 1) => ({
+    benchmark: "synthetic-bench",
+    version: "9.9.9",
+    level,
+    assessedAt,
+    packDigest: `sha256:${"a".repeat(64)}`,
+    basis: "recommendations" as const,
+    results: [["1.1", "fail", ["synthetic_setting_alpha"]] as [string, "fail", string[]]],
+  });
+
+  it("loads snapshots saved before benchmark runs existed, without the field", async () => {
+    const target = store();
+    const entry = await target.save(TENANT, projection(), guard(target));
+    const read = await store().read(TENANT, entry!.id);
+    expect("benchmarks" in read).toBe(false);
+    expect(await store().benchmarkRunSnapshots(TENANT)).toEqual([]);
+  });
+
+  it("adds runs to a stored snapshot in place, encrypted, with run keys in the index only", async () => {
+    const target = store();
+    const entry = await target.save(TENANT, projection(), guard(target));
+    const [before] = await target.list(TENANT);
+    const first = run("2026-10-18T11:00:00.000Z");
+    expect(await target.update(TENANT, entry!.id, (stored) => ({ ...stored, benchmarks: [first] }), yes)).toBe(true);
+    const reopened = store();
+    const [after] = await reopened.list(TENANT);
+    // Same snapshot: id and collection stay, only the size follows.
+    expect({ ...after, bytes: 0 }).toEqual({ ...before, bytes: 0 });
+    expect((await reopened.read(TENANT, entry!.id)).benchmarks).toEqual([first]);
+    expect(await reopened.benchmarkRunSnapshots()).toEqual([
+      {
+        tenantId: TENANT,
+        id: entry!.id,
+        collectedAt: entry!.collectedAt,
+        runs: [{ benchmark: "synthetic-bench", version: "9.9.9", level: 1, assessedAt: first.assessedAt }],
+      },
+    ]);
+    expect(snapshotFiles()).toHaveLength(1);
+    for (const file of allFiles(dir)) {
+      const bytes = readFileSync(file);
+      for (const secret of ["synthetic_setting_alpha", "synthetic-bench", TENANT]) expect(bytes.includes(secret)).toBe(false);
+    }
+  });
+
+  it("lists run keys from the index without decrypting snapshots, per tenant or for all", async () => {
+    const target = store();
+    const own = await target.save(TENANT, projection(), guard(target));
+    const other = await target.save(OTHER, projection(), guard(target));
+    await target.save(OTHER, projection("Second"), guard(target));
+    await target.update(TENANT, own!.id, (stored) => ({ ...stored, benchmarks: [run("2026-10-18T11:00:00.000Z")] }), yes);
+    await target.update(OTHER, other!.id, (stored) => ({ ...stored, benchmarks: [run("2026-10-18T12:00:00.000Z", 2)] }), yes);
+    for (const file of snapshotFiles()) writeFileSync(file, "damaged");
+    const reopened = store();
+    expect((await reopened.benchmarkRunSnapshots(TENANT)).map((entry) => entry.id)).toEqual([own!.id]);
+    expect((await reopened.benchmarkRunSnapshots()).map((entry) => [entry.tenantId, entry.runs[0]!.level]).sort()).toEqual(
+      [
+        [OTHER, 2],
+        [TENANT, 1],
+      ].sort(),
+    );
+  });
+
+  it("refuses an update that changes the collection, and changes nothing for another account or a gone snapshot", async () => {
+    const target = store();
+    const entry = await target.save(TENANT, projection(), guard(target));
+    const sealed = readFileSync(snapshotFiles()[0]!);
+    await expect(
+      target.update(TENANT, entry!.id, (stored) => ({ ...stored, collectedAt: "2020-01-01T00:00:00.000Z" }), yes),
+    ).rejects.toThrow("keep its collection");
+    expect(await target.update(TENANT, entry!.id, (stored) => ({ ...stored, benchmarks: [] }), () => false)).toBe(false);
+    // The account changes while the snapshot is read: checked again before the write.
+    let checks = 0;
+    const flips = () => (checks += 1) === 1;
+    expect(await target.update(TENANT, entry!.id, (stored) => ({ ...stored, benchmarks: [] }), flips)).toBe(false);
+    expect(checks).toBe(2);
+    expect(await target.update(OTHER, entry!.id, (stored) => stored, yes)).toBe(false);
+    expect(readFileSync(snapshotFiles()[0]!).equals(sealed)).toBe(true);
+    await expect(target.update(TENANT, "../x", (stored) => stored, yes)).rejects.toThrow("Unknown snapshot.");
+  });
+
+  it("removes the run keys when the runs are removed, and with the snapshot", async () => {
+    const target = store();
+    const entry = await target.save(TENANT, projection(), guard(target));
+    await target.update(TENANT, entry!.id, (stored) => ({ ...stored, benchmarks: [run("2026-10-18T11:00:00.000Z")] }), yes);
+    await target.update(TENANT, entry!.id, (stored) => ({ ...stored, benchmarks: [] }), yes);
+    expect(await target.benchmarkRunSnapshots(TENANT)).toEqual([]);
+    await target.update(TENANT, entry!.id, (stored) => ({ ...stored, benchmarks: [run("2026-10-18T11:00:00.000Z")] }), yes);
+    await target.delete(TENANT, entry!.id, yes);
+    expect(await target.benchmarkRunSnapshots(TENANT)).toEqual([]);
+  });
+});

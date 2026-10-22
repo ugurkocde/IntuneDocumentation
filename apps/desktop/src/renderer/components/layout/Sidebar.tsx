@@ -7,6 +7,7 @@ import {
   History,
   KeyRound,
   LayoutGrid,
+  ListChecks,
   LogIn,
   LogOut,
   PanelLeftClose,
@@ -374,6 +375,15 @@ export function Sidebar() {
               label="Compliance Evidence"
               onClick={() => actions.navigate("compliance")}
             />
+            {state.benchmarks === "internal" && (
+              <NavButton
+                isOpen={isOpen}
+                active={screen === "benchmarks"}
+                icon={ListChecks}
+                label="CIS Benchmarks"
+                onClick={() => actions.navigate("benchmarks")}
+              />
+            )}
           </div>
         </section>
 

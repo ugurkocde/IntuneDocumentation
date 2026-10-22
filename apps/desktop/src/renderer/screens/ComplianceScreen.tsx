@@ -1,4 +1,4 @@
-import { ExternalLink, KeyRound, LayoutGrid, RefreshCw, ShieldCheck } from "lucide-react";
+import { ExternalLink, KeyRound, LayoutGrid, ListChecks, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FrameworkBadge } from "../../../../../src/components/dashboard/framework-badge";
 import { compareControlIds } from "../../../../../src/lib/compliance/engine";
@@ -81,12 +81,59 @@ function SummaryCard({
   );
 }
 
+// CIS Benchmarks next to the frameworks. Without the signed licence claim the
+// card is disabled and says coming soon only: no benchmark names, versions or
+// dates.
+function BenchmarksCard({ available, onOpen }: { available: boolean; onOpen: () => void }) {
+  return (
+    <div role="listitem" className="flex">
+      <button
+        type="button"
+        aria-label={available ? "CIS Benchmarks" : "CIS Benchmarks, coming soon"}
+        disabled={!available}
+        onClick={available ? onOpen : undefined}
+        className="border-petrol-950/8 shadow-card group enabled:hover:bg-mint-50/35 flex w-full flex-col rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow,transform] duration-200 focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none enabled:cursor-pointer enabled:hover:-translate-y-0.5 enabled:hover:border-teal-700/25 enabled:hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] enabled:active:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-50/70 disabled:shadow-none motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+      >
+        <span className="flex w-full items-start justify-between gap-3">
+          <span
+            className={`flex h-10 w-10 items-center justify-center rounded-md ${
+              available ? "bg-teal-700 text-white" : "bg-mint-100 text-petrol-600"
+            }`}
+          >
+            <ListChecks className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+          </span>
+          {!available && (
+            <span className="bg-mint-100 text-petrol-700 rounded-full px-2.5 py-1 text-[10px] font-bold">
+              Coming soon
+            </span>
+          )}
+        </span>
+        <span className={`mt-5 block text-base font-semibold ${available ? "text-petrol-950" : "text-petrol-700"}`}>
+          CIS Benchmarks
+        </span>
+        <span className="mt-1 block min-h-4 text-xs font-semibold text-teal-700">
+          {available ? "Internal preview" : ""}
+        </span>
+        <span className="text-petrol-600 mt-3 block text-sm leading-6">
+          {available
+            ? "Readiness comparison of your Settings Catalog policies with a benchmark delivered from the licensed content service."
+            : "Readiness comparison of your Settings Catalog policies with CIS Benchmarks."}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function FrameworkPicker({
   view,
   onSelect,
+  benchmarksAvailable,
+  onOpenBenchmarks,
 }: {
   view: ComplianceView | null;
   onSelect: (id: ComplianceFrameworkId) => void;
+  benchmarksAvailable: boolean;
+  onOpenBenchmarks: () => void;
 }) {
   return (
     <div role="list" aria-label="Compliance frameworks" className="grid grid-cols-1 gap-4 @2xl:grid-cols-2 @4xl:grid-cols-3">
@@ -115,6 +162,7 @@ function FrameworkPicker({
           </div>
         );
       })}
+      <BenchmarksCard available={benchmarksAvailable} onOpen={onOpenBenchmarks} />
     </div>
   );
 }
@@ -302,7 +350,12 @@ export function ComplianceScreen() {
             {error}
           </Alert>
         )}
-        <FrameworkPicker view={view} onSelect={(id) => choose(id, true)} />
+        <FrameworkPicker
+          view={view}
+          onSelect={(id) => choose(id, true)}
+          benchmarksAvailable={state.benchmarks === "internal"}
+          onOpenBenchmarks={() => actions.navigate("benchmarks")}
+        />
       </div>
     );
   }

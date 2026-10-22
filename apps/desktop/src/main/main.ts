@@ -33,7 +33,8 @@ import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
 import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
 import { AuthService } from "./auth";
-import { registerBenchmarksIpc } from "./benchmarks";
+import { BenchmarkExceptionStore } from "./benchmark-exceptions";
+import { benchmarkWork, registerBenchmarksIpc } from "./benchmarks";
 import {
   clearCollection,
   collectAll,
@@ -65,6 +66,7 @@ import {
   parseFrameworkId,
   parseRegisterFormat,
   snapshotInputs,
+  tenantLabelOf,
 } from "./compliance";
 import { estimateScopedExport, prepareExport } from "./export";
 import { registerHistoryIpc } from "./history-ipc";
@@ -133,6 +135,13 @@ const isMac = process.platform === "darwin";
 const history = new SnapshotStore({
   dir: () => path.join(app.getPath("userData"), "snapshots"),
 });
+// Accepted CIS Benchmark exceptions, encrypted per tenant.
+const benchmarkExceptions = new BenchmarkExceptionStore({
+  dir: () => path.join(app.getPath("userData"), "benchmark-exceptions"),
+});
+// The snapshot of the last collection while it is being saved, so a
+// benchmark run of that collection is added once it is stored.
+let snapshotSaving: Promise<unknown> = Promise.resolve();
 // History, Compare and Portfolio handlers; set by registerIpc.
 let historyIpc: ReturnType<typeof registerHistoryIpc> | null = null;
 // CIS Benchmarks handlers and their memory only content; set by registerIpc.
@@ -273,11 +282,12 @@ function cancelCollection(
 }
 
 // An account change drops a snapshot that is still being prepared, the
-// comparison and the CIS Benchmark content held in memory.
+// comparison and the CIS Benchmark content and exceptions key held in memory.
 function resetHistorySession(): void {
   history.invalidate();
   historyIpc?.reset();
   benchmarksIpc?.reset();
+  benchmarkExceptions.reset();
   scheduler.reset();
   void scheduler.refresh();
 }
@@ -525,6 +535,7 @@ const LOCAL_DATA = [
   "window-state.json",
   "logs",
   "snapshots",
+  "benchmark-exceptions",
 ];
 
 async function clearLocalData(): Promise<void> {
@@ -551,6 +562,9 @@ async function clearLocalData(): Promise<void> {
   // key and index.
   await history.clear().catch((error: unknown) =>
     log("warn", "history clear failed", { message: errorText(error) }),
+  );
+  await benchmarkExceptions.clear().catch((error: unknown) =>
+    log("warn", "benchmark exceptions clear failed", { message: errorText(error) }),
   );
   const userData = app.getPath("userData");
   await Promise.all(
@@ -698,12 +712,19 @@ const collections = new CollectionRunner<
     const tenant = signedInTenant();
     if (!tenant) return;
     const generation = history.begin();
-    if (scheduled) return recordSnapshot(owner, tenant, generation);
-    setImmediate(
-      () =>
-        void recordSnapshot(owner, tenant, generation).catch((error: unknown) =>
-          broadcast("history:notSaved", errorText(error)),
+    if (scheduled) {
+      const saving = recordSnapshot(owner, tenant, generation);
+      snapshotSaving = saving.catch(() => undefined);
+      return saving;
+    }
+    snapshotSaving = new Promise<void>((resolve) =>
+      setImmediate(() =>
+        resolve(
+          recordSnapshot(owner, tenant, generation).catch((error: unknown) =>
+            broadcast("history:notSaved", errorText(error)),
+          ),
         ),
+      ),
     );
   },
 });
@@ -1556,6 +1577,22 @@ function registerIpc(): void {
     },
     saveFile: saveWithDialog,
     log,
+    work: benchmarkWork({
+      collectionFor: (owner) =>
+        getCollectionOwner() === owner ? getLastCollection() : null,
+      exceptions: benchmarkExceptions,
+      isCurrent: (owner, tenantId) =>
+        auth?.getOwnerKey() === owner &&
+        signedInTenant()?.toLowerCase() === tenantId,
+      // After the snapshot of the last collection was saved.
+      recordRun: async (owner, tenantId, collectedAt, run) => {
+        await snapshotSaving;
+        return historyHandlers.recordBenchmarkRun(owner, tenantId, collectedAt, run);
+      },
+      history: historyHandlers,
+      tenantLabel: tenantLabelOf,
+      log,
+    }),
   });
 
   handle("data:clear", async () => {

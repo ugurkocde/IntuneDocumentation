@@ -39,6 +39,14 @@ import type {
   BenchmarkIdentity,
   BenchmarkLevel,
 } from "../../../../src/lib/benchmarks/pack";
+import type { BenchmarkAssessment } from "../../../../src/lib/benchmarks/assessment";
+import type { BenchmarkException } from "../../../../src/lib/benchmarks/exceptions";
+import type { StoredBenchmarkRun } from "../../../../src/lib/benchmarks/history";
+import type { DriftEntry, TrendPoint } from "../../../../src/lib/benchmarks/trend";
+import type {
+  PortfolioBenchmark,
+  PortfolioRow,
+} from "../../../../src/lib/benchmarks/portfolio";
 
 // Scheduled collection interval in hours; 0 is off.
 export type ScheduleHours = 0 | 6 | 12 | 24;
@@ -597,17 +605,31 @@ export interface AppInfo {
 // channel refuses with BENCHMARKS_COMING_SOON. Content stays in main memory.
 export const BENCHMARKS_COMING_SOON = "CIS comparisons are coming soon.";
 
-export type { BenchmarkCatalog, BenchmarkIdentity, BenchmarkLevel };
+export type {
+  BenchmarkCatalog,
+  BenchmarkException,
+  BenchmarkIdentity,
+  BenchmarkLevel,
+  DriftEntry,
+  PortfolioBenchmark,
+  PortfolioRow,
+  StoredBenchmarkRun,
+  TrendPoint,
+};
 
 export interface BenchmarkAvailability {
   state: "internal" | "comingSoon";
 }
 
-// The engine's assessment view (src/lib/benchmarks/index.ts); only the
-// identity of the assessed benchmark is fixed here.
-export interface BenchmarkAssessmentView extends BenchmarkIdentity {
-  assessedAt: string;
-}
+// benchmarks:assess: the engine's assessment (assessBenchmark in
+// src/lib/benchmarks) of the signed in owner's last collection, with the
+// tenant's exceptions applied to the adjusted headline. Titles and policy
+// names come from the delivered pack and stay in memory; main keeps the last
+// assessment per tenant and owner for the exports and purges it with the
+// content. With history on, the stored form of the run (ids, result codes,
+// open setting ids and the pack digest) is added to the snapshot of the
+// assessed collection.
+export type BenchmarkAssessmentView = BenchmarkAssessment;
 
 export type BenchmarkExportFormat = "pdf" | "csv" | "json" | "drafts";
 
@@ -627,16 +649,52 @@ export interface BenchmarkExceptionInput {
   expiresOn: string;
 }
 
-export interface BenchmarkException
-  extends BenchmarkIdentity,
-    BenchmarkExceptionInput {
-  createdAt: string;
-}
-
+// benchmarks:exceptions answers with the exceptions of the requested
+// benchmark, version and level, stored encrypted per tenant (BenchmarkException
+// adds id and createdAt). Set adds one, or changes the one with the same
+// setting id; remove drops it.
 export type BenchmarkExceptionsRequest =
   | ({ action: "list" } & BenchmarkIdentity)
   | ({ action: "set" } & BenchmarkIdentity & BenchmarkExceptionInput)
   | ({ action: "remove"; settingId: string } & BenchmarkIdentity);
+
+// benchmarks:history, for the signed in tenant: trend points of every stored
+// benchmark, version and level (oldest first), drift in the newest point of
+// each, and the stored runs of the requested benchmark, version and level
+// (oldest first; none without a request). Runs hold ids and result codes
+// only: titles come from the assessment of the delivered pack in memory.
+export type BenchmarkHistoryRequest = BenchmarkIdentity;
+
+export interface BenchmarkHistoryView {
+  // Keep history is on; runs are stored only then. Runs stored before it
+  // was turned off are still shown.
+  enabled: boolean;
+  // False when history cannot be used on this computer; reason says why.
+  available: boolean;
+  reason: string | null;
+  trend: TrendPoint[];
+  drift: DriftEntry[];
+  runs: StoredBenchmarkRun[];
+}
+
+// benchmarks:portfolio, MSP plan only: the newest stored run of every level
+// per stored tenant for one benchmark and version, by default the one most
+// tenants ran. Tenants without a run of it are rows without levels.
+export interface BenchmarkPortfolioRequest {
+  benchmark: string;
+  version: string;
+}
+
+export interface BenchmarkPortfolioView {
+  available: boolean;
+  reason: string | null;
+  // Every benchmark and version stored for any tenant.
+  benchmarks: PortfolioBenchmark[];
+  selected: BenchmarkPortfolioRequest | null;
+  // tenantName is the stored label or the short tenant label; current marks
+  // the signed in tenant.
+  rows: Array<PortfolioRow & { current: boolean }>;
+}
 
 export type HelpKey = "entraAppRegistrations" | "gettingStarted" | "support";
 
@@ -760,6 +818,13 @@ export interface IntunedocApi {
   benchmarksExceptions(
     request: BenchmarkExceptionsRequest,
   ): Promise<BenchmarkException[]>;
+  benchmarksHistory(
+    request?: BenchmarkHistoryRequest,
+  ): Promise<BenchmarkHistoryView>;
+  // MSP plan only.
+  benchmarksPortfolio(
+    request?: BenchmarkPortfolioRequest,
+  ): Promise<BenchmarkPortfolioView>;
   onCollectProgress(callback: (progress: CollectProgress) => void): () => void;
   onExportProgress(callback: (progress: ExportProgress) => void): () => void;
   onComplianceProgress(

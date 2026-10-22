@@ -378,18 +378,18 @@ describe("assignment of matching policies", () => {
     ]);
   });
 
-  it("treats assignments that were not read as an incomplete collection", () => {
+  it("treats assignments that were not read as an unknown assignment, not an incomplete collection", () => {
     const run = assess([
       tenantPolicy({
         settings: [choice(ALPHA, "1")],
         assignmentsStatus: "incomplete",
       }),
     ]);
-    expect(run.collection.complete).toBe(false);
+    expect(run.collection.complete).toBe(true);
     expect(statusOf(run, ALPHA)).toEqual([
+      "Present",
       "Review",
-      "Review",
-      "collectionIncomplete",
+      "assignmentUnknown",
     ]);
   });
 
@@ -399,6 +399,136 @@ describe("assignment of matching policies", () => {
     ]);
     expect(statusOf(run, BETA)).toEqual(["Different", "Fail", undefined]);
   });
+});
+
+describe("a fetch error that concerns only assignments", () => {
+  // The item and fetchErrors entry as intune-detailed-client.ts records an
+  // assignments request that failed after the settings were read whole.
+  const failedAssignments = (
+    overrides: {
+      error?: string;
+      endpoint?: string;
+      message?: string;
+      settingsStatus?: "complete" | "incomplete";
+      assignmentsStatus?: "complete" | "incomplete";
+      policyId?: string;
+    } = {},
+  ) => {
+    const policy: Record<string, unknown> = {
+      ...tenantPolicy({
+        settings: [choice(ALPHA, "1")],
+        assignments: [],
+        settingsStatus: overrides.settingsStatus ?? "complete",
+        assignmentsStatus: overrides.assignmentsStatus ?? "incomplete",
+      }),
+      hasFetchError: true,
+      fetchErrorMessage:
+        overrides.message ?? overrides.error ?? "Assignments: request failed",
+    };
+    return {
+      policy,
+      fetchErrors: [
+        {
+          policyId: overrides.policyId ?? String(policy.id),
+          policyName: String(policy.name),
+          policyType: "Settings Catalog",
+          familyKey: "settingsCatalog",
+          endpoint:
+            overrides.endpoint ??
+            `/deviceManagement/configurationPolicies('${String(policy.id)}')`,
+          error: overrides.error ?? "Assignments: request failed",
+          partial: true,
+        },
+      ],
+    };
+  };
+
+  const recommendationPack = pack(
+    [{ settings: [choice(ALPHA, "1"), simpleInteger(LENGTH, 14)] }],
+    [
+      {
+        id: "1.1",
+        title: "Synthetic alpha",
+        level: 1,
+        settings: [ALPHA],
+      },
+      {
+        id: "1.2",
+        title: "Synthetic length",
+        level: 1,
+        settings: [LENGTH],
+      },
+    ],
+  );
+
+  it("keeps the family complete and makes only that policy's assignment unknown", () => {
+    const { policy, fetchErrors } = failedAssignments();
+    const run = assessBenchmark(
+      collection({ policies: [policy], fetchErrors }),
+      recommendationPack,
+      { now: NOW },
+    );
+    expect(run.collection).toMatchObject({ complete: true, gaps: [] });
+    expect(
+      run.recommendations.map((item) => [item.id, item.result, item.reason]),
+    ).toEqual([
+      ["1.1", "Review", "assignmentUnknown"],
+      ["1.2", "Fail", undefined],
+    ]);
+    expect(statusOf(run, LENGTH)).toEqual(["Missing", "Fail", undefined]);
+  });
+
+  it("keeps a readable difference on that policy a Fail", () => {
+    const { policy, fetchErrors } = failedAssignments();
+    policy.settings = [{ id: "0", settingInstance: choice(ALPHA, "2") }];
+    expect(statusOf(assess([policy], { fetchErrors }), ALPHA)).toEqual([
+      "Different",
+      "Fail",
+      undefined,
+    ]);
+  });
+
+  const familyWide: Array<[string, Parameters<typeof failedAssignments>[0]]> = [
+    [
+      "a settings step next to the assignments step",
+      { error: "Settings: request failed; Assignments: request failed" },
+    ],
+    [
+      "settings marked incomplete",
+      { settingsStatus: "incomplete", assignmentsStatus: "incomplete" },
+    ],
+    [
+      "assignments marked complete despite the error",
+      { assignmentsStatus: "complete" },
+    ],
+    [
+      "an endpoint naming the settings relation",
+      {
+        endpoint:
+          "/deviceManagement/configurationPolicies('synthetic')/settings",
+      },
+    ],
+    [
+      "an item message with a settings step",
+      { message: "Settings: request failed; Assignments: request failed" },
+    ],
+    [
+      "an assignments error for no collected policy",
+      { policyId: "collection-Settings Catalog" },
+    ],
+  ];
+
+  for (const [label, overrides] of familyWide)
+    it(`stays family wide with ${label}`, () => {
+      const { policy, fetchErrors } = failedAssignments(overrides);
+      const run = assess([policy], { fetchErrors });
+      expect(run.collection.complete).toBe(false);
+      expect(statusOf(run, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "collectionIncomplete",
+      ]);
+    });
 });
 
 describe("profile choice", () => {
@@ -535,6 +665,141 @@ describe("grouped roots", () => {
         GROUP,
       ),
     ).toEqual(["Different", "Fail", undefined]);
+  });
+
+  const entryOn = () => [leaf("one", "on"), leaf("two", "on")];
+  const entryOff = () => [leaf("one", "off"), leaf("two", "off")];
+  const twoEntryPack = pack([
+    { settings: [groupCollection(GROUP, [entryOn(), entryOff()])] },
+  ]);
+  const groupRun = (entries: Record<string, unknown>[][]) =>
+    assess(
+      [tenantPolicy({ settings: [groupCollection(GROUP, entries)] })],
+      {},
+      twoEntryPack,
+    );
+
+  it("matches reordered entries as a multiset, never Different", () => {
+    expect(statusOf(groupRun([entryOff(), entryOn()]), GROUP)).toEqual([
+      "Present",
+      "Pass",
+      undefined,
+    ]);
+    // Reordered children inside an entry match as well.
+    expect(
+      statusOf(
+        groupRun([
+          [leaf("two", "off"), leaf("one", "off")],
+          [leaf("two", "on"), leaf("one", "on")],
+        ]),
+        GROUP,
+      ),
+    ).toEqual(["Present", "Pass", undefined]);
+  });
+
+  it("ignores an extra tenant entry in any position", () => {
+    expect(
+      statusOf(
+        groupRun([[leaf("extra", "kept")], entryOff(), entryOn()]),
+        GROUP,
+      ),
+    ).toEqual(["Present", "Pass", undefined]);
+  });
+
+  it("is Different when a recommended entry has no readable match", () => {
+    expect(statusOf(groupRun([entryOn()]), GROUP)).toEqual([
+      "Different",
+      "Fail",
+      undefined,
+    ]);
+    // A multiset: one tenant entry cannot stand for two recommended ones.
+    const twice = pack([
+      { settings: [groupCollection(GROUP, [entryOn(), entryOn()])] },
+    ]);
+    expect(
+      statusOf(
+        assess(
+          [tenantPolicy({ settings: [groupCollection(GROUP, [entryOn()])] })],
+          {},
+          twice,
+        ),
+        GROUP,
+      ),
+    ).toEqual(["Different", "Fail", undefined]);
+  });
+
+  it("is Review when the only candidate for a recommended entry is unreadable", () => {
+    const unreadableTwo = {
+      ...leaf("two", "off"),
+      choiceSettingValue: { value: REDACTED_VALUE, children: [] },
+    };
+    expect(
+      statusOf(
+        groupRun([[leaf("one", "off"), unreadableTwo], entryOn()]),
+        GROUP,
+      ),
+    ).toEqual(["Review", "Review", "unreadableValue"]);
+  });
+
+  it("matches nested group collections inside entries in any order", () => {
+    const INNER = `${GROUP}_inner`;
+    const inner = (first: string, second: string) =>
+      groupCollection(INNER, [
+        [choice(`${INNER}_leaf`, first)],
+        [choice(`${INNER}_leaf`, second)],
+      ]);
+    const nestedPack = pack([
+      { settings: [groupCollection(GROUP, [[inner("a", "b")], entryOn()])] },
+    ]);
+    const nested = (first: string, second: string) =>
+      statusOf(
+        assess(
+          [
+            tenantPolicy({
+              settings: [
+                groupCollection(GROUP, [entryOn(), [inner(first, second)]]),
+              ],
+            }),
+          ],
+          {},
+          nestedPack,
+        ),
+        GROUP,
+      );
+    expect(nested("b", "a")).toEqual(["Present", "Pass", undefined]);
+    expect(nested("b", "c")).toEqual(["Different", "Fail", undefined]);
+  });
+
+  it("judges a declared leaf inside reordered entries as a multiset", () => {
+    const leafPack = pack(
+      [{ settings: [groupCollection(GROUP, [entryOn(), entryOff()])] }],
+      [
+        {
+          id: "1.1",
+          title: "Synthetic group leaf one",
+          level: 1,
+          settings: [`${GROUP}_one`],
+        },
+      ],
+    );
+    const leafRun = (entries: Record<string, unknown>[][]) =>
+      assessBenchmark(
+        collection({
+          policies: [
+            tenantPolicy({ settings: [groupCollection(GROUP, entries)] }),
+          ],
+        }),
+        leafPack,
+        { now: NOW },
+      ).recommendations[0];
+    expect(leafRun([entryOff(), entryOn()])).toMatchObject({
+      result: "Pass",
+      settings: [{ status: "Present", result: "Pass" }],
+    });
+    expect(leafRun([entryOn(), entryOn()])).toMatchObject({
+      result: "Fail",
+      settings: [{ status: "Different", result: "Fail" }],
+    });
   });
 
   it("is Review when a group entry has no readable children", () => {

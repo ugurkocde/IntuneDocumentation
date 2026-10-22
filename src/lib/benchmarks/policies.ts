@@ -281,9 +281,10 @@ const inSubtree = (path: string, anchor: string) =>
  * Leaf values of one setting instance, keyed by the settingDefinitionId path
  * from the root. Child instances are taken out of their parent's own value and
  * keyed below it; a repeated child definition in one children list is keyed by
- * its occurrence, and entries of a group collection by position. A leaf whose
- * own value is not readable maps to UNREADABLE. The instance must still carry
- * its @odata.type (clean, not comparable).
+ * its occurrence, and entries of a collection by position (compareLeaves
+ * matches group collection entries regardless of it). A leaf whose own value
+ * is not readable maps to UNREADABLE. The instance must still carry its
+ * @odata.type (clean, not comparable).
  */
 function leafValues(
   instance: SettingInstance,
@@ -338,25 +339,92 @@ function leafValues(
 
 export type Comparison = "match" | "differ" | "unknown";
 
+// A group setting collection entry in a leaf path. The first one is the
+// outermost: an entry path always extends the path of its collection.
+const ENTRY = /^(.*?:groupSettingCollectionValue)\[(\d+)\](.*)$/;
+const entryless = (path: string) =>
+  path.replace(/(:groupSettingCollectionValue)\[\d+\]/g, "$1[]");
+
+/**
+ * Leaves outside any group collection entry, and the leaves of each entry
+ * keyed by its collection path, relative to the entry.
+ */
+function splitEntries(leaves: Iterable<[string, string]>) {
+  const direct: Array<[string, string]> = [];
+  const collections = new Map<string, Map<string, Array<[string, string]>>>();
+  for (const [path, value] of leaves) {
+    const match = ENTRY.exec(path);
+    if (!match) {
+      direct.push([path, value]);
+      continue;
+    }
+    const [, at = "", index = "", rest = ""] = match;
+    const entries = collections.get(at) ?? new Map();
+    entries.set(index, [...(entries.get(index) ?? []), [rest, value]]);
+    collections.set(at, entries);
+  }
+  return { direct, collections };
+}
+
+/** Whether every row gets its own column through an allowed cell (bipartite matching). */
+function assignable(
+  grid: Comparison[][],
+  allowed: (cell: Comparison) => boolean,
+): boolean {
+  const owner: number[] = [];
+  const place = (row: number, seen: Set<number>): boolean =>
+    (grid[row] ?? []).some((cell, column) => {
+      if (!allowed(cell) || seen.has(column)) return false;
+      seen.add(column);
+      const current = owner[column];
+      if (current !== undefined && !place(current, seen)) return false;
+      owner[column] = row;
+      return true;
+    });
+  return grid.every((_, row) => place(row, new Set()));
+}
+
 /**
  * Compares the recommended leaves with one tenant root. A readable leaf that
  * differs or is absent below readable parents is a difference, and a definite
  * difference wins. A leaf that is unreadable, or absent below an unreadable
- * parent, is unknown.
+ * parent, is unknown. Group collection entries compare as multisets: each
+ * recommended entry needs its own tenant entry, in any order, and extra
+ * tenant entries are ignored. A recommended entry no tenant entry can match
+ * is a difference when every candidate differs readably, and unknown when one
+ * might match or the collection itself is not readable.
  */
 function compareLeaves(
-  wanted: Array<[string, string]>,
+  wanted: Iterable<[string, string]>,
   have: Map<string, string>,
 ): Comparison {
   let unknown = false;
-  const unreadable = [...have].filter(([, value]) => value === UNREADABLE);
-  for (const [path, value] of wanted) {
+  const unreadable = [...have]
+    .filter(([, value]) => value === UNREADABLE)
+    .map(([at]) => at);
+  const shadowed = (path: string) =>
+    unreadable.some((at) => inSubtree(path, at));
+  const want = splitEntries(wanted);
+  for (const [path, value] of want.direct) {
     const observed = have.get(path);
     if (observed === UNREADABLE) unknown = true;
     else if (observed === undefined) {
-      if (unreadable.some(([at]) => inSubtree(path, at))) unknown = true;
+      if (shadowed(path)) unknown = true;
       else return "differ";
     } else if (observed !== value) return "differ";
+  }
+  const held = splitEntries(have).collections;
+  for (const [at, entries] of want.collections) {
+    const candidates = [...(held.get(at)?.values() ?? [])].map(
+      (entry) => new Map(entry),
+    );
+    const grid = [...entries.values()].map((entry) =>
+      candidates.map((candidate) => compareLeaves(entry, candidate)),
+    );
+    if (assignable(grid, (cell) => cell === "match")) continue;
+    if (assignable(grid, (cell) => cell !== "differ") || shadowed(`${at}[0]`))
+      unknown = true;
+    else return "differ";
   }
   return unknown ? "unknown" : "match";
 }
@@ -364,8 +432,9 @@ function compareLeaves(
 /**
  * Whether an observed root satisfies a recommended root. A root without child
  * setting instances must match exactly. A grouped root matches when every
- * recommended leaf exists at the same definition path with an equal value;
- * extra tenant children are ignored.
+ * recommended leaf exists at the same definition path with an equal value,
+ * group collection entries in any order; extra tenant children and entries
+ * are ignored.
  */
 export function compareRoot(recommended: Json, observed: Json): Comparison {
   const want = clean(recommended);
@@ -419,10 +488,13 @@ export function compareDefinition(
   )
     return { holds: "maybe", comparison: "unknown" };
   const haveLeaves = leafValues(have, "", new Map());
-  if (!anchors.some((anchor) => haveLeaves.has(anchor))) {
+  // Held in any entry of a group collection: entries are matched, not paired.
+  const heldPaths = new Set([...haveLeaves.keys()].map(entryless));
+  if (!anchors.some((anchor) => heldPaths.has(entryless(anchor)))) {
     const below = [...haveLeaves].some(
       ([at, value]) =>
-        value === UNREADABLE && anchors.some((anchor) => inSubtree(anchor, at)),
+        value === UNREADABLE &&
+        anchors.some((anchor) => inSubtree(entryless(anchor), entryless(at))),
     );
     return below
       ? { holds: "maybe", comparison: "unknown" }

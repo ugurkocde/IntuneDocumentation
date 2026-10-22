@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   scheduleStatus: vi.fn(),
   listener: { current: null as null | ((status: ScheduleStatus) => void) },
   syncCollection: vi.fn(async () => undefined),
+  navigate: vi.fn(),
+  benchmarks: { current: "comingSoon" as "internal" | "comingSoon" },
 }));
 
 vi.mock("../../lib/ipc", () => ({
@@ -25,9 +27,9 @@ vi.mock("../../lib/ipc", () => ({
   errorMessage: (error: unknown) => String(error),
 }));
 
-const actions = { syncCollection: mocks.syncCollection };
+const actions = { syncCollection: mocks.syncCollection, navigate: mocks.navigate };
 vi.mock("../../state/context", () => ({
-  useApp: () => ({ state: createInitialState(), actions }),
+  useApp: () => ({ state: { ...createInitialState(), sidebarOpen: true, benchmarks: mocks.benchmarks.current }, actions }),
 }));
 
 const { Sidebar } = await import("./Sidebar");
@@ -63,7 +65,10 @@ beforeEach(() => {
   document.body.append(host);
   root = createRoot(host);
   mocks.scheduleStatus.mockReset();
+  mocks.scheduleStatus.mockResolvedValue(status(null, null));
   mocks.syncCollection.mockClear();
+  mocks.navigate.mockClear();
+  mocks.benchmarks.current = "comingSoon";
 });
 
 afterEach(() => {
@@ -90,5 +95,24 @@ describe("Sidebar after a scheduled collection", () => {
     await act(async () => mocks.listener.current?.(status("2026-10-18T18:00:00.000Z", "failed")));
     await act(async () => mocks.listener.current?.(status(null, null)));
     expect(mocks.syncCollection).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Sidebar CIS Benchmarks entry", () => {
+  const entry = () =>
+    [...host.querySelectorAll("nav button")].find((button) => button.textContent?.trim() === "CIS Benchmarks");
+
+  it("is absent without the claim", async () => {
+    await act(async () => root.render(<Sidebar />));
+    expect(entry()).toBeUndefined();
+    expect(host.textContent).not.toContain("CIS");
+  });
+
+  it("opens the Benchmarks screen when internal", async () => {
+    mocks.benchmarks.current = "internal";
+    await act(async () => root.render(<Sidebar />));
+    expect(entry()).toBeDefined();
+    await act(async () => entry()!.click());
+    expect(mocks.navigate).toHaveBeenCalledWith("benchmarks");
   });
 });

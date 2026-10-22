@@ -14,6 +14,7 @@ import type {
   FullCollectionSummary,
   UpdateStatus,
 } from "../../shared/ipc-types";
+import { useBenchmarksAvailability } from "../hooks/use-benchmarks-availability";
 import { errorMessage, ipc } from "../lib/ipc";
 import { createInitialState, persistSidebar, reducer } from "./reducer";
 import type { Action, AppState, Screen } from "./types";
@@ -224,6 +225,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, [actions]);
+
+  useBenchmarksAvailability(dispatch, state.booted, state.auth, state.license);
 
   const value = useMemo(
     () => ({ state, dispatch, actions }),

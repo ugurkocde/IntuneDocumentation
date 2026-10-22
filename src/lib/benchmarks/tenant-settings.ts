@@ -11,6 +11,9 @@
  * policy assignments; collectionStatus.settings and .assignments are
  * "complete" or "incomplete", and failures are listed in fetchErrors with
  * familyKey "settingsCatalog" (per policy) or a collection entry.
+ *
+ * A failure that concerns only a policy's assignments leaves its settings
+ * proven: the family stays complete and that policy's assignment is unknown.
  */
 import type { DetailedExportData } from "../configuration-analyzer";
 import { summarizeAssignments } from "../compliance/assignments";
@@ -52,7 +55,17 @@ export type BenchmarkCollection = Omit<DetailedExportData, "groupNames"> & {
   groupNames?: ReadonlyMap<string, string>;
 };
 
+type FetchError = NonNullable<BenchmarkCollection["fetchErrors"]>[number];
+
 const FAMILY = "settingsCatalog";
+
+// The collector joins its per policy step warnings with "; ", each starting
+// with its step ("Settings:" or "Assignments:"), and names the policy (not
+// the relation) as the endpoint.
+const assignmentStepsOnly = (message: unknown) =>
+  typeof message === "string" &&
+  message.split("; ").every((step) => step.startsWith("Assignments:"));
+const POLICY_ENDPOINT = /\/configurationPolicies\('[^/]*'\)(?:\/assignments)?$/;
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
@@ -70,26 +83,108 @@ function sectionItems(data: BenchmarkCollection): unknown[] | null {
   return Array.isArray(data.settingsCatalog) ? data.settingsCatalog : null;
 }
 
+const familyError = (error: FetchError) =>
+  error.familyKey === FAMILY ||
+  (!error.familyKey && error.policyType === "Settings Catalog");
+
+/**
+ * The items whose only collection failure is their assignments, by the
+ * collector's markers: settings "complete", assignments "incomplete", no
+ * other part incomplete, and every fetch error message and fetchErrors
+ * entry of the policy made of "Assignments:" steps on the policy endpoint.
+ * A missing or ambiguous marker keeps the failure family wide.
+ */
+function assignmentOnlyItems(
+  items: readonly unknown[],
+  errors: readonly FetchError[],
+): Set<RecordJson> {
+  const only = new Set<RecordJson>();
+  for (const item of items) {
+    if (!record(item) || !record(item.collectionStatus)) continue;
+    const id = text(item.id);
+    const status = item.collectionStatus;
+    if (
+      id &&
+      status.settings === "complete" &&
+      status.assignments === "incomplete" &&
+      Object.entries(status).every(
+        ([part, value]) => part === "assignments" || value === "complete",
+      ) &&
+      (item.hasFetchError !== true ||
+        assignmentStepsOnly(item.fetchErrorMessage)) &&
+      errors
+        .filter((error) => error.policyId === id)
+        .every(
+          (error) =>
+            assignmentStepsOnly(error.error) &&
+            (error.endpoint === undefined ||
+              POLICY_ENDPOINT.test(error.endpoint)),
+        )
+    )
+      only.add(item);
+  }
+  return only;
+}
+
+/**
+ * The collection as its settings stand: assignment only failures removed,
+ * so the family coverage row judges settings alone. Assignment state is
+ * read per policy from the original item.
+ */
+function settingsView(
+  data: BenchmarkCollection,
+  only: ReadonlySet<RecordJson>,
+): BenchmarkCollection {
+  if (!only.size) return data;
+  const ids = new Set([...only].map((item) => item.id));
+  const settle = (items: unknown[]) =>
+    items.map((item) => {
+      if (!record(item) || !only.has(item)) return item;
+      const status = { ...(item.collectionStatus as RecordJson) };
+      delete status.assignments;
+      const settled: RecordJson = {
+        ...item,
+        hasFetchError: false,
+        collectionStatus: status,
+      };
+      delete settled.fetchErrorMessage;
+      return settled;
+    });
+  return {
+    ...data,
+    sections: data.sections?.map((section) =>
+      section.familyKey === FAMILY
+        ? { ...section, items: settle(section.items) }
+        : section,
+    ),
+    settingsCatalog: Array.isArray(data.settingsCatalog)
+      ? settle(data.settingsCatalog)
+      : data.settingsCatalog,
+    fetchErrors: data.fetchErrors?.filter(
+      (error) => !(familyError(error) && ids.has(error.policyId)),
+    ),
+  };
+}
+
 export function tenantSettings(data: BenchmarkCollection): TenantSettings {
   const gaps: string[] = [];
   const collectedAt = text(data.collectedAt);
   if (!collectedAt) gaps.push("The collection has no completion time.");
   const items = sectionItems(data);
   if (!items) gaps.push("Settings Catalog policies were not collected.");
-  const row = buildCollectionCoverage(data, [], true).find(
-    (entry) => entry.family === FAMILY,
-  );
+  const errors = (data.fetchErrors ?? []).filter(familyError);
+  const assignmentOnly = assignmentOnlyItems(items ?? [], errors);
+  const row = buildCollectionCoverage(
+    settingsView(data, assignmentOnly),
+    [],
+    true,
+  ).find((entry) => entry.family === FAMILY);
   if (row && row.status !== "complete")
     gaps.push(
       ...(row.errors.length
         ? row.errors
         : [`Settings Catalog collection is ${row.status}.`]),
     );
-  const errors = (data.fetchErrors ?? []).filter(
-    (error) =>
-      error.familyKey === FAMILY ||
-      (!error.familyKey && error.policyType === "Settings Catalog"),
-  );
   const policies: TenantPolicy[] = [];
   for (const item of items ?? []) {
     if (!record(item)) {
@@ -113,8 +208,8 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
       status.settings === "complete" &&
       Array.isArray(item.settings) &&
       settings.length === item.settings.length &&
-      !policyErrors.length &&
-      item.hasFetchError !== true;
+      (assignmentOnly.has(item) ||
+        (!policyErrors.length && item.hasFetchError !== true));
     const platforms = text(item.platforms);
     if (!settingsComplete)
       gaps.push(`${name}: settings were not read completely.`);

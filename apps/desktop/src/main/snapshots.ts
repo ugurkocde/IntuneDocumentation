@@ -67,6 +67,25 @@ interface IndexEntry extends HistoryEntry {
     partial: number;
     applicableControls: number;
   }>;
+  // The benchmark runs the snapshot holds, so trend and portfolio decrypt
+  // only the snapshots they need. Absent when it holds none.
+  benchmarks?: BenchmarkRunKey[];
+}
+
+// One stored benchmark run as the index names it: ids and time only.
+export interface BenchmarkRunKey {
+  benchmark: string;
+  version: string;
+  level: 1 | 2;
+  assessedAt: string;
+}
+
+// A snapshot that holds benchmark runs, from the index.
+export interface BenchmarkRunSnapshot {
+  tenantId: string;
+  id: string;
+  collectedAt: string;
+  runs: BenchmarkRunKey[];
 }
 
 interface StoredIndex {
@@ -144,7 +163,7 @@ export function unseal(key: Buffer, additional: Buffer, sealed: Buffer): Buffer 
 // Temp file, flushed to disk, then rename, so a reader never sees a partial
 // file, also after a power loss. Temp names never match a snapshot id and are
 // swept on the next start.
-async function writeAtomic(file: string, bytes: Buffer): Promise<void> {
+export async function writeAtomic(file: string, bytes: Buffer): Promise<void> {
   const temp = `${file}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     const handle = await fs.open(temp, "w", 0o600);
@@ -194,6 +213,25 @@ function isEntry(value: unknown): value is IndexEntry {
   );
 }
 
+function runKeys(runs: unknown): BenchmarkRunKey[] {
+  return (Array.isArray(runs) ? runs : []).flatMap((run) => {
+    const value = run as Partial<BenchmarkRunKey> | null;
+    return value &&
+      typeof value.benchmark === "string" &&
+      typeof value.version === "string" &&
+      (value.level === 1 || value.level === 2) &&
+      typeof value.assessedAt === "string"
+      ? [{ benchmark: value.benchmark, version: value.version, level: value.level, assessedAt: value.assessedAt }]
+      : [];
+  });
+}
+
+function withRunKeys(entry: IndexEntry, runs: unknown): IndexEntry {
+  const { benchmarks: _old, ...rest } = entry;
+  const keys = runKeys(runs);
+  return keys.length ? { ...rest, benchmarks: keys } : rest;
+}
+
 function parseIndex(text: string): StoredIndex {
   const parsed = JSON.parse(text) as Partial<StoredIndex> | null;
   if (!parsed || parsed.format !== INDEX_FORMAT || typeof parsed.tenants !== "object") {
@@ -204,7 +242,9 @@ function parseIndex(text: string): StoredIndex {
     if (!isGuid(tenant) || tenant !== tenant.toLowerCase() || !value) continue;
     index.tenants[tenant] = {
       ...(typeof value.label === "string" ? { label: value.label.slice(0, 100) } : {}),
-      snapshots: (Array.isArray(value.snapshots) ? value.snapshots : []).filter(isEntry),
+      snapshots: (Array.isArray(value.snapshots) ? value.snapshots : [])
+        .filter(isEntry)
+        .map((entry) => withRunKeys(entry, entry.benchmarks)),
     };
   }
   return index;
@@ -490,19 +530,80 @@ export class SnapshotStore {
       if (!index?.tenants[tenant]?.snapshots.some((entry) => entry.id === id)) {
         throw new Error("This snapshot is not in the history of the signed in tenant.");
       }
-      let projection: SnapshotProjection;
-      try {
-        const sealed = await fs.readFile(this.snapshotFile(tenant, id));
-        const plain = await gunzipAsync(unseal(this.key!, aad(SNAPSHOT_FORMAT, tenant, id), sealed));
-        projection = JSON.parse(plain.toString("utf8")) as SnapshotProjection;
-      } catch {
-        log("warn", "snapshot unreadable", { reason: "decrypt_failed" });
-        throw new Error("This snapshot could not be read. Delete it and collect again.");
+      return this.decrypt(tenant, id);
+    });
+  }
+
+  private async decrypt(tenant: string, id: string): Promise<SnapshotProjection> {
+    let projection: SnapshotProjection;
+    try {
+      const sealed = await fs.readFile(this.snapshotFile(tenant, id));
+      const plain = await gunzipAsync(unseal(this.key!, aad(SNAPSHOT_FORMAT, tenant, id), sealed));
+      projection = JSON.parse(plain.toString("utf8")) as SnapshotProjection;
+    } catch {
+      log("warn", "snapshot unreadable", { reason: "decrypt_failed" });
+      throw new Error("This snapshot could not be read. Delete it and collect again.");
+    }
+    if (projection?.format !== SNAPSHOT_FORMAT) {
+      throw new Error("This snapshot has an unknown format.");
+    }
+    return projection;
+  }
+
+  // Rewrites one stored snapshot with data added after it was saved, such as
+  // benchmark runs. The id, the collection and the index entry stay; only
+  // the size and the benchmark run keys follow the new content. False when
+  // the guard says the account changed while the change was queued, or when
+  // the snapshot is gone.
+  async update(
+    tenantId: string,
+    id: string,
+    change: (projection: SnapshotProjection) => SnapshotProjection,
+    isCurrent: MutationGuard,
+  ): Promise<boolean> {
+    const tenant = normalizeTenant(tenantId);
+    if (!SNAPSHOT_ID_PATTERN.test(id)) throw new Error("Unknown snapshot.");
+    return this.serial(async () => {
+      if (!isCurrent()) return false;
+      const index = await this.open(true);
+      if (!index?.tenants[tenant]?.snapshots.some((entry) => entry.id === id)) return false;
+      const before = await this.decrypt(tenant, id);
+      const next = change(before);
+      if (next.format !== SNAPSHOT_FORMAT || next.collectedAt !== before.collectedAt) {
+        throw new Error("A snapshot update must keep its collection.");
       }
-      if (projection?.format !== SNAPSHOT_FORMAT) {
-        throw new Error("This snapshot has an unknown format.");
-      }
-      return projection;
+      const plain = await gzipAsync(Buffer.from(JSON.stringify(next), "utf8"));
+      const sealed = seal(this.key!, aad(SNAPSHOT_FORMAT, tenant, id), plain);
+      if (!isCurrent()) return false;
+      await writeAtomic(this.snapshotFile(tenant, id), sealed);
+      const updated = structuredClone(index);
+      const bucket = updated.tenants[tenant]!;
+      bucket.snapshots = bucket.snapshots.map((entry) =>
+        entry.id === id ? withRunKeys({ ...entry, bytes: sealed.length }, next.benchmarks) : entry,
+      );
+      await this.writeIndex(updated);
+      return true;
+    });
+  }
+
+  // Snapshots holding benchmark runs, of one tenant or of all, from the
+  // index only: no snapshot is decrypted.
+  async benchmarkRunSnapshots(tenantId?: string): Promise<BenchmarkRunSnapshot[]> {
+    const only = tenantId === undefined ? null : normalizeTenant(tenantId);
+    return this.serial(async () => {
+      const index = await this.open();
+      return Object.entries(index?.tenants ?? {})
+        .filter(([tenant]) => only === null || tenant === only)
+        .flatMap(([tenant, bucket]) =>
+          bucket.snapshots
+            .filter((entry) => entry.benchmarks?.length)
+            .map((entry) => ({
+              tenantId: tenant,
+              id: entry.id,
+              collectedAt: entry.collectedAt,
+              runs: structuredClone(entry.benchmarks!),
+            })),
+        );
     });
   }
 
@@ -531,7 +632,7 @@ export class SnapshotStore {
         await fs.rm(file, { force: true });
         return null;
       }
-      const entry: IndexEntry = {
+      const entry: IndexEntry = withRunKeys({
         id,
         collectedAt: projection.collectedAt,
         savedAt: new Date(now).toISOString(),
@@ -547,7 +648,7 @@ export class SnapshotStore {
           partial: framework.summary.partial,
           applicableControls: framework.summary.applicableControls,
         })),
-      };
+      }, projection.benchmarks);
       const bucket = (index.tenants[tenant] ??= { snapshots: [] });
       bucket.snapshots.push(entry);
       const removed = this.applyRetention(index, now, entry.id);

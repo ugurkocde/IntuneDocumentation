@@ -13,6 +13,7 @@ import { normalizeOdataType } from "../compliance/engine";
 import { canonicalOmaUri } from "../compliance/oma-uri";
 import { frameworkCoverageLabel } from "../compliance/presentation";
 import { REDACTED_VALUE, redactedDigests } from "../intune-policy-registry";
+import type { StoredBenchmarkRun } from "../benchmarks/history";
 import type {
   AssessmentScope,
   CapabilityStatus,
@@ -161,6 +162,11 @@ export interface SnapshotProjection {
   tenantIdentityPolicies?: SnapshotTenantIdentityPolicies;
   policyDeviceStatus?: SnapshotPolicyDeviceStatus;
   assessment: StoredAssessment;
+  // Benchmark runs assessed on this collection, added after the snapshot was
+  // saved. Ids, result codes, open setting ids and a pack digest only, never
+  // titles or values (validateStoredRun rejects anything else). Absent in
+  // snapshots saved before benchmark runs existed.
+  benchmarks?: StoredBenchmarkRun[];
 }
 
 // What projectSnapshot reads from a collection.

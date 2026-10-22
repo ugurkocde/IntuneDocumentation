@@ -227,23 +227,24 @@ afterEach(() => {
 });
 
 describe("organization license sharing", () => {
-  it("issues the internal CIS claim through an organization license only when allowlisted", async () => {
+  it("never issues the internal CIS claim through an organization license, even when allowlisted", async () => {
+    // The install id is chosen by the caller and the key is supplied by the
+    // server on this path, so neither proves the caller is the internal install.
     vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID);
-    await holderActivates();
-    const unlisted = await claim();
-    expect(unlisted.status).toBe(200);
-    expect(
-      verifyEntitlement(unlisted.body.token as string, publicKey),
-    ).not.toHaveProperty("cis");
-
     vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", INSTALL_B);
-    const claimed = await claim("refresh", {
-      activationId: unlisted.body.activationId,
-    });
-    expect(claimed.status).toBe(200);
+    await holderActivates();
+    const activated = await claim();
+    expect(activated.status).toBe(200);
     expect(
-      verifyEntitlement(claimed.body.token as string, publicKey)?.cis,
-    ).toBe("internal");
+      verifyEntitlement(activated.body.token as string, publicKey),
+    ).not.toHaveProperty("cis");
+    const refreshed = await claim("refresh", {
+      activationId: activated.body.activationId,
+    });
+    expect(refreshed.status).toBe(200);
+    expect(
+      verifyEntitlement(refreshed.body.token as string, publicKey),
+    ).not.toHaveProperty("cis");
   });
 
   it("shares a Pro key with its tenant by default", async () => {

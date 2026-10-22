@@ -1455,6 +1455,82 @@ describe("review round fixes", () => {
     });
   });
 
+  describe("a pack descendant below an unreadable pack parent", () => {
+    const GROUP = "synthetic_bench_hidden";
+    const ROOT = "synthetic_bench_hidden_root";
+    const DESCENDANT = "synthetic_bench_hidden_descendant";
+    const leaf = (id: string) => choice(id, "on");
+    // A child entry without a definition id, holding a valid descendant.
+    const hidden = () => ({
+      ...choice("synthetic_bench_hidden_parent", "on", [leaf(DESCENDANT)]),
+      settingDefinitionId: "",
+    });
+    const recommendations = [
+      {
+        id: "5.1",
+        title: "Synthetic hidden descendant",
+        level: 1 as const,
+        settings: [DESCENDANT],
+      },
+    ];
+    const roots: Array<[string, string, Record<string, unknown>]> = [
+      [
+        "a group root",
+        GROUP,
+        groupCollection(GROUP, [[leaf(`${GROUP}_one`), hidden()]]),
+      ],
+      ["a choice root", ROOT, choice(ROOT, "1", [hidden()])],
+    ];
+
+    for (const [label, rootId, root] of roots)
+      it(`is Review packValueUnreadable under ${label} on a complete, empty collection`, () => {
+        const target = pack([{ settings: [root] }], recommendations);
+        const run = assess([tenantPolicy({ settings: [] })], {}, target);
+        expect(run.collection.complete).toBe(true);
+        expect(statusOf(run, rootId)).toEqual([
+          "Review",
+          "Review",
+          "packValueUnreadable",
+        ]);
+        const [item] = run.recommendations;
+        expect([item!.result, item!.reason]).toEqual([
+          "Review",
+          "packValueUnreadable",
+        ]);
+        expect(item!.settings.map((setting) => setting.status)).toEqual([
+          "Review",
+        ]);
+        expect(run.levels[0]!.headline.rate).toBeNull();
+        expect(generateBenchmarkDrafts(run, target).drafts).toEqual([]);
+      });
+
+    it("is Review packValueUnreadable for a readable descendant of an unreadable pack parent", () => {
+      const parent = (value: string, children: Record<string, unknown>[]) => ({
+        ...choice(ROOT, "1", children),
+        choiceSettingValue: { value, children },
+      });
+      const target = pack(
+        [{ settings: [parent("", [leaf(DESCENDANT)])] }],
+        recommendations,
+      );
+      const outcome = (tenant: Record<string, unknown>[]) => {
+        const run = assess([tenantPolicy({ settings: tenant })], {}, target);
+        expect(run.collection.complete).toBe(true);
+        const [item] = run.recommendations;
+        return [item!.result, item!.reason];
+      };
+      expect(outcome([])).toEqual(["Review", "packValueUnreadable"]);
+      expect(outcome([parent(`${ROOT}_1`, [leaf(DESCENDANT)])])).toEqual([
+        "Review",
+        "packValueUnreadable",
+      ]);
+      // A readable difference on the descendant itself still decides.
+      expect(
+        outcome([parent(`${ROOT}_1`, [choice(DESCENDANT, "off")])]),
+      ).toEqual(["Fail", undefined]);
+    });
+  });
+
   it("does not read a sibling id that extends another id with a dot as its child", () => {
     const GROUP = "synthetic.bench.payload";
     const target = pack(

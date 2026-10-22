@@ -223,7 +223,7 @@ describe("group names to resolve", () => {
             {
               id: "Fido2",
               includeTargets: [{ targetType: "group", id: "all_users" }],
-              excludeTargets: [{ targetType: "group", id: excluded }],
+              excludeTargets: [{ targetType: "group", id: excluded }, { targetType: "group", id: "" }],
             },
           ],
           registrationEnforcement: {

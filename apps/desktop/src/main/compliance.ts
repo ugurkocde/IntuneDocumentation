@@ -188,7 +188,7 @@ export function referencedGroupIds(collection: Collection): string[] {
       ...(Array.isArray(owner?.excludeTargets) ? owner.excludeTargets : []),
     ]) {
       // "all_users" is a fixed target, not a group id.
-      if (target?.targetType === "group" && typeof target.id === "string" && target.id !== "all_users") {
+      if (target?.targetType === "group" && typeof target.id === "string" && target.id && target.id !== "all_users") {
         ids.add(target.id);
       }
     }

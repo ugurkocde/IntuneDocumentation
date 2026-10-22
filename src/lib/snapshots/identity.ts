@@ -72,7 +72,8 @@ function plain(value: unknown): string | null {
 
 // Whether the policy was read on this side: collected, and for the
 // authentication methods policy with its method configurations, which the
-// engine also needs to read it.
+// engine also needs to read it, each with its id: a configuration without
+// one may be any method.
 export function identityCollected(
   identity: SnapshotTenantIdentityPolicies | undefined,
   policy: IdentityPolicyName,
@@ -82,7 +83,13 @@ export function identityCollected(
     identity?.status?.[policy] === "collected" &&
     isRecord(data) &&
     (policy !== "authenticationMethods" ||
-      Array.isArray(data.authenticationMethodConfigurations))
+      (Array.isArray(data.authenticationMethodConfigurations) &&
+        data.authenticationMethodConfigurations.every(
+          (configuration) =>
+            isRecord(configuration) &&
+            typeof configuration.id === "string" &&
+            configuration.id !== "",
+        )))
   );
 }
 
@@ -103,8 +110,8 @@ function unreadableRow(
   };
 }
 
-// A target is read only with a string id and a documented target type; the
-// registration campaign also names a documented method to register.
+// A target is read only with a nonempty string id and a documented target
+// type; the registration campaign also names a documented method to register.
 function targetRows(
   policy: IdentityPolicyName,
   setting: string,
@@ -120,6 +127,7 @@ function targetRows(
       (target) =>
         isRecord(target) &&
         typeof target.id === "string" &&
+        target.id !== "" &&
         isDocumented("authenticationMethodTargetType", target.targetType) &&
         (!campaign ||
           !("targetedAuthenticationMethod" in target) ||
@@ -144,7 +152,7 @@ function targetRows(
       path,
       value: [type, id, method ?? ""].join(":"),
       display: method ? `${label} (${method})` : label,
-      ...(all || !id ? {} : { tenantObject: true as const }),
+      ...(all ? {} : { tenantObject: true as const }),
     };
   });
 }

@@ -474,10 +474,12 @@ export function compareRoot(recommended: Json, observed: Json): Comparison {
 }
 
 /**
- * Whether the recommended value of a definition, and everything below it,
- * has the documented shape. parsePolicies accepts any instance with a
- * definition id and a type, so a pack may hold a value this app cannot read
- * (a secret, a wrong type or an undocumented type); it is never compared.
+ * Whether the recommended value of a definition, everything below it and
+ * every parent above it has the documented shape. parsePolicies accepts any
+ * instance with a definition id and a type, so a pack may hold a value this
+ * app cannot read (a secret, a wrong type or an undocumented type); it is
+ * never compared. A definition with no leaf, such as one inside a child entry
+ * without a definition id, is not readable either.
  */
 export function readableRecommendation(
   recommended: Json,
@@ -489,9 +491,13 @@ export function readableRecommendation(
   const anchors = leaves
     .map(([path]) => path)
     .filter((path) => path.endsWith(`/${definitionId}`));
+  if (!anchors.length) return false;
   return !leaves.some(
     ([path, value]) =>
-      value === UNREADABLE && anchors.some((anchor) => inSubtree(path, anchor)),
+      value === UNREADABLE &&
+      anchors.some(
+        (anchor) => inSubtree(path, anchor) || inSubtree(anchor, path),
+      ),
   );
 }
 

@@ -43,6 +43,9 @@ const all = (results: Array<boolean | undefined>) =>
     : results.includes(undefined)
       ? undefined
       : true;
+// NOT of a result where undefined is unknown.
+const not = (result: boolean | undefined) =>
+  result === undefined ? undefined : !result;
 // OR of results: true wins, then unknown.
 const any = (results: Array<boolean | undefined>) =>
   results.includes(true)
@@ -141,8 +144,19 @@ export function conditionalAccessOutcome(
   const users = config.conditions?.users;
   const apps = config.conditions?.applications;
   // Graph uses the "None" sentinel for an include list that targets nobody.
+  // An empty entry names no object: it may be any target or application, so
+  // it leaves the answer open unless another entry decides it.
+  const open = (list: string[], decided: boolean) =>
+    decided ? true : list.includes("") ? undefined : false;
   const targets = (value: unknown) =>
-    isStringList(value) ? value.some((item) => item !== "None") : undefined;
+    isStringList(value)
+      ? open(
+          value,
+          value.some((item) => item !== "None" && item !== ""),
+        )
+      : undefined;
+  const include = apps?.includeApplications;
+  const exclude = apps?.excludeApplications;
   const builtIn = controls?.builtInControls;
   return all([
     // Only documented states decide; an omitted or undocumented one is
@@ -162,12 +176,17 @@ export function conditionalAccessOutcome(
       : undefined,
     ...(check === "conditionalAccessMfaAllApps"
       ? [
-          isStringList(apps?.includeApplications)
-            ? apps.includeApplications.includes("All")
+          isStringList(include)
+            ? open(include, include.includes("All"))
             : undefined,
           // An omitted exclusion list is unknown, not empty.
-          isStringList(apps?.excludeApplications)
-            ? apps.excludeApplications.length === 0
+          isStringList(exclude)
+            ? not(
+                open(
+                  exclude,
+                  exclude.some((item) => item !== ""),
+                ),
+              )
             : undefined,
         ]
       : []),

@@ -165,6 +165,96 @@ export function collectCatalogValues(
   return values;
 }
 
+/** An identifier Graph returned: a nonempty string. An empty one names nothing. */
+export const isIdentifier = (value: unknown): value is string =>
+  typeof value === "string" && value !== "";
+
+export type IdentifiedSource =
+  | "settingsCatalog"
+  | "securityBaseline"
+  | "omaUri"
+  | "administrativeTemplate";
+
+const isObject = (value: unknown): value is Record<string, any> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+// A Settings Catalog instance, or one of its child instances, without a
+// definition id.
+function unidentifiedInstance(instance: unknown, depth = 0): boolean {
+  if (!isObject(instance) || !isIdentifier(instance.settingDefinitionId))
+    return true;
+  if (depth > 16) return false;
+  const entries = (value: unknown) => (Array.isArray(value) ? value : []);
+  return [
+    instance.choiceSettingValue?.children,
+    ...entries(instance.choiceSettingCollectionValue).map(
+      (entry) => entry?.children,
+    ),
+    instance.groupSettingValue?.children,
+    ...entries(instance.groupSettingCollectionValue).map(
+      (entry) => entry?.children,
+    ),
+  ].some(
+    (children) =>
+      Array.isArray(children) &&
+      children.some((child) => unidentifiedInstance(child, depth + 1)),
+  );
+}
+
+/**
+ * The setting sources of a configuration that hold a row Graph returned
+ * without its identifier: a Settings Catalog instance without a definition
+ * id, an intent setting without a definition id, a custom OMA-URI row
+ * without a URI or an administrative template value without a definition.
+ * Such a row may be any setting of its source, so a setting the
+ * configuration does not show is unknown there, never missing.
+ */
+export function unidentifiedSources(
+  config: Record<string, unknown>,
+): Set<IdentifiedSource> {
+  const found = new Set<IdentifiedSource>();
+  const list = (value: unknown): unknown[] =>
+    Array.isArray(value) ? value : [];
+  // The layout of a settings list is read from its rows: Settings Catalog
+  // rows hold an instance, intent rows a definition id. A row of that layout
+  // without it is unidentified; other layouts, such as app configuration
+  // keys, have no identifier read here.
+  const has = (rows: unknown[], key: string) =>
+    rows.some((row) => isObject(row) && key in row);
+  for (const rows of [
+    list(config.settings),
+    ...list(config.categories).map((category) =>
+      list(isObject(category) ? category.settings : undefined),
+    ),
+  ]) {
+    if (has(rows, "settingInstance")) {
+      if (
+        rows.some(
+          (row) => !isObject(row) || unidentifiedInstance(row.settingInstance),
+        )
+      )
+        found.add("settingsCatalog");
+    } else if (
+      has(rows, "definitionId") &&
+      rows.some((row) => !isObject(row) || !isIdentifier(row.definitionId))
+    )
+      found.add("securityBaseline");
+  }
+  if (
+    list(config.omaSettings).some(
+      (row) => !isObject(row) || !isIdentifier(row.omaUri),
+    )
+  )
+    found.add("omaUri");
+  if (
+    list(config.definitionValues).some(
+      (row) => !isObject(row) || !isIdentifier(row.definition?.id),
+    )
+  )
+    found.add("administrativeTemplate");
+  return found;
+}
+
 function normalizeGroupNames(value: unknown): Map<string, string> {
   if (value instanceof Map) {
     return new Map(
@@ -291,6 +381,7 @@ function evaluateConfiguration(
 ): CapabilityEvidence[] {
   const evidence: CapabilityEvidence[] = [];
   const catalogValues = collectCatalogValues(config.settings);
+  const unidentified = unidentifiedSources(config);
   const odataType = normalizeOdataType(config["@odata.type"]);
   const assignment = summarizeAssignments(
     config.assignments,
@@ -343,6 +434,7 @@ function evaluateConfiguration(
       if (signal.source === "tenantPolicy") continue;
       const checks = checksByCapability.get(capability.id) ?? [];
       checksByCapability.set(capability.id, checks);
+      const checked = checks.length;
       let values: unknown[] = [];
       let settingId: string;
       let prerequisiteReason: string | undefined;
@@ -490,6 +582,26 @@ function evaluateConfiguration(
               });
           }
         }
+        // A row without its identifier may be this setting, so its absence
+        // from this configuration is unknown.
+        if (
+          signal.source !== "graphProperty" &&
+          unidentified.has(signal.source) &&
+          !values.length &&
+          checks.length === checked
+        )
+          checks.push({
+            assessmentStatus: "unableToCheck",
+            result: null,
+            settingId,
+            expectedValue: expectedValue(signal),
+            actualValue: null,
+            reason:
+              "Graph returned a setting of this policy without its identifier, so this setting may be configured in it. Refresh policy details.",
+            policyId,
+            policyName,
+            assignment,
+          });
         // A Graph property is read only as a documented value of its type:
         // an Int32 is an integer in range, and an enum one of its documented
         // values. Only readable values are evidence.
@@ -591,6 +703,7 @@ function evaluateConfiguration(
 function capabilityStatus(
   evidence: readonly CapabilityEvidence[],
   capability: ComplianceCapability,
+  policyKey: (item: CapabilityEvidence) => string,
 ): CapabilityStatus {
   const assigned = evidence.filter(
     (item) => item.assignment.state === "assigned",
@@ -601,15 +714,12 @@ function capabilityStatus(
   if (positive.length) {
     if (capability.requiredGroups?.length) {
       // Do not assemble a complete setting from policies with different scopes.
-      const policyKeys = new Set(
-        positive.map((item) => `${item.policyType}:${item.policyId}`),
-      );
+      const policyKeys = new Set(positive.map(policyKey));
       const complete = [...policyKeys].some((key) =>
         capability.requiredGroups!.every((group) =>
           positive.some(
             (item) =>
-              `${item.policyType}:${item.policyId}` === key &&
-              item.requirementGroup === group,
+              policyKey(item) === key && item.requirementGroup === group,
           ),
         ),
       );
@@ -676,14 +786,22 @@ export function assessCapabilities(
   const groupNames = normalizeGroupNames(data.groupNames);
   const evidenceByCapability = new Map<string, CapabilityEvidence[]>();
   const checksByCapability = new Map<string, TechnicalCheck[]>();
+  // The configuration each piece of evidence came from, so policies without
+  // an id are never taken for one policy.
+  const origin = new Map<CapabilityEvidence, number>();
+  const policyKey = (item: CapabilityEvidence) =>
+    isIdentifier(item.policyId)
+      ? `${item.policyType}:${item.policyId}`
+      : `\u0000${origin.get(item)}`;
 
-  for (const config of configurations) {
+  for (const [index, config] of configurations.entries()) {
     for (const item of evaluateConfiguration(
       config,
       capabilities,
       groupNames,
       checksByCapability,
     )) {
+      origin.set(item, index);
       const existing = evidenceByCapability.get(item.capabilityId);
       if (existing) existing.push(item);
       else evidenceByCapability.set(item.capabilityId, [item]);
@@ -767,7 +885,7 @@ export function assessCapabilities(
               : "No supported setting was found after checking the collected policies.",
       });
     }
-    let status = capabilityStatus(evidence, capability);
+    let status = capabilityStatus(evidence, capability, policyKey);
     if (status === "noEvidence" && incomplete) status = "collectionIncomplete";
     if (
       scope.platforms &&

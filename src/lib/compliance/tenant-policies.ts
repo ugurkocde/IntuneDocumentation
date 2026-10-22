@@ -237,7 +237,8 @@ function methodActual(state: string, targets: number | null, mode: unknown) {
 }
 
 // Include targets as a count of the users and groups they name, or null
-// when Graph omitted the list or returned only targets it did not document.
+// when Graph omitted the list or returned only targets it did not document
+// or without an id.
 function targetCount(list: unknown): number | null {
   if (!Array.isArray(list)) return null;
   const valid = list.filter(
@@ -245,6 +246,7 @@ function targetCount(list: unknown): number | null {
       !!target &&
       typeof target === "object" &&
       typeof target.id === "string" &&
+      target.id !== "" &&
       isDocumented("authenticationMethodTargetType", target.targetType),
   ).length;
   return valid || !list.length ? valid : null;

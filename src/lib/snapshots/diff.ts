@@ -3,6 +3,11 @@
 import { flattenItemSettings, METADATA_KEYS } from "../settings-flatten";
 import type { CapabilityStatus, ControlStatus } from "../compliance/types";
 import {
+  isIdentifier,
+  normalizeOdataType,
+  unidentifiedSources,
+} from "../compliance/engine";
+import {
   IDENTITY_POLICY_LABELS,
   identityCompleteness,
   identityRows,
@@ -266,6 +271,44 @@ function targetLabel(
   if (type === "groupassignmenttarget")
     return group.charAt(0).toUpperCase() + group.slice(1);
   return type || "Unknown target";
+}
+
+// An assignment target is read only with its type, the group id of a group
+// target and the filter id of a filter that applies, and an intent Graph
+// returned is not empty. Without them two targets cannot be told apart.
+function unreadableAssignments(list: unknown): boolean {
+  return (
+    Array.isArray(list) &&
+    list.some((entry: Record<string, unknown>) => {
+      const target = (entry?.target ?? {}) as Record<string, unknown>;
+      const type = normalizeOdataType(target["@odata.type"]);
+      const filterType = target.deviceAndAppManagementAssignmentFilterType;
+      return (
+        !type ||
+        (type.endsWith("groupassignmenttarget") &&
+          !isIdentifier(target.groupId)) ||
+        (filterType !== undefined &&
+          filterType !== null &&
+          filterType !== "none" &&
+          !isIdentifier(target.deviceAndAppManagementAssignmentFilterId)) ||
+        entry?.intent === ""
+      );
+    })
+  );
+}
+
+/**
+ * Whether an item can be paired and compared: it has an id, every setting
+ * row has its identifier and every assignment target can be read.
+ * Otherwise a row may be taken for another one, so the item is not
+ * compared rather than reported with changes it may not have.
+ */
+export function comparableItem(item: SnapshotItem): boolean {
+  return (
+    isIdentifier(item.id) &&
+    unidentifiedSources(item.data).size === 0 &&
+    !unreadableAssignments(item.data.assignments)
+  );
 }
 
 // Null when assignments were not collected completely, so they are not
@@ -539,7 +582,19 @@ export function diffSnapshots(
       assignmentsTotal: 0,
       ...extra,
     });
+    const notComparable = (section: SnapshotSection, item: SnapshotItem) =>
+      notComparedItems.push({
+        sectionKey: key,
+        sectionLabel: label,
+        id: item.id,
+        displayName: snapshotItemLabel(section, item),
+      });
     for (const item of b.items) {
+      // Without an id an item cannot be paired with its earlier version.
+      if (!isIdentifier(item.id)) {
+        notComparable(b, item);
+        continue;
+      }
       const old = before.get(item.id);
       if (!old) {
         policies.push(change(item, "added"));
@@ -548,14 +603,11 @@ export function diffSnapshots(
       if (
         old.incomplete ||
         item.incomplete ||
-        omitsValue(old.data, item.data)
+        omitsValue(old.data, item.data) ||
+        !comparableItem(old) ||
+        !comparableItem(item)
       ) {
-        notComparedItems.push({
-          sectionKey: key,
-          sectionLabel: label,
-          id: item.id,
-          displayName: snapshotItemLabel(b, item),
-        });
+        notComparable(b, item);
         continue;
       }
       const previousName = snapshotItemLabel(a, old);
@@ -577,7 +629,11 @@ export function diffSnapshots(
       );
     }
     for (const item of a.items) {
-      if (!after.has(item.id))
+      if (after.has(item.id)) continue;
+      // An item without an id is listed once, by the newer snapshot when it
+      // has one too.
+      if (!isIdentifier(item.id)) notComparable(a, item);
+      else
         policies.push({
           ...change(item, "removed"),
           displayName: snapshotItemLabel(a, item),

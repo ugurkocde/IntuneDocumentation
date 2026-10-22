@@ -528,7 +528,7 @@ function getPath(source: unknown, path: string): unknown {
 
 function projectAssignments(value: unknown): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  return value.filter(isRecord).map((assignment) => {
+  return asRecords(value).map((assignment) => {
     const target = isRecord(assignment.target) ? assignment.target : {};
     return {
       ...pick(assignment, ["intent"]),
@@ -578,11 +578,12 @@ function projectInstance(
     dropped && definitionId
       ? (content: string) => dropped(definitionId, content)
       : undefined;
+  // A child that is no instance, or too deep to keep, is kept as an empty
+  // one, so the instance reads as holding a setting without its id instead
+  // of one setting fewer.
   const children = (list: unknown) =>
     Array.isArray(list)
-      ? list
-          .map((child) => projectInstance(child, depth + 1, dropped))
-          .filter((child): child is Json => Boolean(child))
+      ? list.map((child) => projectInstance(child, depth + 1, dropped) ?? {})
       : undefined;
   const choice = (value: unknown) =>
     isRecord(value)
@@ -638,8 +639,11 @@ function projectSettings(
 ): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const records = value.filter(isRecord);
+  // A row of the layout that is no record, or lacks its instance or
+  // definition id, is kept with an empty one, so it reads as a setting
+  // without its id instead of one setting fewer.
   if (records.some((setting) => "settingInstance" in setting)) {
-    return records.map((setting) => {
+    return asRecords(value).map((setting) => {
       const definitions = projectDefinitions(setting.settingDefinitions);
       return {
         ...pick(setting, ["id"]),
@@ -651,21 +655,26 @@ function projectSettings(
   }
   // Security baseline and endpoint security intents. Other layouts, such as
   // app configuration keys and values, are not kept.
-  const intents = records.filter(
-    (setting) => typeof setting.definitionId === "string",
-  );
-  return intents.length
-    ? intents.map((setting) =>
-        pick(setting, ["@odata.type", "definitionId", "value", "valueJson"]),
-      )
+  return records.some((setting) => "definitionId" in setting)
+    ? asRecords(value).map((setting) => ({
+        ...pick(setting, ["@odata.type", "definitionId", "value", "valueJson"]),
+        definitionId:
+          typeof setting.definitionId === "string" ? setting.definitionId : "",
+      }))
     : undefined;
 }
 
 // --- Other setting layouts ----------------------------------------------------
 
+// A row that is no record is kept as an empty one, here and for custom
+// OMA-URI rows, assignments and method configurations, so it reads as a row
+// without its identifier instead of one row fewer.
+const asRecords = (value: unknown[]): Json[] =>
+  value.map((entry) => (isRecord(entry) ? entry : {}));
+
 function projectDefinitionValues(value: unknown): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  return value.filter(isRecord).map((row) => {
+  return asRecords(value).map((row) => {
     const definition = isRecord(row.definition) ? row.definition : {};
     return {
       ...pick(row, ["enabled", "presentationFetchError"]),
@@ -701,7 +710,7 @@ function projectOmaSettings(
 ): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const { omaUris } = signals();
-  return value.filter(isRecord).map((setting) => {
+  return asRecords(value).map((setting) => {
     const uri = canonicalOmaUri(setting.omaUri) ?? "";
     const read = omaUris.has(uri) || APPLOCKER_NODE.test(uri);
     const keep =
@@ -943,23 +952,22 @@ function projectIdentity(
       ...pick(methods, ["policyMigrationState"]),
       ...(Array.isArray(methods.authenticationMethodConfigurations)
         ? {
-            authenticationMethodConfigurations:
-              methods.authenticationMethodConfigurations
-                .filter(isRecord)
-                .map((configuration) => ({
-                  ...pick(configuration, ["@odata.type", "id", "state"]),
-                  ...targets("includeTargets", configuration),
-                  ...targets("excludeTargets", configuration),
-                  // The X.509 default mode the engine reports with the method.
-                  ...(isRecord(configuration.authenticationModeConfiguration)
-                    ? {
-                        authenticationModeConfiguration: pick(
-                          configuration.authenticationModeConfiguration,
-                          ["x509CertificateAuthenticationDefaultMode"],
-                        ),
-                      }
-                    : {}),
-                })),
+            authenticationMethodConfigurations: asRecords(
+              methods.authenticationMethodConfigurations,
+            ).map((configuration) => ({
+              ...pick(configuration, ["@odata.type", "id", "state"]),
+              ...targets("includeTargets", configuration),
+              ...targets("excludeTargets", configuration),
+              // The X.509 default mode the engine reports with the method.
+              ...(isRecord(configuration.authenticationModeConfiguration)
+                ? {
+                    authenticationModeConfiguration: pick(
+                      configuration.authenticationModeConfiguration,
+                      ["x509CertificateAuthenticationDefaultMode"],
+                    ),
+                  }
+                : {}),
+            })),
           }
         : {}),
     };

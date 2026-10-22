@@ -222,12 +222,11 @@ function judge(
       return { status: "Review", reason: "otherProfiles", holders };
     return { status: "Missing", holders };
   }
+  // A match below an unreadable pack parent is not a reading of the pack.
+  if (!readable)
+    return { status: "Review", reason: "packValueUnreadable", holders };
   if (maybe || holding.some(({ state }) => state.comparison === "unknown"))
-    return {
-      status: "Review",
-      reason: readable ? "unreadableValue" : "packValueUnreadable",
-      holders,
-    };
+    return { status: "Review", reason: "unreadableValue", holders };
   if (!proof.complete)
     return { status: "Review", reason: "collectionIncomplete", holders };
   return { status: "Present", holders };

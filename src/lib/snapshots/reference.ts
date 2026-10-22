@@ -5,6 +5,7 @@
 // checksum detects damage, not authorship: anyone can recompute it.
 // Desktop only (Node).
 import { createHash } from "node:crypto";
+import { unidentifiedSources } from "../compliance/engine";
 import { sha256 } from "../compliance/manifest";
 import { flattenItemSettings } from "../settings-flatten";
 import {
@@ -297,8 +298,9 @@ function groupInstances(rows: ReferenceSetting[]): void {
 }
 
 // Settings of every family collected completely. A family with a failed or
-// skipped collection, or with an item whose details are incomplete, is not
-// compared, so a gap never reads as a missing setting.
+// skipped collection, or with an item whose details are incomplete or with a
+// setting row Graph returned without its identifier, is not compared, so a
+// gap never reads as a missing setting.
 export function projectionSettings(projection: SnapshotProjection): SettingSet {
   const families: ReferenceFamily[] = [];
   const notCompared: ReferenceFamily[] = [];
@@ -307,7 +309,9 @@ export function projectionSettings(projection: SnapshotProjection): SettingSet {
     const family = { key: section.key, label: section.label };
     if (
       section.status !== "complete" ||
-      section.items.some((item) => item.incomplete)
+      section.items.some(
+        (item) => item.incomplete || unidentifiedSources(item.data).size > 0,
+      )
     ) {
       notCompared.push(family);
       continue;

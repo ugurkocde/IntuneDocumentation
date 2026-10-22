@@ -55,7 +55,9 @@ export function summarizeAssignments(
         mode: typeof mode === "string" ? mode : "unknown",
       });
       if (!["include", "exclude"].includes(mode)) unknownTarget = true;
-    } else if (mode && mode !== "none") {
+    } else if (mode !== undefined && mode !== null && mode !== "none") {
+      // A filter type other than none without a filter id, or an empty one,
+      // leaves the filter unknown.
       unknownTarget = true;
       summary.filters.push({
         target: label,

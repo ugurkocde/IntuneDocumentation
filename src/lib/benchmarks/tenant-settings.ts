@@ -305,10 +305,14 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
     const name = text(item.displayName) ?? text(item.name) ?? "Unnamed policy";
     const status = record(item.collectionStatus) ? item.collectionStatus : {};
     const policyErrors = errors.filter((error) => id && error.policyId === id);
+    // A root without a definition id cannot be compared, so the policy was
+    // not read whole: it may hold any recommended setting unseen.
     const settings = Array.isArray(item.settings)
       ? item.settings
           .map((setting) =>
-            record(setting) && record(setting.settingInstance)
+            record(setting) &&
+            record(setting.settingInstance) &&
+            text(setting.settingInstance.settingDefinitionId)
               ? setting.settingInstance
               : null,
           )

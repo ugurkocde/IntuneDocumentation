@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assessBenchmark } from "../assessment";
+import { generateBenchmarkDrafts } from "../drafts";
 import {
   RESULT_LABELS,
   REASON_LABELS,
@@ -185,6 +186,58 @@ describe("Missing only when the collection proves absence", () => {
     });
     expect(statusOf(run, BETA)).toEqual(["Different", "Fail", undefined]);
   });
+});
+
+describe("a tenant root without a definition id", () => {
+  const unidentified: Array<[string, Record<string, unknown>]> = [
+    [
+      "no settingDefinitionId",
+      {
+        "@odata.type":
+          "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
+        choiceSettingValue: { value: `${ALPHA}_1`, children: [] },
+      },
+    ],
+    [
+      "an empty settingDefinitionId",
+      { ...choice(ALPHA, "1"), settingDefinitionId: "" },
+    ],
+  ];
+
+  for (const [label, root] of unidentified) {
+    it(`makes the collection incomplete as the only root of a policy, with ${label}`, () => {
+      const run = assess([tenantPolicy({ settings: [root] })]);
+      expect(run.collection.complete).toBe(false);
+      expect(run.collection.gaps.join(" ")).toMatch(
+        /settings were not read completely/,
+      );
+      for (const id of [ALPHA, LENGTH])
+        expect(statusOf(run, id)).toEqual([
+          "Review",
+          "Review",
+          "collectionIncomplete",
+        ]);
+      expect(generateBenchmarkDrafts(run, settingsPack).drafts).toEqual([]);
+    });
+
+    it(`keeps a match next to it from Pass, with ${label}`, () => {
+      const run = assess([
+        tenantPolicy({ settings: [choice(ALPHA, "1"), root] }),
+      ]);
+      expect(run.collection.complete).toBe(false);
+      expect(statusOf(run, ALPHA)).toEqual([
+        "Review",
+        "Review",
+        "collectionIncomplete",
+      ]);
+      expect(statusOf(run, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "collectionIncomplete",
+      ]);
+      expect(generateBenchmarkDrafts(run, settingsPack).drafts).toEqual([]);
+    });
+  }
 });
 
 describe("settings outside the Settings Catalog (owner decision D2)", () => {

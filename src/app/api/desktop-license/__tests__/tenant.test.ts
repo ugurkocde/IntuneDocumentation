@@ -227,6 +227,25 @@ afterEach(() => {
 });
 
 describe("organization license sharing", () => {
+  it("issues the internal CIS claim through an organization license only when allowlisted", async () => {
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID);
+    await holderActivates();
+    const unlisted = await claim();
+    expect(unlisted.status).toBe(200);
+    expect(
+      verifyEntitlement(unlisted.body.token as string, publicKey),
+    ).not.toHaveProperty("cis");
+
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", INSTALL_B);
+    const claimed = await claim("refresh", {
+      activationId: unlisted.body.activationId,
+    });
+    expect(claimed.status).toBe(200);
+    expect(
+      verifyEntitlement(claimed.body.token as string, publicKey)?.cis,
+    ).toBe("internal");
+  });
+
   it("shares a Pro key with its tenant by default", async () => {
     const response = await holderActivates();
     expect(response.status).toBe(200);

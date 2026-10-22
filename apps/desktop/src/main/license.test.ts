@@ -490,3 +490,66 @@ describe("LicenseService MSP plan", () => {
     }
   });
 });
+
+describe("LicenseService CIS claim", () => {
+  beforeEach(() => {
+    keys.dir.current = mkdtempSync(path.join(tmpdir(), "license-test-"));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0 + DAY);
+    // Nothing here may reach the licensing service.
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 503 })));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    rmSync(keys.dir.current, { recursive: true, force: true });
+  });
+
+  it("is closed without the claim, while the token still serves as bearer", async () => {
+    const value = token();
+    storeLicense(value);
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(false);
+    expect(await license.entitlementToken(TENANT)).toBe(value);
+  });
+
+  it("opens with the internal claim for that tenant only", async () => {
+    const value = token({ cis: "internal" });
+    storeLicense(value);
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(true);
+    expect(await license.cisInternal(TENANT.toUpperCase())).toBe(true);
+    expect(await license.entitlementToken(TENANT)).toBe(value);
+    expect(await license.cisInternal(null)).toBe(false);
+    expect(await license.cisInternal("99999999-2222-3333-4444-555555555555")).toBe(false);
+    expect(await license.entitlementToken("99999999-2222-3333-4444-555555555555")).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses a token with an unknown claim value", async () => {
+    for (const cis of ["public", "Internal", true, 1, null]) {
+      storeLicense(token({ cis }));
+      const license = new LicenseService();
+      expect(await license.cisInternal(TENANT)).toBe(false);
+      expect(await license.entitlementToken(TENANT)).toBeNull();
+      expect((await license.status(TENANT)).entitled).toBe(false);
+    }
+  });
+
+  it("closes once the activation expires and hands out no token", async () => {
+    storeLicense(token({ cis: "internal" }));
+    expect(await new LicenseService().cisInternal(TENANT)).toBe(true);
+    vi.setSystemTime(T0 + 15 * DAY);
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(false);
+    expect(await license.entitlementToken(TENANT)).toBeNull();
+  });
+
+  it("closes for an activation of another installation", async () => {
+    storeLicense(token({ cis: "internal", installId: "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee" }));
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(false);
+    expect(await license.entitlementToken(TENANT)).toBeNull();
+  });
+});

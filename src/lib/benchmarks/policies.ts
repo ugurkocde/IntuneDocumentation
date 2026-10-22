@@ -1,0 +1,435 @@
+/**
+ * Settings Catalog comparison for benchmark packs, ported from TenuVault
+ * (policies.ts) without the remediation payload: this module never builds
+ * anything that writes to a tenant.
+ *
+ * Unlike the TenuVault original, every comparison is tri-state. A tenant
+ * value is readable only when its instance and value records have the
+ * documented Graph beta shape (see tasks/briefs/cis-wp0-graph-shapes.md): a
+ * secret value, a value the collector redacted, a value of the wrong type or
+ * an undocumented instance or value type is unknown, and unknown is never a
+ * difference.
+ */
+import { REDACTED_VALUE } from "../intune-policy-registry";
+
+export type Json =
+  | null
+  | boolean
+  | number
+  | string
+  | Json[]
+  | { [key: string]: Json };
+export type RecordJson = Record<string, Json>;
+/** A setting instance: a record with its definition id. */
+export type SettingInstance = RecordJson & { settingDefinitionId: string };
+
+export interface BaselinePolicy {
+  name: string;
+  platforms: string;
+  technologies: string;
+  description: string;
+  settings: Array<{ settingInstance: SettingInstance }>;
+  provenance?: Record<string, string | number>;
+  templateReference?: { templateId: string };
+}
+
+export function record(value: unknown): value is RecordJson {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Remove export annotations, retaining the derived type discriminators. */
+export function clean(value: Json): Json {
+  if (Array.isArray(value)) return value.map(clean);
+  if (!record(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key, v]) =>
+          v !== null &&
+          key !== "id" &&
+          key !== "auditRuleInformation" &&
+          (!key.includes("@odata.") || key === "@odata.type"),
+      )
+      .map(([key, v]) => [key, clean(v)]),
+  );
+}
+
+/**
+ * Validates the Settings Catalog policies of a delivered pack. The pack
+ * level recommendation list is the only recommendation source, so a
+ * recommendations field on a policy is not read.
+ */
+export function parsePolicies(input: unknown): BaselinePolicy[] {
+  const values = Array.isArray(input) ? input : [input];
+  if (!values.length || values.length > 200)
+    throw new Error(
+      "A benchmark pack holds between 1 and 200 Settings Catalog policies.",
+    );
+  if (JSON.stringify(values).length > 8_000_000)
+    throw new Error("The benchmark pack exceeds 8 MB.");
+  return values.map((value, index) => {
+    if (
+      !record(value) ||
+      typeof value.name !== "string" ||
+      !value.name.trim() ||
+      value.name.length > 200 ||
+      typeof value.platforms !== "string" ||
+      !value.platforms ||
+      typeof value.technologies !== "string" ||
+      !value.technologies ||
+      !Array.isArray(value.settings) ||
+      !value.settings.length ||
+      value.settings.length > 1000
+    ) {
+      throw new Error(
+        `Policy ${index + 1}: expected a Settings Catalog policy with name, platforms, technologies and settings.`,
+      );
+    }
+    const seen = new Set<string>();
+    const settings = value.settings.map((setting) => {
+      if (
+        !record(setting) ||
+        !record(setting.settingInstance) ||
+        typeof setting.settingInstance.settingDefinitionId !== "string" ||
+        typeof setting.settingInstance["@odata.type"] !== "string"
+      )
+        throw new Error(
+          `Policy ${index + 1}: settingInstance requires a definition ID and derived @odata.type.`,
+        );
+      const id = setting.settingInstance.settingDefinitionId;
+      if (seen.has(id))
+        throw new Error(`Policy ${index + 1}: duplicate root setting ${id}.`);
+      seen.add(id);
+      return {
+        settingInstance: clean(setting.settingInstance) as SettingInstance,
+      };
+    });
+    const template =
+      record(value.templateReference) &&
+      typeof value.templateReference.templateId === "string" &&
+      value.templateReference.templateId
+        ? { templateId: value.templateReference.templateId }
+        : undefined;
+    if (
+      value.provenance !== undefined &&
+      (!record(value.provenance) ||
+        Object.values(value.provenance).some(
+          (item) => typeof item !== "string" && typeof item !== "number",
+        ))
+    )
+      throw new Error(`Policy ${index + 1}: invalid pack provenance.`);
+    return {
+      ...(record(value.provenance)
+        ? {
+            provenance: value.provenance as Record<string, string | number>,
+          }
+        : {}),
+      name: value.name.trim(),
+      platforms: value.platforms,
+      technologies: value.technologies,
+      description:
+        typeof value.description === "string"
+          ? value.description.slice(0, 1500)
+          : "",
+      settings,
+      ...(template ? { templateReference: template } : {}),
+    };
+  });
+}
+
+/** Configuration content without export and template metadata. Array order is kept. */
+export function comparable(value: Json): Json {
+  if (Array.isArray(value)) return value.map(comparable);
+  if (!record(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .filter(
+        ([key, v]) =>
+          v !== null &&
+          key !== "id" &&
+          key !== "auditRuleInformation" &&
+          !key.includes("@odata.") &&
+          !key.endsWith("TemplateReference"),
+      )
+      .map(([key, v]) => [key, comparable(v)]),
+  );
+}
+
+function isInstance(value: unknown): value is SettingInstance {
+  return record(value) && typeof value.settingDefinitionId === "string";
+}
+
+/** True when a setting instance nests child setting instances, as group setting collections do. */
+export function hasChildInstances(value: Json): boolean {
+  if (Array.isArray(value)) return value.some(hasChildInstances);
+  if (!record(value)) return false;
+  return Object.entries(value).some(
+    ([key, v]) =>
+      (key === "children" && Array.isArray(v) && v.some(isInstance)) ||
+      hasChildInstances(v),
+  );
+}
+
+/** The definition ID of a setting instance and of every child instance nested in it. */
+export function definitionIds(instance: Json | undefined): string[] {
+  const ids = new Set<string>();
+  const walk = (value: Json | undefined): void => {
+    if (Array.isArray(value)) {
+      for (const entry of value) walk(entry);
+      return;
+    }
+    if (!record(value)) return;
+    if (typeof value.settingDefinitionId === "string")
+      ids.add(value.settingDefinitionId);
+    for (const child of Object.values(value)) walk(child);
+  };
+  walk(instance);
+  return [...ids];
+}
+
+// --- Readability (Graph beta shapes, verified in WP0) ------------------------
+
+function typeName(value: unknown): string {
+  return typeof value === "string"
+    ? value
+        .replace(/^#/, "")
+        .replace(/^microsoft\.graph\./, "")
+        .toLowerCase()
+    : "";
+}
+
+const isRedacted = (value: unknown) =>
+  value === REDACTED_VALUE ||
+  (Array.isArray(value) && value.some((item) => item === REDACTED_VALUE));
+
+function readableChildren(value: RecordJson): boolean {
+  return value.children === undefined || Array.isArray(value.children);
+}
+
+function readableChoice(value: unknown): boolean {
+  return (
+    record(value) &&
+    typeof value.value === "string" &&
+    value.value.length > 0 &&
+    !isRedacted(value.value) &&
+    readableChildren(value)
+  );
+}
+
+// Secret values are never readable: Graph returns an encrypted token or
+// nothing, and the collector never keeps them.
+function readableSimple(value: unknown): boolean {
+  if (!record(value) || isRedacted(value.value)) return false;
+  const type = typeName(value["@odata.type"]);
+  if (
+    type === "devicemanagementconfigurationstringsettingvalue" ||
+    type === "devicemanagementconfigurationreferencesettingvalue"
+  )
+    return typeof value.value === "string";
+  if (type === "devicemanagementconfigurationintegersettingvalue")
+    return (
+      typeof value.value === "number" &&
+      Number.isInteger(value.value) &&
+      Math.abs(value.value) <= 2 ** 31
+    );
+  return false;
+}
+
+const readableGroup = (value: unknown) =>
+  record(value) && Array.isArray(value.children);
+
+const everyEntry = (value: unknown, check: (entry: unknown) => boolean) =>
+  Array.isArray(value) && value.every(check);
+
+/**
+ * Whether the own value of one setting instance (without its child instances)
+ * has the documented shape for its instance type.
+ */
+export function readableOwnValue(instance: RecordJson): boolean {
+  switch (typeName(instance["@odata.type"])) {
+    case "devicemanagementconfigurationchoicesettinginstance":
+      return readableChoice(instance.choiceSettingValue);
+    case "devicemanagementconfigurationchoicesettingcollectioninstance":
+      return everyEntry(instance.choiceSettingCollectionValue, readableChoice);
+    case "devicemanagementconfigurationsimplesettinginstance":
+      return readableSimple(instance.simpleSettingValue);
+    case "devicemanagementconfigurationsimplesettingcollectioninstance":
+      return everyEntry(instance.simpleSettingCollectionValue, readableSimple);
+    case "devicemanagementconfigurationgroupsettinginstance":
+      return readableGroup(instance.groupSettingValue);
+    case "devicemanagementconfigurationgroupsettingcollectioninstance":
+      return everyEntry(instance.groupSettingCollectionValue, readableGroup);
+    default:
+      return false;
+  }
+}
+
+// --- Leaf comparison ---------------------------------------------------------
+
+/** Marks a leaf whose tenant value is not readable. Never equal to a JSON text. */
+const UNREADABLE = "\u0000unreadable";
+
+// Path separators that never occur in a definition id: ":" before a value
+// key, "/" before a child, "#" for an occurrence and "[" for an entry.
+const SUBTREE_NEXT = [":", "/", "#", "["];
+const inSubtree = (path: string, anchor: string) =>
+  path === anchor ||
+  SUBTREE_NEXT.some((next) => path.startsWith(`${anchor}${next}`));
+
+/**
+ * Leaf values of one setting instance, keyed by the settingDefinitionId path
+ * from the root. Child instances are taken out of their parent's own value and
+ * keyed below it; a repeated child definition in one children list is keyed by
+ * its occurrence, and entries of a group collection by position. A leaf whose
+ * own value is not readable maps to UNREADABLE. The instance must still carry
+ * its @odata.type (clean, not comparable).
+ */
+function leafValues(
+  instance: SettingInstance,
+  path: string,
+  out: Map<string, string>,
+): Map<string, string> {
+  const own = `${path}/${instance.settingDefinitionId}`;
+  const readable = readableOwnValue(instance);
+  const strip = (value: Json, at: string): Json => {
+    if (
+      Array.isArray(value) &&
+      value.length &&
+      value.every((entry) => record(entry) && Array.isArray(entry.children))
+    ) {
+      value.forEach((entry, index) =>
+        out.set(
+          `${own}${at}[${index}]`,
+          // Entries belong to the own value: unreadable when it is.
+          readable
+            ? JSON.stringify(comparable(strip(entry, `${at}[${index}]`)))
+            : UNREADABLE,
+        ),
+      );
+      return null;
+    }
+    if (Array.isArray(value))
+      return value.map((entry, index) => strip(entry, `${at}[${index}]`));
+    if (!record(value)) return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, v]) => {
+        if (key !== "children" || !Array.isArray(v))
+          return [key, strip(v, `${at}:${key}`)];
+        const seen = new Map<string, number>();
+        for (const child of v.filter(isInstance)) {
+          const id = child.settingDefinitionId;
+          const occurrence = seen.get(id) ?? 0;
+          seen.set(id, occurrence + 1);
+          leafValues(
+            child,
+            `${own}${at}${occurrence ? `#${occurrence}` : ""}`,
+            out,
+          );
+        }
+        return [key, v.filter((child) => !isInstance(child))];
+      }),
+    );
+  };
+  const value = JSON.stringify(comparable(strip(instance, "")));
+  out.set(own, readable ? value : UNREADABLE);
+  return out;
+}
+
+export type Comparison = "match" | "differ" | "unknown";
+
+/**
+ * Compares the recommended leaves with one tenant root. A readable leaf that
+ * differs or is absent below readable parents is a difference, and a definite
+ * difference wins. A leaf that is unreadable, or absent below an unreadable
+ * parent, is unknown.
+ */
+function compareLeaves(
+  wanted: Array<[string, string]>,
+  have: Map<string, string>,
+): Comparison {
+  let unknown = false;
+  const unreadable = [...have].filter(([, value]) => value === UNREADABLE);
+  for (const [path, value] of wanted) {
+    const observed = have.get(path);
+    if (observed === UNREADABLE) unknown = true;
+    else if (observed === undefined) {
+      if (unreadable.some(([at]) => inSubtree(path, at))) unknown = true;
+      else return "differ";
+    } else if (observed !== value) return "differ";
+  }
+  return unknown ? "unknown" : "match";
+}
+
+/**
+ * Whether an observed root satisfies a recommended root. A root without child
+ * setting instances must match exactly. A grouped root matches when every
+ * recommended leaf exists at the same definition path with an equal value;
+ * extra tenant children are ignored.
+ */
+export function compareRoot(recommended: Json, observed: Json): Comparison {
+  const want = clean(recommended);
+  const have = clean(observed);
+  if (!isInstance(want) || !isInstance(have)) return "unknown";
+  if (have.settingDefinitionId !== want.settingDefinitionId) return "differ";
+  const haveLeaves = leafValues(have, "", new Map());
+  if (!hasChildInstances(want)) {
+    // A root without child instances is compared whole: its own value, and
+    // a tenant child below it (readable or not) is a difference by itself.
+    const wanted = leafValues(want, "", new Map());
+    const own = `/${want.settingDefinitionId}`;
+    const observedRoot = haveLeaves.get(own);
+    if (observedRoot === UNREADABLE) return "unknown";
+    if (observedRoot !== wanted.get(own)) return "differ";
+    if (hasChildInstances(have) || haveLeaves.size !== wanted.size)
+      return "differ";
+    return compareLeaves([...wanted], haveLeaves);
+  }
+  return compareLeaves([...leafValues(want, "", new Map())], haveLeaves);
+}
+
+/** Whether a tenant root holds a definition: yes, no, or maybe below an unreadable parent. */
+export type Holding = "yes" | "no" | "maybe";
+
+/**
+ * One setting definition inside a recommended root, judged against one
+ * observed tenant root of the same root definition. For the root definition
+ * itself this is compareRoot. For a nested definition the leaf and everything
+ * below it must equal the recommendation. Null when the recommended root does
+ * not contain the definition.
+ */
+export function compareDefinition(
+  recommended: Json,
+  observed: Json,
+  definitionId: string,
+): { holds: Holding; comparison: Comparison } | null {
+  const want = clean(recommended);
+  if (!isInstance(want)) return null;
+  if (want.settingDefinitionId === definitionId)
+    return { holds: "yes", comparison: compareRoot(want, observed) };
+  const wanted = [...leafValues(want, "", new Map())];
+  const anchors = wanted
+    .map(([path]) => path)
+    .filter((path) => path.endsWith(`/${definitionId}`));
+  if (!anchors.length) return null;
+  const have = clean(observed);
+  if (
+    !isInstance(have) ||
+    have.settingDefinitionId !== want.settingDefinitionId
+  )
+    return { holds: "maybe", comparison: "unknown" };
+  const haveLeaves = leafValues(have, "", new Map());
+  if (!anchors.some((anchor) => haveLeaves.has(anchor))) {
+    const below = [...haveLeaves].some(
+      ([at, value]) =>
+        value === UNREADABLE && anchors.some((anchor) => inSubtree(anchor, at)),
+    );
+    return below
+      ? { holds: "maybe", comparison: "unknown" }
+      : { holds: "no", comparison: "differ" };
+  }
+  const subtree = wanted.filter(([path]) =>
+    anchors.some((anchor) => inSubtree(path, anchor)),
+  );
+  return { holds: "yes", comparison: compareLeaves(subtree, haveLeaves) };
+}

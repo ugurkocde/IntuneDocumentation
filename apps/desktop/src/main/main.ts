@@ -5,6 +5,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  net,
   powerMonitor,
   session,
   shell,
@@ -32,6 +33,7 @@ import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
 import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
 import { AuthService } from "./auth";
+import { registerBenchmarksIpc } from "./benchmarks";
 import {
   clearCollection,
   collectAll,
@@ -44,6 +46,7 @@ import { searchSettingsIndex, settingsIndexFor } from "./search-index";
 import {
   DEFAULT_SCOPES,
   HELP_URLS,
+  LICENSE_API_BASE,
   LICENSE_BUY_URL,
   LICENSE_PORTAL_URL,
   WEBSITE_URL,
@@ -132,6 +135,8 @@ const history = new SnapshotStore({
 });
 // History, Compare and Portfolio handlers; set by registerIpc.
 let historyIpc: ReturnType<typeof registerHistoryIpc> | null = null;
+// CIS Benchmarks handlers and their memory only content; set by registerIpc.
+let benchmarksIpc: ReturnType<typeof registerBenchmarksIpc> | null = null;
 // Scheduled collection while the app is open, signed in and licensed.
 const scheduler = new CollectionScheduler({
   settings: () => readSettings(),
@@ -267,11 +272,12 @@ function cancelCollection(
   collections.cancel(reason);
 }
 
-// An account change drops a snapshot that is still being prepared and the
-// comparison held in memory.
+// An account change drops a snapshot that is still being prepared, the
+// comparison and the CIS Benchmark content held in memory.
 function resetHistorySession(): void {
   history.invalidate();
   historyIpc?.reset();
+  benchmarksIpc?.reset();
   scheduler.reset();
   void scheduler.refresh();
 }
@@ -302,7 +308,9 @@ async function tokenProvider(): Promise<string> {
   return token;
 }
 
+// Also drops CIS Benchmark content once the licence lost the claim.
 function pushLicense(): void {
+  void benchmarksIpc?.revalidate();
   void license
     .status(signedInTenant())
     .then((status) => broadcast("license:changed", status))
@@ -1393,6 +1401,7 @@ function registerIpc(): void {
   });
 
   handle("license:deactivate", async () => {
+    benchmarksIpc?.reset();
     try {
       return await license.deactivate();
     } finally {
@@ -1528,6 +1537,27 @@ function registerIpc(): void {
     return result.state === "ready" ? result.changes : null;
   });
 
+  // CIS Benchmarks: refused without the signed claim; checked in benchmarks.ts.
+  benchmarksIpc = registerBenchmarksIpc({
+    handle,
+    requireOwner,
+    requireLicense,
+    signedInTenant,
+    license,
+    fetch: (url, init) => net.fetch(url, init),
+    apiBase: LICENSE_API_BASE,
+    track: async (work) => {
+      assessingCompliance += 1;
+      try {
+        return await work();
+      } finally {
+        assessingCompliance -= 1;
+      }
+    },
+    saveFile: saveWithDialog,
+    log,
+  });
+
   handle("data:clear", async () => {
     await clearLocalData();
     return true;
@@ -1584,6 +1614,9 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
   });
+
+  // Benchmark content never outlives the process.
+  app.on("will-quit", () => benchmarksIpc?.reset());
 
   app.on("window-all-closed", () => {
     if (!isMac) {

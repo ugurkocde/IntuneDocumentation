@@ -109,6 +109,11 @@ const api: IntunedocApi = {
     invoke("portfolio:setLabel", tenantId, label),
   portfolioDeleteTenant: (tenantId) =>
     invoke("portfolio:deleteTenant", tenantId),
+  benchmarksAvailability: () => invoke("benchmarks:availability"),
+  benchmarksCatalog: () => invoke("benchmarks:catalog"),
+  benchmarksAssess: (request) => invoke("benchmarks:assess", request),
+  benchmarksExport: (request) => invoke("benchmarks:export", request),
+  benchmarksExceptions: (request) => invoke("benchmarks:exceptions", request),
   onCollectProgress: (callback) => subscribe("collect:progress", callback),
   onExportProgress: (callback) => subscribe("export:progress", callback),
   onComplianceProgress: (callback) =>

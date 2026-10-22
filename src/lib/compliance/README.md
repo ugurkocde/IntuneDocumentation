@@ -49,9 +49,17 @@ HIPAA Security Rule (45 CFR Part 164, Subpart C).
    reused; titles are short paraphrases of the Directive. The HIPAA Security
    Rule is US federal regulation in the public domain (17 U.S.C. 105); titles
    are the official specification names with original summaries. Do not add
-   frameworks that require a commercial license (for example CIS Benchmarks,
-   CIS Controls or HITRUST CSF, whose licence excludes security product
-   vendors and derivative works).
+   frameworks that require a commercial license (for example CIS Controls or
+   HITRUST CSF, whose licence excludes security product vendors and derivative
+   works). CIS Controls stay excluded; the only exception is the customer
+   supplied crosswalk, which shows safeguard ids from the customer's own file.
+   CIS Benchmarks are not a framework of this engine: their packs are
+   delivered at runtime from the gated content service with the licence token
+   and are internal only until the CIS commercial-use agreement covers
+   Intune Documentation. No CIS Benchmark content ships in the product, its
+   samples or its published assets; tests use synthetic data with the
+   benchmark id "synthetic-bench", and
+   `src/lib/__tests__/cis-content-guardrails.test.ts` enforces this.
 7. **Match the control's technical requirement.** Firewall activation is not
    evidence of default-deny rules, password presence is not evidence of
    credential quality, and app-source restrictions are not evidence of an

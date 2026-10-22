@@ -34,6 +34,11 @@ import type {
   ComparisonPart,
   NotComparedSettingsFamily,
 } from "../../../../src/lib/snapshots/reference-types";
+import type {
+  BenchmarkCatalog,
+  BenchmarkIdentity,
+  BenchmarkLevel,
+} from "../../../../src/lib/benchmarks/pack";
 
 // Scheduled collection interval in hours; 0 is off.
 export type ScheduleHours = 0 | 6 | 12 | 24;
@@ -587,6 +592,52 @@ export interface AppInfo {
   packaged: boolean;
 }
 
+// CIS Benchmarks, internal only until the CIS agreement covers this app.
+// Only availability answers without the signed licence claim; every other
+// channel refuses with BENCHMARKS_COMING_SOON. Content stays in main memory.
+export const BENCHMARKS_COMING_SOON = "CIS comparisons are coming soon.";
+
+export type { BenchmarkCatalog, BenchmarkIdentity, BenchmarkLevel };
+
+export interface BenchmarkAvailability {
+  state: "internal" | "comingSoon";
+}
+
+// The engine's assessment view (src/lib/benchmarks/index.ts); only the
+// identity of the assessed benchmark is fixed here.
+export interface BenchmarkAssessmentView extends BenchmarkIdentity {
+  assessedAt: string;
+}
+
+export type BenchmarkExportFormat = "pdf" | "csv" | "json" | "drafts";
+
+// Exports the last assessment. Drafts are saved only with confirmed set,
+// after the user accepted the draft warnings.
+export interface BenchmarkExportRequest {
+  format: BenchmarkExportFormat;
+  confirmed?: boolean;
+}
+
+// An accepted exception, keyed by benchmark, version, level and setting id.
+export interface BenchmarkExceptionInput {
+  settingId: string;
+  owner: string;
+  reason: string;
+  // YYYY-MM-DD; the exception is active through this date.
+  expiresOn: string;
+}
+
+export interface BenchmarkException
+  extends BenchmarkIdentity,
+    BenchmarkExceptionInput {
+  createdAt: string;
+}
+
+export type BenchmarkExceptionsRequest =
+  | ({ action: "list" } & BenchmarkIdentity)
+  | ({ action: "set" } & BenchmarkIdentity & BenchmarkExceptionInput)
+  | ({ action: "remove"; settingId: string } & BenchmarkIdentity);
+
 export type HelpKey = "entraAppRegistrations" | "gettingStarted" | "support";
 
 export type MenuCommand = "open-settings" | "check-updates";
@@ -700,6 +751,15 @@ export interface IntunedocApi {
   portfolioList(): Promise<PortfolioView>;
   portfolioSetLabel(tenantId: string, label: string): Promise<PortfolioView>;
   portfolioDeleteTenant(tenantId: string): Promise<PortfolioView>;
+  // CIS Benchmarks. availability never throws; the rest refuse without the
+  // licence claim. Export returns the saved path, or null when cancelled.
+  benchmarksAvailability(): Promise<BenchmarkAvailability>;
+  benchmarksCatalog(): Promise<BenchmarkCatalog>;
+  benchmarksAssess(request: BenchmarkIdentity): Promise<BenchmarkAssessmentView>;
+  benchmarksExport(request: BenchmarkExportRequest): Promise<string | null>;
+  benchmarksExceptions(
+    request: BenchmarkExceptionsRequest,
+  ): Promise<BenchmarkException[]>;
   onCollectProgress(callback: (progress: CollectProgress) => void): () => void;
   onExportProgress(callback: (progress: ExportProgress) => void): () => void;
   onComplianceProgress(

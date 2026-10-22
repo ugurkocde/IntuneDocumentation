@@ -1,5 +1,6 @@
 import { type KeyObject } from "node:crypto";
 import { GUID, verifyEntraIdToken } from "~/lib/entra-id-token";
+import { cisInternalClaim } from "./cis-claim";
 import {
   PolarNotFound,
   PolarNotPermitted,
@@ -161,15 +162,24 @@ function limitViolation(
   return null;
 }
 
+// The single issuance point for every token, key and tenant paths alike, so
+// the internal CIS claim can only come from the server-side allowlists.
 function issue(
   ctx: LicenseContext,
   now: number,
-  fields: Omit<EntitlementPayload, "v" | "status" | "iat" | "exp">,
+  fields: Omit<EntitlementPayload, "v" | "status" | "iat" | "exp" | "cis">,
 ): Entitlement {
   const iat = Math.floor(now / 1000);
   const exp = iat + TOKEN_LIFETIME_SECONDS;
   const token = signEntitlement(
-    { v: 1, status: "granted", iat, exp, ...fields },
+    {
+      v: 1,
+      status: "granted",
+      iat,
+      exp,
+      ...fields,
+      ...cisInternalClaim(fields),
+    },
     ctx.signingKey,
   );
   return {

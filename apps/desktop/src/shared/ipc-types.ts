@@ -40,6 +40,7 @@ import type {
   BenchmarkLevel,
 } from "../../../../src/lib/benchmarks/pack";
 import type { BenchmarkAssessment } from "../../../../src/lib/benchmarks/assessment";
+import type { BenchmarkDraftGap } from "../../../../src/lib/benchmarks/drafts";
 import type { BenchmarkException } from "../../../../src/lib/benchmarks/exceptions";
 import type { StoredBenchmarkRun } from "../../../../src/lib/benchmarks/history";
 import type { DriftEntry, TrendPoint } from "../../../../src/lib/benchmarks/trend";
@@ -640,6 +641,16 @@ export interface BenchmarkExportRequest {
   confirmed?: boolean;
 }
 
+// benchmarks:previewDrafts: what the draft policies ZIP of the last
+// assessment would hold, shown before it is saved (generateBenchmarkDrafts
+// with the assessed pack). draftSettings counts the settings the drafts hold;
+// notGenerated lists the settings without a draft and why.
+export interface BenchmarkDraftsPreview {
+  draftPolicies: number;
+  draftSettings: number;
+  notGenerated: BenchmarkDraftGap[];
+}
+
 // An accepted exception, keyed by benchmark, version, level and setting id.
 export interface BenchmarkExceptionInput {
   settingId: string;
@@ -696,7 +707,7 @@ export interface BenchmarkPortfolioView {
   rows: Array<PortfolioRow & { current: boolean }>;
 }
 
-export type HelpKey = "entraAppRegistrations" | "gettingStarted" | "support";
+export type HelpKey = "cisBenchmarks" | "entraAppRegistrations" | "gettingStarted" | "support";
 
 export type MenuCommand = "open-settings" | "check-updates";
 
@@ -814,6 +825,7 @@ export interface IntunedocApi {
   benchmarksAvailability(): Promise<BenchmarkAvailability>;
   benchmarksCatalog(): Promise<BenchmarkCatalog>;
   benchmarksAssess(request: BenchmarkIdentity): Promise<BenchmarkAssessmentView>;
+  benchmarksPreviewDrafts(): Promise<BenchmarkDraftsPreview>;
   benchmarksExport(request: BenchmarkExportRequest): Promise<string | null>;
   benchmarksExceptions(
     request: BenchmarkExceptionsRequest,

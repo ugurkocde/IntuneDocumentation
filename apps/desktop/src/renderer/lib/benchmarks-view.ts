@@ -186,6 +186,10 @@ export function assessedCount(rows: readonly ReviewRow[], level: LevelSummary["l
   return rows.filter((row) => row.level === level && row.result !== "Not assessed").length;
 }
 
+// The Levels the results show, for the review header: "Level 1" or
+// "Levels 1 and 2". The compared Level when no Level has results.
+export { levelsLabel } from "../../../../../src/lib/benchmarks/display";
+
 // Drafts are generated only for Missing settings of a complete collection.
 export function missingSettings(assessment: BenchmarkAssessment): number {
   if (!assessment.collection.complete) return 0;

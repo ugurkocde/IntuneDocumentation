@@ -23,7 +23,6 @@ import type {
   ComplianceFrameworkId,
   ComplianceReportProgress,
   ComplianceRequest,
-  HelpKey,
   MenuCommand,
   UpdateStatus,
 } from "../shared/ipc-types";
@@ -47,6 +46,7 @@ import { searchSettingsIndex, settingsIndexFor } from "./search-index";
 import {
   DEFAULT_SCOPES,
   HELP_URLS,
+  helpUrl,
   LICENSE_API_BASE,
   LICENSE_BUY_URL,
   LICENSE_PORTAL_URL,
@@ -1493,10 +1493,7 @@ function registerIpc(): void {
   );
 
   handle("help:open", async (_event, key) => {
-    if (typeof key !== "string" || !Object.hasOwn(HELP_URLS, key)) {
-      throw new Error("Refused to open an unexpected link.");
-    }
-    await shell.openExternal(HELP_URLS[key as HelpKey]);
+    await shell.openExternal(helpUrl(key));
     return true;
   });
 

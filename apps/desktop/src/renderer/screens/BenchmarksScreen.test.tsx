@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   assess: vi.fn(),
   exceptions: vi.fn(),
   exportFile: vi.fn(),
+  previewDrafts: vi.fn(),
+  openHelp: vi.fn(),
   history: vi.fn(),
   portfolio: vi.fn(),
   navigate: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock("../lib/ipc", () => ({
     benchmarksAssess: mocks.assess,
     benchmarksExceptions: mocks.exceptions,
     benchmarksExport: mocks.exportFile,
+    benchmarksPreviewDrafts: mocks.previewDrafts,
+    openHelp: mocks.openHelp,
     benchmarksHistory: mocks.history,
     benchmarksPortfolio: mocks.portfolio,
     onHistoryChanged: () => () => undefined,
@@ -254,6 +258,16 @@ describe("BenchmarksScreen review step", () => {
     expect(text).not.toMatch(/\bcompliant\b|\bscore\b|\bcertified\b/i);
   });
 
+  it("names the Levels the results show in the review header", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 30, levels: [1, 2], level: 2 }));
+    expect(screen.getByText(/^Version 2\.0\.0, Levels 1 and 2\. Compared/)).toBeTruthy();
+    expect(screen.queryByText(/^Version 2\.0\.0, Level 2\./)).toBeNull();
+    mocks.assess.mockResolvedValueOnce(syntheticAssessment({ levels: [1] }));
+    await click(screen.getByRole("button", { name: "Compare again" }));
+    await until(() => expect(screen.getByText(/^Version 2\.0\.0, Level 1\. Compared/)).toBeTruthy());
+  });
+
   it("shows n/a when nothing could be assessed", async () => {
     const assessment = syntheticAssessment({ count: 1 });
     assessment.levels[0]!.headline = { ...assessment.levels[0]!.headline, rate: null };
@@ -325,6 +339,9 @@ describe("BenchmarksScreen review step", () => {
     const manual = screen.getByRole("region", { name: "Recommendations to check by hand" });
     expect(within(manual).getByText(/Not all recommendations from the CIS Benchmarks are included/)).toBeTruthy();
     expect(within(manual).getByText("https://www.cisecurity.org/cis-benchmarks")).toBeTruthy();
+    // Opened by its allowlisted key, never by the address the view carries.
+    await click(within(manual).getByRole("button", { name: "Open link" }));
+    expect(mocks.openHelp).toHaveBeenCalledExactlyOnceWith("cisBenchmarks");
     expect(within(manual).getByText("Synthetic manual recommendation 1")).toBeTruthy();
     expect(within(manual).getByText(/checks 10 recommendations of this pack automatically/)).toBeTruthy();
   });
@@ -438,23 +455,70 @@ describe("BenchmarksScreen exports", () => {
     expect(screen.getByText("The export could not be saved")).toBeTruthy();
   });
 
+  const PREVIEW = {
+    draftPolicies: 2,
+    draftSettings: 3,
+    notGenerated: [
+      {
+        settingId: "synthetic_bench_setting_9",
+        recommendationIds: ["1.9"],
+        reason: "Synthetic reason why no draft is generated.",
+      },
+    ],
+  };
+
   it("asks for confirmation before saving drafts", async () => {
+    mocks.previewDrafts.mockResolvedValue(PREVIEW);
     await renderScreen();
     await compare();
     await click(screen.getByRole("button", { name: "Drafts (.zip)" }));
+    expect(mocks.previewDrafts).toHaveBeenCalledTimes(1);
     const dialog = screen.getByRole("alertdialog");
     expect(within(dialog).getByText("Save the draft policies?")).toBeTruthy();
+    // The exact count main generates, not the number of missing settings.
+    expect(
+      within(dialog).getByText(
+        "2 draft policies for 3 missing settings. Read these points before you import any of them.",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).getByText("Not generated (1)")).toBeTruthy();
+    expect(within(dialog).getByText("Synthetic reason why no draft is generated.")).toBeTruthy();
     expect(within(dialog).getByText(/Every policy is a draft and unassigned/)).toBeTruthy();
     expect(mocks.exportFile).not.toHaveBeenCalled();
     await click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(mocks.exportFile).not.toHaveBeenCalled();
 
+    mocks.previewDrafts.mockResolvedValueOnce({ ...PREVIEW, draftPolicies: 1, draftSettings: 1 });
+    await click(screen.getByRole("button", { name: "Drafts (.zip)" }));
+    expect(
+      within(screen.getByRole("alertdialog")).getByText(
+        "1 draft policy for 1 missing setting. Read these points before you import any of them.",
+      ),
+    ).toBeTruthy();
+    await click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" }));
+
     mocks.exportFile.mockResolvedValueOnce("/synthetic/drafts.zip");
     await click(screen.getByRole("button", { name: "Drafts (.zip)" }));
     await click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Save drafts" }));
     expect(mocks.exportFile).toHaveBeenCalledWith({ format: "drafts", confirmed: true });
     expect(screen.getByText("Draft policies saved: drafts.zip")).toBeTruthy();
+  });
+
+  it("saves nothing and says why when no draft policy can be generated", async () => {
+    mocks.previewDrafts.mockResolvedValueOnce({ ...PREVIEW, draftPolicies: 0, draftSettings: 0 });
+    await renderScreen();
+    await compare();
+    await click(screen.getByRole("button", { name: "Drafts (.zip)" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByText(/No draft policy can be generated for the missing settings/)).toBeTruthy();
+    expect(screen.getByText("Synthetic reason why no draft is generated.")).toBeTruthy();
+    mocks.previewDrafts.mockRejectedValueOnce(new Error("Compare with a benchmark first."));
+    await click(screen.getByRole("button", { name: "Drafts (.zip)" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByText("The draft policies could not be prepared")).toBeTruthy();
+    expect(screen.getByText("Compare with a benchmark first.")).toBeTruthy();
+    expect(mocks.exportFile).not.toHaveBeenCalled();
   });
 
   it("offers no drafts when no setting is missing", async () => {

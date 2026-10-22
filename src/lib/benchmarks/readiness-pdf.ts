@@ -72,6 +72,7 @@ import {
   exclusionsText,
   headlineLabel,
   levelCheckSummary,
+  levelsLabel,
   ratePercent,
 } from "./display";
 import { appliesOn, localDate, type BenchmarkException } from "./exceptions";
@@ -412,14 +413,14 @@ export function renderReadinessPdf(
   drawCoverHeadline(doc, theme, frame, {
     eyebrow: "CIS Benchmark readiness",
     title,
-    subtitle: `Level ${assessment.level}`,
+    subtitle: levelsLabel(assessment),
     lead: `${READINESS_DISCLAIMER}. The delivered pack compared with the last collection of Settings Catalog policies.`,
   });
   drawCoverTenantBlock(doc, theme, frame, {
     tenantEyebrow: "Tenant",
     tenant,
     facts: [
-      ["Level", String(assessment.level)],
+      ["Levels", levelsLabel(assessment).replace(/^Levels? /, "")],
       ["Assessed", formatDate(assessedAt, fixed)],
       [
         "Data collected",

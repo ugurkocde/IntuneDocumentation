@@ -106,6 +106,7 @@ export {
   headlineLabel,
   levelCheckCounts,
   levelCheckSummary,
+  levelsLabel,
   ratePercent,
 } from "./display";
 export {

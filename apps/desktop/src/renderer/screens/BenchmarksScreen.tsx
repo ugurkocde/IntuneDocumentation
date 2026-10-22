@@ -19,6 +19,7 @@ import { Spinner } from "../components/ui/Spinner";
 import {
   catalogChoices,
   differingSettingIds,
+  levelsLabel,
   missingSettings,
   resolveSelection,
   reviewRows,
@@ -438,8 +439,9 @@ export function BenchmarksScreen() {
                 {nameOf(assessment.benchmark)}
               </h2>
               <p className="text-petrol-600 mt-0.5 text-xs leading-5">
-                Version {assessment.version}, Level {assessment.level}. Compared {formatDateTime(assessment.assessedAt)}{" "}
-                with the collection from {formatDateTime(assessment.collection.collectedAt)}. {DELIVERED}.
+                Version {assessment.version}, {levelsLabel(assessment)}. Compared{" "}
+                {formatDateTime(assessment.assessedAt)} with the collection from{" "}
+                {formatDateTime(assessment.collection.collectedAt)}. {DELIVERED}.
               </p>
               <p className="mt-1 text-xs font-semibold text-teal-700">{READINESS_DISCLAIMER}</p>
             </div>

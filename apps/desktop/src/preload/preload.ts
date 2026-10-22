@@ -112,6 +112,7 @@ const api: IntunedocApi = {
   benchmarksAvailability: () => invoke("benchmarks:availability"),
   benchmarksCatalog: () => invoke("benchmarks:catalog"),
   benchmarksAssess: (request) => invoke("benchmarks:assess", request),
+  benchmarksPreviewDrafts: () => invoke("benchmarks:previewDrafts"),
   benchmarksExport: (request) => invoke("benchmarks:export", request),
   benchmarksExceptions: (request) => invoke("benchmarks:exceptions", request),
   benchmarksHistory: (request) => invoke("benchmarks:history", request),

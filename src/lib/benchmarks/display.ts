@@ -5,6 +5,7 @@
  * result compliant, a score or certified.
  */
 import type {
+  BenchmarkAssessment,
   LevelSummary,
   ReasonCode,
   ResultState,
@@ -147,4 +148,18 @@ export function coverageStatement(
   if (coverage.coverage === null)
     return `Coverage of the full benchmark is not shown because the recommendation list marks none of Level ${level.level} as automated.`;
   return `Coverage: ${formatRate(coverage.coverage)} (${coverage.numerator} of ${coverage.denominator} automated recommendations), from the delivered recommendation list.`;
+}
+
+/**
+ * The Levels an assessment's results cover, for headers and the PDF cover:
+ * "Level 1", "Level 2" or "Levels 1 and 2". Falls back to the compared Level.
+ */
+export function levelsLabel(
+  assessment: Pick<BenchmarkAssessment, "level" | "levels">,
+): string {
+  const levels = assessment.levels.length
+    ? assessment.levels.map((item) => item.level)
+    : [assessment.level];
+  if (levels.length === 1) return `Level ${levels[0]}`;
+  return `Levels ${levels.slice(0, -1).join(", ")} and ${levels.at(-1)}`;
 }

@@ -1,5 +1,6 @@
 import type { IpcMainInvokeEvent } from "electron";
 import { assessBenchmark } from "../../../../src/lib/benchmarks/assessment";
+import { generateBenchmarkDrafts } from "../../../../src/lib/benchmarks/drafts";
 import { exportBenchmark } from "../../../../src/lib/benchmarks/export";
 import { packDigest, summarizeRun, type StoredBenchmarkRun } from "../../../../src/lib/benchmarks/history";
 import type { BenchmarkCollection } from "../../../../src/lib/benchmarks/tenant-settings";
@@ -17,6 +18,7 @@ import {
   BENCHMARKS_COMING_SOON,
   type BenchmarkAssessmentView,
   type BenchmarkAvailability,
+  type BenchmarkDraftsPreview,
   type BenchmarkException,
   type BenchmarkExceptionsRequest,
   type BenchmarkExportFormat,
@@ -80,6 +82,8 @@ export interface BenchmarkWork {
     pack: BenchmarkPack;
     list: RecommendationList | null;
   }): Promise<BenchmarkAssessmentView>;
+  // The draft policies an assessment and its pack would give, counted.
+  draftsPreview(input: { assessment: BenchmarkAssessmentView; pack: BenchmarkPack }): Promise<BenchmarkDraftsPreview>;
   // Readiness PDF, CSV, JSON or draft policies of an assessment, with the
   // pack it was made from and, for the PDF, the delivered benchmark name.
   exportBenchmark(input: {
@@ -167,6 +171,15 @@ export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
         }
       }
       return assessment;
+    },
+    // The drafts export makes the same call, so the counts are the ZIP's.
+    async draftsPreview({ assessment, pack }) {
+      const { drafts, notGenerated } = generateBenchmarkDrafts(assessment, pack);
+      return {
+        draftPolicies: drafts.length,
+        draftSettings: drafts.reduce((sum, draft) => sum + draft.settingIds.length, 0),
+        notGenerated,
+      };
     },
     // Exactly what was assessed: the same pack, and the stored exceptions of
     // the assessed benchmark, version and level (the PDF lists them).
@@ -534,15 +547,27 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     });
   });
 
+  // The last assessment of this tenant and owner, with the pack it used.
+  function held(tenant: string, owner: string) {
+    if (!last || last.tenant !== tenant || last.owner !== owner) throw new Error(BENCHMARK_ASSESS_FIRST);
+    return last;
+  }
+
+  deps.handle("benchmarks:previewDrafts", async (): Promise<BenchmarkDraftsPreview> => {
+    const tenant = await requireBenchmarks();
+    const owner = await licensed(tenant);
+    const draftsPreview = deps.work?.draftsPreview ?? notAvailable();
+    const { view: assessment, pack: delivered } = held(tenant, owner);
+    return current(tenant, () => draftsPreview({ assessment, pack: delivered }));
+  });
+
   deps.handle("benchmarks:export", async (_event, input): Promise<string | null> => {
     const tenant = await requireBenchmarks();
     const { format, confirmed } = parseExport(input);
     const owner = await licensed(tenant);
     const exportBenchmark = deps.work?.exportBenchmark ?? notAvailable();
-    const held = last && last.tenant === tenant && last.owner === owner ? last : null;
-    if (!held) throw new Error(BENCHMARK_ASSESS_FIRST);
+    const { view: assessment, pack: delivered } = held(tenant, owner);
     if (format === "drafts" && !confirmed) throw new Error(BENCHMARK_CONFIRM_DRAFTS);
-    const { view: assessment, pack: delivered } = held;
     const file = await deps.track(() =>
       current(tenant, async () =>
         exportBenchmark({

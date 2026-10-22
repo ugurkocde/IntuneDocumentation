@@ -1,11 +1,12 @@
 import { CheckCircle2, FileArchive, FileJson, FileSpreadsheet, FileText, FolderOpen } from "lucide-react";
 import { useCallback, useState } from "react";
-import type { BenchmarkExportFormat } from "../../../shared/ipc-types";
+import type { BenchmarkDraftsPreview, BenchmarkExportFormat } from "../../../shared/ipc-types";
 import { useAsyncAction } from "../../hooks/use-async-action";
 import { ipc, isMac } from "../../lib/ipc";
 import { Alert } from "../ui/Alert";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { DisclosureSummary } from "../ui/DisclosureSummary";
 
 const FORMAT_LABELS: Record<BenchmarkExportFormat, string> = {
   pdf: "Readiness PDF",
@@ -47,10 +48,13 @@ export function BenchmarkExports({
 }) {
   const action = useAsyncAction();
   const fileAction = useAsyncAction();
+  const previewAction = useAsyncAction();
   const [saved, setSaved] = useState<{ format: BenchmarkExportFormat; path: string } | null>(null);
+  // The drafts the ZIP would hold, read from main when Drafts is chosen.
+  const [preview, setPreview] = useState<BenchmarkDraftsPreview | null>(null);
   const [confirming, setConfirming] = useState(false);
   const closeConfirm = useCallback(() => setConfirming(false), []);
-  const busy = action.busy as BenchmarkExportFormat | null;
+  const busy = (action.busy ?? previewAction.busy) as BenchmarkExportFormat | "preview" | null;
   const actionBlocker = blocker ?? (busy ? "Available when the current export finishes." : null);
   const draftsBlocker =
     actionBlocker ??
@@ -60,9 +64,40 @@ export function BenchmarkExports({
         ? "No setting is missing, so there is nothing to draft."
         : null);
 
+  const previewDrafts = () =>
+    void previewAction.run("preview", async () => {
+      setSaved(null);
+      setPreview(null);
+      action.reset();
+      const result = await ipc.benchmarksPreviewDrafts();
+      setPreview(result);
+      if (result.draftPolicies > 0) setConfirming(true);
+      else previewAction.setMessage("No draft policy can be generated for the missing settings. Nothing was saved.");
+    });
+
+  const notGenerated = preview && preview.notGenerated.length > 0 && (
+    <details className="border-petrol-950/6 mt-3 rounded-xl border bg-slate-50/60 px-3 py-2.5 text-xs text-slate-700">
+      <DisclosureSummary className="font-semibold hover:text-teal-700">
+        Not generated ({preview.notGenerated.length.toLocaleString()})
+      </DisclosureSummary>
+      <ul
+        className="divide-petrol-950/6 mt-2 max-h-60 divide-y overflow-y-auto pr-1"
+        aria-label="Settings without a draft"
+      >
+        {preview.notGenerated.map((gap, index) => (
+          <li key={`${gap.settingId}|${index}`} className="py-2 leading-5 first:pt-0 last:pb-0">
+            <p className="text-petrol-950 font-mono text-[11px] font-semibold break-all">{gap.settingId}</p>
+            <p className="text-petrol-600 mt-0.5 break-words">{gap.reason}</p>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+
   const run = (format: BenchmarkExportFormat) =>
     void action.run(format, async () => {
       setSaved(null);
+      previewAction.reset();
       const path = await ipc.benchmarksExport(format === "drafts" ? { format, confirmed: true } : { format });
       if (path) setSaved({ format, path });
       else action.setMessage("Save cancelled. Nothing was saved.");
@@ -136,10 +171,10 @@ export function BenchmarkExports({
           <Button
             size="sm"
             icon={FileArchive}
-            loading={busy === "drafts"}
+            loading={busy === "drafts" || busy === "preview"}
             disabled={Boolean(draftsBlocker)}
-            disabledReason={busy === "drafts" ? null : draftsBlocker}
-            onClick={() => setConfirming(true)}
+            disabledReason={busy === "drafts" || busy === "preview" ? null : draftsBlocker}
+            onClick={previewDrafts}
           >
             Drafts (.zip)
           </Button>
@@ -189,13 +224,27 @@ export function BenchmarkExports({
           {action.message}
         </p>
       )}
+      {previewAction.error && (
+        <Alert tone="danger" title="The draft policies could not be prepared" className="mt-4">
+          {previewAction.error}
+        </Alert>
+      )}
+      {previewAction.message && (
+        <p className="text-petrol-600 mt-3 text-xs" role="status">
+          {previewAction.message}
+        </p>
+      )}
+      {previewAction.message && notGenerated}
 
       <ConfirmDialog
         open={confirming}
         title="Save the draft policies?"
         description={
-          `Drafts for ${plural(missing, "missing setting", "missing settings")}. ` +
-          "Read these points before you import any of them."
+          preview
+            ? `${plural(preview.draftPolicies, "draft policy", "draft policies")} for ` +
+              `${plural(preview.draftSettings, "missing setting", "missing settings")}. ` +
+              "Read these points before you import any of them."
+            : ""
         }
         confirmLabel="Save drafts"
         onCancel={closeConfirm}
@@ -209,6 +258,7 @@ export function BenchmarkExports({
             <li key={warning}>{warning}</li>
           ))}
         </ul>
+        {notGenerated}
       </ConfirmDialog>
     </section>
   );

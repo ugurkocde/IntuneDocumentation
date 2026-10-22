@@ -86,6 +86,17 @@ describe("benchmark readiness PDF", () => {
     expect(manualPage.split(MANUAL_RECOMMENDATIONS_NOTICE).length).toBe(3);
   });
 
+  it("names every Level the results cover on the cover", () => {
+    const base = richAssessment();
+    const [first] = base.levels;
+    const both = {
+      ...base,
+      levels: [first!, { ...first!, level: 2 as const }],
+    };
+    const cover = pageTexts(render(both))[0]!;
+    expect(cover).toContain("Levels 1 and 2");
+  });
+
   it("shows the cover title, Level, tenant and assessed date", () => {
     const cover = pageTexts(
       render(richAssessment(), { benchmarkName: "Synthetic Workstation" }),

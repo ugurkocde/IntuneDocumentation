@@ -1,4 +1,5 @@
 import type { IpcMainInvokeEvent } from "electron";
+import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BenchmarkAssessmentView } from "../shared/ipc-types";
 
@@ -122,6 +123,7 @@ function harness(options: { work?: boolean } = {}) {
         assessedAt: "2026-10-22T10:00:00.000Z",
       }),
     ),
+    draftsPreview: vi.fn(async () => ({ draftPolicies: 2, draftSettings: 3, notGenerated: [] })),
     exportBenchmark: vi.fn(async () => ({ fileName: "readiness.csv", bytes: new Uint8Array([1, 2]) })),
     benchmarkExceptions: vi.fn(async () => []),
     benchmarkHistory: vi.fn(async () => ({
@@ -165,13 +167,14 @@ describe("benchmarks gate", () => {
   const gated: Array<[string, unknown]> = [
     ["benchmarks:catalog", undefined],
     ["benchmarks:assess", IDENTITY],
+    ["benchmarks:previewDrafts", undefined],
     ["benchmarks:export", { format: "csv" }],
     ["benchmarks:exceptions", { action: "list", ...IDENTITY }],
     ["benchmarks:history", IDENTITY],
     ["benchmarks:portfolio", undefined],
   ];
 
-  it("registers exactly the seven benchmark channels", () => {
+  it("registers exactly the eight benchmark channels", () => {
     expect([...harness().handlers.keys()].sort()).toEqual([
       "benchmarks:assess",
       "benchmarks:availability",
@@ -180,6 +183,7 @@ describe("benchmarks gate", () => {
       "benchmarks:export",
       "benchmarks:history",
       "benchmarks:portfolio",
+      "benchmarks:previewDrafts",
     ]);
   });
 
@@ -214,6 +218,7 @@ describe("benchmarks gate", () => {
     expect(h.license.entitlementToken).not.toHaveBeenCalled();
     expect(h.fetch).not.toHaveBeenCalled();
     expect(h.work.assessBenchmark).not.toHaveBeenCalled();
+    expect(h.work.draftsPreview).not.toHaveBeenCalled();
     expect(h.work.exportBenchmark).not.toHaveBeenCalled();
     expect(h.work.benchmarkExceptions).not.toHaveBeenCalled();
     expect(h.work.benchmarkHistory).not.toHaveBeenCalled();
@@ -243,6 +248,7 @@ describe("benchmarks gate", () => {
   it("answers Not available yet for parts that are not there, without fetching content", async () => {
     const h = harness({ work: false });
     await expect(h.call("benchmarks:assess", IDENTITY)).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
+    await expect(h.call("benchmarks:previewDrafts")).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
     await expect(h.call("benchmarks:export", { format: "pdf" })).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
     await expect(h.call("benchmarks:exceptions", { action: "list", ...IDENTITY })).rejects.toThrow(
       BENCHMARKS_NOT_AVAILABLE,
@@ -250,7 +256,7 @@ describe("benchmarks gate", () => {
     await expect(h.call("benchmarks:history")).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
     await expect(h.call("benchmarks:portfolio")).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
     expect(h.fetch).not.toHaveBeenCalled();
-    expect(h.requireLicense).toHaveBeenCalledTimes(5);
+    expect(h.requireLicense).toHaveBeenCalledTimes(6);
   });
 
   it("validates benchmark, export and exception input after the gate", async () => {
@@ -521,6 +527,27 @@ describe("benchmarks memory cache", () => {
     await expect(h.call("benchmarks:export", { format: "csv" })).rejects.toThrow(BENCHMARK_ASSESS_FIRST);
   });
 
+  it("previews the drafts of the last assessment of the same tenant and owner", async () => {
+    const h = harness();
+    await expect(h.call("benchmarks:previewDrafts")).rejects.toThrow(BENCHMARK_ASSESS_FIRST);
+    expect(h.work.draftsPreview).not.toHaveBeenCalled();
+    await h.call("benchmarks:assess", IDENTITY);
+    const level2 = await h.call("benchmarks:assess", { ...IDENTITY, level: 2 });
+    await expect(h.call("benchmarks:previewDrafts")).resolves.toEqual({
+      draftPolicies: 2,
+      draftSettings: 3,
+      notGenerated: [],
+    });
+    // The newest assessment and the pack it was made from, nothing fetched again.
+    expect(h.work.draftsPreview).toHaveBeenCalledWith({ assessment: level2, pack: packOf(2) });
+    expect(h.packFetches()).toBe(2);
+    h.requireOwner.mockResolvedValueOnce("owner-2");
+    await expect(h.call("benchmarks:previewDrafts")).rejects.toThrow(BENCHMARK_ASSESS_FIRST);
+    h.ipc.reset();
+    await expect(h.call("benchmarks:previewDrafts")).rejects.toThrow(BENCHMARK_ASSESS_FIRST);
+    expect(h.work.draftsPreview).toHaveBeenCalledTimes(1);
+  });
+
   it("never touches the file system and never logs content or the token", async () => {
     const console = (["log", "info", "warn", "error", "debug"] as const).map((level) =>
       vi.spyOn(globalThis.console, level).mockImplementation(() => undefined),
@@ -734,6 +761,56 @@ describe("benchmark work wiring", () => {
     expect(h.saveFile.mock.calls.map(([name]) => String(name).split(".").at(-1))).toEqual(["zip", "pdf"]);
     ipc.reset();
     await expect(h.call("benchmarks:export", { format: "drafts", confirmed: true })).rejects.toThrow(BENCHMARK_ASSESS_FIRST);
+  });
+
+  it("previews through the handlers exactly the draft policies the drafts ZIP holds", async () => {
+    const { state, work } = workHarness();
+    const missingPack = () =>
+      pack(
+        [
+          { settings: [choice("synthetic_alpha", "on"), choice("synthetic_gamma", "on")] },
+          { settings: [choice("synthetic_delta", "on"), choice("synthetic_epsilon", "on")] },
+        ],
+        [{ id: "2.1", title: "Synthetic gamma recommendation", level: 1, settings: ["synthetic_gamma"] }],
+      );
+    // gamma and delta are missing (two drafts); epsilon is only on an
+    // unassigned policy, so it needs review and gets no draft.
+    state.collection = collection({
+      collectedAt: "2026-10-20T09:00:00.000Z",
+      policies: [
+        tenantPolicy({ settings: [choice("synthetic_alpha", "on")] }),
+        tenantPolicy({ settings: [choice("synthetic_epsilon", "on")], assignments: [] }),
+      ],
+    });
+    const h = harness();
+    registerBenchmarksIpc({
+      handle: (channel, listener) => h.handlers.set(channel, listener),
+      requireOwner: h.requireOwner,
+      requireLicense: h.requireLicense,
+      signedInTenant: () => h.state.tenant,
+      license: h.license,
+      fetch: async (url) =>
+        url.includes("/packs/") ? json(missingPack()) : json({ error: "not found" }, { status: 404 }),
+      apiBase: BASE,
+      track: (run) => run(),
+      saveFile: h.saveFile,
+      log: h.log,
+      work,
+    });
+    await h.call("benchmarks:assess", { benchmark: fixtures.BENCH, version: fixtures.VERSION, level: 1 });
+    const preview = (await h.call("benchmarks:previewDrafts")) as {
+      draftPolicies: number;
+      draftSettings: number;
+      notGenerated: Array<{ settingId: string; reason: string }>;
+    };
+    expect(preview).toMatchObject({ draftPolicies: 2, draftSettings: 2 });
+    expect(preview.notGenerated).toEqual([
+      expect.objectContaining({ settingId: "synthetic_epsilon", reason: expect.stringContaining("not assigned") }),
+    ]);
+    await h.call("benchmarks:export", { format: "drafts", confirmed: true });
+    const zip = await JSZip.loadAsync(h.saveFile.mock.calls[0]![1] as Uint8Array);
+    const drafts = Object.keys(zip.files).filter((name) => name.endsWith(".json"));
+    expect(drafts).toHaveLength(preview.draftPolicies);
   });
 });
 

@@ -816,6 +816,89 @@ describe("grouped roots", () => {
   });
 });
 
+describe("choice collections", () => {
+  const CHOICES = "synthetic_bench_choices";
+  const choicesPack = pack([
+    { settings: [choiceCollection(CHOICES, ["a", "b", "c"])] },
+  ]);
+  const choicesRun = (instance: Record<string, unknown>) =>
+    statusOf(
+      assess([tenantPolicy({ settings: [instance] })], {}, choicesPack),
+      CHOICES,
+    );
+  const withoutChildren = (options: string[]) => ({
+    ...choiceCollection(CHOICES, options),
+    choiceSettingCollectionValue: options.map((option) => ({
+      value: `${CHOICES}_${option}`,
+    })),
+  });
+
+  it("matches reordered entries as a multiset, never Different", () => {
+    expect(choicesRun(choiceCollection(CHOICES, ["c", "a", "b"]))).toEqual([
+      "Present",
+      "Pass",
+      undefined,
+    ]);
+    // Choice values may omit children; the order still does not count.
+    expect(
+      statusOf(
+        assess(
+          [tenantPolicy({ settings: [withoutChildren(["b", "c", "a"])] })],
+          {},
+          pack([{ settings: [withoutChildren(["a", "b", "c"])] }]),
+        ),
+        CHOICES,
+      ),
+    ).toEqual(["Present", "Pass", undefined]);
+  });
+
+  it("is Different when the entries differ, repeat or are missing or extra at a flat root", () => {
+    for (const options of [
+      ["c", "a", "d"],
+      ["a", "a", "b"],
+      ["b", "a"],
+      ["c", "a", "b", "d"],
+    ])
+      expect(choicesRun(choiceCollection(CHOICES, options))).toEqual([
+        "Different",
+        "Fail",
+        undefined,
+      ]);
+  });
+
+  it("is Review, not Different, when a reordered entry is unreadable or of the wrong type", () => {
+    for (const entry of [
+      { value: REDACTED_VALUE, children: [] },
+      { value: 5, children: [] },
+      { children: [] },
+    ])
+      expect(
+        choicesRun({
+          ...choiceCollection(CHOICES, []),
+          choiceSettingCollectionValue: [
+            { value: `${CHOICES}_c`, children: [] },
+            entry,
+            { value: `${CHOICES}_a`, children: [] },
+          ],
+        }),
+      ).toEqual(["Review", "Review", "unreadableValue"]);
+  });
+
+  it("matches a reordered choice collection inside a group entry", () => {
+    const GROUP = "synthetic_bench_choice_group";
+    const nested = (options: string[]) =>
+      groupCollection(GROUP, [[choiceCollection(`${GROUP}_choices`, options)]]);
+    const target = pack([{ settings: [nested(["x", "y"])] }]);
+    const run = (options: string[]) =>
+      statusOf(
+        assess([tenantPolicy({ settings: [nested(options)] })], {}, target),
+        GROUP,
+      );
+    expect(run(["y", "x"])).toEqual(["Present", "Pass", undefined]);
+    expect(run(["y", "z"])).toEqual(["Different", "Fail", undefined]);
+  });
+});
+
 describe("review round fixes", () => {
   it("is Different when a flat root's own readable value differs, even with an unreadable tenant child", () => {
     const run = assess([

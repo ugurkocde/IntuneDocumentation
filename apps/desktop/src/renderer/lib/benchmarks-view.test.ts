@@ -4,6 +4,7 @@ import {
   catalogChoices,
   differingSettingIds,
   filterRows,
+  levelsLabel,
   missingSettings,
   reasonCounts,
   resolveSelection,
@@ -108,5 +109,14 @@ describe("drafts and exceptions", () => {
       "8",
       "9",
     ]);
+  });
+});
+
+describe("levelsLabel", () => {
+  it("names the Levels the results show, or the compared Level", () => {
+    expect(levelsLabel(syntheticAssessment())).toBe("Level 1");
+    expect(levelsLabel(syntheticAssessment({ levels: [2] }))).toBe("Level 2");
+    expect(levelsLabel(syntheticAssessment({ levels: [1, 2], level: 2 }))).toBe("Levels 1 and 2");
+    expect(levelsLabel({ ...syntheticAssessment({ level: 2 }), levels: [] })).toBe("Level 2");
   });
 });

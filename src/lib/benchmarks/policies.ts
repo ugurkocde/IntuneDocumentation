@@ -282,9 +282,9 @@ const inSubtree = (path: string, anchor: string) =>
  * from the root. Child instances are taken out of their parent's own value and
  * keyed below it; a repeated child definition in one children list is keyed by
  * its occurrence, and entries of a collection by position (compareLeaves
- * matches group collection entries regardless of it). A leaf whose own value
- * is not readable maps to UNREADABLE. The instance must still carry its
- * @odata.type (clean, not comparable).
+ * matches group and choice collection entries regardless of it). A leaf whose
+ * own value is not readable maps to UNREADABLE. The instance must still carry
+ * its @odata.type (clean, not comparable).
  */
 function leafValues(
   instance: SettingInstance,
@@ -297,7 +297,9 @@ function leafValues(
     if (
       Array.isArray(value) &&
       value.length &&
-      value.every((entry) => record(entry) && Array.isArray(entry.children))
+      // Choice values may omit children, so a choice collection is known by its key.
+      (at.endsWith(":choiceSettingCollectionValue") ||
+        value.every((entry) => record(entry) && Array.isArray(entry.children)))
     ) {
       value.forEach((entry, index) =>
         out.set(
@@ -339,15 +341,15 @@ function leafValues(
 
 export type Comparison = "match" | "differ" | "unknown";
 
-// A group setting collection entry in a leaf path. The first one is the
-// outermost: an entry path always extends the path of its collection.
-const ENTRY = /^(.*?:groupSettingCollectionValue)\[(\d+)\](.*)$/;
+// A group or choice setting collection entry in a leaf path. The first one is
+// the outermost: an entry path always extends the path of its collection.
+const ENTRY = /^(.*?:(?:group|choice)SettingCollectionValue)\[(\d+)\](.*)$/;
 const entryless = (path: string) =>
-  path.replace(/(:groupSettingCollectionValue)\[\d+\]/g, "$1[]");
+  path.replace(/(:(?:group|choice)SettingCollectionValue)\[\d+\]/g, "$1[]");
 
 /**
- * Leaves outside any group collection entry, and the leaves of each entry
- * keyed by its collection path, relative to the entry.
+ * Leaves outside any collection entry, and the leaves of each entry keyed by
+ * its collection path, relative to the entry.
  */
 function splitEntries(leaves: Iterable<[string, string]>) {
   const direct: Array<[string, string]> = [];
@@ -388,9 +390,10 @@ function assignable(
  * Compares the recommended leaves with one tenant root. A readable leaf that
  * differs or is absent below readable parents is a difference, and a definite
  * difference wins. A leaf that is unreadable, or absent below an unreadable
- * parent, is unknown. Group collection entries compare as multisets: each
- * recommended entry needs its own tenant entry, in any order, and extra
- * tenant entries are ignored. A recommended entry no tenant entry can match
+ * parent, is unknown. Group and choice collection entries compare as
+ * multisets: each recommended entry needs its own tenant entry, in any order,
+ * and extra tenant entries are ignored (a root without child instances is
+ * still compared whole, so there the entry count must match too). A recommended entry no tenant entry can match
  * is a difference when every candidate differs readably, and unknown when one
  * might match or the collection itself is not readable.
  */
@@ -433,8 +436,9 @@ function compareLeaves(
  * Whether an observed root satisfies a recommended root. A root without child
  * setting instances must match exactly. A grouped root matches when every
  * recommended leaf exists at the same definition path with an equal value,
- * group collection entries in any order; extra tenant children and entries
- * are ignored.
+ * group and choice collection entries in any order; extra tenant children and
+ * entries are ignored. A choice collection without child instances is a root
+ * of the first kind: the same entries in any order.
  */
 export function compareRoot(recommended: Json, observed: Json): Comparison {
   const want = clean(recommended);
@@ -488,7 +492,7 @@ export function compareDefinition(
   )
     return { holds: "maybe", comparison: "unknown" };
   const haveLeaves = leafValues(have, "", new Map());
-  // Held in any entry of a group collection: entries are matched, not paired.
+  // Held in any entry of a collection: entries are matched, not paired.
   const heldPaths = new Set([...haveLeaves.keys()].map(entryless));
   if (!anchors.some((anchor) => heldPaths.has(entryless(anchor)))) {
     const below = [...haveLeaves].some(

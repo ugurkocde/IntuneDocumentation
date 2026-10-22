@@ -1,7 +1,8 @@
-import { BookOpen } from "lucide-react";
+import { BookOpen, ExternalLink } from "lucide-react";
 import type { BenchmarkAssessment } from "../../../../../../src/lib/benchmarks/assessment";
 import { levelCheckSummary } from "../../../../../../src/lib/benchmarks/display";
 import { assessedCount, type ReviewRow } from "../../lib/benchmarks-view";
+import { ipc } from "../../lib/ipc";
 import { CopyButton } from "../ui/CopyButton";
 import { DisclosureSummary } from "../ui/DisclosureSummary";
 
@@ -38,6 +39,15 @@ export function ManualSection({ assessment, rows }: { assessment: BenchmarkAsses
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <code className="selectable min-w-0 font-mono text-[11px] break-all">{assessment.notice.url}</code>
           <CopyButton value={assessment.notice.url} label="Copy link" showLabel />
+          {/* Main opens only its allowlisted copy of this address. */}
+          <button
+            type="button"
+            onClick={() => void ipc.openHelp("cisBenchmarks")}
+            className="text-petrol-600 hover:bg-mint-100 hover:text-petrol-950 inline-flex min-h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:outline-none"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            Open link
+          </button>
         </div>
       </div>
 

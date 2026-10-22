@@ -232,6 +232,7 @@ describe("organization license sharing", () => {
     // server on this path, so neither proves the caller is the internal install.
     vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID);
     vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", INSTALL_B);
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", KEY_ID);
     await holderActivates();
     const activated = await claim();
     expect(activated.status).toBe(200);

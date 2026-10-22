@@ -475,6 +475,22 @@ describe("desktop license activation", () => {
     },
   );
 
+  it("issues the CIS claim for a pilot license key on any installation", async () => {
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", KEY_ID.toUpperCase());
+    const response = await post(activate, activation());
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    expect(verifyEntitlement(body.token, publicKey)?.cis).toBe("internal");
+  });
+
+  it("issues no CIS claim when a different license key is the pilot", async () => {
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", TENANT_B);
+    const response = await post(activate, activation());
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    expect(verifyEntitlement(body.token, publicKey)?.cis).toBeUndefined();
+  });
+
   it("cannot be granted the internal CIS claim by naming a tenant or injecting a field", async () => {
     vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID);
     vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", TENANT_B);

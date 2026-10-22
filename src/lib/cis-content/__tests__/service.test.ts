@@ -241,6 +241,28 @@ describe.each(SERVE)("%s delivery", (_kind, serve, body) => {
     expect(d.auditEvents).toHaveLength(1);
   });
 
+  it("serves a pilot license key on any installation and stops when the key is removed", async () => {
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", "");
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", "");
+    vi.stubEnv(
+      "DESKTOP_CIS_PILOT_LICENSE_KEY_IDS",
+      `${OTHER}, ${KEY_ID.toUpperCase()}`,
+    );
+    const bearer = internalToken();
+    const d = deps("internal");
+    expect((await serve(bearer, d)).status).toBe(200);
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", OTHER);
+    expect((await serve(bearer, d)).status).toBe(403);
+    expect(d.auditEvents).toHaveLength(1);
+  });
+
+  it("does not serve a pilot license key without the claim", async () => {
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", KEY_ID);
+    const refused = deps("internal");
+    expect((await serve(token(), refused)).status).toBe(403);
+    expect(refused.downloads).toEqual([]);
+  });
+
   it("matches allowlist entries case-insensitively in a comma separated list", async () => {
     vi.stubEnv(
       "DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS",

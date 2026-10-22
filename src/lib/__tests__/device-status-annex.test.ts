@@ -195,7 +195,8 @@ describe("policy device status annex", () => {
 
     const german = extractPdfStreamText(
       await generateComplianceReportPDF(CONTOSO_TENANT, {
-        frameworkId: "bsi-it-grundschutz",
+        frameworkId: "iso-27001-2022",
+        locale: "de",
       }),
     );
     expect(german).toContain("Gerätestatus je Richtlinie");

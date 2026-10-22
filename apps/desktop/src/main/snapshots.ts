@@ -9,8 +9,10 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
+import { isAssessedFramework } from "../../../../src/lib/compliance/engine";
 import {
   SNAPSHOT_FORMAT,
+  withAssessedFrameworks,
   type SnapshotFingerprint,
   type SnapshotProjection,
 } from "../../../../src/lib/snapshots/projection";
@@ -244,7 +246,12 @@ function parseIndex(text: string): StoredIndex {
       ...(typeof value.label === "string" ? { label: value.label.slice(0, 100) } : {}),
       snapshots: (Array.isArray(value.snapshots) ? value.snapshots : [])
         .filter(isEntry)
-        .map((entry) => withRunKeys(entry, entry.benchmarks)),
+        .map((entry) => withRunKeys(entry, entry.benchmarks))
+        // A framework removed since the entry was written is not shown.
+        .map((entry) => ({
+          ...entry,
+          frameworks: entry.frameworks.filter((framework) => isAssessedFramework(framework?.id)),
+        })),
     };
   }
   return index;
@@ -547,7 +554,7 @@ export class SnapshotStore {
     if (projection?.format !== SNAPSHOT_FORMAT) {
       throw new Error("This snapshot has an unknown format.");
     }
-    return projection;
+    return withAssessedFrameworks(projection);
   }
 
   // Rewrites one stored snapshot with data added after it was saved, such as

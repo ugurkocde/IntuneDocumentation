@@ -45,7 +45,7 @@ describe("Defender policy exports", () => {
     const renderedText = extractPdfStreamText(result.buffer);
 
     expect(renderedText).toContain("Compliance Evidence Preview");
-    expect(renderedText).toContain("BSI IT-Grundschutz");
+    expect(renderedText).toContain("NCSC Cyber Essentials");
     expect(renderedText).toContain("not a compliance certi");
     expect(renderedText).toContain("intunedocumentation.com/dashboard");
     // The exclusions-only Defender fixture must not produce evidence claims.
@@ -71,7 +71,7 @@ describe("Defender policy exports", () => {
           : extractZipEntry(result.buffer, "word/document.xml");
 
       expect(text).not.toContain("Compliance Evidence Preview");
-      expect(text).not.toContain("BSI IT-Grundschutz");
+      expect(text).not.toContain("NCSC Cyber Essentials");
       expect(result.errors).toEqual([]);
     },
   );
@@ -100,7 +100,7 @@ describe("Defender policy exports", () => {
     expect(documentXml).toContain("Rev. 3");
     expect(documentXml).toContain("13 of 110 published requirements");
     expect(documentXml).toContain("12 of 97 published requirements");
-    expect(documentXml).toContain("BSI IT-Grundschutz");
+    expect(documentXml).toContain("NCSC Cyber Essentials");
     expect(documentXml).toContain("not a compliance certification");
     expect(documentXml).toContain("intunedocumentation.com/dashboard");
     // The exclusions-only Defender fixture must not produce evidence claims.

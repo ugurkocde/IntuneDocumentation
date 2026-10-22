@@ -255,7 +255,6 @@ export type ComplianceFrameworkId =
   | "soc2-tsc"
   | "nist-800-53-r5"
   | "nist-csf-2"
-  | "bsi-it-grundschutz"
   | "def-stan-05-138-i4"
   | "cyber-essentials-v3"
   | "nist-800-171-r2"
@@ -604,7 +603,7 @@ export interface AppInfo {
 // CIS Benchmarks, internal only until the CIS agreement covers this app.
 // Only availability answers without the signed licence claim; every other
 // channel refuses with BENCHMARKS_COMING_SOON. Content stays in main memory.
-export const BENCHMARKS_COMING_SOON = "CIS comparisons are coming soon.";
+export const BENCHMARKS_COMING_SOON = "This feature is not available for this license.";
 
 export type {
   BenchmarkCatalog,

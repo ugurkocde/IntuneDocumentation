@@ -35,7 +35,7 @@ async function previewText(
       ? extractPdfStreamText(result.buffer)
       : extractZipEntry(result.buffer, "word/document.xml");
   expect(text).toContain("Compliance Evidence Preview");
-  expect(text).toContain("BSI IT-Grundschutz");
+  expect(text).toContain("NCSC Cyber Essentials");
   return text;
 }
 

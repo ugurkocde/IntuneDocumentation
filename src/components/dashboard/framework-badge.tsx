@@ -1,5 +1,4 @@
 export type FrameworkId =
-  | "bsi-it-grundschutz"
   | "nist-800-53-r5"
   | "nist-csf-2"
   | "iso-27001-2022"
@@ -15,9 +14,9 @@ export type FrameworkId =
 
 // Text-forward wordmarks only: official logos, insignia, and association marks
 // must not be reproduced. The standards are named in our own typography for
-// nominative use; BSI uses plain national colors without a protected emblem.
+// nominative use.
 const WORDMARK_DETAILS: Record<
-  Exclude<FrameworkId, "bsi-it-grundschutz">,
+  FrameworkId,
   { fill: string; line1: string; line2: string }
 > = {
   "essential-eight": { fill: "#047857", line1: "ESSENTIAL", line2: "EIGHT" },
@@ -75,42 +74,6 @@ export function FrameworkBadge({
   frameworkId: FrameworkId;
   size?: number;
 }) {
-  if (frameworkId === "bsi-it-grundschutz") {
-    return (
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 40 40"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <rect
-          width="39"
-          height="39"
-          x="0.5"
-          y="0.5"
-          rx="6"
-          fill="#FFFFFF"
-          stroke="#E2E8F0"
-        />
-        <rect x="7" y="8" width="5" height="8" fill="#000000" />
-        <rect x="7" y="16" width="5" height="8" fill="#DD0000" />
-        <rect x="7" y="24" width="5" height="8" fill="#FFCC00" />
-        <text
-          x="16"
-          y="24.5"
-          fill="#1E293B"
-          fontFamily={FONT_FAMILY}
-          fontSize="11.5"
-          fontWeight="700"
-          letterSpacing="0.4"
-        >
-          BSI
-        </text>
-      </svg>
-    );
-  }
-
   const details = WORDMARK_DETAILS[frameworkId];
 
   return (

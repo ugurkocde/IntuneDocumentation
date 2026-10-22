@@ -6,7 +6,6 @@ import { buildEvidenceRegister } from "../compliance/export";
 import { buildManagementSummary } from "../compliance/management/management-summary";
 import { outsideIntuneScope } from "../compliance/outside-scope";
 import { generateComplianceReportPDF } from "../compliance/report-pdf";
-import type { ComplianceFrameworkId } from "../compliance/report-pdf";
 import { readPdfPageTexts } from "./helpers/pdf-outline";
 import { extractPdfStreamText } from "./helpers/pdf-text";
 
@@ -158,13 +157,16 @@ function annexHeaderLabels(page: string): HeaderLabel[] {
 
 describe("device status annex header", () => {
   it.each([
-    ["iso-27001-2022", "SUCCEEDED"],
-    ["bsi-it-grundschutz", "ERFOLGREICH"],
+    ["en", "SUCCEEDED"],
+    ["de", "ERFOLGREICH"],
   ] as const)(
     "keeps every %s header label inside its column",
-    async (frameworkId: ComplianceFrameworkId, marker: string) => {
+    async (locale: "en" | "de", marker: string) => {
       const pages = readPdfPageTexts(
-        await generateComplianceReportPDF(CONTOSO_TENANT, { frameworkId }),
+        await generateComplianceReportPDF(CONTOSO_TENANT, {
+          frameworkId: "iso-27001-2022",
+          locale,
+        }),
       );
       const page = pages.find((text) => text.includes(`(${marker}) Tj`));
       expect(page).toBeDefined();

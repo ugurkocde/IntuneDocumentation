@@ -103,16 +103,6 @@
       ]
     },
     {
-      "frameworkId": "bsi-it-grundschutz",
-      "file": "bsi-it-grundschutz.pdf",
-      "locale": "de",
-      "reportId": "IDOC-BSI-20261008-CTSO",
-      "excerptControlIds": [
-        "SYS.2.2.3.A5",
-        "SYS.2.2.3.A4"
-      ]
-    },
-    {
       "frameworkId": "def-stan-05-138-i4",
       "file": "def-stan-05-138.pdf",
       "locale": "en",

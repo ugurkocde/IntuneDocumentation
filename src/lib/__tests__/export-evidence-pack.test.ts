@@ -2,11 +2,7 @@ import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { COMPLIANCE_DISCLAIMER, createEvidenceManifest } from "../compliance";
 import { CONTOSO_TENANT } from "../compliance/demo/contoso-tenant";
-import {
-  buildEvidencePack,
-  NO_PURVIEW_TEMPLATE,
-  safeFileName,
-} from "../compliance/export";
+import { buildEvidencePack, safeFileName } from "../compliance/export";
 import { parseCsv } from "./helpers/export-sheet";
 
 const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
@@ -121,17 +117,6 @@ describe("buildEvidencePack", () => {
     ])
       expect(readme).toContain(text);
     expect(readme).not.toMatch(/[\u2013\u2014]/);
-  });
-
-  it("states when Purview has no template", async () => {
-    const { zip } = await pack("bsi-it-grundschutz", "Bericht.pdf");
-    const index = parseCsv(await zip.file("index.csv")!.async("string"));
-    expect(index.slice(1).every((row) => row[1] === NO_PURVIEW_TEMPLATE)).toBe(
-      true,
-    );
-    expect(await zip.file("README.txt")!.async("string")).toContain(
-      `${NO_PURVIEW_TEMPLATE}.`,
-    );
   });
 
   it("rejects an unknown framework", async () => {

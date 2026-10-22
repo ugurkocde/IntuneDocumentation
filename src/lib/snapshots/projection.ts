@@ -9,7 +9,7 @@ import {
   type ConfigurationSectionData,
 } from "../configuration-sections";
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
-import { normalizeOdataType } from "../compliance/engine";
+import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
 import { canonicalOmaUri } from "../compliance/oma-uri";
 import { frameworkCoverageLabel } from "../compliance/presentation";
 import { REDACTED_VALUE, redactedDigests } from "../intune-policy-registry";
@@ -1042,6 +1042,25 @@ function storedActualValue(check: TechnicalCheck): string | null {
     }
   }
   return value?.slice(0, MAX_CHECK_VALUE) ?? null;
+}
+
+// A snapshot saved by an earlier version can hold a framework that was
+// removed since. It is dropped on read, so History, Compare and Portfolio
+// never show or count it.
+export function withAssessedFrameworks(
+  projection: SnapshotProjection,
+): SnapshotProjection {
+  const frameworks = projection.assessment?.frameworks;
+  if (!Array.isArray(frameworks)) return projection;
+  return {
+    ...projection,
+    assessment: {
+      ...projection.assessment,
+      frameworks: frameworks.filter((framework) =>
+        isAssessedFramework(framework?.id),
+      ),
+    },
+  };
 }
 
 // The stored assessment keeps statuses, evidence and check results, not the

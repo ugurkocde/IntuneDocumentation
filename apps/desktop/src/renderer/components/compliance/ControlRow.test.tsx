@@ -12,7 +12,7 @@ import { ControlRow } from "./ControlRow";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const control = {
-  control: { id: "8.5", title: "Secure authentication", summary: "Authentication" },
+  control: { id: "8.5", title: "Sign-in, unlock and credential protection", summary: "Authentication" },
   capabilityIds: ["tenant-security-defaults-enabled"],
   enforcedCapabilityIds: [],
   status: "noEvidence",

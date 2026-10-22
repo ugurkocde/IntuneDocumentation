@@ -93,7 +93,6 @@ import type {
 export type ComplianceFrameworkId =
   | "nist-800-53-r5"
   | "nist-csf-2"
-  | "bsi-it-grundschutz"
   | "iso-27001-2022"
   | "soc2-tsc"
   | "def-stan-05-138-i4"
@@ -164,13 +163,6 @@ interface ReportStrings {
   methodologyHeading: string;
   notePrefix: string;
   continuationCaption: (controlId: string) => string;
-  manualHeading: string;
-  manualNote: string;
-  manualStatus: string;
-  manualStatuses: readonly [string, string, string, string];
-  manualResponsible: string;
-  manualDueDate: string;
-  manualComment: string;
   pageNumber: (page: number, total: number) => string;
   fileFrameworkLabels: Record<ComplianceFrameworkId, string>;
 }
@@ -246,7 +238,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
     gapIntro:
       "No technical evidence was found. Possible implementation through these Intune settings:",
     disclaimer:
-      "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is not a compliance certification or an IT Grundschutz check and does not replace an audit. Missing evidence means that no supported configuration with a known assignment was detected in the evaluated dataset.",
+      "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is not a compliance certification and does not replace an audit. Missing evidence means that no supported configuration with a known assignment was detected in the evaluated dataset.",
     appendixHeading: "Appendix A: Evidence Register",
     appendixContinuation: "Appendix A (continued)",
     appendixHeaders: [
@@ -265,19 +257,10 @@ const STRINGS: Record<Locale, ReportStrings> = {
     methodologyHeading: "Methodology",
     notePrefix: "Note: ",
     continuationCaption: (controlId) => `${controlId} (continued)`,
-    manualHeading: "Manual assessment (IT Grundschutz check)",
-    manualNote:
-      "The manual assessment of implementation status is performed by the reviewer and is independent of the automated technical evidence.",
-    manualStatus: "Implementation status",
-    manualStatuses: ["not applicable", "yes", "partial", "no"],
-    manualResponsible: "Responsible",
-    manualDueDate: "Target date",
-    manualComment: "Comment",
     pageNumber: (page, total) => `Page ${page} of ${total}`,
     fileFrameworkLabels: {
       "nist-800-53-r5": "NIST-800-53-R5",
       "nist-csf-2": "NIST-CSF-2",
-      "bsi-it-grundschutz": "BSI-IT-Grundschutz",
       "iso-27001-2022": "ISO-27001",
       "soc2-tsc": "SOC-2",
       "def-stan-05-138-i4": "Def-Stan-05-138",
@@ -307,27 +290,8 @@ const STRINGS: Record<Locale, ReportStrings> = {
     ],
     tocHeading: "Inhaltsverzeichnis",
     summaryHeading: "Zusammenfassung",
-    summaryCounts: (framework) => {
-      const requirements = framework.controls.filter(
-        (item) => item.control.tier,
-      );
-      const buildingBlocks = framework.controls.filter(
-        (item) => !item.control.tier,
-      );
-      const requirementsWithEvidence = requirements.filter(
-        (item) => item.status === "evidenceFound",
-      ).length;
-      const requirementsPartial = requirements.filter(
-        (item) => item.status === "partialEvidence",
-      ).length;
-      const buildingBlocksWithEvidence = buildingBlocks.filter(
-        (item) => item.status === "evidenceFound",
-      ).length;
-      const buildingBlocksPartial = buildingBlocks.filter(
-        (item) => item.status === "partialEvidence",
-      ).length;
-      return `${requirementsWithEvidence} von ${requirements.length} Anforderungen mit Nachweis (${requirementsPartial} teilweise), ${buildingBlocksWithEvidence} von ${buildingBlocks.length} Bausteinen mit Nachweis (${buildingBlocksPartial} teilweise)`;
-    },
+    summaryCounts: (framework) =>
+      `${framework.summary.withEvidence} von ${framework.summary.totalControls} ausgewählten Prüfpunkten mit Konfigurationsnachweis (${framework.summary.partial} teilweise)`,
     summaryScope: "Bewertet werden nur ausgewählte technische Prüfpunkte.",
     resultsHeading: "Ergebnisübersicht",
     resultsHeaders: ["Kategorie", "Nachweis", "Teilweise", "Kein Nachweis"],
@@ -391,7 +355,7 @@ const STRINGS: Record<Locale, ReportStrings> = {
     gapIntro:
       "Kein technischer Nachweis gefunden. Mögliche technische Umsetzung mit folgenden Intune-Einstellungen:",
     disclaimer:
-      "Dieser Bericht dokumentiert technische Nachweise aus der Microsoft-Intune-Konfiguration des Mandanten. Der Bericht stellt weder eine Zertifizierung noch einen IT-Grundschutz-Check dar und ersetzt keine Prüfung. Ein fehlender Nachweis bedeutet, dass im ausgewerteten Datenbestand keine unterstützte und wirksam zugewiesene Konfiguration erkannt wurde.",
+      "Dieser Bericht dokumentiert technische Nachweise aus der Microsoft-Intune-Konfiguration des Mandanten. Der Bericht stellt keine Zertifizierung dar und ersetzt keine Prüfung. Ein fehlender Nachweis bedeutet, dass im ausgewerteten Datenbestand keine unterstützte und wirksam zugewiesene Konfiguration erkannt wurde.",
     appendixHeading: "Anhang A: Nachweisverzeichnis",
     appendixContinuation: "Anhang A (Fortsetzung)",
     appendixHeaders: [
@@ -410,19 +374,10 @@ const STRINGS: Record<Locale, ReportStrings> = {
     methodologyHeading: "Methodik",
     notePrefix: "Hinweis: ",
     continuationCaption: (controlId) => `${controlId} (Fortsetzung)`,
-    manualHeading: "Manuelle Bewertung (IT-Grundschutz-Check)",
-    manualNote:
-      "Die manuelle Bewertung des Umsetzungsstatus erfolgt durch die prüfende Person und ist unabhängig vom automatisierten technischen Nachweis.",
-    manualStatus: "Umsetzungsstatus",
-    manualStatuses: ["entbehrlich", "ja", "teilweise", "nein"],
-    manualResponsible: "Verantwortlich",
-    manualDueDate: "Zieltermin",
-    manualComment: "Bemerkung",
     pageNumber: (page, total) => `Seite ${page} von ${total}`,
     fileFrameworkLabels: {
       "nist-800-53-r5": "NIST-800-53-R5",
       "nist-csf-2": "NIST-CSF-2",
-      "bsi-it-grundschutz": "BSI-IT-Grundschutz",
       "iso-27001-2022": "ISO-27001",
       "soc2-tsc": "SOC-2",
       "def-stan-05-138-i4": "Def-Stan-05-138",
@@ -574,9 +529,6 @@ const VERIFIED_SETTING_NAMES: ReadonlyMap<string, string> = new Map(
 const ASSIGNED_COUNTER_EVIDENCE_COLOR: RgbColor = [190, 45, 45];
 const UNASSIGNED_COUNTER_EVIDENCE_COLOR: RgbColor = [171, 95, 0];
 
-const GERMAN_BSI_FRAMEWORK_NOTE =
-  "Die Bausteine zu Clients SYS.2.2.3, SYS.2.4, SYS.3.2.1 und SYS.3.2.2 werden auf Anforderungsebene abgebildet. Weitere Bausteine werden derzeit nur auf Bausteinebene betrachtet. Berücksichtigt werden ausschließlich ausgewählte technische Nachweise aus der Geräteverwaltung.";
-
 const GERMAN_EVIDENCE_VALUE_TRANSLATIONS: Readonly<Record<string, string>> = {
   "Settings Catalog": "Einstellungskatalog",
   "Compliance Policy": "Gerätekonformitätsrichtlinie",
@@ -726,7 +678,6 @@ function tenantSlug(value: string): string {
 const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-53-r5": "N53",
   "nist-csf-2": "CSF",
-  "bsi-it-grundschutz": "BSI",
   "iso-27001-2022": "ISO",
   "soc2-tsc": "SOC",
   "def-stan-05-138-i4": "DEF",
@@ -811,6 +762,8 @@ export interface ComplianceReportOptions {
    * detail pages are rendered only for the listed control ids.
    */
   excerpt?: { controlIds: readonly string[] };
+  /** Report language; English unless German is asked for. */
+  locale?: "en" | "de";
 }
 
 // Device status annex: Intune's per-policy status counts, context only.
@@ -928,7 +881,6 @@ interface LayoutStrings {
   distributionHeading: string;
   controlsCount: (count: number) => string;
   familyHeading: string;
-  tierHeading: string;
   familySmall: string;
   heroLead: (count: number, total: number) => string;
   findingsSmall: string;
@@ -1008,7 +960,6 @@ const LAYOUT: Record<Locale, LayoutStrings> = {
     distributionHeading: "Status distribution",
     controlsCount: (count) => `${count} controls`,
     familyHeading: "Coverage by family",
-    tierHeading: "Coverage by tier",
     familySmall: "controls with technical evidence",
     heroLead: (count, total) =>
       `${count} of ${total} assessable controls have supporting technical evidence in the Intune configuration.`,
@@ -1135,7 +1086,6 @@ const LAYOUT: Record<Locale, LayoutStrings> = {
     distributionHeading: "Statusverteilung",
     controlsCount: (count) => `${count} Prüfpunkte`,
     familyHeading: "Abdeckung nach Gruppe",
-    tierHeading: "Abdeckung nach Anforderungsstufe",
     familySmall: "Prüfpunkte mit technischem Nachweis",
     heroLead: (count, total) =>
       `${count} von ${total} bewertbaren Prüfpunkten haben unterstützende technische Nachweise in der Intune-Konfiguration.`,
@@ -1244,7 +1194,6 @@ const LAYOUT: Record<Locale, LayoutStrings> = {
 const SHORT_FRAMEWORK_NAMES: Record<ComplianceFrameworkId, string> = {
   "nist-800-53-r5": "NIST SP 800-53",
   "nist-csf-2": "NIST CSF 2.0",
-  "bsi-it-grundschutz": "BSI IT-Grundschutz",
   "iso-27001-2022": "ISO/IEC 27001:2022",
   "soc2-tsc": "SOC 2",
   "def-stan-05-138-i4": "Def Stan 05-138",
@@ -1361,7 +1310,6 @@ function groupLabel(
       return { code: `§ ${key}`, name: HIPAA_SECTIONS[key] };
     case "essential-eight":
     case "def-stan-05-138-i4":
-    case "bsi-it-grundschutz":
       return { name: key };
     default:
       return { code: key };
@@ -1439,26 +1387,11 @@ function buildComplianceReportOutline(
   });
 }
 
-const BSI_TIERS = [
-  "Basis-Anforderung",
-  "Standard-Anforderung",
-  "Anforderung bei erhöhtem Schutzbedarf",
-  undefined,
-] as const;
-
-/** Groups controls for the overview: BSI by tier, others by family. */
+/** Groups controls for the overview by family. */
 function buildControlGroups(
   frameworkId: ComplianceFrameworkId,
   controls: readonly ControlAssessment[],
 ): ControlGroup[] {
-  if (frameworkId === "bsi-it-grundschutz") {
-    return BSI_TIERS.map((tier) => ({
-      key: tier ?? "Bausteine",
-      name: tier ?? "Bausteine",
-      controls: controls.filter((item) => item.control.tier === tier),
-    })).filter((group) => group.controls.length > 0);
-  }
-
   // Cyber Essentials controls are themes, so one group avoids a group row
   // per control that only repeats the control name.
   if (frameworkId === "cyber-essentials-v3") {
@@ -1687,8 +1620,7 @@ export async function generateComplianceReportPDF(
   data: DetailedExportData,
   options: ComplianceReportOptions,
 ): Promise<Uint8Array> {
-  const locale: Locale =
-    options.frameworkId === "bsi-it-grundschutz" ? "de" : "en";
+  const locale: Locale = options.locale ?? "en";
   const strings = STRINGS[locale];
   const layout = LAYOUT[locale];
   const branding = options.branding ?? data.branding;
@@ -1832,11 +1764,9 @@ export async function generateComplianceReportPDF(
       ? `${SHORT_FRAMEWORK_NAMES[options.frameworkId]} ML${assessment.scope.essentialEightMaturityLevel ?? 1}`
       : SHORT_FRAMEWORK_NAMES[options.frameworkId];
   const frameworkDisplay =
-    options.frameworkId === "bsi-it-grundschutz"
-      ? "BSI IT-Grundschutz-Kompendium, Edition 2023"
-      : options.frameworkId === "iso-27001-2022"
-        ? "ISO/IEC 27001:2022, Annex A"
-        : `${framework.framework.name} ${framework.framework.version}`;
+    options.frameworkId === "iso-27001-2022"
+      ? "ISO/IEC 27001:2022, Annex A"
+      : `${framework.framework.name} ${framework.framework.version}`;
 
   // Only evidence cited on rendered detail pages enters the register, so an
   // excerpt never shows a reference that the register does not list.
@@ -2167,11 +2097,9 @@ export async function generateComplianceReportPDF(
   // The subtitle adds what the short title leaves out (edition, revision,
   // target level); the full framework name is in the document control grid.
   const coverSubtitle =
-    options.frameworkId === "bsi-it-grundschutz"
-      ? "Kompendium, Edition 2023"
-      : options.frameworkId === "iso-27001-2022"
-        ? "Annex A"
-        : framework.framework.version;
+    options.frameworkId === "iso-27001-2022"
+      ? "Annex A"
+      : framework.framework.version;
   drawCoverHeadline(doc, theme, frame, {
     eyebrow: strings.title,
     title: shortName,
@@ -2539,12 +2467,7 @@ export async function generateComplianceReportPDF(
     return 6.5 + shownRows * familyRowHeight + (hidden > 0 ? 5 : 0) + 5;
   };
   const drawFamilyBlock = (maxRows: number) => {
-    drawSectionHeading(
-      options.frameworkId === "bsi-it-grundschutz"
-        ? layout.tierHeading
-        : layout.familyHeading,
-      layout.familySmall,
-    );
+    drawSectionHeading(layout.familyHeading, layout.familySmall);
     drawRule(doc, margin, yPosition - 1.5, right, primaryColor, 0.4);
     {
       const columns = familyColumns;
@@ -2746,21 +2669,6 @@ export async function generateComplianceReportPDF(
       controlIds: ids,
     });
   }
-  if (options.frameworkId === "bsi-it-grundschutz") {
-    for (const control of controls.filter(
-      (item) =>
-        item.control.tier === "Basis-Anforderung" &&
-        item.status === "noEvidence",
-    )) {
-      const names = mappedCapabilitiesFor(control).map(capabilityName);
-      findings.push({
-        kind: "gap",
-        title: names.join(", ") || control.control.title,
-        description: `Kein technischer Nachweis für ${control.control.id}.`,
-        controlIds: [control.control.id],
-      });
-    }
-  }
   for (const result of unassignedCompliant) {
     const ids = controlIdsByCapability.get(result.capability.id) ?? [];
     if (ids.length === 0) continue;
@@ -2776,10 +2684,7 @@ export async function generateComplianceReportPDF(
   }
   const prioritizedFindings = findings.slice(0, 5);
 
-  const frameworkNote =
-    locale === "de" && framework.framework.id === "bsi-it-grundschutz"
-      ? GERMAN_BSI_FRAMEWORK_NOTE
-      : framework.framework.note;
+  const frameworkNote = framework.framework.note;
   const coverageLabel = frameworkCoverageLabel(framework);
   const scopeTextWidth = contentWidth - 9 - 30;
   const scopeFor = (includeNote: boolean) => {
@@ -3950,16 +3855,6 @@ export async function generateComplianceReportPDF(
       `${strings.platformScope}: ${orderedPlatforms.length > 0 ? orderedPlatforms.join(", ") : locale === "de" ? "Keine Plattform erkannt" : "No platform detected"}`,
       { fontSize: 8.4, style: "bold", after: 4 },
     );
-
-    if (options.frameworkId === "bsi-it-grundschutz") {
-      drawWrappedText(strings.manualNote, {
-        fontSize: 8,
-        style: "italic",
-        color: PALETTE.muted,
-        lineHeight: 3.7,
-        after: 4,
-      });
-    }
   }
 
   // ------------------------------------------------------ Control detail
@@ -4845,48 +4740,6 @@ export async function generateComplianceReportPDF(
     yPosition += 4;
   };
 
-  const drawManualAssessment = (controlId: string) => {
-    const blockHeight = 34;
-    if (yPosition + blockHeight > contentBottom) {
-      addControlContinuationPage(controlId);
-    }
-    const blockTop = yPosition;
-    drawCard(doc, margin, blockTop, contentWidth, blockHeight, {
-      fill: PALETTE.panel,
-      stroke: PALETTE.border,
-    });
-    setFont(doc, 8.4, "bold", primaryColor);
-    doc.text(strings.manualHeading, innerX + 1, blockTop + 6);
-
-    const statusY = blockTop + 13.5;
-    setFont(doc, 7.2, "bold", textColor);
-    doc.text(`${strings.manualStatus}:`, innerX + 1, statusY);
-    let checkboxX = margin + 44;
-    doc.setDrawColor(...PALETTE.muted);
-    doc.setLineWidth(0.3);
-    for (const status of strings.manualStatuses) {
-      doc.setFillColor(...PALETTE.white);
-      doc.roundedRect(checkboxX, statusY - 3.3, 3.8, 3.8, 0.6, 0.6, "FD");
-      setFont(doc, 7.2, "normal", textColor);
-      doc.text(status, checkboxX + 5.4, statusY);
-      checkboxX += 10 + doc.getTextWidth(status);
-    }
-
-    doc.setDrawColor(...PALETTE.muted);
-    doc.setLineWidth(0.25);
-    const ownerY = blockTop + 21.5;
-    setFont(doc, 7.2, "bold", textColor);
-    doc.text(`${strings.manualResponsible}:`, innerX + 1, ownerY);
-    doc.line(margin + 30, ownerY + 0.7, margin + 100, ownerY + 0.7);
-    doc.text(`${strings.manualDueDate}:`, margin + 106, ownerY);
-    doc.line(margin + 128, ownerY + 0.7, right - cardPad, ownerY + 0.7);
-
-    const commentY = blockTop + 28.5;
-    doc.text(`${strings.manualComment}:`, innerX + 1, commentY);
-    doc.line(margin + 30, commentY + 0.7, right - cardPad, commentY + 0.7);
-    yPosition += blockHeight + 4;
-  };
-
   if (detailControls.length > 0) {
     // Details continue on the current page when there is room for a
     // control header with its first card; the header check below keeps
@@ -5104,10 +4957,6 @@ export async function generateComplianceReportPDF(
     }
 
     if (control.unassessedAspects.length > 0) drawUnassessedPanel(control);
-
-    if (options.frameworkId === "bsi-it-grundschutz" && control.control.tier) {
-      drawManualAssessment(control.control.id);
-    }
 
     yPosition += 6;
   }

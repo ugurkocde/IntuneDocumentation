@@ -104,7 +104,7 @@ Maintain a per-publication rights register covering edition, attribution,
 modification, and redistribution inside customer reports.
 
 - Include: NIST (public domain), ASD Essential Eight (CC BY 4.0), NCSC Cyber
-  Essentials (Open Government Licence v3.0), BSI IT-Grundschutz (verify terms).
+  Essentials (Open Government Licence v3.0).
 - Reference by identifier with original summaries: ISO/IEC 27001, SOC 2, UK MOD
   Def Stan 05-138.
 - Exclude until licensed: CIS Controls (except a customer supplied crosswalk).
@@ -148,8 +148,8 @@ modification, and redistribution inside customer reports.
 ### Phase 0, contracts and gates
 
 Deliverables: subscription contract spec; paid-versus-free differentiation;
-committed framework rights register; BSI reuse basis resolved; private-package
-boundary designed for licensed content. No application code.
+committed framework rights register; private-package boundary designed for
+licensed content. No application code.
 
 Acceptance: written and approved. This gates all coding.
 

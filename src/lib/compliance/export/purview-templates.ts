@@ -4,7 +4,6 @@ import type { AssessmentScope } from "../types";
 export type ExportFrameworkId =
   | "nist-800-53-r5"
   | "nist-csf-2"
-  | "bsi-it-grundschutz"
   | "iso-27001-2022"
   | "soc2-tsc"
   | "def-stan-05-138-i4"
@@ -88,7 +87,6 @@ export const PURVIEW_TEMPLATES: Readonly<
     displayName: "Digital Operational Resilience Act",
     verifiedAt,
   },
-  "bsi-it-grundschutz": null,
 };
 
 export function isExportFrameworkId(value: string): value is ExportFrameworkId {

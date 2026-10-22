@@ -1,10 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import { assessCapabilities, assessCompliance } from "../compliance/engine";
+import {
+  assessCapabilities,
+  assessCompliance,
+  assessFramework,
+} from "../compliance/engine";
 import { createEvidenceManifest } from "../compliance/manifest";
 import { assignmentDetails } from "../compliance/assignments";
 import { DetailedIntuneService } from "../intune-detailed-client";
 import type { DetailedExportData } from "../configuration-analyzer";
-import type { ComplianceCapability } from "../compliance/types";
+import type {
+  AssessmentScope,
+  ComplianceCapability,
+  FrameworkDefinition,
+} from "../compliance/types";
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 
 const assigned = [
@@ -30,6 +38,34 @@ function data(...policies: any[]): DetailedExportData {
     securityBaselines: [],
     scripts: { windows: [], macOS: [] },
   };
+}
+// A framework with one macOS only requirement that minimum OS versions
+// support in part.
+const MAC_ONLY: FrameworkDefinition = {
+  id: "synthetic-mac-only",
+  name: "Synthetic framework",
+  version: "1",
+  controls: {
+    "MAC-1": {
+      id: "MAC-1",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
+      platforms: ["macos"],
+      unassessedAspects: [
+        "Installed OS security-update support is not verified.",
+      ],
+      title: "Synthetic current macOS versions",
+      summary: "Synthetic requirement.",
+    },
+  },
+  mappings: { "macos-minimum-os-version": ["MAC-1"] },
+};
+function macOnly(exportData: DetailedExportData, scope: AssessmentScope = {}) {
+  return assessFramework(
+    assessCapabilities(exportData, COMPLIANCE_CAPABILITIES, scope),
+    MAC_ONLY,
+    scope,
+  ).controls[0]!;
 }
 function capability(exportData: DetailedExportData, id: string) {
   return assessCapabilities(exportData).find(
@@ -311,13 +347,9 @@ describe("evidence integrity regressions", () => {
       nist.controls.find((control) => control.control.id === "SC-28")
         ?.capabilityIds,
     ).toEqual(["windows-disk-encryption"]);
-    const bsi = result.frameworks.find(
-      (framework) => framework.framework.id === "bsi-it-grundschutz",
-    )!;
-    expect(
-      bsi.controls.find((control) => control.control.id === "SYS.2.4.A6")
-        ?.status,
-    ).toBe("notApplicable");
+    expect(macOnly(exportData, exportData.assessmentScope).status).toBe(
+      "notApplicable",
+    );
     exportData.assessmentScope = { platforms: ["ios"] };
     const iosNist = assessCompliance(exportData).frameworks.find(
       (framework) => framework.framework.id === "nist-800-53-r5",
@@ -347,14 +379,9 @@ describe("evidence integrity regressions", () => {
     ).toBe(0);
   });
   it("keeps minimum OS evidence partial even when a value is present", () => {
-    const bsi = assessCompliance(
+    const control = macOnly(
       data(policy("macOSCompliancePolicy", { osMinimumVersion: "10.1" })),
-    ).frameworks.find(
-      (framework) => framework.framework.id === "bsi-it-grundschutz",
-    )!;
-    const control = bsi.controls.find(
-      (control) => control.control.id === "SYS.2.4.A6",
-    )!;
+    );
     expect(control.status).toBe("partialEvidence");
     expect(control.unassessedAspects.join(" ")).toContain("support");
   });

@@ -72,12 +72,6 @@ export const SAMPLE_REPORTS: readonly SampleReport[] = [
     locale: "en",
   },
   {
-    frameworkId: "bsi-it-grundschutz",
-    label: "BSI IT-Grundschutz",
-    file: "bsi-it-grundschutz.pdf",
-    locale: "de",
-  },
-  {
     frameworkId: "def-stan-05-138-i4",
     label: "Def Stan 05-138",
     file: "def-stan-05-138.pdf",

@@ -2,7 +2,6 @@ import type { DetailedExportData } from "../../../../src/lib/configuration-analy
 import type { TokenProvider } from "../../../../src/lib/graph-client";
 import {
   assessCompliance,
-  BSI_IT_GRUNDSCHUTZ,
   compareControlIds,
   createEvidenceManifest,
   CYBER_ESSENTIALS,
@@ -88,7 +87,6 @@ const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "soc2-tsc": () => SOC_2,
   "nist-800-53-r5": () => NIST_800_53,
   "nist-csf-2": () => NIST_CSF,
-  "bsi-it-grundschutz": () => BSI_IT_GRUNDSCHUTZ,
   "def-stan-05-138-i4": () => DEF_STAN_05_138,
   "cyber-essentials-v3": () => CYBER_ESSENTIALS,
   "nist-800-171-r2": () => NIST_800_171,

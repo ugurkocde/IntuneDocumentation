@@ -1,6 +1,6 @@
 ---
 title: "Compliance evidence"
-description: "Map your Intune configuration to frameworks such as NIS2, ISO/IEC 27001, SOC 2, NIST and BSI IT-Grundschutz, and export an evidence report for your auditor."
+description: "Map your Intune configuration to frameworks such as NIS2, ISO/IEC 27001, SOC 2 and NIST, and export an evidence report for your auditor."
 ---
 
 Auditors, insurers and customer questionnaires all ask the same thing: show me that the control is in place. For the technical controls, the answer is in your Intune configuration. Finding it by hand means screenshots, exports and a spreadsheet.
@@ -19,7 +19,7 @@ Auditors, insurers and customer questionnaires all ask the same thing: show me t
 
 ## Supported frameworks [#frameworks]
 
-The app supports thirteen frameworks. NIS2 and DORA are available in the desktop app only.
+The app supports twelve frameworks. NIS2 and DORA are available in the desktop app only.
 
 | Framework | What is covered |
 | --- | --- |
@@ -31,7 +31,6 @@ The app supports thirteen frameworks. NIS2 and DORA are available in the desktop
 | HIPAA Security Rule | Selected 45 CFR Part 164 safeguards for electronic protected health information. Administrative and physical safeguards need separate assessment. |
 | NIST SP 800-53 | Security and privacy controls for information systems and organizations. |
 | NIST CSF 2.0 | Outcome-based guidance for managing and reducing cybersecurity risk. |
-| BSI IT-Grundschutz | Baseline safeguards for systematic information security management. The report is in German. |
 | Def Stan 05-138 | UK MOD supplier controls under DEFCON 658, with the Cyber Risk Profile levels at which each applies. |
 | Cyber Essentials | The five NCSC control themes mapped to managed-device configuration evidence. |
 | NIST SP 800-171 Rev. 2 | Requirements for protecting controlled unclassified information, as referenced by CMMC 2.0 Level 2. |
@@ -58,7 +57,7 @@ The app remembers your choice. To switch later, use the framework menu at the to
 </Step>
 </Steps>
 
-<Screenshot src="/images/desktop/compliance-picker.png" alt="The Choose a compliance framework screen with cards for ASD Essential Eight, ISO/IEC 27001, NIS2 Directive, SOC 2, NIST SP 800-53, NIST CSF 2.0, BSI IT-Grundschutz, Def Stan 05-138 and Cyber Essentials. The two NIST SP 800-171 cards are further down the screen" caption="Each card shows the framework version and how much of it maps to Intune evidence." width={2880} height={1800} />
+<Screenshot src="/images/desktop/compliance-picker.png" alt="The Choose a compliance framework screen with cards for ASD Essential Eight, ISO/IEC 27001, NIS2 Directive, SOC 2, NIST SP 800-53, NIST CSF 2.0, Def Stan 05-138 and Cyber Essentials. The two NIST SP 800-171 cards are further down the screen" caption="Each card shows the framework version and how much of it maps to Intune evidence." width={2880} height={1800} />
 
 ## Set the scope [#scope]
 
@@ -79,7 +78,7 @@ The framework screen has four parts, from summary to detail.
 3. **Check results.** Three counts across all technical checks in scope: <Ui>Matches expected value</Ui>, <Ui>Different value</Ui> and <Ui>Missing</Ui>, each with how many are in assigned policies.
 4. **Mapped controls.** Every control of the framework that has Intune evidence mappings.
 
-<Screenshot src="/images/desktop/compliance-framework.png" alt="Mapped controls for ISO/IEC 27001, such as 8.8 Technical vulnerability management with 5 of 6 safeguards in place and 7 match, 0 missing, 1 different" caption="Each mapped control shows its safeguards in place and how its checks turned out." width={2880} height={1800} />
+<Screenshot src="/images/desktop/compliance-framework.png" alt="Mapped controls for ISO/IEC 27001, such as 8.8 Operating system updates and minimum versions with 5 of 6 safeguards in place and 7 match, 0 missing, 1 different" caption="Each mapped control shows its safeguards in place and how its checks turned out." width={2880} height={1800} />
 
 Each control shows its id and title, a bar with its safeguards in place, for example <Ui>5 of 6 safeguards in place</Ui>, and a summary of its checks, for example <Ui>7 match, 0 missing, 1 different</Ui>. Controls with mixed policy evidence are listed first.
 
@@ -155,10 +154,6 @@ Every framework report is designed to go straight to an auditor, an insurer or a
 - **Evidence register.** Every piece of evidence with its policy, type, setting, value and assignment, with a short guide on how to read the report.
 
 The PDF is bookmarked by control family. Status is always shown with a shape and a label as well as a colour, so the report stays readable when printed in black and white.
-
-### BSI IT-Grundschutz in German [#bsi]
-
-The BSI IT-Grundschutz report is written entirely in German. For each requirement it adds a block for the manual assessment (IT-Grundschutz-Check) with fields for implementation status, the person responsible, a target date and a comment. Your reviewer fills these in, independently of the automated technical evidence.
 
 ### See a sample first [#samples]
 

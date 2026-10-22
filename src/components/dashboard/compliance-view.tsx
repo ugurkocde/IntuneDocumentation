@@ -102,13 +102,6 @@ const FRAMEWORK_OPTIONS: ReadonlyArray<{
       "Outcome-based guidance for managing and reducing cybersecurity risk.",
   },
   {
-    id: "bsi-it-grundschutz",
-    label: "BSI IT-Grundschutz",
-    shortLabel: "BSI",
-    description:
-      "Baseline safeguards for systematic information security management.",
-  },
-  {
     id: "def-stan-05-138-i4",
     label: "Def Stan 05-138",
     shortLabel: "Def Stan",

@@ -1,7 +1,7 @@
 # Compliance evidence engine
 
-Maps an Intune tenant export to evidence for 13 frameworks: ISO/IEC 27001:2022, SOC 2, NIST
-SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0, BSI IT-Grundschutz,
+Maps an Intune tenant export to evidence for 12 frameworks: ISO/IEC 27001:2022, SOC 2, NIST
+SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0,
 UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, ASD Essential Eight
 with target Maturity Levels 1, 2 and 3, NIS2 (Directive (EU) 2022/2555,
 Art. 21(2)), DORA (Regulation (EU) 2022/2554 with RTS (EU) 2024/1774) and the
@@ -35,11 +35,8 @@ HIPAA Security Rule (45 CFR Part 164, Subpart C).
 6. **Mappings are data.** Capability-to-control tables live in `frameworks/`
    and can be reviewed without touching detection logic. ISO/IEC 27001 and the
    SOC 2 Trust Services Criteria are referenced by identifier with original
-   summaries. NIST is public domain; BSI mobile Bausteine (SYS.3.2.1,
-   SYS.3.2.2) are mapped at
-   requirement level, verified against the Edition 2023 Baustein PDFs, while
-   the remaining Bausteine stay at Baustein level until verified the same way.
-   Only requirements with technical Intune evidence are listed as controls;
+   titles and summaries; no ISO title repeats an Annex A title. NIST is public
+   domain. Only requirements with technical Intune evidence are listed as controls;
    organizational requirements are intentionally absent. Def Stan 05-138 is
    marked "Copying Only as Agreed with DStan", so it is referenced by control
    identifier with original titles and summaries, never the official wording.
@@ -231,7 +228,7 @@ always unverified by this configuration-only engine.
 Pass `assessmentScope` on an export, or the second argument to
 `assessCompliance`, to select platforms and a Def Stan risk level. The dashboard
 provides these controls. Policy absence and empty inventory counts never
-automatically exclude platforms. Platform-specific BSI requirements outside
+automatically exclude platforms. Platform-specific requirements outside
 scope become `notApplicable`; a general control lacking a detector for the
 selected platform becomes `notAssessed`. Outside-scope controls do not affect
 the applicable denominator or deviation counters. Tenant access capabilities
@@ -281,7 +278,7 @@ version, signal definitions, control metadata and mappings. Bump the ruleset
 version whenever evaluation logic changes. Fingerprints detect changes; they
 are not signatures or independent proof of authentic tenant data.
 
-Publisher references use Microsoft, BSI, NIST, NCSC, ISO, AICPA and GOV.UK.
+Publisher references use Microsoft, NIST, NCSC, ISO, AICPA and GOV.UK.
 Reference review dates are not certification or independent validation of every
 licensed standard requirement. Third-party document mirrors are not sources.
 
@@ -407,9 +404,9 @@ outside the legacy positive/negative predicates are retained as comparisons
 instead of disappearing. The shared 14-day update threshold is a supporting
 configuration check, not a framework-specific remediation verdict.
 
-The review covers all ten framework definitions: ISO 27001, SOC 2, NIST 800-53,
-NIST CSF, BSI IT-Grundschutz, Def Stan, Cyber Essentials, both NIST 800-171
-revisions and Essential Eight. Every listed in-scope requirement has mapped
+The review covers every framework definition: ISO 27001, SOC 2, NIST 800-53,
+NIST CSF, Def Stan, Cyber Essentials, both NIST 800-171 revisions and
+Essential Eight. Every listed in-scope requirement has mapped
 checks or an explicit `unavailableCheck` with a reason. Automated tests enforce
 this invariant and exercise matching and different configurations across every
 framework mapping. It does not expand the licensed/selected framework subsets
@@ -583,7 +580,7 @@ without it. `provenance.deviceState` stays `notCollected` (per-device state is
 not collected) and `provenance.policyStatusSummary` records whether the annex
 was collected (evidence record schema version 2; version 3 adds the
 capability `alternative` states, see Alternative capabilities). The
-framework PDF adds an annex (English and German) listing the cited device policies; a policy without
+framework PDF adds an annex listing the cited device policies; a policy without
 a row in the Intune summary shows "No status reported", never zero.
 
 ## Alternative capabilities and review corrections (ruleset 2026.10.5)
@@ -763,3 +760,13 @@ Corrections from the live PDF review of 21 October 2026.
   collected as context only.
 - **Headline.** "N of M technical safeguards are set up and switched on in
   Intune and Entra."
+
+## Removed frameworks and stored data
+
+`isAssessedFramework(id)` (engine) is true only for a framework the engine
+still assesses. Snapshots saved by an earlier version can hold a framework
+that was removed since: `withAssessedFrameworks` (snapshots/projection) and
+the desktop snapshot index drop it on read, so History, Compare and Portfolio
+never show or count it. A stored framework selection naming it falls back to
+the picker, a request naming it is refused as an unknown framework, and a
+management baseline file for it is rejected as another framework.

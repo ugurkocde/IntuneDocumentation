@@ -4,7 +4,6 @@ import {
   assessCapabilities,
   assessCompliance,
   assessFramework,
-  BSI_IT_GRUNDSCHUTZ,
   compareControlIds,
   ISO_27001,
   NIST_800_53,
@@ -404,9 +403,9 @@ describe("compliance engine", () => {
 
 describe("framework assessment", () => {
   it("sorts control ids naturally by numeric segments", () => {
-    expect(["SYS.2.2.3.A14", "SYS.2.2.3.A4"].sort(compareControlIds)).toEqual([
-      "SYS.2.2.3.A4",
-      "SYS.2.2.3.A14",
+    expect(["3.13.11", "3.13.8"].sort(compareControlIds)).toEqual([
+      "3.13.8",
+      "3.13.11",
     ]);
     expect(["SC-28", "SC-7"].sort(compareControlIds)).toEqual([
       "SC-7",
@@ -436,11 +435,6 @@ describe("framework assessment", () => {
     const prDs01 = csf.controls.find((c) => c.control.id === "PR.DS-01");
     expect(prDs01?.status).toBe("partialEvidence");
     expect(prDs01?.enforcedCapabilityIds).toEqual(["windows-disk-encryption"]);
-
-    const bsi = assessFramework(capabilities, BSI_IT_GRUNDSCHUTZ);
-    const con1 = bsi.controls.find((c) => c.control.id === "CON.1");
-    expect(con1?.status).toBe("partialEvidence");
-    expect(con1?.enforcedCapabilityIds).toEqual(["windows-disk-encryption"]);
   });
 
   it("only reports evidenceFound when every mapped capability is enforced", () => {
@@ -483,7 +477,7 @@ describe("framework assessment", () => {
     expect(si2?.enforcedCapabilityIds).toHaveLength(4);
   });
 
-  it("assesses BSI mobile requirements at requirement level", () => {
+  it("reads mobile app source and integrity restrictions", () => {
     const data = emptyExportData();
     data.deviceConfigurations = [
       {
@@ -504,23 +498,28 @@ describe("framework assessment", () => {
       },
     ];
 
-    const bsi = assessFramework(assessCapabilities(data), BSI_IT_GRUNDSCHUTZ);
+    expect(
+      capabilityResult(data, "android-app-source-restriction").status,
+    ).toBe("enforced");
+    // A compliance policy requirement, assigned.
+    expect(capabilityResult(data, "ios-jailbreak-block").status).toBe(
+      "requirementAssigned",
+    );
+    expect(capabilityResult(data, "android-device-integrity").status).toBe(
+      "noEvidence",
+    );
+    expect(capabilityResult(data, "ios-passcode-required").status).toBe(
+      "noEvidence",
+    );
 
-    // SYS.3.2.1.A8 is fully evidenced (only the Android capability maps to it).
-    const a8 = bsi.controls.find((c) => c.control.id === "SYS.3.2.1.A8");
-    expect(a8?.status).toBe("partialEvidence");
-    expect(a8?.control.tier).toBe("Basis-Anforderung");
-
-    // SYS.3.2.2.A17 needs both iOS and Android integrity; only iOS is enforced.
-    const a17 = bsi.controls.find((c) => c.control.id === "SYS.3.2.2.A17");
-    expect(a17?.status).toBe("partialEvidence");
-    expect(a17?.enforcedCapabilityIds).toEqual(["ios-jailbreak-block"]);
-
-    const a4 = bsi.controls.find((c) => c.control.id === "SYS.3.2.1.A4");
-    expect(a4?.status).toBe("noEvidence");
+    // ISO 8.1 also needs Android integrity, which is not set here.
+    const iso = assessFramework(assessCapabilities(data), ISO_27001);
+    const control = iso.controls.find((c) => c.control.id === "8.1");
+    expect(control?.status).toBe("partialEvidence");
+    expect(control?.enforcedCapabilityIds).toEqual(["ios-jailbreak-block"]);
   });
 
-  it("assesses BSI Windows and macOS requirements at requirement level", () => {
+  it("reads Windows restrictions and macOS app source settings", () => {
     const data = emptyExportData();
     data.deviceConfigurations = [
       {
@@ -542,26 +541,24 @@ describe("framework assessment", () => {
       },
     ];
 
-    const capabilities = assessCapabilities(data);
-    const bsi = assessFramework(capabilities, BSI_IT_GRUNDSCHUTZ);
-
-    expect(
-      bsi.controls.find((c) => c.control.id === "SYS.2.2.3.A4")?.status,
-    ).toBe("evidenceFound");
-    expect(
-      bsi.controls.find((c) => c.control.id === "SYS.2.2.3.A14")?.status,
-    ).toBe("evidenceFound");
+    expect(capabilityResult(data, "windows-telemetry-minimized").status).toBe(
+      "enforced",
+    );
+    expect(capabilityResult(data, "windows-cortana-disabled").status).toBe(
+      "enforced",
+    );
     // microsoftAccountBlocked: false is the unconfigured default, not coverage.
     expect(
-      bsi.controls.find((c) => c.control.id === "SYS.2.2.3.A6")?.status,
+      capabilityResult(data, "windows-microsoft-account-blocked").status,
     ).toBe("noEvidence");
-    // SYS.2.4.A2 needs SIP (compliance policy) and Gatekeeper; only Gatekeeper here.
-    expect(
-      bsi.controls.find((c) => c.control.id === "SYS.2.4.A2")?.status,
-    ).toBe("partialEvidence");
-    expect(
-      bsi.controls.find((c) => c.control.id === "SYS.2.4.A4")?.status,
-    ).toBe("partialEvidence");
+    // Gatekeeper is set; SIP comes from a compliance policy, absent here.
+    expect(capabilityResult(data, "macos-gatekeeper").status).toBe("enforced");
+    expect(capabilityResult(data, "macos-system-integrity").status).toBe(
+      "noEvidence",
+    );
+    expect(capabilityResult(data, "macos-disk-encryption").status).toBe(
+      "enforced",
+    );
   });
 
   it("produces a full assessment with disclaimer and all frameworks", () => {
@@ -572,7 +569,6 @@ describe("framework assessment", () => {
     expect(assessment.frameworks.map((f) => f.framework.id)).toEqual([
       "nist-800-53-r5",
       "nist-csf-2",
-      "bsi-it-grundschutz",
       "iso-27001-2022",
       "soc2-tsc",
       "def-stan-05-138-i4",
@@ -745,7 +741,6 @@ describe("framework assessment", () => {
     for (const framework of [
       NIST_800_53,
       NIST_CSF,
-      BSI_IT_GRUNDSCHUTZ,
       ISO_27001,
       SOC_2,
       DEF_STAN_05_138,

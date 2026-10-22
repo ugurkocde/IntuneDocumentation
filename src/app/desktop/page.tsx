@@ -52,7 +52,7 @@ import reportSummary from "../../../public/landing/report-summary.png";
 
 const SITE_URL = "https://intunedocumentation.com";
 const title = "Intune Documentation Desktop App";
-const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 13 frameworks including NIS2, DORA and HIPAA, a one-page management report, and multi-tenant support for MSPs. ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`;
+const description = `Document Microsoft Intune from your own machine with your own Entra app registration. Word and PDF exports, compliance evidence for 12 frameworks including NIS2, DORA and HIPAA, a one-page management report, and multi-tenant support for MSPs. ${DESKTOP_REFUND_DAYS}-day money-back guarantee.`;
 
 export const metadata: Metadata = {
   title,
@@ -177,9 +177,9 @@ const features = [
   },
   {
     icon: ShieldCheck,
-    title: "Compliance evidence for 13 frameworks",
+    title: "Compliance evidence for 12 frameworks",
     detail:
-      "Map your configuration to NIS2, DORA, ISO/IEC 27001, SOC 2, HIPAA, NIST, BSI IT-Grundschutz, Cyber Essentials, Essential Eight, and more. Save the same assessment as an Excel and CSV evidence register or as a Purview evidence pack for Compliance Manager. Each report is built to hand to an auditor, with sample reports to preview.",
+      "Map your configuration to NIS2, DORA, ISO/IEC 27001, SOC 2, HIPAA, NIST, Cyber Essentials, Essential Eight, and more. Save the same assessment as an Excel and CSV evidence register or as a Purview evidence pack for Compliance Manager. Each report is built to hand to an auditor, with sample reports to preview.",
     href: "/compliance",
   },
   {

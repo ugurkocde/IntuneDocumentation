@@ -63,10 +63,6 @@ export const SAMPLE_EXCERPTS: Readonly<
     { controlId: "ML1-MAC-01", status: "partialEvidence" },
     { controlId: "ML1-PO-07", status: "conflictingEvidence" },
   ],
-  "bsi-it-grundschutz": [
-    { controlId: "SYS.2.2.3.A5", status: "partialEvidence" },
-    { controlId: "SYS.2.2.3.A4", status: "noEvidence" },
-  ],
   "def-stan-05-138-i4": [
     { controlId: "2317", status: "partialEvidence" },
     { controlId: "2426", status: "partialEvidence" },
@@ -77,7 +73,6 @@ export const SAMPLE_EXCERPTS: Readonly<
 const REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-53-r5": "N53",
   "nist-csf-2": "CSF",
-  "bsi-it-grundschutz": "BSI",
   "iso-27001-2022": "ISO",
   "soc2-tsc": "SOC",
   "def-stan-05-138-i4": "DEF",

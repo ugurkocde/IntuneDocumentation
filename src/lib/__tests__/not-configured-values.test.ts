@@ -340,7 +340,8 @@ describe("German report text for plain check values and not configured reasons",
   it("prints the update ring and scan reasons in German in a German report", async () => {
     const text = extractPdfStreamText(
       await generateComplianceReportPDF(data([pilotRing, restrictions]), {
-        frameworkId: "bsi-it-grundschutz",
+        frameworkId: "iso-27001-2022",
+        locale: "de",
       }),
     );
     expect(text).toContain("In diesem Updatering ist keine Frist");

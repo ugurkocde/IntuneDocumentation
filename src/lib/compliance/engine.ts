@@ -21,7 +21,6 @@ import {
   TENANT_POLICY_FAMILIES,
   tenantPolicySettingId,
 } from "./tenant-policies";
-import { BSI_IT_GRUNDSCHUTZ } from "./frameworks/bsi-it-grundschutz";
 import { CYBER_ESSENTIALS } from "./frameworks/cyber-essentials";
 import { DEF_STAN_05_138 } from "./frameworks/def-stan-05-138";
 import { ISO_27001 } from "./frameworks/iso-27001";
@@ -1120,6 +1119,40 @@ export function assessFramework(
   };
 }
 
+// Every framework the engine assesses, in report order.
+function assessedFrameworks(
+  essentialEightMaturityLevel: AssessmentScope["essentialEightMaturityLevel"],
+): FrameworkDefinition[] {
+  return [
+    NIST_800_53,
+    NIST_CSF,
+    ISO_27001,
+    SOC_2,
+    DEF_STAN_05_138,
+    CYBER_ESSENTIALS,
+    NIST_800_171,
+    NIST_800_171_R3,
+    essentialEightFramework(essentialEightMaturityLevel),
+    NIS2,
+    DORA,
+    HIPAA_SECURITY_RULE,
+  ];
+}
+
+let assessedIds: ReadonlySet<string> | undefined;
+
+/**
+ * Whether the engine still assesses this framework. Assessments stored by an
+ * earlier version can name a framework that was removed since; readers drop
+ * it so it is never shown or counted.
+ */
+export function isAssessedFramework(frameworkId: unknown): boolean {
+  assessedIds ??= new Set(
+    assessedFrameworks(undefined).map((framework) => framework.id),
+  );
+  return typeof frameworkId === "string" && assessedIds.has(frameworkId);
+}
+
 export function assessCompliance(
   data: ComplianceExportData,
   scope: AssessmentScope = data.assessmentScope ?? {},
@@ -1149,24 +1182,8 @@ export function assessCompliance(
         : "notCollected",
       effectiveAccess: "unverified",
     },
-    frameworks: [
-      assessFramework(capabilities, NIST_800_53, scope),
-      assessFramework(capabilities, NIST_CSF, scope),
-      assessFramework(capabilities, BSI_IT_GRUNDSCHUTZ, scope),
-      assessFramework(capabilities, ISO_27001, scope),
-      assessFramework(capabilities, SOC_2, scope),
-      assessFramework(capabilities, DEF_STAN_05_138, scope),
-      assessFramework(capabilities, CYBER_ESSENTIALS, scope),
-      assessFramework(capabilities, NIST_800_171, scope),
-      assessFramework(capabilities, NIST_800_171_R3, scope),
-      assessFramework(
-        capabilities,
-        essentialEightFramework(scope.essentialEightMaturityLevel),
-        scope,
-      ),
-      assessFramework(capabilities, NIS2, scope),
-      assessFramework(capabilities, DORA, scope),
-      assessFramework(capabilities, HIPAA_SECURITY_RULE, scope),
-    ],
+    frameworks: assessedFrameworks(scope.essentialEightMaturityLevel).map(
+      (framework) => assessFramework(capabilities, framework, scope),
+    ),
   };
 }

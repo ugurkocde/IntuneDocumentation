@@ -260,13 +260,13 @@ export interface FrameworkControl {
   /** German title for German reports, where the framework has an official German text. */
   titleDe?: string;
   summary: string;
-  /** Requirement tier where the framework defines one (e.g. BSI Basis/Standard). */
+  /** Requirement tier where the framework defines one (e.g. Def Stan risk levels). */
   tier?: string;
   evidenceStrength?: "direct" | "supporting";
   unassessedAspects?: readonly string[];
   platforms?: readonly CompliancePlatform[];
   riskLevels?: readonly number[];
-  granularity?: "requirement" | "buildingBlock" | "theme";
+  granularity?: "requirement" | "theme";
   /** Equivalent identifiers in national transpositions, e.g. scheme "DE". */
   aliases?: readonly { scheme: string; id: string }[];
 }

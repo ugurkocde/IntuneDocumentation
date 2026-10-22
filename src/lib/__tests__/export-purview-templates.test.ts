@@ -41,7 +41,6 @@ describe("Purview template mapping", () => {
       "Digital Operational Resilience Act",
     );
     expect(purviewTemplateFor("nist-800-171-r3")?.note).toContain("revision");
-    expect(purviewTemplateFor("bsi-it-grundschutz")).toBeNull();
     expect(purviewTemplateFor("unknown-framework")).toBeUndefined();
   });
 

@@ -53,7 +53,6 @@ function result(instances: any[], assigned = true) {
 const matrix = [
   ["nist-800-53-r5", "CM-6"],
   ["nist-csf-2", "PR.PS-01"],
-  ["bsi-it-grundschutz", "SYS.2.1"],
   ["iso-27001-2022", "8.9"],
   ["soc2-tsc", "CC6.8"],
   ["def-stan-05-138-i4", "2418"],

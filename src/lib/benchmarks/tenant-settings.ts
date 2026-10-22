@@ -19,12 +19,13 @@
  * only, and profiles of older types can carry equivalent settings. Their
  * platforms are read from the collection (verified with Lokka on 2026-10-22):
  * device configurations and update rings by their @odata.type prefix
- * (windows..., macOS..., ios..., android..., aosp...), administrative
- * templates are Windows, and security baseline and endpoint security intents
- * carry only a templateId, whose platform the collector does not read (the
- * lab tenant holds a macOS intent), so an intent may be on any platform. A
- * family that was not collected completely, or a type of unknown platform,
- * may also hold profiles for any platform.
+ * (windows..., macOS..., ios..., android..., aosp...) or, for the Windows
+ * only sharedPCConfiguration and editionUpgradeConfiguration, by name;
+ * administrative templates are Windows, and security baseline and endpoint
+ * security intents carry only a templateId, whose platform the collector
+ * does not read (the lab tenant holds a macOS intent), so an intent may be
+ * on any platform. A family that was not collected completely, or a type of
+ * unknown platform, may also hold profiles for any platform.
  */
 import type { DetailedExportData } from "../configuration-analyzer";
 import { summarizeAssignments } from "../compliance/assignments";
@@ -200,6 +201,16 @@ const PLATFORM_PREFIXES: ReadonlyArray<[string, string]> = [
   ["linux", "linux"],
 ];
 
+// Windows only device configuration types without a platform prefix: Shared
+// PC and Windows 10 edition upgrade, from the Graph schema and accepted by
+// isof() on /deviceManagement/deviceConfigurations (beta, verified with Lokka
+// on 2026-10-22). Other unprefixed types (the Apple, VPN and email bases,
+// unsupportedDeviceConfiguration) stay of unknown platform.
+const WINDOWS_TYPES: ReadonlySet<string> = new Set([
+  "sharedpcconfiguration",
+  "editionupgradeconfiguration",
+]);
+
 /** The platform family of a Settings Catalog platforms token or a device configuration type name. */
 function platformFamily(value: string): string | null {
   const name = value
@@ -207,6 +218,7 @@ function platformFamily(value: string): string | null {
     .replace(/^#/, "")
     .replace(/^microsoft\.graph\./, "")
     .toLowerCase();
+  if (WINDOWS_TYPES.has(name)) return "windows";
   return (
     PLATFORM_PREFIXES.find(([prefix]) => name.startsWith(prefix))?.[1] ?? null
   );

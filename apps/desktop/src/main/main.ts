@@ -1582,9 +1582,9 @@ function registerIpc(): void {
         auth?.getOwnerKey() === owner &&
         signedInTenant()?.toLowerCase() === tenantId,
       // After the snapshot of the last collection was saved.
-      recordRun: async (owner, tenantId, collectedAt, run) => {
+      recordRuns: async (owner, tenantId, collectedAt, runs) => {
         await snapshotSaving;
-        return historyHandlers.recordBenchmarkRun(owner, tenantId, collectedAt, run);
+        return historyHandlers.recordBenchmarkRuns(owner, tenantId, collectedAt, runs);
       },
       history: historyHandlers,
       tenantLabel: tenantLabelOf,

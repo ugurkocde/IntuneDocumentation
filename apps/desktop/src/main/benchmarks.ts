@@ -127,9 +127,10 @@ export interface BenchmarkWorkDeps {
   exceptions: Pick<BenchmarkExceptionStore, "list" | "set" | "remove">;
   // Still the account that asked; exception writes are dropped otherwise.
   isCurrent(owner: string, tenantId: string): boolean;
-  // Adds the stored run to the snapshot of the collection it assessed, once
-  // that snapshot is saved; false when it is not stored (history off).
-  recordRun(owner: string, tenantId: string, collectedAt: string, run: StoredBenchmarkRun): Promise<boolean>;
+  // Adds the stored runs (one per Level) to the snapshot of the collection
+  // they assessed in one write, once that snapshot is saved; false when they
+  // are not stored (history off).
+  recordRuns(owner: string, tenantId: string, collectedAt: string, runs: StoredBenchmarkRun[]): Promise<boolean>;
   history: {
     benchmarkHistory(
       owner: string,
@@ -167,8 +168,9 @@ export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
       deps.log("warn", "benchmark exceptions not read", { purpose, message: errorText(error) });
       return [];
     });
-  // All runs of an assessment are checked against the stored schema first,
-  // so either every Level is recorded or the view says why none was.
+  // All runs of an assessment are checked against the stored schema first
+  // and written together, so either every Level is recorded or the view says
+  // why none was.
   async function record(
     owner: string,
     tenantId: string,
@@ -186,9 +188,9 @@ export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
       return { recorded: false, reason: `This comparison is not stored in history. ${errorText(error)}` };
     }
     try {
-      let recorded = true;
-      for (const run of runs) recorded = (await deps.recordRun(owner, tenantId, collectedAt, run)) && recorded;
-      return recorded ? { recorded: true, reason: null } : { recorded: false, reason: RUN_NOT_KEPT };
+      return (await deps.recordRuns(owner, tenantId, collectedAt, runs))
+        ? { recorded: true, reason: null }
+        : { recorded: false, reason: RUN_NOT_KEPT };
     } catch (error) {
       deps.log("warn", "benchmark run not stored", { message: errorText(error) });
       return { recorded: false, reason: RUN_NOT_STORED };

@@ -378,19 +378,21 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     return runs;
   }
 
-  // With history on, adds the stored form of a run to the snapshot of the
-  // collection it assessed. False when history is off or unavailable, or no
-  // snapshot of that collection is stored (history was off when it was
-  // collected, or its save failed). The run is validated strictly first, so
-  // nothing but ids, result codes and the digest is ever written.
-  async function recordBenchmarkRun(
+  // With history on, adds the stored form of the runs of one comparison (one
+  // per Level) to the snapshot of the collection it assessed, in one write,
+  // so either every Level is stored or none is. False when history is off or
+  // unavailable, or no snapshot of that collection is stored (history was off
+  // when it was collected, or its save failed). The runs are validated
+  // strictly first, so nothing but ids, result codes and the digest is ever
+  // written.
+  async function recordBenchmarkRuns(
     owner: string,
     tenant: string,
     collectedAt: string,
-    input: StoredBenchmarkRun,
+    inputs: readonly StoredBenchmarkRun[],
   ): Promise<boolean> {
     const session = { owner, tenant, started: generation };
-    const run = validateStoredRun(input);
+    const runs = inputs.map((input) => validateStoredRun(input));
     const settings = current(session, await deps.readSettings());
     if (!settings.keepHistory || store.unavailableReason()) return false;
     const entry = current(session, await store.list(tenant)).find((item) => item.collectedAt === collectedAt);
@@ -398,12 +400,15 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     const updated = await store.update(
       tenant,
       entry.id,
-      (projection) => ({ ...projection, benchmarks: withRun(snapshotRuns(projection), run) }),
+      (projection) => ({ ...projection, benchmarks: runs.reduce(withRun, snapshotRuns(projection)) }),
       () => isCurrent(session),
     );
     storedRuns.delete(`${tenant}|${entry.id}`);
     if (!updated) return false;
-    deps.log("info", "benchmark run stored", { results: run.results.length });
+    deps.log("info", "benchmark runs stored", {
+      runs: runs.length,
+      results: runs.reduce((sum, run) => sum + run.results.length, 0),
+    });
     deps.notifyHistoryChanged();
     return current(session, true);
   }
@@ -792,7 +797,7 @@ export function registerHistoryIpc(deps: HistoryIpcDeps) {
     changesFor,
     // Benchmark runs: stored on the assessed collection's snapshot, trend
     // and drift of the signed in tenant, and the MSP portfolio.
-    recordBenchmarkRun,
+    recordBenchmarkRuns,
     benchmarkHistory,
     benchmarkPortfolio,
     // A snapshot was saved or removed: comparisons are made again.

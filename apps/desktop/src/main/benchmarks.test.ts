@@ -2,6 +2,7 @@ import type { IpcMainInvokeEvent } from "electron";
 import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BenchmarkAssessmentView } from "../shared/ipc-types";
+import type { StoredBenchmarkRun as StoredRun } from "../../../../src/lib/benchmarks/history";
 
 // Handler level tests of the CIS Benchmarks gate, the content client and
 // the memory only cache. Synthetic content only. The licence is a stub of
@@ -659,7 +660,7 @@ describe("benchmark work wiring", () => {
         remove: vi.fn(async () => stored),
       },
       isCurrent: vi.fn(() => true),
-      recordRun: vi.fn(async () => true),
+      recordRuns: vi.fn(async (..._args: [string, string, string, StoredRun[]]) => true),
       history: {
         benchmarkHistory: vi.fn(async () => ({ enabled: true, available: true, reason: null, trend: [], drift: [], runs: [] })),
         benchmarkPortfolio: vi.fn(async () => ({ available: true, reason: null, benchmarks: [], selected: null, rows: [] })),
@@ -678,9 +679,11 @@ describe("benchmark work wiring", () => {
       ["1.2", "Fail"],
     ]);
     expect(assessment.levels[0]!.headline).toMatchObject({ rate: 0.5, adjusted: 1, exceptionIds: ["synthetic-exception-1"] });
-    expect(deps.recordRun).toHaveBeenCalledTimes(1);
-    const [owner, tenantId, collectedAt, run] = deps.recordRun.mock.calls[0] as unknown as [string, string, string, object];
+    expect(deps.recordRuns).toHaveBeenCalledTimes(1);
+    const [owner, tenantId, collectedAt, runs] = deps.recordRuns.mock.calls[0]!;
     expect([owner, tenantId, collectedAt]).toEqual([OWNER, TENANT, "2026-10-20T09:00:00.000Z"]);
+    expect(runs).toHaveLength(1);
+    const run = runs[0];
     expect(run).toMatchObject({
       benchmark: fixtures.BENCH,
       level: 1,
@@ -710,13 +713,13 @@ describe("benchmark work wiring", () => {
         settings: ["synthetic_alpha"],
       })),
     );
-    deps.recordRun.mockClear();
+    deps.recordRuns.mockClear();
     const tooMany = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: many, list: null });
     expect(tooMany.history).toEqual({
       recorded: false,
       reason: "This comparison is not stored in history. The stored benchmark run holds more than 5000 results.",
     });
-    expect(deps.recordRun).not.toHaveBeenCalled();
+    expect(deps.recordRuns).not.toHaveBeenCalled();
     expect(tooMany.recommendations).toHaveLength(5001);
 
     const badId = pack(
@@ -726,9 +729,9 @@ describe("benchmark work wiring", () => {
     const refused = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: badId, list: null });
     expect(refused.history?.recorded).toBe(false);
     expect(refused.history?.reason).toContain("an id is not 1 to 500 letters");
-    expect(deps.recordRun).not.toHaveBeenCalled();
+    expect(deps.recordRuns).not.toHaveBeenCalled();
 
-    deps.recordRun.mockResolvedValueOnce(false);
+    deps.recordRuns.mockResolvedValueOnce(false);
     const off = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
     expect(off.history).toEqual({ recorded: false, reason: RUN_NOT_KEPT });
 
@@ -749,11 +752,36 @@ describe("benchmark work wiring", () => {
     );
     const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: mixed, list: null });
     expect(assessment.history).toEqual({ recorded: true, reason: null });
-    const runs = deps.recordRun.mock.calls.map((call) => (call as unknown as [string, string, string, { level: number; results: unknown[] }])[3]);
+    expect(deps.recordRuns).toHaveBeenCalledTimes(1);
+    const runs = deps.recordRuns.mock.calls[0]![3];
     expect(runs.map((run) => [run.level, run.results])).toEqual([
       [1, [["1.1", "pass", []]]],
       [2, [["2.1", "fail", ["synthetic_beta"]]]],
     ]);
+  });
+
+  it("stores every Level of a comparison in one write, so a failed write stores none and says so", async () => {
+    const { deps, work } = workHarness();
+    const mixed = pack(
+      [{ settings: [choice("synthetic_alpha", "on"), choice("synthetic_beta", "on")] }],
+      [
+        { id: "1.1", title: PACK_TITLE, level: 1, settings: ["synthetic_alpha"] },
+        { id: "2.1", title: "Synthetic beta recommendation", level: 2, settings: ["synthetic_beta"] },
+      ],
+      2,
+    );
+    // A store that refuses a write holding Level 2 after it would have kept Level 1.
+    const stored: StoredRun[] = [];
+    deps.recordRuns.mockImplementation(async (_owner, _tenantId, _collectedAt, runs) => {
+      if (runs.some((run) => run.level === 2)) throw new Error("Synthetic write failure");
+      stored.push(...runs);
+      return true;
+    });
+    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: mixed, list: null });
+    expect(deps.recordRuns).toHaveBeenCalledTimes(1);
+    expect(deps.recordRuns.mock.calls[0]![3].map((run) => run.level)).toEqual([1, 2]);
+    expect(stored).toEqual([]);
+    expect(assessment.history).toEqual({ recorded: false, reason: RUN_NOT_STORED });
   });
 
   it("needs the owner's own collection", async () => {
@@ -765,13 +793,13 @@ describe("benchmark work wiring", () => {
     await expect(work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null })).rejects.toThrow(
       "Collect tenant data first.",
     );
-    expect(deps.recordRun).not.toHaveBeenCalled();
+    expect(deps.recordRuns).not.toHaveBeenCalled();
   });
 
   it("returns the assessment when exceptions or history cannot be used, logging reasons only", async () => {
     const { deps, work } = workHarness();
     deps.exceptions.list.mockRejectedValueOnce(new Error("The exceptions key could not be unlocked right now."));
-    deps.recordRun.mockRejectedValueOnce(new Error("The stored benchmark run has an invalid result 1."));
+    deps.recordRuns.mockRejectedValueOnce(new Error("The stored benchmark run has an invalid result 1."));
     const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
     expect(assessment.levels[0]!.headline).toMatchObject({ rate: 0.5, adjusted: null });
     expect(assessment.history).toEqual({ recorded: false, reason: RUN_NOT_STORED });
@@ -957,7 +985,7 @@ describe("main process wiring", () => {
     expect(registration).toMatch(/exceptions: benchmarkExceptions,/);
     expect(registration).toMatch(/auth\?\.getOwnerKey\(\) === owner &&\s+signedInTenant\(\)\?\.toLowerCase\(\) === tenantId/);
     expect(registration).toMatch(
-      /recordRun: async \(owner, tenantId, collectedAt, run\) => \{\s+await snapshotSaving;\s+return historyHandlers\.recordBenchmarkRun\(/,
+      /recordRuns: async \(owner, tenantId, collectedAt, runs\) => \{\s+await snapshotSaving;\s+return historyHandlers\.recordBenchmarkRuns\(/,
     );
     expect(registration).toMatch(/history: historyHandlers,/);
     // Manual and scheduled collections both expose their snapshot save.

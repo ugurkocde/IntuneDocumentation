@@ -322,6 +322,28 @@ describe("settings outside the Settings Catalog (owner decision D2)", () => {
     expect(linux.settings[0]!.status).toBe("Missing");
   });
 
+  for (const type of ["sharedPCConfiguration", "editionUpgradeConfiguration"])
+    it(`reads ${type} as a Windows only profile`, () => {
+      const windowsType = {
+        other: { deviceConfigurations: [deviceConfiguration(type)] },
+      };
+      const mac = assessBenchmark(
+        collection({ policies: [], ...windowsType }),
+        macPack,
+        { now: NOW },
+      );
+      expect(mac.settings.map((finding) => finding.status)).toEqual([
+        "Missing",
+        "Missing",
+      ]);
+      const windows = assess([present()], windowsType);
+      expect(statusOf(windows, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "otherProfiles",
+      ]);
+    });
+
   it("keeps a recommendation out of the rate instead of Differs", () => {
     const target = pack(
       [{ settings: [simpleInteger(LENGTH, 14)] }],

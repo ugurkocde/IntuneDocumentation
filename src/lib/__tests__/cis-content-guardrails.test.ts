@@ -37,17 +37,31 @@ const SKIPPED_DIRS = new Set(["node_modules", ".next", ".source", "out"]);
 // Customer facing copy must not mention CIS Benchmarks at all until the CIS
 // commercial-use agreement covers Intune Documentation (owner decision
 // 2026-10-22). CIS Controls and the customer supplied crosswalk may appear.
+// The desktop renderer is not listed: its Benchmarks screen, navigation entry
+// and Compliance Evidence card render only with the signed licence claim, and
+// its tests prove customers see none of them.
 const COPY_ROOTS = [
   "README.md",
+  "apps/desktop/build/license_en.txt",
   "apps/desktop/release-notes",
+  "apps/docs/app",
+  "apps/docs/components",
   "apps/docs/content",
+  "apps/docs/lib",
+  "apps/docs/public",
   "docs/releases",
   "docs/sales",
   "public",
   "src/app",
   "src/components",
+  // Exported documents and evidence reports.
+  "src/lib/compliance",
+  "src/lib/docx-generator-detailed.ts",
+  "src/lib/pdf-generator-detailed.ts",
+  "src/lib/pdf-generator-jspdf.ts",
 ];
-const NOT_COPY = ["src/app/api"];
+// Server routes and the engine notes for developers.
+const NOT_COPY = ["src/app/api", "src/lib/compliance/README.md"];
 
 // The complete allowlist. Everything else is scanned without exemption,
 // including the CIS Controls crosswalk (src/lib/compliance/management) and
@@ -387,6 +401,22 @@ describe("CIS content guardrails", () => {
     expect(files).toContain("IntuneDocumentation-Sample.pdf");
     expect(files.some((file) => file.startsWith("public/samples/"))).toBe(true);
     expect(files).not.toContain(THIS_FILE);
+  });
+
+  it("holds the docs site, installer licence and exported documents to the copy rule", () => {
+    for (const root of COPY_ROOTS)
+      expect(existsSync(path.join(ROOT, root)), root).toBe(true);
+    for (const file of [
+      "apps/docs/app/layout.tsx",
+      "apps/docs/components/mdx.tsx",
+      "apps/docs/lib/layout.shared.tsx",
+      "apps/desktop/build/license_en.txt",
+      "src/lib/compliance/report-pdf.ts",
+      "src/lib/docx-generator-detailed.ts",
+    ])
+      expect(isCopy(file), file).toBe(true);
+    expect(isCopy("src/lib/compliance/README.md")).toBe(false);
+    expect(isCopy("src/lib/benchmarks/readiness-pdf.ts")).toBe(false);
   });
 
   it("reads the text of every published PDF or lists it as checked by hand", () => {

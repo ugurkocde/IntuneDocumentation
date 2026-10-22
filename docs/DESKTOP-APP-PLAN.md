@@ -33,7 +33,10 @@ customer's own app registration.
 - No customer-side app registration for the hosted app. Hosted keeps the vendor app.
 - No anti-tamper or DRM investment. The source is public under Elastic-2.0; the
   gate is contractual and trust based.
-- No CIS Benchmarks or CIS Controls content until a commercial license exists.
+- No CIS Controls content until a commercial license exists. CIS Benchmarks are
+  delivered at runtime from the gated content service (never bundled), internal
+  only behind a signed licence claim until the CIS commercial-use agreement
+  covers Intune Documentation; customers see nothing of them until then.
 - No PowerShell collector in the first release. Revisit only if a pilot requires it.
 
 ## Target architecture
@@ -104,7 +107,10 @@ modification, and redistribution inside customer reports.
   Essentials (Open Government Licence v3.0), BSI IT-Grundschutz (verify terms).
 - Reference by identifier with original summaries: ISO/IEC 27001, SOC 2, UK MOD
   Def Stan 05-138.
-- Exclude until licensed: CIS Benchmarks and CIS Controls.
+- Exclude until licensed: CIS Controls (except a customer supplied crosswalk).
+  CIS Benchmarks: gated and internal only, delivered at runtime from the
+  licensed content service, never shipped, until the CIS commercial-use
+  agreement covers Intune Documentation (see tasks/cis-benchmarks.md).
 - No framework logos. No certification or endorsement claims. Output remains
   evidence statements, never a compliance verdict.
 - Independent practitioner review of mappings before the paid pilot.

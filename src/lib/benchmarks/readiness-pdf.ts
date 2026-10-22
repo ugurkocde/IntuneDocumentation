@@ -73,6 +73,7 @@ import {
   headlineLabel,
   levelCheckSummary,
   levelsLabel,
+  observationLabel,
   ratePercent,
 } from "./display";
 import { appliesOn, localDate, type BenchmarkException } from "./exceptions";
@@ -82,7 +83,6 @@ import {
   MANUAL_RECOMMENDATIONS_URL,
 } from "./manual";
 import {
-  compareDefinition,
   readableOwnValue,
   record,
   type Json,
@@ -126,9 +126,9 @@ const ASSIGNMENT_LABELS: Readonly<Record<Observation["assignment"], string>> = {
 };
 
 const METHOD_LINES = [
-  "Each setting of the delivered pack is compared with the Settings Catalog policies of the last collection. Nothing is written to the tenant.",
-  "Matches needs the recommended value on assigned policies. A matching value on a policy that is not assigned, or whose assignment could not be read, needs review.",
-  "Differs needs a readable tenant value that differs, or a complete collection that shows the setting missing from every policy.",
+  "Each setting of the delivered pack is compared with the Settings Catalog policies of the last collection only. Device configurations, administrative templates, security baselines and endpoint security intents are not read. Nothing is written to the tenant.",
+  "Matches needs the recommended value on at least one assigned policy. A matching value only on policies that are not assigned, or whose assignment could not be read, needs review.",
+  "Differs needs a readable tenant value that differs, or a complete collection that shows the setting missing from every policy while no profile of another type exists for its platform. When such profiles exist, a setting missing from the Settings Catalog needs review, because it may be set outside it.",
   "Absent, unreadable or incomplete data is Needs review or Not assessed, never Differs.",
   "A recommendation that names a setting outside the pack is Not assessed.",
 ];
@@ -789,7 +789,7 @@ export function renderReadinessPdf(
   y = drawSectionHeading(doc, theme, frame, y, "Collection");
   if (assessment.collection.complete)
     paragraph(
-      "The Settings Catalog collection is complete, so a setting missing from every policy is reported as Differs.",
+      "The Settings Catalog collection is complete, so a setting missing from every policy is reported as Differs, unless profiles of another type for its platform may set it (Needs review).",
     );
   else {
     paragraph(
@@ -1024,20 +1024,7 @@ export function renderReadinessPdf(
           indent: 6,
         });
       for (const { finding, observation } of observations) {
-        const state = compareDefinition(
-          finding.recommended,
-          observation.value,
-          setting.id,
-        );
-        const comparison = !state
-          ? "Not readable"
-          : state.holds === "no"
-            ? "Not set in this policy"
-            : state.comparison === "match"
-              ? "Matches"
-              : state.comparison === "differ"
-                ? "Differs"
-                : "Not readable";
+        const comparison = observationLabel(finding, observation, setting.id);
         const value =
           comparison === "Matches" || comparison === "Differs"
             ? `, value ${valueText(findInstance(observation.value, setting.id))}`

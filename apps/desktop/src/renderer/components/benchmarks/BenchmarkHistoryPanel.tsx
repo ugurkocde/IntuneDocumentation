@@ -2,7 +2,14 @@ import { History, RefreshCw, TrendingDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { formatRate } from "../../../../../../src/lib/benchmarks/display";
 import { sparklineSegments, trendChangeText } from "../../../../../../src/lib/benchmarks/trend";
-import type { BenchmarkHistoryView, BenchmarkIdentity, DriftEntry, TrendPoint } from "../../../shared/ipc-types";
+import type {
+  BenchmarkHistoryView,
+  BenchmarkIdentity,
+  BenchmarkLevel,
+  BenchmarkRunRecord,
+  DriftEntry,
+  TrendPoint,
+} from "../../../shared/ipc-types";
 import { errorMessage, ipc } from "../../lib/ipc";
 import { Alert } from "../ui/Alert";
 import { Button } from "../ui/Button";
@@ -18,8 +25,12 @@ function formatDate(value: string): string {
     : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-const sameSeries = (identity: BenchmarkIdentity) => (point: Pick<TrendPoint, "benchmark" | "version" | "level">) =>
-  point.benchmark === identity.benchmark && point.version === identity.version && point.level === identity.level;
+// A series is a benchmark, version and recommendation Level: the Level cards
+// of a comparison, not the Level of the pack that was loaded.
+const sameSeries =
+  (identity: BenchmarkIdentity, level: BenchmarkLevel) =>
+  (point: Pick<TrendPoint, "benchmark" | "version" | "level">) =>
+    point.benchmark === identity.benchmark && point.version === identity.version && point.level === level;
 
 function driftText(entry: DriftEntry): string {
   const change =
@@ -66,16 +77,23 @@ function Sparkline({ points }: { points: readonly TrendPoint[] }) {
   );
 }
 
-// Trend and drift of the compared benchmark, version and Level from the runs
-// stored with the snapshots. Shows why when history is off or unavailable.
+// Trend and drift of each Level of the compared benchmark and version from
+// the runs stored with the snapshots, one series per Level card. Shows why
+// when history is off or unavailable, or when this comparison was not stored.
 export function BenchmarkHistoryPanel({
   identity,
+  levels,
   assessedAt,
+  record,
   onOpenHistory,
 }: {
   identity: BenchmarkIdentity;
-  // A new comparison may have stored a new run.
+  // The Levels the comparison shows, as the Level cards.
+  levels: readonly BenchmarkLevel[];
+  // A new comparison may have stored new runs.
   assessedAt: string;
+  // Whether this comparison was stored, and why not.
+  record?: BenchmarkRunRecord;
   onOpenHistory: () => void;
 }) {
   const [view, setView] = useState<BenchmarkHistoryView | null>(null);
@@ -101,8 +119,12 @@ export function BenchmarkHistoryPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, reload]);
 
-  const points = view?.trend.filter(sameSeries(identity)) ?? [];
-  const drift = view?.drift.filter(sameSeries(identity)) ?? [];
+  const series = levels.map((level) => ({
+    level,
+    points: view?.trend.filter(sameSeries(identity, level)) ?? [],
+    drift: view?.drift.filter(sameSeries(identity, level)) ?? [],
+  }));
+  const several = levels.length > 1;
 
   return (
     <section
@@ -116,7 +138,7 @@ export function BenchmarkHistoryPanel({
         <div className="min-w-0 flex-1">
           <p className="text-petrol-600 text-[10px] font-bold tracking-[0.14em] uppercase">History</p>
           <h2 id="benchmark-history-title" className="text-petrol-950 mt-1 text-base font-semibold tracking-[-0.01em]">
-            Trend of this benchmark, version and Level
+            {several ? "Trend of this benchmark and version per Level" : "Trend of this benchmark, version and Level"}
           </h2>
           <p className="text-petrol-600 mt-1 max-w-2xl text-xs leading-5">
             Each stored comparison keeps ids and results only. Points are compared only when they used the same
@@ -162,42 +184,57 @@ export function BenchmarkHistoryPanel({
                 {view.reason ? ` ${view.reason}` : ""}
               </Alert>
             )}
-            {drift.map((entry) => (
-              <Alert
-                key={`${entry.kind}-${entry.assessedAt}`}
-                tone="warning"
-                title={entry.kind === "below-bar" ? "Below 90%" : "The headline dropped"}
-              >
-                <span className="inline-flex items-start gap-1.5">
-                  <TrendingDown className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  {driftText(entry)}
-                </span>
+            {record && !record.recorded && view.enabled && (
+              <Alert tone="warning" title="This comparison was not stored">
+                {record.reason ?? "It could not be stored in history."}
               </Alert>
-            ))}
-            {points.length === 0 ? (
-              <p className="text-petrol-600 text-xs">No comparison of this benchmark, version and Level is stored yet.</p>
-            ) : (
-              <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-                <Sparkline points={points} />
-                <ol className="min-w-0 flex-1 basis-64 space-y-1.5" aria-label="Stored comparisons">
-                  {[...points]
-                    .reverse()
-                    .slice(0, POINTS_SHOWN)
-                    .map((point) => (
-                      <li
-                        key={point.assessedAt}
-                        className="text-petrol-700 flex flex-wrap items-baseline gap-x-3 text-xs tabular-nums"
-                      >
-                        <span className="text-petrol-600 min-w-36">{formatDate(point.assessedAt)}</span>
-                        <span className="text-petrol-950 font-semibold">
-                          {point.rate === null ? "n/a" : formatRate(point.rate)}
-                        </span>
-                        <span>{trendChangeText(point)}</span>
-                      </li>
-                    ))}
-                </ol>
-              </div>
             )}
+            {series.map(({ level, points, drift }) => (
+              <div key={level} className="space-y-3">
+                {several && <h3 className="text-petrol-950 text-[13px] font-semibold">Level {level}</h3>}
+                {drift.map((entry) => (
+                  <Alert
+                    key={`${entry.kind}-${entry.assessedAt}`}
+                    tone="warning"
+                    title={entry.kind === "below-bar" ? "Below 90%" : "The headline dropped"}
+                  >
+                    <span className="inline-flex items-start gap-1.5">
+                      <TrendingDown className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      {driftText(entry)}
+                    </span>
+                  </Alert>
+                ))}
+                {points.length === 0 ? (
+                  <p className="text-petrol-600 text-xs">
+                    No comparison of this benchmark, version and Level is stored yet.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+                    <Sparkline points={points} />
+                    <ol
+                      className="min-w-0 flex-1 basis-64 space-y-1.5"
+                      aria-label={several ? `Stored comparisons, Level ${level}` : "Stored comparisons"}
+                    >
+                      {[...points]
+                        .reverse()
+                        .slice(0, POINTS_SHOWN)
+                        .map((point) => (
+                          <li
+                            key={point.assessedAt}
+                            className="text-petrol-700 flex flex-wrap items-baseline gap-x-3 text-xs tabular-nums"
+                          >
+                            <span className="text-petrol-600 min-w-36">{formatDate(point.assessedAt)}</span>
+                            <span className="text-petrol-950 font-semibold">
+                              {point.rate === null ? "n/a" : formatRate(point.rate)}
+                            </span>
+                            <span>{trendChangeText(point)}</span>
+                          </li>
+                        ))}
+                    </ol>
+                  </div>
+                )}
+              </div>
+            ))}
           </>
         )}
       </div>

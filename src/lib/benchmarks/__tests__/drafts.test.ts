@@ -21,6 +21,7 @@ import {
   richAssessment,
   richPack,
 } from "./export-fixtures";
+import { deviceConfiguration } from "./fixtures";
 
 const settingIds = (drafts: ReturnType<typeof generateBenchmarkDrafts>) =>
   drafts.drafts.flatMap((draft) => draft.settingIds);
@@ -107,6 +108,27 @@ describe("benchmark draft policies", () => {
     );
     expect(reasons[TEMPLATED]).toMatch(/created from a template/);
     expect(reasons[GAMMA]).toContain(`Assign policy ${UNASSIGNED_POLICY}`);
+  });
+
+  it("drafts nothing for a setting that may be set outside the Settings Catalog (D2)", () => {
+    const assessment = richAssessment({
+      other: {
+        deviceConfigurations: [
+          deviceConfiguration("macOSCustomConfiguration"),
+          deviceConfiguration(
+            "windows10CustomConfiguration",
+            "synthetic-config-2",
+          ),
+        ],
+      },
+    });
+    const result = generateBenchmarkDrafts(assessment, richPack());
+    expect(result.drafts).toEqual([]);
+    const reasons = Object.fromEntries(
+      result.notGenerated.map((gap) => [gap.settingId, gap.reason]),
+    );
+    expect(reasons[LENGTH]).toContain("outside the Settings Catalog");
+    expect(reasons[MAC]).toContain("outside the Settings Catalog");
   });
 
   it("drafts nothing on an incomplete collection", () => {

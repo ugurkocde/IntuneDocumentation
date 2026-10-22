@@ -75,7 +75,7 @@ describe("benchmark CSV", () => {
       "synthetic-bench,1.0.0,1,1,Recommendation,1.1,pass,Matches,,,",
     );
     expect(lines).toContain(
-      "synthetic-bench,1.0.0,1,1,Recommendation,2.1,review,Needs review,notAssigned,The matching value is on a policy that is not assigned.,synthetic_bench_gamma",
+      "synthetic-bench,1.0.0,1,1,Recommendation,2.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_gamma",
     );
     expect(lines).toHaveLength(1 + richAssessment().recommendations.length);
     for (const item of richAssessment().recommendations)

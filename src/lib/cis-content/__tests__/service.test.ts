@@ -137,9 +137,34 @@ describe("parseDeliveryMode", () => {
   it("defaults to off and fails closed on unknown values", () => {
     expect(parseDeliveryMode(undefined)).toBe("off");
     expect(parseDeliveryMode("")).toBe("off");
+    expect(parseDeliveryMode("off")).toBe("off");
     expect(parseDeliveryMode("internal")).toBe("internal");
-    expect(parseDeliveryMode(" Licensed ")).toBe("licensed");
+    expect(parseDeliveryMode("licensed")).toBe("licensed");
     expect(parseDeliveryMode("everything")).toBe("off");
+  });
+
+  it("reads exactly the strings src/env.js accepts, nothing trimmed or folded", async () => {
+    const { z } = await import("zod");
+    const source = (await import("node:fs")).readFileSync("src/env.js", "utf8");
+    const values = /DESKTOP_CIS_DELIVERY_MODE: z\s*\.enum\(\[([^\]]*)\]\)/.exec(
+      source,
+    )?.[1];
+    expect(values).toBeDefined();
+    const accepted = z.enum(JSON.parse(`[${values}]`) as [string, ...string[]]);
+    for (const value of [
+      "off",
+      "internal",
+      "licensed",
+      " licensed ",
+      "Licensed",
+      "INTERNAL",
+      "internal\n",
+      "",
+    ]) {
+      const valid = accepted.safeParse(value).success;
+      // A value env.js refuses never selects a delivery mode here.
+      expect(parseDeliveryMode(value)).toBe(valid ? value : "off");
+    }
   });
 });
 

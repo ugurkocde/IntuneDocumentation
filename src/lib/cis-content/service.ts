@@ -47,10 +47,12 @@ const GUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const CATALOG_KEY = "catalog.json";
 
+// DESKTOP_CIS_DELIVERY_MODE takes the exact strings off, internal or licensed,
+// as src/env.js validates them: no trimming and no case folding, so the
+// server never runs in a mode the environment check would refuse. Anything
+// else, and no value, is off.
 export function parseDeliveryMode(value: string | undefined): CisDeliveryMode {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized === "internal" || normalized === "licensed") return normalized;
-  return "off";
+  return value === "internal" || value === "licensed" ? value : "off";
 }
 
 const HEADERS = {
@@ -70,8 +72,11 @@ function errorResponse(status: number, message: string): Response {
 const unavailable = () =>
   errorResponse(503, "CIS benchmark delivery is not available.");
 
-// A valid entitlement already proves a live Polar-backed grant, and every
-// token binds tenant, installation and activation. CIS delivery additionally
+// A valid entitlement proves the Polar-backed grant at the time the token
+// was issued, not now: a grant revoked since then stays usable until the
+// token expires. Licensed mode therefore needs a live grant check or a
+// shorter token lifetime before it is enabled. Every token binds tenant,
+// installation and activation. CIS delivery additionally
 // requires those bindings to be real identifiers, a Pro or MSP plan and a
 // granted status. In internal mode the token must carry the server-issued
 // internal claim and its license key and installation must still be on both

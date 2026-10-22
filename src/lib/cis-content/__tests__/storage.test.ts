@@ -101,13 +101,88 @@ describe("supabaseCisStore", () => {
     expect(supabaseCisStore()).toBeNull();
   });
 
-  it("reports a storage error as an unpublished object", async () => {
-    const { client } = storageClient(async () => ({
-      data: null,
-      error: new Error("Object not found"),
-    }));
-    clients.supabaseWriter = client;
-    expect(await supabaseCisStore()!.download("catalog.json")).toBeNull();
+  // The shapes storage-js 2.x returns for a download, seen against this
+  // project's Storage API on 2026-10-22: an HTTP error is a
+  // StorageUnknownError whose originalError is the Response.
+  const storageError = (
+    originalError: unknown,
+    extra: Record<string, unknown> = {},
+  ) =>
+    Object.assign(new Error("{}"), {
+      name: "StorageUnknownError",
+      __isStorageError: true,
+      originalError,
+      ...extra,
+    });
+  const answer = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+
+  it("reports only a missing object as unpublished", async () => {
+    for (const error of [
+      storageError(
+        answer(400, {
+          statusCode: "404",
+          error: "not_found",
+          message: "Object not found",
+          code: "NoSuchKey",
+        }),
+      ),
+      storageError(
+        answer(404, {
+          statusCode: "404",
+          error: "not_found",
+          message: "Object not found",
+        }),
+      ),
+      Object.assign(new Error("Object not found"), {
+        name: "StorageApiError",
+        status: 400,
+        statusCode: "404",
+      }),
+    ]) {
+      const { client } = storageClient(async () => ({ data: null, error }));
+      clients.supabaseWriter = client;
+      expect(await supabaseCisStore()!.download("catalog.json")).toBeNull();
+    }
+  });
+
+  it("throws on any other storage failure, so the service answers 502 and not 404", async () => {
+    for (const error of [
+      storageError(new TypeError("fetch failed")),
+      storageError(
+        answer(500, {
+          statusCode: "500",
+          error: "internal",
+          message: "Synthetic outage",
+        }),
+      ),
+      storageError(answer(503, { message: "Synthetic unavailable" })),
+      storageError(
+        answer(400, {
+          statusCode: "404",
+          error: "Bucket not found",
+          message: "Bucket not found",
+          code: "NoSuchBucket",
+        }),
+      ),
+      storageError(
+        answer(403, {
+          statusCode: "403",
+          error: "Unauthorized",
+          message: "Synthetic denied",
+        }),
+      ),
+      new Error("Synthetic unknown"),
+    ]) {
+      const { client } = storageClient(async () => ({ data: null, error }));
+      clients.supabaseWriter = client;
+      await expect(
+        supabaseCisStore()!.download("catalog.json"),
+      ).rejects.toThrow("CIS content storage failed.");
+    }
   });
 });
 

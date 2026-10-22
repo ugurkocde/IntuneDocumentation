@@ -14,6 +14,17 @@
  *
  * A failure that concerns only a policy's assignments leaves its settings
  * proven: the family stays complete and that policy's assignment is unknown.
+ *
+ * Owner decision (2026-10-22): the comparison reads Settings Catalog policies
+ * only, and profiles of older types can carry equivalent settings. Their
+ * platforms are read from the collection (verified with Lokka on 2026-10-22):
+ * device configurations and update rings by their @odata.type prefix
+ * (windows..., macOS..., ios..., android..., aosp...), administrative
+ * templates are Windows, and security baseline and endpoint security intents
+ * carry only a templateId, whose platform the collector does not read (the
+ * lab tenant holds a macOS intent), so an intent may be on any platform. A
+ * family that was not collected completely, or a type of unknown platform,
+ * may also hold profiles for any platform.
  */
 import type { DetailedExportData } from "../configuration-analyzer";
 import { summarizeAssignments } from "../compliance/assignments";
@@ -49,6 +60,12 @@ export interface TenantSettings {
   complete: boolean;
   /** Plain reasons the family is not complete, for display. */
   gaps: string[];
+  /**
+   * Platforms (windows, macos, ios, android) with profiles outside the
+   * Settings Catalog that may set the same settings; null when that cannot
+   * be ruled out for any platform. An absent setting there is never Missing.
+   */
+  otherProfilePlatforms: string[] | null;
 }
 
 export type BenchmarkCollection = Omit<DetailedExportData, "groupNames"> & {
@@ -166,6 +183,87 @@ function settingsView(
   };
 }
 
+// Families of older profile types that can carry Settings Catalog equivalents.
+const OTHER_FAMILIES = [
+  "deviceConfigurations",
+  "windowsUpdatePolicies",
+  "administrativeTemplates",
+  "securityBaselines",
+] as const;
+
+const PLATFORM_PREFIXES: ReadonlyArray<[string, string]> = [
+  ["windows", "windows"],
+  ["macos", "macos"],
+  ["ios", "ios"],
+  ["android", "android"],
+  ["aosp", "android"],
+  ["linux", "linux"],
+];
+
+/** The platform family of a Settings Catalog platforms token or a device configuration type name. */
+function platformFamily(value: string): string | null {
+  const name = value
+    .trim()
+    .replace(/^#/, "")
+    .replace(/^microsoft\.graph\./, "")
+    .toLowerCase();
+  return (
+    PLATFORM_PREFIXES.find(([prefix]) => name.startsWith(prefix))?.[1] ?? null
+  );
+}
+
+/** The platforms of a Settings Catalog platforms value, for example "windows10" or "iOS,macOS". */
+export function platformFamilies(platforms: string): string[] {
+  return [
+    ...new Set(
+      platforms
+        .split(",")
+        .map((token) => platformFamily(token) ?? token.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** Platforms with profiles of older types, or null when any platform may have one. */
+function otherProfilePlatforms(data: BenchmarkCollection): string[] | null {
+  const rows = buildCollectionCoverage(data, [], true);
+  const found = new Set<string>();
+  for (const family of OTHER_FAMILIES) {
+    const row = rows.find((entry) => entry.family === family);
+    if (!row || row.status !== "complete") return null;
+    const items = data.sections?.length
+      ? data.sections
+          .filter((section) => section.familyKey === family)
+          .flatMap((section) => section.items)
+      : (((data as unknown as Record<string, unknown>)[family] as unknown[]) ??
+        []);
+    for (const item of items) {
+      if (family === "administrativeTemplates") {
+        found.add("windows");
+        continue;
+      }
+      if (family === "securityBaselines") return null;
+      const type = record(item) ? text(item["@odata.type"]) : null;
+      const platform = type ? platformFamily(type) : null;
+      if (!platform) return null;
+      found.add(platform);
+    }
+  }
+  return [...found].sort();
+}
+
+/** Whether a setting of a pack platforms value may be set outside the Settings Catalog. */
+export function mayBeSetElsewhere(
+  tenant: Pick<TenantSettings, "otherProfilePlatforms">,
+  platforms: string,
+): boolean {
+  const other = tenant.otherProfilePlatforms;
+  return (
+    other === null ||
+    platformFamilies(platforms).some((platform) => other.includes(platform))
+  );
+}
+
 export function tenantSettings(data: BenchmarkCollection): TenantSettings {
   const gaps: string[] = [];
   const collectedAt = text(data.collectedAt);
@@ -243,5 +341,6 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
     policies,
     complete: gaps.length === 0,
     gaps: [...new Set(gaps)],
+    otherProfilePlatforms: otherProfilePlatforms(data),
   };
 }

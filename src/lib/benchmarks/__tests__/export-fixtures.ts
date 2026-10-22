@@ -140,7 +140,11 @@ export const EXCEPTIONS: BenchmarkException[] = [
 
 /** Every result: Matches, Differs (different and missing), Needs review, Not assessed. */
 export function richAssessment(
-  extra: { list?: boolean; complete?: boolean } = {},
+  extra: {
+    list?: boolean;
+    complete?: boolean;
+    other?: Parameters<typeof collection>[0]["other"];
+  } = {},
 ): BenchmarkAssessment {
   return assessBenchmark(
     collection({
@@ -166,6 +170,7 @@ export function richAssessment(
         }),
       ],
       ...(extra.complete === false ? { collectedAt: null } : {}),
+      ...(extra.other ? { other: extra.other } : {}),
     }),
     richPack(),
     {

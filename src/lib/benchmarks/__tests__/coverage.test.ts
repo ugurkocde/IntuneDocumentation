@@ -129,4 +129,68 @@ describe("coverage of the full benchmark", () => {
       "Level 1: Intune Documentation checks 1 recommendation of this pack automatically. The one listed here and any recommendations outside the pack need a manual check.",
     );
   });
+
+  it("keeps the delivered title and audit text of automated items selected for a manual check (finding 3)", () => {
+    const target = pack(
+      [{ settings: [choice("synthetic_a", "on")] }],
+      [
+        {
+          id: "1.1",
+          title: "Synthetic one",
+          level: 1,
+          settings: ["synthetic_a"],
+        },
+        {
+          id: "1.2",
+          title: "Synthetic two",
+          level: 1,
+          settings: ["synthetic_outside"],
+        },
+      ],
+    );
+    const delivered = list([
+      {
+        identifier: "1.1",
+        level: 1,
+        automated: true,
+        title: "Synthetic assessed item",
+      },
+      {
+        identifier: "1.2",
+        level: 1,
+        automated: true,
+        title: "Synthetic item the pack cannot assess",
+        audit: "Synthetic audit steps",
+      },
+      {
+        identifier: "1.3",
+        level: 1,
+        automated: true,
+        title: "Synthetic item outside the pack",
+      },
+    ]);
+    const run = assessBenchmark(
+      collection({
+        policies: [tenantPolicy({ settings: [choice("synthetic_a", "on")] })],
+      }),
+      target,
+      { now: NOW, list: delivered },
+    );
+    const manual = run.levels[0]!.manual;
+    expect(
+      manual.map((item) => [
+        item.identifier,
+        item.title ?? null,
+        item.audit ?? null,
+      ]),
+    ).toEqual([
+      ["1.2", "Synthetic item the pack cannot assess", "Synthetic audit steps"],
+      ["1.3", "Synthetic item outside the pack", null],
+    ]);
+    expect(manual.find((item) => item.identifier === "1.2")!.hasText).toBe(
+      true,
+    );
+    // The assessed automated item is not a manual one.
+    expect(manual.map((item) => item.identifier)).not.toContain("1.1");
+  });
 });

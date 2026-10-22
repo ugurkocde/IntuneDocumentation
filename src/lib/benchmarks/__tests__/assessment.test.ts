@@ -13,6 +13,7 @@ import {
   choice,
   choiceCollection,
   collection,
+  deviceConfiguration,
   groupCollection,
   pack,
   simpleCollection,
@@ -26,6 +27,9 @@ import {
 const ALPHA = "synthetic_bench_alpha";
 const BETA = "synthetic_bench_beta";
 const LENGTH = "synthetic_bench_length";
+const GROUP = "synthetic_bench_group";
+const CHILD_A = "synthetic_bench_group_a";
+const CHILD_B = "synthetic_bench_group_b";
 
 const settingsPack = pack([
   {
@@ -180,6 +184,227 @@ describe("Missing only when the collection proves absence", () => {
       sectionError: "Request failed",
     });
     expect(statusOf(run, BETA)).toEqual(["Different", "Fail", undefined]);
+  });
+});
+
+describe("settings outside the Settings Catalog (owner decision D2)", () => {
+  const present = () => tenantPolicy({ settings: [choice(ALPHA, "1")] });
+  const macPack = pack([
+    {
+      platforms: "macOS",
+      settings: [choice(ALPHA, "1"), simpleInteger(LENGTH, 14)],
+    },
+  ]);
+  const linuxPack = pack([
+    { platforms: "linux", settings: [simpleInteger(LENGTH, 14)] },
+  ]);
+
+  it("stays Missing when no profile of another type exists for the platform", () => {
+    const run = assess([present()], {
+      other: {
+        deviceConfigurations: [deviceConfiguration("macOSCustomConfiguration")],
+      },
+    });
+    expect(run.collection.complete).toBe(true);
+    expect(statusOf(run, LENGTH)).toEqual(["Missing", "Fail", undefined]);
+  });
+
+  const others: Array<[string, Partial<Parameters<typeof collection>[0]>]> = [
+    [
+      "a device configuration",
+      {
+        other: {
+          deviceConfigurations: [
+            deviceConfiguration("windows10CustomConfiguration"),
+          ],
+        },
+      },
+    ],
+    [
+      "an update ring",
+      {
+        other: {
+          windowsUpdatePolicies: [
+            deviceConfiguration("windowsUpdateForBusinessConfiguration"),
+          ],
+        },
+      },
+    ],
+    [
+      "an administrative template",
+      {
+        other: {
+          administrativeTemplates: [
+            { id: "synthetic-admx-1", displayName: "Synthetic ADMX" },
+          ],
+        },
+      },
+    ],
+    [
+      "a security baseline intent",
+      {
+        other: {
+          securityBaselines: [
+            { id: "synthetic-intent-1", templateId: "synthetic-template" },
+          ],
+        },
+      },
+    ],
+    [
+      "a device configuration of an unknown type",
+      {
+        other: {
+          deviceConfigurations: [deviceConfiguration("futureConfiguration")],
+        },
+      },
+    ],
+    ["a family that was not collected", { omit: ["administrativeTemplates"] }],
+  ];
+  for (const [label, extra] of others)
+    it(`is Review otherProfiles, never Missing, with ${label} for the platform`, () => {
+      const run = assess([present()], extra);
+      expect(run.collection.complete).toBe(true);
+      expect(statusOf(run, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "otherProfiles",
+      ]);
+      expect(statusOf(run, ALPHA)).toEqual(["Present", "Pass", undefined]);
+    });
+
+  it("judges each platform on its own profiles", () => {
+    const windowsOnly = {
+      other: { administrativeTemplates: [{ id: "synthetic-admx-1" }] },
+    };
+    const mac = assessBenchmark(
+      collection({ policies: [], ...windowsOnly }),
+      macPack,
+      { now: NOW },
+    );
+    expect(mac.settings.map((finding) => finding.status)).toEqual([
+      "Missing",
+      "Missing",
+    ]);
+    const macProfile = {
+      other: {
+        deviceConfigurations: [
+          deviceConfiguration("macOSGeneralDeviceConfiguration"),
+        ],
+      },
+    };
+    const macElsewhere = assessBenchmark(
+      collection({ policies: [], ...macProfile }),
+      macPack,
+      { now: NOW },
+    );
+    expect(macElsewhere.settings.map((finding) => finding.reason)).toEqual([
+      "otherProfiles",
+      "otherProfiles",
+    ]);
+    // An intent's platform is not collected, so it counts for every platform.
+    const intent = {
+      other: { securityBaselines: [{ id: "synthetic-intent-1" }] },
+    };
+    const macIntent = assessBenchmark(
+      collection({ policies: [], ...intent }),
+      macPack,
+      { now: NOW },
+    );
+    expect(macIntent.settings.map((finding) => finding.reason)).toEqual([
+      "otherProfiles",
+      "otherProfiles",
+    ]);
+    const linux = assessBenchmark(
+      collection({ policies: [], ...macProfile }),
+      linuxPack,
+      { now: NOW },
+    );
+    expect(linux.settings[0]!.status).toBe("Missing");
+  });
+
+  it("keeps a recommendation out of the rate instead of Differs", () => {
+    const target = pack(
+      [{ settings: [simpleInteger(LENGTH, 14)] }],
+      [{ id: "1.1", title: "Synthetic length", level: 1, settings: [LENGTH] }],
+    );
+    const run = assess(
+      [present()],
+      { other: { administrativeTemplates: [{ id: "synthetic-admx-1" }] } },
+      target,
+    );
+    expect(run.recommendations[0]).toMatchObject({
+      result: "Review",
+      reason: "otherProfiles",
+    });
+    expect(run.levels[0]!.headline.rate).toBeNull();
+    expect(REASON_LABELS.otherProfiles).toMatch(/outside the Settings Catalog/);
+  });
+});
+
+describe("a pack value this app cannot read (finding 5)", () => {
+  const secretPack = pack([
+    { settings: [simpleSecret(LENGTH), choice(ALPHA, "1")] },
+  ]);
+  const wrongTypePack = pack([{ settings: [simpleInteger(LENGTH, "14")] }]);
+
+  it("is Review packValueUnreadable, never Different, against a readable tenant value", () => {
+    const run = assess(
+      [tenantPolicy({ settings: [simpleString(LENGTH, "synthetic")] })],
+      {},
+      secretPack,
+    );
+    expect(statusOf(run, LENGTH)).toEqual([
+      "Review",
+      "Review",
+      "packValueUnreadable",
+    ]);
+    const wrong = assess(
+      [tenantPolicy({ settings: [simpleInteger(LENGTH, 15)] })],
+      {},
+      wrongTypePack,
+    );
+    expect(statusOf(wrong, LENGTH)).toEqual([
+      "Review",
+      "Review",
+      "packValueUnreadable",
+    ]);
+  });
+
+  it("is never Missing when the setting is absent", () => {
+    const run = assess(
+      [tenantPolicy({ settings: [choice(ALPHA, "1")] })],
+      {},
+      secretPack,
+    );
+    expect(statusOf(run, LENGTH)).toEqual([
+      "Review",
+      "Review",
+      "packValueUnreadable",
+    ]);
+    expect(statusOf(run, ALPHA)).toEqual(["Present", "Pass", undefined]);
+  });
+
+  it("still reports a readable difference elsewhere in the same root", () => {
+    const groupPack = pack([
+      {
+        settings: [
+          groupCollection(GROUP, [
+            [simpleSecret(CHILD_A), choice(CHILD_B, "1")],
+          ]),
+        ],
+      },
+    ]);
+    const tenant = groupCollection(GROUP, [
+      [simpleString(CHILD_A, "x"), choice(CHILD_B, "2")],
+    ]);
+    const run = assessBenchmark(
+      collection({ policies: [tenantPolicy({ settings: [tenant] })] }),
+      groupPack,
+      {
+        now: NOW,
+      },
+    );
+    expect(statusOf(run, GROUP)).toEqual(["Different", "Fail", undefined]);
   });
 });
 
@@ -350,12 +575,75 @@ describe("assignment of matching policies", () => {
     expect(statusOf(run, ALPHA)).toEqual(["Present", "Review", "notAssigned"]);
   });
 
-  it("is Review notAssigned when one matching policy is assigned and another is not", () => {
+  it("is Pass when one matching policy is assigned and another is not (owner decision D1)", () => {
     const run = assess([
       tenantPolicy({ settings: [choice(ALPHA, "1")] }),
       tenantPolicy({ settings: [choice(ALPHA, "1")], assignments: [] }),
     ]);
-    expect(statusOf(run, ALPHA)).toEqual(["Present", "Review", "notAssigned"]);
+    expect(statusOf(run, ALPHA)).toEqual(["Present", "Pass", undefined]);
+  });
+
+  it("is Pass when one matching policy is assigned and another's assignment is unknown", () => {
+    const run = assess([
+      tenantPolicy({
+        settings: [choice(ALPHA, "1")],
+        assignmentsStatus: "incomplete",
+      }),
+      tenantPolicy({ settings: [choice(ALPHA, "1")] }),
+    ]);
+    expect(statusOf(run, ALPHA)).toEqual(["Present", "Pass", undefined]);
+  });
+
+  it("is Review assignmentUnknown when no match is assigned and one assignment is unknown", () => {
+    const run = assess([
+      tenantPolicy({ settings: [choice(ALPHA, "1")], assignments: [] }),
+      tenantPolicy({
+        settings: [choice(ALPHA, "1")],
+        assignmentsStatus: "incomplete",
+      }),
+    ]);
+    expect(statusOf(run, ALPHA)).toEqual([
+      "Present",
+      "Review",
+      "assignmentUnknown",
+    ]);
+  });
+
+  it("is Review notAssigned for a recommendation whose every match is unassigned, Pass with one assigned", () => {
+    const target = pack(
+      [{ settings: [choice(ALPHA, "1")] }],
+      [{ id: "1.1", title: "Synthetic alpha", level: 1, settings: [ALPHA] }],
+    );
+    const unassigned = assess(
+      [
+        tenantPolicy({ settings: [choice(ALPHA, "1")], assignments: [] }),
+        tenantPolicy({ settings: [choice(ALPHA, "1")], assignments: [] }),
+      ],
+      {},
+      target,
+    );
+    expect(unassigned.recommendations[0]).toMatchObject({
+      result: "Review",
+      reason: "notAssigned",
+    });
+    const mixed = assess(
+      [
+        tenantPolicy({ settings: [choice(ALPHA, "1")], assignments: [] }),
+        tenantPolicy({ settings: [choice(ALPHA, "1")] }),
+      ],
+      {},
+      target,
+    );
+    expect(mixed.recommendations[0]!.result).toBe("Pass");
+    expect(mixed.recommendations[0]!.reason).toBeUndefined();
+  });
+
+  it("keeps an assigned readable difference a Fail next to an unassigned match", () => {
+    const run = assess([
+      tenantPolicy({ settings: [choice(BETA, "false")] }),
+      tenantPolicy({ settings: [choice(BETA, "true")], assignments: [] }),
+    ]);
+    expect(statusOf(run, BETA)).toEqual(["Different", "Fail", undefined]);
   });
 
   it("is Review assignmentUnknown when an assignment target could not be read", () => {

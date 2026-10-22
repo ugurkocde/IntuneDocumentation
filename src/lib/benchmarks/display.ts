@@ -7,10 +7,13 @@
 import type {
   BenchmarkAssessment,
   LevelSummary,
+  Observation,
   ReasonCode,
   ResultState,
+  SettingFinding,
   SettingStatus,
 } from "./assessment";
+import { compareDefinition } from "./policies";
 
 export const RESULT_LABELS: Readonly<Record<ResultState, string>> = {
   Pass: "Matches",
@@ -36,13 +39,47 @@ export const REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
     "The tenant value could not be read (secret, redacted, wrong type or undocumented).",
   profileChoice:
     "The pack holds several values for this setting; choose one first.",
-  notAssigned: "The matching value is on a policy that is not assigned.",
-  assignmentUnknown: "The assignment of the matching policy could not be read.",
+  notAssigned: "The matching value is only on policies that are not assigned.",
+  assignmentUnknown:
+    "No matching policy is known to be assigned: an assignment could not be read.",
   settingOutsidePack:
     "The recommendation names a setting outside the pack, so it is not assessed here.",
+  otherProfiles:
+    "Not found in the Settings Catalog. It may be set outside the Settings Catalog, by a profile of another type for this platform.",
+  packValueUnreadable:
+    "The delivered pack holds a value for this setting that cannot be compared.",
 };
 
 export const READINESS_DISCLAIMER = "Readiness comparison, not a certification";
+
+export type ObservationLabel =
+  | "Matches"
+  | "Differs"
+  | "Not set in this policy"
+  | "Not readable";
+
+/**
+ * How one tenant policy holds the displayed setting of a finding: the
+ * setting itself, not the whole root it sits in, so a nested setting that
+ * matches next to a differing sibling reads Matches. The screen and the PDF
+ * both use it.
+ */
+export function observationLabel(
+  finding: Pick<SettingFinding, "recommended">,
+  observation: Pick<Observation, "value">,
+  settingId: string,
+): ObservationLabel {
+  const state = compareDefinition(
+    finding.recommended,
+    observation.value,
+    settingId,
+  );
+  if (!state) return "Not readable";
+  if (state.holds === "no") return "Not set in this policy";
+  if (state.comparison === "match") return "Matches";
+  if (state.comparison === "differ") return "Differs";
+  return "Not readable";
+}
 
 /** A rate in percent with one decimal; null stays null. */
 export function ratePercent(rate: number | null): number | null {

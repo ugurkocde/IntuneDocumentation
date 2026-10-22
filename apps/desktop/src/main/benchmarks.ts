@@ -2,7 +2,12 @@ import type { IpcMainInvokeEvent } from "electron";
 import { assessBenchmark } from "../../../../src/lib/benchmarks/assessment";
 import { generateBenchmarkDrafts } from "../../../../src/lib/benchmarks/drafts";
 import { exportBenchmark } from "../../../../src/lib/benchmarks/export";
-import { packDigest, summarizeRun, type StoredBenchmarkRun } from "../../../../src/lib/benchmarks/history";
+import {
+  packDigest,
+  summarizeRuns,
+  validateStoredRun,
+  type StoredBenchmarkRun,
+} from "../../../../src/lib/benchmarks/history";
 import type { BenchmarkCollection } from "../../../../src/lib/benchmarks/tenant-settings";
 import {
   parseBenchmarkIdentity,
@@ -26,6 +31,7 @@ import {
   type BenchmarkHistoryView,
   type BenchmarkPortfolioRequest,
   type BenchmarkPortfolioView,
+  type BenchmarkRunRecord,
 } from "../shared/ipc-types";
 import { answerExceptions, type BenchmarkExceptionStore } from "./benchmark-exceptions";
 import type { LicenseService } from "./license";
@@ -142,18 +148,52 @@ export interface BenchmarkWorkDeps {
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : "unknown");
 
+// Why the runs of a comparison were not recorded, shown with the history.
+export const RUN_NOT_TIMED = "This comparison is not stored in history: the collection has no completion time.";
+export const RUN_NOT_KEPT =
+  "This comparison is not stored in history: Keep history is off, or the snapshot of this collection was not saved.";
+export const RUN_NOT_STORED = "This comparison could not be stored in history.";
+
 // The engine, the exports, the exceptions store and history behind the
 // handlers. The assessment applies the tenant's exceptions to the adjusted
 // headline (without them when they cannot be read) and, with history on,
-// its stored form goes onto the snapshot of the assessed collection; a run
-// that cannot be stored leaves the assessment as it is. Only reasons are
-// logged, never content.
+// its stored runs (one per Level shown) go onto the snapshot of the assessed
+// collection. A run that cannot be stored leaves the assessment as it is,
+// and the view says it was not recorded and why. Only reasons are logged,
+// never content.
 export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
   const exceptionsOf = (tenantId: string, purpose: string) =>
     deps.exceptions.list(tenantId).catch((error: unknown) => {
       deps.log("warn", "benchmark exceptions not read", { purpose, message: errorText(error) });
       return [];
     });
+  // All runs of an assessment are checked against the stored schema first,
+  // so either every Level is recorded or the view says why none was.
+  async function record(
+    owner: string,
+    tenantId: string,
+    collectedAt: string | undefined,
+    assessment: Parameters<typeof summarizeRuns>[0],
+    pack: BenchmarkPack,
+  ): Promise<BenchmarkRunRecord> {
+    if (!collectedAt) return { recorded: false, reason: RUN_NOT_TIMED };
+    let runs: StoredBenchmarkRun[];
+    try {
+      // The strict stored schema (validateStoredRun) caps results and ids.
+      runs = summarizeRuns(assessment, await packDigest(pack)).map((run) => validateStoredRun(run));
+    } catch (error) {
+      deps.log("warn", "benchmark run not stored", { message: errorText(error) });
+      return { recorded: false, reason: `This comparison is not stored in history. ${errorText(error)}` };
+    }
+    try {
+      let recorded = true;
+      for (const run of runs) recorded = (await deps.recordRun(owner, tenantId, collectedAt, run)) && recorded;
+      return recorded ? { recorded: true, reason: null } : { recorded: false, reason: RUN_NOT_KEPT };
+    } catch (error) {
+      deps.log("warn", "benchmark run not stored", { message: errorText(error) });
+      return { recorded: false, reason: RUN_NOT_STORED };
+    }
+  }
   return {
     async assessBenchmark({ owner, tenantId, pack, list }) {
       const collection = deps.collectionFor(owner);
@@ -162,15 +202,7 @@ export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
         ...(list ? { list } : {}),
         exceptions: await exceptionsOf(tenantId, "assess"),
       });
-      if (collection.collectedAt) {
-        try {
-          const run = summarizeRun(assessment, await packDigest(pack));
-          await deps.recordRun(owner, tenantId, collection.collectedAt, run);
-        } catch (error) {
-          deps.log("warn", "benchmark run not stored", { message: errorText(error) });
-        }
-      }
-      return assessment;
+      return { ...assessment, history: await record(owner, tenantId, collection.collectedAt, assessment, pack) };
     },
     // The drafts export makes the same call, so the counts are the ZIP's.
     async draftsPreview({ assessment, pack }) {
@@ -291,6 +323,8 @@ type ContentKind = "catalog" | "pack" | "list";
 // Client for /api/cis/v1. The entitlement token is the only credential;
 // redirects are refused, every request times out and every body is capped.
 // A list the service does not have (404) is null: coverage is then not shown.
+// Any other failure, of the list too, is an error (the service answers 502
+// when its storage fails), so an outage never reads as not published.
 export function contentClient(options: {
   fetch: Fetcher;
   apiBase: string;
@@ -412,7 +446,7 @@ const notAvailable = (): never => {
 export function registerBenchmarksIpc(deps: BenchmarksDeps) {
   const client = contentClient(deps);
   // Packs and lists by tenant, benchmark, version (and level for packs).
-  const content = new Map<string, BenchmarkPack | RecommendationList | null>();
+  const content = new Map<string, BenchmarkPack | RecommendationList>();
   let last: { tenant: string; owner: string; view: BenchmarkAssessmentView; pack: BenchmarkPack } | null = null;
   // Bumped by every purge, so a fetch that was running is never cached or
   // returned after it.
@@ -473,6 +507,9 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const fullKey = `${tenant}|${key}`;
     if (content.has(fullKey)) return content.get(fullKey) as T;
     const value = await fetched(tenant, load);
+    // A list that is not published (null) is asked for again at the next
+    // compare, so a list published later is used; failures are never held.
+    if (value === null) return value;
     content.set(fullKey, value);
     while (content.size > MAX_CACHED_CONTENT) content.delete(content.keys().next().value!);
     return value;

@@ -18,6 +18,8 @@ export const env = createEnv({
     DESKTOP_LICENSE_MSP_BENEFIT_ID: z.string().uuid().optional(),
     DESKTOP_LICENSE_SIGNING_KEY: z.string().optional(),
     // Internal only: CIS Benchmarks delivery and the internal license claim.
+    // Exact strings only; parseDeliveryMode (src/lib/cis-content/service.ts)
+    // reads them the same way and treats anything else as off.
     DESKTOP_CIS_DELIVERY_MODE: z
       .enum(["off", "internal", "licensed"])
       .optional(),

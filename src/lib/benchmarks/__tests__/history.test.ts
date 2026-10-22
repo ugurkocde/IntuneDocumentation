@@ -4,7 +4,8 @@ import {
   canonicalJson,
   packDigest,
   storedRunHeadline,
-  summarizeRun,
+  MAX_STORED_RESULTS,
+  summarizeRuns,
   validateStoredRun,
 } from "../history";
 import { NOW, choice, collection, pack, tenantPolicy } from "./fixtures";
@@ -53,7 +54,9 @@ describe("stored benchmark runs", () => {
   );
 
   it("keeps ids, result codes and open setting ids only", () => {
-    const run = summarizeRun(assessment, DIGEST);
+    const runs = summarizeRuns(assessment, DIGEST);
+    expect(runs).toHaveLength(1);
+    const run = runs[0]!;
     expect(run).toEqual({
       benchmark: "synthetic-bench",
       version: "1.0.0",
@@ -75,7 +78,7 @@ describe("stored benchmark runs", () => {
   });
 
   it("gives the same headline as the live assessment", () => {
-    expect(storedRunHeadline(summarizeRun(assessment, DIGEST))).toEqual({
+    expect(storedRunHeadline(summarizeRuns(assessment, DIGEST)[0]!)).toEqual({
       counts: assessment.levels[0]!.headline.counts,
       rate: assessment.levels[0]!.headline.rate,
     });
@@ -93,14 +96,37 @@ describe("stored benchmark runs", () => {
       ]),
       { now: NOW },
     );
-    expect(summarizeRun(settingsOnly, DIGEST).results).toEqual([
-      ["synthetic_a", "pass", []],
-      ["synthetic_b", "fail", ["synthetic_b"]],
+    expect(
+      summarizeRuns(settingsOnly, DIGEST).map((run) => run.results),
+    ).toEqual([
+      [
+        ["synthetic_a", "pass", []],
+        ["synthetic_b", "fail", ["synthetic_b"]],
+      ],
     ]);
   });
 
+  it("names why a run exceeds the stored schema: too many results or an id history cannot store", () => {
+    const [run] = summarizeRuns(assessment, DIGEST);
+    const many = Array.from(
+      { length: MAX_STORED_RESULTS + 1 },
+      (_, index): [string, "pass", string[]] => [`1.${index + 1}`, "pass", []],
+    );
+    expect(() => validateStoredRun({ ...run!, results: many })).toThrow(
+      `holds more than ${MAX_STORED_RESULTS} results`,
+    );
+    expect(() =>
+      validateStoredRun({
+        ...run!,
+        results: [["1.1", "fail", ["synthetic id with spaces"]]],
+      }),
+    ).toThrow("an id is not 1 to 500 letters");
+  });
+
   it("rejects extra fields, free text and unknown codes", () => {
-    const run = summarizeRun(assessment, DIGEST);
+    const [run] = summarizeRuns(assessment, DIGEST) as [
+      ReturnType<typeof summarizeRuns>[number],
+    ];
     expect(() =>
       validateStoredRun({ ...run, title: "Synthetic title one" }),
     ).toThrow("unknown field: title");

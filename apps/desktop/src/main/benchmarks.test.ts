@@ -45,6 +45,9 @@ vi.mock("../../../../src/lib/benchmarks/export", async (importOriginal) => {
 });
 
 const {
+  RUN_NOT_KEPT,
+  RUN_NOT_STORED,
+  RUN_NOT_TIMED,
   BENCHMARK_ACCOUNT_CHANGED,
   BENCHMARK_ASSESS_FIRST,
   BENCHMARK_CONFIRM_DRAFTS,
@@ -374,6 +377,32 @@ describe("benchmarks content client", () => {
     expect(h.work.assessBenchmark).not.toHaveBeenCalled();
   });
 
+  it("asks again for a list that was not published at the next compare, and never holds a failed one (finding 4)", async () => {
+    const h = harness();
+    const lists = () => h.fetch.mock.calls.filter(([url]) => url.includes("/lists/")).length;
+    h.fetch.mockImplementation(async (url) =>
+      url.includes("/lists/") ? json({ error: "not found" }, { status: 404 }) : service(url),
+    );
+    await h.call("benchmarks:assess", IDENTITY);
+    expect(h.work.assessBenchmark.mock.calls[0]?.[0]).toMatchObject({ list: null });
+    expect(h.ipc.cachedCount()).toBe(1);
+    // Published since: the next compare uses it.
+    h.fetch.mockImplementation(async (url) => service(url));
+    await h.call("benchmarks:assess", IDENTITY);
+    expect(lists()).toBe(2);
+    expect(h.work.assessBenchmark.mock.calls[1]?.[0]).toMatchObject({ list: { benchmark: "synthetic-bench" } });
+    // A storage failure on the service (502) is an error, never "not published".
+    const failing = harness();
+    failing.fetch.mockImplementation(async (url) =>
+      url.includes("/lists/") ? json({ error: "could not be loaded" }, { status: 502 }) : service(url),
+    );
+    await expect(failing.call("benchmarks:assess", IDENTITY)).rejects.toThrow("returned 502");
+    expect(failing.ipc.cachedCount()).toBe(1);
+    failing.fetch.mockImplementation(async (url) => service(url));
+    await failing.call("benchmarks:assess", IDENTITY);
+    expect(failing.work.assessBenchmark.mock.calls[0]?.[0]).toMatchObject({ list: { benchmark: "synthetic-bench" } });
+  });
+
   it("treats a missing list as not delivered and other failures as errors", async () => {
     const h = harness();
     h.fetch.mockImplementation(async (url) =>
@@ -492,12 +521,19 @@ describe("benchmarks memory cache", () => {
 
   it(`keeps at most ${MAX_CACHED_CONTENT} packs and lists, dropping the oldest`, async () => {
     const h = harness();
-    for (let index = 0; index < MAX_CACHED_CONTENT; index += 1) {
+    // Every benchmark has a published list here, so lists are held too.
+    h.fetch.mockImplementation(async (url) => {
+      const listed = /^\/api\/cis\/v1\/lists\/([^/]+)\/9\.9\.9$/.exec(new URL(url).pathname);
+      return listed ? json({ ...list, benchmark: decodeURIComponent(listed[1]!) }) : service(url);
+    });
+    for (let index = 0; index < MAX_CACHED_CONTENT / 2; index += 1) {
       await h.call("benchmarks:assess", { ...IDENTITY, benchmark: `synthetic-${index}` });
     }
     expect(h.ipc.cachedCount()).toBe(MAX_CACHED_CONTENT);
+    await h.call("benchmarks:assess", { ...IDENTITY, benchmark: `synthetic-${MAX_CACHED_CONTENT / 2}` });
+    expect(h.ipc.cachedCount()).toBe(MAX_CACHED_CONTENT);
     await h.call("benchmarks:assess", { ...IDENTITY, benchmark: "synthetic-0" });
-    expect(h.packFetches()).toBe(MAX_CACHED_CONTENT + 1);
+    expect(h.packFetches()).toBe(MAX_CACHED_CONTENT / 2 + 2);
   });
 
   it("exports the last assessment of the same tenant and owner, drafts only when confirmed", async () => {
@@ -660,6 +696,66 @@ describe("benchmark work wiring", () => {
     }
   });
 
+  it("says in the view when a run is not recorded and why: schema limits, history off, no time (finding 6)", async () => {
+    const { deps, state, work } = workHarness();
+    const recorded = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    expect(recorded.history).toEqual({ recorded: true, reason: null });
+
+    const many = pack(
+      [{ settings: [choice("synthetic_alpha", "on")] }],
+      Array.from({ length: 5001 }, (_, index) => ({
+        id: `1.${index + 1}`,
+        title: `Synthetic ${index}`,
+        level: 1 as const,
+        settings: ["synthetic_alpha"],
+      })),
+    );
+    deps.recordRun.mockClear();
+    const tooMany = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: many, list: null });
+    expect(tooMany.history).toEqual({
+      recorded: false,
+      reason: "This comparison is not stored in history. The stored benchmark run holds more than 5000 results.",
+    });
+    expect(deps.recordRun).not.toHaveBeenCalled();
+    expect(tooMany.recommendations).toHaveLength(5001);
+
+    const badId = pack(
+      [{ settings: [choice("synthetic alpha", "on")] }],
+      [{ id: "1.1", title: "Synthetic", level: 1, settings: ["synthetic alpha"] }],
+    );
+    const refused = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: badId, list: null });
+    expect(refused.history?.recorded).toBe(false);
+    expect(refused.history?.reason).toContain("an id is not 1 to 500 letters");
+    expect(deps.recordRun).not.toHaveBeenCalled();
+
+    deps.recordRun.mockResolvedValueOnce(false);
+    const off = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    expect(off.history).toEqual({ recorded: false, reason: RUN_NOT_KEPT });
+
+    state.collection = { ...collected(), collectedAt: undefined } as unknown as ReturnType<typeof collected>;
+    const untimed = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    expect(untimed.history).toEqual({ recorded: false, reason: RUN_NOT_TIMED });
+  });
+
+  it("records one run per Level the comparison shows", async () => {
+    const { deps, work } = workHarness();
+    const mixed = pack(
+      [{ settings: [choice("synthetic_alpha", "on"), choice("synthetic_beta", "on")] }],
+      [
+        { id: "1.1", title: PACK_TITLE, level: 1, settings: ["synthetic_alpha"] },
+        { id: "2.1", title: "Synthetic beta recommendation", level: 2, settings: ["synthetic_beta"] },
+      ],
+      2,
+    );
+    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: mixed, list: null });
+    expect(assessment.history).toEqual({ recorded: true, reason: null });
+    const runs = deps.recordRun.mock.calls.map((call) => (call as unknown as [string, string, string, { level: number; results: unknown[] }])[3]);
+    expect(runs.map((run) => [run.level, run.results])).toEqual([
+      [1, [["1.1", "pass", []]]],
+      [2, [["2.1", "fail", ["synthetic_beta"]]]],
+    ]);
+  });
+
   it("needs the owner's own collection", async () => {
     const { deps, state, work } = workHarness();
     await expect(work.assessBenchmark({ owner: "owner-2", tenantId: TENANT, pack: delivered(), list: null })).rejects.toThrow(
@@ -678,6 +774,7 @@ describe("benchmark work wiring", () => {
     deps.recordRun.mockRejectedValueOnce(new Error("The stored benchmark run has an invalid result 1."));
     const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
     expect(assessment.levels[0]!.headline).toMatchObject({ rate: 0.5, adjusted: null });
+    expect(assessment.history).toEqual({ recorded: false, reason: RUN_NOT_STORED });
     const logged = JSON.stringify(deps.log.mock.calls);
     expect(logged).toContain("benchmark run not stored");
     for (const secret of [PACK_TITLE, PACK_POLICY, TENANT_POLICY, fixtures.BENCH, TENANT, OWNER]) {

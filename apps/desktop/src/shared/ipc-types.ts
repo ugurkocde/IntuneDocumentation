@@ -628,9 +628,17 @@ export interface BenchmarkAvailability {
 // names come from the delivered pack and stay in memory; main keeps the last
 // assessment per tenant and owner for the exports and purges it with the
 // content. With history on, the stored form of the run (ids, result codes,
-// open setting ids and the pack digest) is added to the snapshot of the
-// assessed collection.
-export type BenchmarkAssessmentView = BenchmarkAssessment;
+// open setting ids and the pack digest), one run per Level shown, is added
+// to the snapshot of the assessed collection; history says whether it was
+// and, when not, why.
+export type BenchmarkAssessmentView = BenchmarkAssessment & { history?: BenchmarkRunRecord };
+
+// Whether the runs of a comparison were stored with the snapshot of its
+// collection. reason is plain text for display when they were not.
+export interface BenchmarkRunRecord {
+  recorded: boolean;
+  reason: string | null;
+}
 
 export type BenchmarkExportFormat = "pdf" | "csv" | "json" | "drafts";
 

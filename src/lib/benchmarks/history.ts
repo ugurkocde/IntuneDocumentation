@@ -36,32 +36,52 @@ export interface StoredBenchmarkRun {
   results: StoredResult[];
 }
 
-/** The stored summary of one assessment. */
-export function summarizeRun(
+/**
+ * The stored runs of one assessment, one per Level the assessment shows:
+ * the series is the benchmark, version and recommendation Level, so a Level 2
+ * pack holding Level 1 and Level 2 recommendations stores two runs whose
+ * headlines are the two live Level cards. A pack without recommendations is
+ * judged by settings and stores one run at its own Level.
+ */
+export function summarizeRuns(
   assessment: BenchmarkAssessment,
   packDigest: string,
-): StoredBenchmarkRun {
-  const results: StoredResult[] =
-    assessment.basis === "recommendations"
-      ? assessment.recommendations.map((item) => [
-          item.id,
-          RESULT_CODES[item.result],
-          [...item.openSettingIds],
-        ])
-      : assessment.settings.map((finding) => [
-          finding.settingId,
-          RESULT_CODES[finding.result],
-          finding.result === "Pass" ? [] : [finding.settingId],
-        ]);
-  return {
+): StoredBenchmarkRun[] {
+  const run = (
+    level: BenchmarkLevel,
+    results: StoredResult[],
+  ): StoredBenchmarkRun => ({
     benchmark: assessment.benchmark,
     version: assessment.version,
-    level: assessment.level,
+    level,
     assessedAt: assessment.assessedAt,
     packDigest,
     basis: assessment.basis,
     results,
-  };
+  });
+  if (assessment.basis === "settings")
+    return [
+      run(
+        assessment.level,
+        assessment.settings.map((finding) => [
+          finding.settingId,
+          RESULT_CODES[finding.result],
+          finding.result === "Pass" ? [] : [finding.settingId],
+        ]),
+      ),
+    ];
+  return assessment.levels.map(({ level }) =>
+    run(
+      level,
+      assessment.recommendations
+        .filter((item) => item.level === level)
+        .map((item) => [
+          item.id,
+          RESULT_CODES[item.result],
+          [...item.openSettingIds],
+        ]),
+    ),
+  );
 }
 
 const RUN_FIELDS = new Set([
@@ -115,26 +135,28 @@ export function validateStoredRun(input: unknown): StoredBenchmarkRun {
     throw new Error("The stored benchmark run has an invalid pack digest.");
   if (value.basis !== "recommendations" && value.basis !== "settings")
     throw new Error("The stored benchmark run has an invalid basis.");
-  if (
-    !Array.isArray(value.results) ||
-    value.results.length > MAX_STORED_RESULTS
-  )
+  if (!Array.isArray(value.results))
     throw new Error("The stored benchmark run has invalid results.");
+  if (value.results.length > MAX_STORED_RESULTS)
+    throw new Error(
+      `The stored benchmark run holds more than ${MAX_STORED_RESULTS} results.`,
+    );
   const results = value.results.map((entry, index): StoredResult => {
+    const storable = (id: unknown) =>
+      typeof id === "string" && ID_PATTERN.test(id);
     if (
       !Array.isArray(entry) ||
       entry.length !== 3 ||
-      typeof entry[0] !== "string" ||
-      !ID_PATTERN.test(entry[0]) ||
       typeof entry[1] !== "string" ||
       !CODES.has(entry[1]) ||
-      !Array.isArray(entry[2]) ||
-      entry[2].some(
-        (id: unknown) => typeof id !== "string" || !ID_PATTERN.test(id),
-      )
+      !Array.isArray(entry[2])
     )
       throw new Error(
         `The stored benchmark run has an invalid result ${index + 1}.`,
+      );
+    if (!storable(entry[0]) || !entry[2].every(storable))
+      throw new Error(
+        `The stored benchmark run has an invalid result ${index + 1}: an id is not 1 to 500 letters, digits or _ . { } ~ -.`,
       );
     return [entry[0], entry[1] as ResultCode, [...(entry[2] as string[])]];
   });

@@ -70,7 +70,7 @@ export {
   canonicalJson,
   packDigest,
   storedRunHeadline,
-  summarizeRun,
+  summarizeRuns,
   validateStoredRun,
   type ResultCode,
   type StoredBenchmarkRun,

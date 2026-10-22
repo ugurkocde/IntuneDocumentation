@@ -6,6 +6,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BenchmarkAssessment } from "../../../../../src/lib/benchmarks/assessment";
+import { assessBenchmark } from "../../../../../src/lib/benchmarks/assessment";
+import * as engine from "../../../../../src/lib/benchmarks/__tests__/fixtures";
 import { SYNTHETIC_CATALOG, syntheticAssessment } from "../__fixtures__/benchmarks";
 
 const mocks = vi.hoisted(() => ({
@@ -139,10 +141,11 @@ afterEach(() => {
 });
 
 describe("BenchmarksScreen without the claim", () => {
-  it("shows coming soon only and calls no benchmark channel", async () => {
+  it("names no CIS Benchmarks and calls no benchmark channel", async () => {
     mocks.state.current = appState({ benchmarks: "comingSoon" });
     await renderScreen();
-    expect(screen.getByText("CIS Benchmarks are coming soon")).toBeTruthy();
+    expect(screen.getByText("This view is not available")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/CIS|Benchmark|coming soon/i);
     expect(screen.queryByText(/Synthetic/)).toBeNull();
     expect(mocks.catalog).not.toHaveBeenCalled();
     await click(screen.getByRole("button", { name: "Open Compliance Evidence" }));
@@ -253,7 +256,7 @@ describe("BenchmarksScreen review step", () => {
     expect(within(level1).getByText(/outside the pack, so it is not assessed here/)).toBeTruthy();
     expect(within(level1).getByText(/Coverage of the full benchmark is not shown/)).toBeTruthy();
     const level2 = screen.getByRole("region", { name: "Level 2" });
-    expect(within(level2).getByText("The matching value is on a policy that is not assigned.")).toBeTruthy();
+    expect(within(level2).getByText("The matching value is only on policies that are not assigned.")).toBeTruthy();
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/\bcompliant\b|\bscore\b|\bcertified\b/i);
   });
@@ -323,6 +326,47 @@ describe("BenchmarksScreen review step", () => {
     expect(within(detail).getByText("device_vendor_msft_policy_config_synthetic_area_synthetic_setting_2")).toBeTruthy();
     expect(within(detail).getByText("Synthetic tenant policy 2")).toBeTruthy();
     expect(within(detail).getByText("Recommended value")).toBeTruthy();
+  });
+
+  it("judges each policy on the displayed nested setting, not on its whole root (finding 2)", async () => {
+    const { choice, collection, groupCollection, pack, tenantPolicy } = engine;
+    const group = "synthetic_bench_group";
+    const childA = "synthetic_bench_group_a";
+    const childB = "synthetic_bench_group_b";
+    const nested = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({
+            name: "Synthetic grouped tenant policy",
+            settings: [groupCollection(group, [[choice(childA, "1"), choice(childB, "2")]])],
+          }),
+        ],
+      }),
+      {
+        ...pack(
+          [{ settings: [groupCollection(group, [[choice(childA, "1"), choice(childB, "1")]])] }],
+          [
+            { id: "1.1", title: "Synthetic nested match", level: 1, settings: [childA] },
+            { id: "1.2", title: "Synthetic nested difference", level: 1, settings: [childB] },
+          ],
+        ),
+        version: "2.0.0",
+      },
+      { now: engine.NOW },
+    );
+    // The root differs (childB), so the whole root comparison says differ.
+    expect(nested.settings[0]!.observations[0]!.comparison).toBe("differ");
+    await renderScreen();
+    await compare(nested);
+    await click(row("Synthetic nested match"));
+    let detail = within(list()).getByRole("list", { name: "Policies holding this setting" });
+    expect(within(detail).getByText("Synthetic grouped tenant policy")).toBeTruthy();
+    expect(within(detail).getByText("Matches")).toBeTruthy();
+    expect(within(detail).queryByText("Differs")).toBeNull();
+    await click(within(list()).getByRole("button", { name: /Synthetic nested match/, expanded: true }));
+    await click(row("Synthetic nested difference"));
+    detail = within(list()).getByRole("list", { name: "Policies holding this setting" });
+    expect(within(detail).getByText("Differs")).toBeTruthy();
   });
 
   it("warns about an incomplete collection and offers no drafts", async () => {
@@ -587,6 +631,35 @@ describe("BenchmarksScreen history", () => {
     mocks.assess.mockResolvedValueOnce({ ...syntheticAssessment(), assessedAt: "2026-10-22T10:00:00.000Z" });
     await click(screen.getByRole("button", { name: "Compare again" }));
     await until(() => expect(within(panel).getByText("Synthetic: the history store is locked.")).toBeTruthy());
+  });
+
+  it("shows one trend per Level card for a pack with Level 1 and Level 2 recommendations (finding 1)", async () => {
+    mocks.history.mockResolvedValue({
+      ...HISTORY,
+      trend: [
+        point("2026-10-22T09:30:00.000Z", 0.5, "first", null),
+        { ...point("2026-10-22T09:30:00.000Z", 1, "first", null), level: 2 as const },
+      ],
+    });
+    await renderScreen();
+    await compare(syntheticAssessment({ levels: [1, 2] }));
+    const panel = screen.getByRole("region", { name: "Trend of this benchmark and version per Level" });
+    await until(() => expect(within(panel).getByRole("list", { name: "Stored comparisons, Level 2" })).toBeTruthy());
+    const one = within(panel).getByRole("list", { name: "Stored comparisons, Level 1" });
+    const two = within(panel).getByRole("list", { name: "Stored comparisons, Level 2" });
+    expect(one.textContent).toContain("50%");
+    expect(two.textContent).toContain("100%");
+  });
+
+  it("says when this comparison was not stored and why (finding 6)", async () => {
+    await renderScreen();
+    await compare({
+      ...syntheticAssessment(),
+      history: { recorded: false, reason: "Synthetic: the stored benchmark run holds more than 5000 results." },
+    } as BenchmarkAssessment);
+    const panel = screen.getByRole("region", { name: "Trend of this benchmark, version and Level" });
+    await until(() => expect(within(panel).getByText("This comparison was not stored")).toBeTruthy());
+    expect(within(panel).getByText(/holds more than 5000 results/)).toBeTruthy();
   });
 
   it("shows a history error with Try again", async () => {

@@ -67,7 +67,9 @@ const byIdentifier = (a: { identifier: string }, b: { identifier: string }) =>
 /**
  * Manual items for one Level: list items marked not automated, plus the
  * identifiers given as not assessed, once each. List items win because they
- * may carry a title and text.
+ * may carry a title and text, also for an automated item that is given as
+ * not assessed (the pack cannot assess it, so it needs a manual check);
+ * only automated items that were assessed are left out.
  */
 export function manualItemsForLevel(
   list: RecommendationList | undefined,
@@ -75,11 +77,12 @@ export function manualItemsForLevel(
   notAssessed: readonly string[] = [],
 ): ManualItemView[] {
   const items = new Map<string, ManualItemView>();
-  for (const identifier of notAssessed)
-    if (!items.has(identifier))
-      items.set(identifier, toManualView({ identifier, level }));
+  const selected = new Set(notAssessed);
+  for (const identifier of selected)
+    items.set(identifier, toManualView({ identifier, level }));
   for (const item of list?.items ?? []) {
-    if (item.level !== level || item.automated) continue;
+    if (item.level !== level) continue;
+    if (item.automated && !selected.has(item.identifier)) continue;
     items.set(item.identifier, toManualView(item));
   }
   return [...items.values()].sort(byIdentifier);

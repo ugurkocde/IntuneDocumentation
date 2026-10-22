@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assessBenchmark } from "../assessment";
 import { exclusionsText, formatRate, headlineLabel } from "../display";
-import { storedRunHeadline, summarizeRun } from "../history";
+import { storedRunHeadline, summarizeRuns } from "../history";
 import { portfolioRows } from "../portfolio";
 import { tenantSettings } from "../tenant-settings";
 import { benchmarkTrend } from "../trend";
@@ -112,7 +112,9 @@ describe("one benchmark rate in every view", () => {
   });
 
   it("shows the same raw rate in the stored run, the trend and the portfolio", () => {
-    const run = summarizeRun(assessment, DIGEST_A);
+    const [run] = summarizeRuns(assessment, DIGEST_A) as [
+      ReturnType<typeof summarizeRuns>[number],
+    ];
     const stored = storedRunHeadline(run);
     const trend = benchmarkTrend([run])[0]!;
     const portfolio = portfolioRows([
@@ -217,5 +219,92 @@ describe("collection markers the adapter reads", () => {
       collectionSkippedFamilies: ["settingsCatalog"],
     };
     expect(tenantSettings(data).complete).toBe(false);
+  });
+});
+
+describe("one rate per Level when a Level 2 pack holds Level 1 and Level 2 recommendations", () => {
+  const mixed = pack(
+    [
+      {
+        settings: [
+          choice("synthetic_a", "on"),
+          choice("synthetic_b", "on"),
+          choice("synthetic_c", "on"),
+          choice("synthetic_d", "on"),
+        ],
+      },
+    ],
+    [
+      {
+        id: "1.1",
+        title: "Synthetic one",
+        level: 1,
+        settings: ["synthetic_a"],
+      },
+      {
+        id: "1.2",
+        title: "Synthetic two",
+        level: 1,
+        settings: ["synthetic_b"],
+      },
+      {
+        id: "2.1",
+        title: "Synthetic three",
+        level: 2,
+        settings: ["synthetic_c"],
+      },
+      {
+        id: "2.2",
+        title: "Synthetic four",
+        level: 2,
+        settings: ["synthetic_d"],
+      },
+    ],
+    2,
+  );
+  // Level 1: one of two match (50%). Level 2: both match (100%). Together 75%.
+  const assessment = assessBenchmark(
+    collection({
+      policies: [
+        tenantPolicy({
+          settings: [
+            choice("synthetic_a", "on"),
+            choice("synthetic_b", "off"),
+            choice("synthetic_c", "on"),
+            choice("synthetic_d", "on"),
+          ],
+        }),
+      ],
+    }),
+    mixed,
+    { now: NOW },
+  );
+
+  it("stores one run per recommendation Level whose headline is that Level card", () => {
+    const runs = summarizeRuns(assessment, DIGEST_A);
+    expect(runs.map((run) => run.level)).toEqual([1, 2]);
+    expect(runs.map((run) => run.results.map(([id]) => id))).toEqual([
+      ["1.1", "1.2"],
+      ["2.1", "2.2"],
+    ]);
+    const live = assessment.levels.map(({ level, headline }) => ({
+      level,
+      rate: headline.rate,
+      counts: headline.counts,
+    }));
+    expect(live.map((item) => item.rate)).toEqual([0.5, 1]);
+    expect(
+      runs.map((run) => ({ level: run.level, ...storedRunHeadline(run) })),
+    ).toEqual(live);
+    const trend = benchmarkTrend(runs);
+    expect(
+      trend.map(({ level, rate, counts }) => ({ level, rate, counts })),
+    ).toEqual(live);
+    const row = portfolioRows([
+      { tenantId: "00000000-0000-0000-0000-000000000001", runs },
+    ])[0]!;
+    expect(
+      row.levels.map(({ level, rate, counts }) => ({ level, rate, counts })),
+    ).toEqual(live);
   });
 });

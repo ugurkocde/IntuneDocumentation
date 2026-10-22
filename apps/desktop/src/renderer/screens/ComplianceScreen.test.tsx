@@ -62,16 +62,13 @@ afterEach(() => {
 });
 
 describe("Compliance framework picker, CIS Benchmarks card", () => {
-  it("is disabled and says coming soon only without the claim", async () => {
+  it("is not shown at all without the claim: no card, no CIS Benchmarks mention", async () => {
     mocks.state.current = appState("comingSoon");
     await renderScreen();
-    const card = screen.getByRole("button", { name: "CIS Benchmarks, coming soon" }) as HTMLButtonElement;
-    expect(card.disabled).toBe(true);
-    expect(card.textContent).toContain("Coming soon");
-    // No benchmark names, versions or dates.
-    expect(card.textContent).not.toMatch(/\d|Level|Windows|macOS|Synthetic/);
-    fireEvent.click(card);
-    expect(mocks.navigate).not.toHaveBeenCalled();
+    const picker = screen.getByRole("list", { name: "Compliance frameworks" });
+    expect(screen.queryByRole("button", { name: /CIS Benchmarks/ })).toBeNull();
+    expect(picker.textContent).not.toMatch(/CIS Benchmarks|coming soon/i);
+    expect(container.textContent).not.toMatch(/CIS Benchmarks|coming soon/i);
   });
 
   it("opens the Benchmarks screen when internal", async () => {

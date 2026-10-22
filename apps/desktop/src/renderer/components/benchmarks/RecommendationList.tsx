@@ -1,7 +1,12 @@
 import { Check, ChevronDown, Search, ShieldOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Observation, ResultState, SettingFinding } from "../../../../../../src/lib/benchmarks/assessment";
-import { REASON_LABELS, RESULT_LABELS, SETTING_STATUS_LABELS } from "../../../../../../src/lib/benchmarks/display";
+import {
+  REASON_LABELS,
+  RESULT_LABELS,
+  SETTING_STATUS_LABELS,
+  observationLabel,
+} from "../../../../../../src/lib/benchmarks/display";
 import type { BenchmarkLevel } from "../../../shared/ipc-types";
 import { useDebouncedValue } from "../../hooks/use-debounced-value";
 import {
@@ -24,12 +29,6 @@ const ASSIGNMENT_LABELS: Record<Observation["assignment"], string> = {
   assigned: "Assigned",
   notAssigned: "Not assigned",
   unknown: "Assignment unknown",
-};
-
-const COMPARISON_LABELS: Record<Observation["comparison"], string> = {
-  match: "Matches",
-  differ: "Differs",
-  unknown: "Unreadable",
 };
 
 function FilterChip({
@@ -70,7 +69,10 @@ function Json({ value }: { value: unknown }) {
   );
 }
 
-function FindingDetail({ finding }: { finding: SettingFinding }) {
+// The policies holding the root of a finding, each judged on the displayed
+// setting (observationLabel, as the PDF), never on the whole root: a nested
+// setting that matches next to a differing sibling reads Matches.
+function FindingDetail({ finding, settingId }: { finding: SettingFinding; settingId: string }) {
   return (
     <div className="mt-2 space-y-2">
       {finding.observations.length === 0 ? (
@@ -86,7 +88,7 @@ function FindingDetail({ finding }: { finding: SettingFinding }) {
               <span className="bg-mint-100 text-petrol-700 rounded-full px-2 py-0.5 text-[10px] font-bold">
                 {ASSIGNMENT_LABELS[observation.assignment]}
               </span>
-              <span className="text-petrol-600">{COMPARISON_LABELS[observation.comparison]}</span>
+              <span className="text-petrol-600">{observationLabel(finding, observation, settingId)}</span>
             </li>
           ))}
         </ul>
@@ -124,7 +126,7 @@ function RowDetail({ row, onAddException }: { row: ReviewRow; onAddException: (s
                 .map((key) => findings.get(key))
                 .filter((finding): finding is SettingFinding => Boolean(finding))
                 .map((finding) => (
-                  <FindingDetail key={finding.key} finding={finding} />
+                  <FindingDetail key={finding.key} finding={finding} settingId={setting.id} />
                 ))}
               {setting.result === "Fail" && (
                 <Button

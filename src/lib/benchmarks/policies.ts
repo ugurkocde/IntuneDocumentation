@@ -410,7 +410,8 @@ function compareLeaves(
   const want = splitEntries(wanted);
   for (const [path, value] of want.direct) {
     const observed = have.get(path);
-    if (observed === UNREADABLE) unknown = true;
+    // A pack value this app cannot read is never compared.
+    if (value === UNREADABLE || observed === UNREADABLE) unknown = true;
     else if (observed === undefined) {
       if (shadowed(path)) unknown = true;
       else return "differ";
@@ -452,13 +453,36 @@ export function compareRoot(recommended: Json, observed: Json): Comparison {
     const wanted = leafValues(want, "", new Map());
     const own = `/${want.settingDefinitionId}`;
     const observedRoot = haveLeaves.get(own);
-    if (observedRoot === UNREADABLE) return "unknown";
+    if (observedRoot === UNREADABLE || wanted.get(own) === UNREADABLE)
+      return "unknown";
     if (observedRoot !== wanted.get(own)) return "differ";
     if (hasChildInstances(have) || haveLeaves.size !== wanted.size)
       return "differ";
     return compareLeaves([...wanted], haveLeaves);
   }
   return compareLeaves([...leafValues(want, "", new Map())], haveLeaves);
+}
+
+/**
+ * Whether the recommended value of a definition, and everything below it,
+ * has the documented shape. parsePolicies accepts any instance with a
+ * definition id and a type, so a pack may hold a value this app cannot read
+ * (a secret, a wrong type or an undocumented type); it is never compared.
+ */
+export function readableRecommendation(
+  recommended: Json,
+  definitionId: string,
+): boolean {
+  const want = clean(recommended);
+  if (!isInstance(want)) return false;
+  const leaves = [...leafValues(want, "", new Map())];
+  const anchors = leaves
+    .map(([path]) => path)
+    .filter((path) => path.endsWith(`/${definitionId}`));
+  return !leaves.some(
+    ([path, value]) =>
+      value === UNREADABLE && anchors.some((anchor) => inSubtree(path, anchor)),
+  );
 }
 
 /** Whether a tenant root holds a definition: yes, no, or maybe below an unreadable parent. */

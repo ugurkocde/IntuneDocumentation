@@ -6,7 +6,12 @@ import type {
   ResultState,
   SettingFinding,
 } from "../../../../../src/lib/benchmarks/assessment";
-import type { BenchmarkCatalog, BenchmarkIdentity, BenchmarkLevel } from "../../shared/ipc-types";
+import type {
+  BenchmarkAssessmentView,
+  BenchmarkCatalog,
+  BenchmarkIdentity,
+  BenchmarkLevel,
+} from "../../shared/ipc-types";
 
 // View helpers of the Benchmarks screen. Titles come from the delivered pack
 // and live in this window's memory only.
@@ -20,7 +25,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 // benchmarks:assess returns the engine's BenchmarkAssessment as JSON. Anything
 // without its lists is refused here instead of rendering a half empty review.
-export function toAssessment(value: unknown): BenchmarkAssessment {
+export function toAssessment(value: unknown): BenchmarkAssessmentView {
   if (
     !isRecord(value) ||
     typeof value.benchmark !== "string" ||
@@ -34,7 +39,7 @@ export function toAssessment(value: unknown): BenchmarkAssessment {
   ) {
     throw new Error(UNREADABLE);
   }
-  return value as unknown as BenchmarkAssessment;
+  return value as unknown as BenchmarkAssessmentView;
 }
 
 const numeric = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });

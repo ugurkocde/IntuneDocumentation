@@ -1,9 +1,13 @@
 import { Check, Info, KeyRound, LayoutGrid, ListChecks, Play, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { BenchmarkAssessment } from "../../../../../src/lib/benchmarks/assessment";
 import { benchmarkDisplayName, READINESS_DISCLAIMER } from "../../../../../src/lib/benchmarks/display";
 import { flowStage, flowSteps, type FlowStep } from "../../../../../src/lib/benchmarks/flow";
-import type { BenchmarkCatalog, BenchmarkIdentity, BenchmarkLevel } from "../../shared/ipc-types";
+import type {
+  BenchmarkAssessmentView,
+  BenchmarkCatalog,
+  BenchmarkIdentity,
+  BenchmarkLevel,
+} from "../../shared/ipc-types";
 import { BenchmarkExports } from "../components/benchmarks/BenchmarkExports";
 import { BenchmarkHistoryPanel } from "../components/benchmarks/BenchmarkHistoryPanel";
 import { BenchmarkPortfolioPanel } from "../components/benchmarks/BenchmarkPortfolioPanel";
@@ -120,7 +124,7 @@ export function BenchmarksScreen() {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [catalogToken, setCatalogToken] = useState(0);
   const [wanted, setWanted] = useState<Partial<BenchmarkIdentity>>({});
-  const [assessment, setAssessment] = useState<BenchmarkAssessment | null>(null);
+  const [assessment, setAssessment] = useState<BenchmarkAssessmentView | null>(null);
   const [running, setRunning] = useState(false);
   const [assessError, setAssessError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -179,14 +183,16 @@ export function BenchmarksScreen() {
     : null;
   const msp = state.license?.plan === "msp";
 
+  // Without the claim nothing names CIS Benchmarks (the reducer also leaves
+  // this screen when the claim is gone).
   if (!available) {
     return (
       <div className="space-y-5">
-        <Header eyebrow="CIS Benchmarks" title="Coming soon" />
+        <Header eyebrow="Compliance Evidence" title="Not available" />
         <EmptyState
           icon={ListChecks}
-          title="CIS Benchmarks are coming soon"
-          description="Readiness comparisons with CIS Benchmarks are not available for this licence yet."
+          title="This view is not available"
+          description="It is not part of this licence."
           action={
             <Button icon={ShieldCheck} onClick={() => actions.navigate("compliance")}>
               Open Compliance Evidence
@@ -502,7 +508,9 @@ export function BenchmarksScreen() {
 
           <BenchmarkHistoryPanel
             identity={assessed!}
+            levels={assessment.levels.map((item) => item.level)}
             assessedAt={assessment.assessedAt}
+            record={assessment.history}
             onOpenHistory={() => actions.navigate("history")}
           />
 

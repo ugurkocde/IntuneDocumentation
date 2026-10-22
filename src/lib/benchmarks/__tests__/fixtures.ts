@@ -202,10 +202,44 @@ export interface CollectionInput {
   collectedAt?: string | null;
   fetchErrors?: BenchmarkCollection["fetchErrors"];
   sectionError?: string;
+  /** Items of the older profile families; each is an empty section by default. */
+  other?: Partial<Record<(typeof OTHER_FAMILIES)[number], unknown[]>>;
+  /** Older profile families left out of the sections, as if not collected. */
+  omit?: Array<(typeof OTHER_FAMILIES)[number]>;
 }
 
-/** A finished collection holding only the Settings Catalog section. */
+/** Families of profile types outside the Settings Catalog. */
+export const OTHER_FAMILIES = [
+  "deviceConfigurations",
+  "windowsUpdatePolicies",
+  "administrativeTemplates",
+  "securityBaselines",
+] as const;
+
+/** A device configuration item of a Graph type, for example "macOSCustomConfiguration". */
+export function deviceConfiguration(type: string, id = "synthetic-config-1") {
+  return {
+    "@odata.type": `#microsoft.graph.${type}`,
+    id,
+    displayName: "Synthetic device configuration",
+    assignments: [],
+  };
+}
+
+/**
+ * A finished collection: the Settings Catalog section plus the older profile
+ * families, empty unless given.
+ */
 export function collection(input: CollectionInput): BenchmarkCollection {
+  const others = OTHER_FAMILIES.filter(
+    (family) => !input.omit?.includes(family),
+  ).map((family) => ({
+    key: family,
+    familyKey: family,
+    label: family,
+    selectionPrefix: family,
+    items: input.other?.[family] ?? [],
+  }));
   return {
     ...(input.collectedAt === null
       ? {}
@@ -222,13 +256,14 @@ export function collection(input: CollectionInput): BenchmarkCollection {
           ? { error: { message: input.sectionError } }
           : {}),
       },
+      ...others,
     ],
     fetchErrors: input.fetchErrors ?? [],
     settingsCatalog: input.policies,
-    deviceConfigurations: [],
-    administrativeTemplates: [],
+    deviceConfigurations: input.other?.deviceConfigurations ?? [],
+    administrativeTemplates: input.other?.administrativeTemplates ?? [],
     compliancePolicies: [],
-    securityBaselines: [],
+    securityBaselines: input.other?.securityBaselines ?? [],
     scripts: { windows: [], macOS: [] },
   };
 }

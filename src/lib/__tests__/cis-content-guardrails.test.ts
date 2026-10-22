@@ -34,8 +34,9 @@ const SCAN_ROOTS = [
 const OPTIONAL_ROOTS = new Set(["apps/desktop/dist"]);
 const SKIPPED_DIRS = new Set(["node_modules", ".next", ".source", "out"]);
 
-// Customer facing copy: any mention of CIS Benchmarks must say coming soon and
-// name no benchmark beyond "CIS Benchmarks".
+// Customer facing copy must not mention CIS Benchmarks at all until the CIS
+// commercial-use agreement covers Intune Documentation (owner decision
+// 2026-10-22). CIS Controls and the customer supplied crosswalk may appear.
 const COPY_ROOTS = [
   "README.md",
   "apps/desktop/release-notes",
@@ -151,10 +152,6 @@ const CLAIM_RULE: Rule = {
 const SYNTHETIC_MARK = /synthetic/i;
 const BENCHMARK_MENTION =
   /\b(?:CIS|Center\s+for\s+Internet\s+Security)[\s-]+(?:\(CIS\)\s*)?Benchmarks?\b/gi;
-// Words that would name a specific benchmark next to a mention in copy.
-const NAMED_BENCHMARK =
-  /\b(?:Windows|macOS|iOS|iPadOS|Android|Intune|Entra|Microsoft\s+365|M365|Office|Edge|Chrome|Defender|Level\s*[12]|L[12])\b|\bv?\d+\.\d+(?:\.\d+)?\b/i;
-const COMING_SOON = /coming soon/i;
 
 type Finding = { file: string; rule: string; text: string };
 
@@ -318,14 +315,11 @@ function copyFindings(file: string, text: string): Finding[] {
   const findings: Finding[] = [];
   for (const unit of copyUnits(text)) {
     if (!unit.match(BENCHMARK_MENTION)) continue;
-    const rest = unit.replace(BENCHMARK_MENTION, " ");
-    const problem = !COMING_SOON.test(unit)
-      ? "copy-not-coming-soon"
-      : NAMED_BENCHMARK.test(rest)
-        ? "copy-names-a-benchmark"
-        : null;
-    if (problem)
-      findings.push({ file, rule: problem, text: unit.trim().slice(0, 160) });
+    findings.push({
+      file,
+      rule: "copy-mentions-cis-benchmarks",
+      text: unit.trim().slice(0, 160),
+    });
   }
   return findings;
 }
@@ -524,20 +518,23 @@ describe("CIS content guardrail rules", () => {
     expect(rules("logo.png", Buffer.from([0x89, 0x50, 0]))).toEqual([]);
   });
 
-  it("requires coming soon and no benchmark names in customer copy", () => {
+  it("refuses any mention of CIS Benchmarks in customer copy, coming soon included", () => {
     const copy = (text: string) =>
       scanFile("page.mdx", Buffer.from(text), true).map((f) => f.rule);
     expect(copy(`${cis} Benchmarks are supported.`)).toEqual([
-      "copy-not-coming-soon",
+      "copy-mentions-cis-benchmarks",
     ]);
     expect(copy(`Center for Internet Security benchmarks are here.`)).toEqual([
-      "copy-not-coming-soon",
+      "copy-mentions-cis-benchmarks",
     ]);
-    expect(copy(`${cis} Benchmarks for Windows 99 are coming soon.`)).toEqual([
-      "copy-names-a-benchmark",
+    expect(copy(`**${cis} Benchmarks (coming soon).** Later.`)).toEqual([
+      "copy-mentions-cis-benchmarks",
     ]);
     expect(
       copy(`- Windows 99 support\n- ${cis} Benchmarks: coming soon.`),
+    ).toEqual(["copy-mentions-cis-benchmarks"]);
+    expect(
+      copy(`Import your own ${cis} Controls crosswalk for ISO and NIS2.`),
     ).toEqual([]);
   });
 

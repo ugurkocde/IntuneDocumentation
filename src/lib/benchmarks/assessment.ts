@@ -4,14 +4,22 @@
  * and cis-readiness.ts) and adapted to this PR's rule: absent, unreadable or
  * incomplete data is Review or Not assessed, never Missing or Different.
  *
- * - Missing only when the collection proves absence (TenantSettings.complete).
+ * - Missing only when the collection proves absence (TenantSettings.complete)
+ *   and no profile of an older type (device configuration, administrative
+ *   template, security baseline or endpoint security intent) exists for the
+ *   setting's platform; otherwise an absent setting is Review (otherProfiles),
+ *   because the comparison reads Settings Catalog policies only.
  * - Different only with a readable observed value that differs.
  * - Present only when every observation holding the setting is readable and
  *   matches, and the collection is complete (an unread policy may hold
  *   another value).
- * - Pass needs Present on assigned policies only: a setting held only, or
- *   also, on an unassigned policy is Review (notAssigned), and one whose
- *   assignment could not be read is Review (assignmentUnknown).
+ * - Pass needs Present on at least one assigned policy (owner decision
+ *   2026-10-22); unassigned policies holding the same value do not change
+ *   that. Review (notAssigned) only when every matching policy is unassigned,
+ *   Review (assignmentUnknown) when none is assigned and an assignment could
+ *   not be read.
+ * - A pack value this app cannot read is never compared: Review
+ *   (packValueUnreadable), never Different or Missing.
  * - A recommendation naming a setting outside the pack is Not assessed.
  * - The headline is Pass / (Pass + Fail); Review and Not assessed are counted
  *   but never lower it; null when nothing was assessed.
@@ -22,6 +30,7 @@ import {
   compareRoot,
   definitionIds,
   parsePolicies,
+  readableRecommendation,
   type BaselinePolicy,
   type Comparison,
   type RecordJson,
@@ -41,6 +50,7 @@ import {
   type ManualItemView,
 } from "./manual";
 import {
+  mayBeSetElsewhere,
   tenantSettings,
   type AssignmentState,
   type BenchmarkCollection,
@@ -65,7 +75,9 @@ export type ReasonCode =
   | "profileChoice"
   | "notAssigned"
   | "assignmentUnknown"
-  | "settingOutsidePack";
+  | "settingOutsidePack"
+  | "otherProfiles"
+  | "packValueUnreadable";
 
 export interface Observation {
   policyId: string;
@@ -170,6 +182,14 @@ interface Judgement {
   holders: Observation[];
 }
 
+/** What the collection proves about absence for one pack platform. */
+export interface AbsenceProof {
+  /** The Settings Catalog collection is complete. */
+  complete: boolean;
+  /** Profiles of older types may set the setting on this platform. */
+  elsewhere: boolean;
+}
+
 /**
  * One definition of a recommended root across every tenant root of the same
  * platform and root definition.
@@ -178,7 +198,7 @@ function judge(
   recommended: RecordJson,
   observations: readonly Observation[],
   definitionId: string,
-  complete: boolean,
+  proof: AbsenceProof,
 ): Judgement {
   const states = observations.map((observation) => ({
     observation,
@@ -191,26 +211,37 @@ function judge(
   const holders = holding.map(({ observation }) => observation);
   if (holding.some(({ state }) => state.comparison === "differ"))
     return { status: "Different", holders };
+  const readable = readableRecommendation(recommended, definitionId);
   const maybe = states.some(({ state }) => state.holds === "maybe");
-  if (!holding.length && !maybe)
-    return complete
-      ? { status: "Missing", holders }
-      : { status: "Review", reason: "collectionIncomplete", holders };
+  if (!holding.length && !maybe) {
+    if (!proof.complete)
+      return { status: "Review", reason: "collectionIncomplete", holders };
+    if (!readable)
+      return { status: "Review", reason: "packValueUnreadable", holders };
+    if (proof.elsewhere)
+      return { status: "Review", reason: "otherProfiles", holders };
+    return { status: "Missing", holders };
+  }
   if (maybe || holding.some(({ state }) => state.comparison === "unknown"))
-    return { status: "Review", reason: "unreadableValue", holders };
-  if (!complete)
+    return {
+      status: "Review",
+      reason: readable ? "unreadableValue" : "packValueUnreadable",
+      holders,
+    };
+  if (!proof.complete)
     return { status: "Review", reason: "collectionIncomplete", holders };
   return { status: "Present", holders };
 }
 
+/** One assigned matching policy is enough; otherwise why the match needs review. */
 function assignmentReason(
   holders: readonly Observation[],
 ): ReasonCode | undefined {
-  if (holders.some((holder) => holder.assignment === "notAssigned"))
+  if (holders.some((holder) => holder.assignment === "assigned"))
+    return undefined;
+  if (holders.every((holder) => holder.assignment === "notAssigned"))
     return "notAssigned";
-  if (holders.some((holder) => holder.assignment !== "assigned"))
-    return "assignmentUnknown";
-  return undefined;
+  return "assignmentUnknown";
 }
 
 function resultOf(judgement: Judgement): {
@@ -286,12 +317,10 @@ export function compareSettings(
           result: "Review" as const,
           reason: "profileChoice" as const,
         };
-      const judgement = judge(
-        settingInstance,
-        observed,
-        settingId,
-        tenant.complete,
-      );
+      const judgement = judge(settingInstance, observed, settingId, {
+        complete: tenant.complete,
+        elsewhere: mayBeSetElsewhere(tenant, policy.platforms),
+      });
       const { result, reason } = resultOf(judgement);
       return withReason(
         { ...base, status: judgement.status, result },
@@ -322,14 +351,14 @@ const STATUS_ORDER: SettingStatus[] = [
  * One result per pack recommendation. Each declared setting is judged on its
  * own leaf across every tenant root holding it. Not assessed when any
  * declared setting is outside the pack; otherwise Fail when any is Missing or
- * Different; otherwise Review when any is Review or held on a policy that is
- * not assigned; Pass only when every declared setting is Present on assigned
- * policies.
+ * Different; otherwise Review when any is Review or matches on no assigned
+ * policy; Pass only when every declared setting is Present with at least one
+ * assigned matching policy.
  */
 export function recommendationResults(
   findings: readonly SettingFinding[],
   recommendations: readonly PackRecommendation[],
-  complete: boolean,
+  tenant: Pick<TenantSettings, "complete" | "otherProfilePlatforms">,
 ): RecommendationResult[] {
   const findingIds = findings.map((finding) => ({
     finding,
@@ -362,19 +391,35 @@ export function recommendationResults(
               reason: "profileChoice" as const,
               findingKeys,
             };
-          const judgements = mapped.map((finding) =>
-            judge(finding.recommended, finding.observations, id, complete),
-          );
+          // Each pack root holding the definition is judged on its own: an
+          // assigned match on one root does not stand in for another root.
+          const judged = mapped.map((finding) => {
+            const judgement = judge(
+              finding.recommended,
+              finding.observations,
+              id,
+              {
+                complete: tenant.complete,
+                elsewhere: mayBeSetElsewhere(tenant, finding.platforms),
+              },
+            );
+            return { judgement, ...resultOf(judgement) };
+          });
           const status =
             STATUS_ORDER.find((candidate) =>
-              judgements.some((judgement) => judgement.status === candidate),
+              judged.some(({ judgement }) => judgement.status === candidate),
             ) ?? "Review";
-          const combined: Judgement = {
-            status,
-            reason: judgements.find((judgement) => judgement.reason)?.reason,
-            holders: judgements.flatMap((judgement) => judgement.holders),
-          };
-          const { result, reason } = resultOf(combined);
+          const result: ResultState = judged.some(
+            (entry) => entry.result === "Fail",
+          )
+            ? "Fail"
+            : judged.some((entry) => entry.result === "Review")
+              ? "Review"
+              : "Pass";
+          const reason =
+            result === "Review"
+              ? judged.find((entry) => entry.result === "Review")?.reason
+              : undefined;
           return withReason({ id, status, result, findingKeys }, reason);
         });
       const results = settings.map((setting) => setting.result);
@@ -495,7 +540,7 @@ export function assessBenchmark(
   const recommendations = recommendationResults(
     settings,
     pack.recommendations ?? [],
-    tenant.complete,
+    tenant,
   );
   const basis = recommendations.length ? "recommendations" : "settings";
   const list = matchingList(pack, options.list);

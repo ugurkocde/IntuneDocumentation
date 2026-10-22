@@ -143,7 +143,7 @@ describe("benchmark readiness PDF", () => {
     for (const label of ["Matches", "Differs", "Needs review", "Not assessed"])
       expect(all).toContain(label);
     expect(all).toContain(
-      "The matching value is on a policy that is not assigned.",
+      "The matching value is only on policies that are not assigned.",
     );
     expect(all).toContain(
       "The recommendation names a setting outside the pack, so it is not assessed here.",

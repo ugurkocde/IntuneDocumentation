@@ -27,10 +27,10 @@ describe("Purview template mapping", () => {
       "compliance-manager-regulations-list",
     );
     for (const entry of Object.values(PURVIEW_TEMPLATES))
-      if (entry) expect(entry.verifiedAt).toBe("2026-10-18");
+      expect(entry.verifiedAt).toBe("2026-10-18");
   });
 
-  it("resolves names, notes and frameworks without a template", () => {
+  it("resolves names and notes", () => {
     expect(purviewTemplateFor("iso-27001-2022")?.displayName).toBe(
       "ISO/IEC 27001:2022",
     );

@@ -42,7 +42,6 @@ export {
 } from "./purview-templates";
 export {
   buildEvidencePack,
-  NO_PURVIEW_TEMPLATE,
   safeFileName,
   type EvidenceManifest,
   type EvidencePackMeta,

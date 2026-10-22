@@ -9,9 +9,7 @@ import {
 import { generateFixPack } from "../compliance/fix-pack";
 import { MANAGEMENT_REPORT_STRINGS } from "../compliance/management/management-report-strings";
 import type { CapabilityResult } from "../compliance/types";
-import { generateComplianceReportPDF, translateCheckText } from "../compliance/report-pdf";
 import { diffAssessments } from "../snapshots/diff";
-import { extractPdfStreamText } from "./helpers/pdf-text";
 import { compactAssessment, type StoredAssessment } from "../snapshots/projection";
 
 // Graph returns null for an unset deadline or scan time and the enum default
@@ -322,30 +320,5 @@ describe("history for a value that could not be read", () => {
     });
     for (const { cause } of deadlineCauses(stored(off(configured)), assessment))
       expect(cause.notCompared).toBe(false);
-  });
-});
-
-describe("German report text for plain check values and not configured reasons", () => {
-  it("translates method states, security defaults and not configured reasons", () => {
-    expect(translateCheckText("Enabled for 1 target")).toBe("Aktiviert für 1 Ziel");
-    expect(translateCheckText("Enabled for 3 targets; single-factor default mode")).toBe(
-      "Aktiviert für 3 Ziele; Standardmodus Einzelfaktor",
-    );
-    expect(translateCheckText("Enabled, no users targeted")).toBe("Aktiviert, keine Benutzer als Ziel");
-    expect(translateCheckText("Disabled")).toBe("Deaktiviert");
-    expect(translateCheckText("Off")).toBe("Aus");
-    expect(translateCheckText("Other text")).toBe("Other text");
-  });
-
-  it("prints the update ring and scan reasons in German in a German report", async () => {
-    const text = extractPdfStreamText(
-      await generateComplianceReportPDF(data([pilotRing, restrictions]), {
-        frameworkId: "iso-27001-2022",
-        locale: "de",
-      }),
-    );
-    expect(text).toContain("In diesem Updatering ist keine Frist");
-    expect(text).not.toContain("No quality update deadline is configured");
-    expect(text).not.toContain("No scheduled scan is configured");
   });
 });

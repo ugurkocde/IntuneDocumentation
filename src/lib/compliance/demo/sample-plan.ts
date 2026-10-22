@@ -103,7 +103,7 @@ export function sampleMetadata(sample: SampleReport) {
     preparedBy: "Endpoint Engineering",
     reportId: sampleReportId(sample.frameworkId),
     revision: "1.0",
-    classification: sample.locale === "de" ? "Intern" : "Internal",
+    classification: "Internal",
   };
 }
 
@@ -119,7 +119,6 @@ export interface SampleManifest {
   files: {
     frameworkId: string;
     file: string;
-    locale: string;
     reportId: string;
     excerptControlIds: string[];
   }[];
@@ -133,7 +132,6 @@ export async function expectedSampleManifest(): Promise<SampleManifest> {
     files: SAMPLE_REPORTS.map((sample) => ({
       frameworkId: sample.frameworkId,
       file: sample.file,
-      locale: sample.locale,
       reportId: sampleReportId(sample.frameworkId),
       excerptControlIds: sampleExcerptControlIds(sample),
     })),

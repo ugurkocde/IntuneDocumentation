@@ -50,26 +50,19 @@ export const CAPABILITY_STATUS_LABELS: Record<CapabilityStatus, string> = {
  */
 export const ALTERNATIVE_STATE_LABELS: Record<
   Exclude<CapabilityAlternative["state"], "unknown">,
-  { en: string; de: string }
+  string
 > = {
-  inUse: {
-    en: "Not needed, an alternative is set up",
-    de: "Nicht nötig, eine Alternative ist eingerichtet",
-  },
-  notCombinable: {
-    en: "Not applicable while Conditional Access policies exist",
-    de: "Nicht anwendbar, solange Richtlinien für bedingten Zugriff bestehen",
-  },
+  inUse: "Not needed, an alternative is set up",
+  notCombinable: "Not applicable while Conditional Access policies exist",
 };
 
 /** The alternative label of a capability, or undefined when it has none. */
 export function alternativeLabel(
   result: Pick<CapabilityResult, "alternative">,
-  locale: "en" | "de" = "en",
 ): string | undefined {
   const state = result.alternative?.state;
   return state && state !== "unknown"
-    ? ALTERNATIVE_STATE_LABELS[state][locale]
+    ? ALTERNATIVE_STATE_LABELS[state]
     : undefined;
 }
 

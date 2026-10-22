@@ -104,8 +104,6 @@ export type ComplianceFrameworkId =
   | "dora-2022-2554"
   | "hipaa-security-rule";
 
-type Locale = "en" | "de";
-
 interface ReportStrings {
   title: string;
   coverLead: string;
@@ -123,7 +121,6 @@ interface ReportStrings {
   tocHeading: string;
   summaryHeading: string;
   summaryCounts: (framework: FrameworkAssessment) => string;
-  summaryScope?: string;
   resultsHeading: string;
   resultsHeaders: readonly [string, string, string, string];
   assignedDeviations: string;
@@ -167,328 +164,110 @@ interface ReportStrings {
   fileFrameworkLabels: Record<ComplianceFrameworkId, string>;
 }
 
-const STRINGS: Record<Locale, ReportStrings> = {
-  en: {
-    title: "Technical Evidence Report: Intune Configuration",
-    coverLead:
-      "Evidence matrix for selected assessment points, read from the Microsoft Intune configuration",
-    generatedOn: "Report date",
-    documentControlLabels: [
-      "Tenant",
-      "Prepared for",
-      "Prepared by",
-      "Contact",
-      "Report ID",
-      "Revision",
-      "Ruleset version",
-      "Classification",
-    ],
-    tocHeading: "Table of Contents",
-    summaryHeading: "Summary",
-    summaryCounts: (framework) =>
-      `${framework.summary.withEvidence} of ${framework.summary.totalControls} selected controls with configuration evidence (${framework.summary.partial} partial)`,
-    resultsHeading: "Results Overview",
-    resultsHeaders: ["Category", "Evidence", "Partial", "No evidence"],
-    assignedDeviations: "Assigned deviating configurations",
-    assignedDeviationsExplanation:
-      "At least one assigned policy explicitly contradicts the target configuration.",
-    unassignedCompliant: "Configured settings without assignment",
-    unassignedCompliantExplanation:
-      "The detected target configuration is not effective until it is assigned.",
-    findingsHeading: "Key findings",
-    noFindings: "No prioritized findings were identified.",
-    provenanceHeading: "Data Basis and Scope",
-    dataBasis:
-      "The assessment runs on the data provided at generation time. Data basis: configuration export provided at the time the report was generated.",
-    rulesetLabel: "Ruleset version",
-    inventoryHeading: "Assessed inventory",
-    inventoryHeaders: ["Policy family", "Items", "Assigned"],
-    inventoryFamilies: [
-      "Settings Catalog policies",
-      "Device configurations",
-      "Device compliance policies",
-    ],
-    inventoryOther: "Other policy families",
-    collectionHeading: "Collection notes",
-    incompleteCollection:
-      "Data collection was incomplete. Assessment points without evidence may be caused by missing data.",
-    noCollectionErrors: "No collection errors were provided.",
-    platformScope: "Platforms observed in export",
-    controlStatuses: {
-      ...CONTROL_STATUS_LABELS,
-      evidenceFound: "Technical configuration evidence detected",
-      partialEvidence: "Technical configuration evidence partially detected",
-      noEvidence: "No supported technical configuration evidence detected",
-    },
-    capabilityStatuses: {
-      ...CAPABILITY_STATUS_LABELS,
-      enforced: "Setting configured and assigned",
-      configuredNotAssigned: "Setting configured, but not assigned",
-      disabledByPolicy: "Deviating configuration detected",
-      noEvidence: "No evidence",
-    },
-    counterEvidenceStatuses: {
-      unknown: "Assignment unknown; effective scope unverified",
-      assigned: "Deviating configuration detected and assigned (risk)",
-      notAssigned: "Deviating configuration detected, but not assigned",
-    },
-    notAssigned: "Not assigned",
-    assigned: "Assigned",
-    evidenceRefs: "Evidence",
-    gapIntro:
-      "No technical evidence was found. Possible implementation through these Intune settings:",
-    disclaimer:
-      "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is not a compliance certification and does not replace an audit. Missing evidence means that no supported configuration with a known assignment was detected in the evaluated dataset.",
-    appendixHeading: "Appendix A: Evidence Register",
-    appendixContinuation: "Appendix A (continued)",
-    appendixHeaders: [
-      "Ref",
-      "Policy",
-      "Type",
-      "Setting",
-      "Value",
-      "Assignment",
-    ],
-    appendixNote:
-      "Referenced assessment points for each item of evidence are listed in the relevant sections.",
-    methodology:
-      "Evidence is determined exclusively from concrete Intune settings: An assessment point is considered technically evidenced only when a recognized setting is configured with a recognized value and the policy is assigned. Configurations that explicitly contradict the target state are reported separately. Unsupported settings or settings that cannot be mapped unambiguously remain unassessed. Organizational requirements are not part of this automated technical assessment and must be assessed separately.",
-    footer: "Generated with Intune Documentation (intunedocumentation.com)",
-    methodologyHeading: "Methodology",
-    notePrefix: "Note: ",
-    continuationCaption: (controlId) => `${controlId} (continued)`,
-    pageNumber: (page, total) => `Page ${page} of ${total}`,
-    fileFrameworkLabels: {
-      "nist-800-53-r5": "NIST-800-53-R5",
-      "nist-csf-2": "NIST-CSF-2",
-      "iso-27001-2022": "ISO-27001",
-      "soc2-tsc": "SOC-2",
-      "def-stan-05-138-i4": "Def-Stan-05-138",
-      "cyber-essentials-v3": "Cyber-Essentials",
-      "essential-eight": "Essential-Eight",
-      "nist-800-171-r2": "NIST-800-171-R2",
-      "nist-800-171-r3": "NIST-800-171-R3",
-      "nis2-2022-2555": "NIS2",
-      "dora-2022-2554": "DORA",
-      "hipaa-security-rule": "HIPAA-Security-Rule",
-    },
+const STRINGS: ReportStrings = {
+  title: "Technical Evidence Report: Intune Configuration",
+  coverLead:
+    "Evidence matrix for selected assessment points, read from the Microsoft Intune configuration",
+  generatedOn: "Report date",
+  documentControlLabels: [
+    "Tenant",
+    "Prepared for",
+    "Prepared by",
+    "Contact",
+    "Report ID",
+    "Revision",
+    "Ruleset version",
+    "Classification",
+  ],
+  tocHeading: "Table of Contents",
+  summaryHeading: "Summary",
+  summaryCounts: (framework) =>
+    `${framework.summary.withEvidence} of ${framework.summary.totalControls} selected controls with configuration evidence (${framework.summary.partial} partial)`,
+  resultsHeading: "Results Overview",
+  resultsHeaders: ["Category", "Evidence", "Partial", "No evidence"],
+  assignedDeviations: "Assigned deviating configurations",
+  assignedDeviationsExplanation:
+    "At least one assigned policy explicitly contradicts the target configuration.",
+  unassignedCompliant: "Configured settings without assignment",
+  unassignedCompliantExplanation:
+    "The detected target configuration is not effective until it is assigned.",
+  findingsHeading: "Key findings",
+  noFindings: "No prioritized findings were identified.",
+  provenanceHeading: "Data Basis and Scope",
+  dataBasis:
+    "The assessment runs on the data provided at generation time. Data basis: configuration export provided at the time the report was generated.",
+  rulesetLabel: "Ruleset version",
+  inventoryHeading: "Assessed inventory",
+  inventoryHeaders: ["Policy family", "Items", "Assigned"],
+  inventoryFamilies: [
+    "Settings Catalog policies",
+    "Device configurations",
+    "Device compliance policies",
+  ],
+  inventoryOther: "Other policy families",
+  collectionHeading: "Collection notes",
+  incompleteCollection:
+    "Data collection was incomplete. Assessment points without evidence may be caused by missing data.",
+  noCollectionErrors: "No collection errors were provided.",
+  platformScope: "Platforms observed in export",
+  controlStatuses: {
+    ...CONTROL_STATUS_LABELS,
+    evidenceFound: "Technical configuration evidence detected",
+    partialEvidence: "Technical configuration evidence partially detected",
+    noEvidence: "No supported technical configuration evidence detected",
   },
-  de: {
-    title: "Technischer Nachweisbericht: Intune-Konfiguration",
-    coverLead:
-      "Nachweismatrix für ausgewählte Prüfpunkte aus der Microsoft-Intune-Konfiguration",
-    generatedOn: "Berichtsstand",
-    documentControlLabels: [
-      "Mandant",
-      "Erstellt für",
-      "Erstellt von",
-      "Kontakt",
-      "Berichts-ID",
-      "Revision",
-      "Regelwerk-Version",
-      "Klassifizierung",
-    ],
-    tocHeading: "Inhaltsverzeichnis",
-    summaryHeading: "Zusammenfassung",
-    summaryCounts: (framework) =>
-      `${framework.summary.withEvidence} von ${framework.summary.totalControls} ausgewählten Prüfpunkten mit Konfigurationsnachweis (${framework.summary.partial} teilweise)`,
-    summaryScope: "Bewertet werden nur ausgewählte technische Prüfpunkte.",
-    resultsHeading: "Ergebnisübersicht",
-    resultsHeaders: ["Kategorie", "Nachweis", "Teilweise", "Kein Nachweis"],
-    assignedDeviations: "Abweichende Konfigurationen (zugewiesen)",
-    assignedDeviationsExplanation:
-      "Mindestens eine zugewiesene Richtlinie widerspricht der Sollkonfiguration.",
-    unassignedCompliant: "Konfigurierte Einstellungen ohne Zuweisung",
-    unassignedCompliantExplanation:
-      "Die erkannte Sollkonfiguration ist ohne Zuweisung nicht wirksam.",
-    findingsHeading: "Wesentliche Feststellungen",
-    noFindings: "Keine priorisierten Feststellungen ermittelt.",
-    provenanceHeading: "Datengrundlage und Geltungsbereich",
-    dataBasis:
-      "Die Bewertung erfolgt auf Basis der zum Zeitpunkt der Berichtserstellung vorliegenden Daten. Datengrundlage: zum Zeitpunkt der Berichtserstellung übermittelter Konfigurationsexport.",
-    rulesetLabel: "Regelwerk-Version",
-    inventoryHeading: "Geprüfter Bestand",
-    inventoryHeaders: ["Richtlinienfamilie", "Anzahl", "Davon mit Zuweisung"],
-    inventoryOther: "Weitere Richtlinienfamilien",
-    inventoryFamilies: [
-      "Einstellungskatalog-Richtlinien",
-      "Gerätekonfigurationen",
-      "Gerätekonformitätsrichtlinien",
-    ],
-    collectionHeading: "Erhebungshinweise",
-    incompleteCollection:
-      "Die Datenerhebung war unvollständig. Prüfpunkte ohne Nachweis können auf fehlende Daten zurückgehen.",
-    noCollectionErrors: "Keine Erhebungsfehler übermittelt.",
-    platformScope: "Im Export erkannte Plattformen",
-    controlStatuses: {
-      ...CONTROL_STATUS_LABELS,
-      notApplicable: "Außerhalb des gewählten Geltungsbereichs",
-      notAssessed: "Nicht bewertet",
-      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
-      evidenceFound: "Technischer Konfigurationsnachweis erkannt",
-      partialEvidence: "Technischer Konfigurationsnachweis teilweise erkannt",
-      noEvidence:
-        "Kein unterstützter technischer Konfigurationsnachweis erkannt",
-    },
-    capabilityStatuses: {
-      ...CAPABILITY_STATUS_LABELS,
-      requirementAssigned: "Konformitätsanforderung zugewiesen",
-      assignmentUnknown: "Zuweisung unbekannt",
-      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
-      partialConfiguration: "Erforderliche Einstellungen teilweise vorhanden",
-      collectionIncomplete: "Datenerhebung unvollständig",
-      notApplicable: "Außerhalb des Geltungsbereichs",
-      enforced: "Einstellung konfiguriert und zugewiesen",
-      configuredNotAssigned:
-        "Einstellung konfiguriert, jedoch nicht zugewiesen",
-      disabledByPolicy: "Abweichende Konfiguration erkannt",
-      noEvidence: "Kein Nachweis",
-    },
-    counterEvidenceStatuses: {
-      unknown: "Assignment unknown; effective scope unverified",
-      assigned: "Abweichende Konfiguration erkannt und zugewiesen (Risiko)",
-      notAssigned: "Abweichende Konfiguration erkannt, jedoch nicht zugewiesen",
-    },
-    notAssigned: "Nicht zugewiesen",
-    assigned: "Zugewiesen",
-    evidenceRefs: "Belege",
-    gapIntro:
-      "Kein technischer Nachweis gefunden. Mögliche technische Umsetzung mit folgenden Intune-Einstellungen:",
-    disclaimer:
-      "Dieser Bericht dokumentiert technische Nachweise aus der Microsoft-Intune-Konfiguration des Mandanten. Der Bericht stellt keine Zertifizierung dar und ersetzt keine Prüfung. Ein fehlender Nachweis bedeutet, dass im ausgewerteten Datenbestand keine unterstützte und wirksam zugewiesene Konfiguration erkannt wurde.",
-    appendixHeading: "Anhang A: Nachweisverzeichnis",
-    appendixContinuation: "Anhang A (Fortsetzung)",
-    appendixHeaders: [
-      "Ref",
-      "Richtlinie",
-      "Typ",
-      "Einstellung",
-      "Wert",
-      "Zuweisung",
-    ],
-    appendixNote:
-      "Referenzierte Prüfpunkte je Nachweis sind den Abschnitten zu entnehmen.",
-    methodology:
-      "Nachweise werden ausschließlich anhand konkreter Intune-Einstellungen ermittelt: Ein Prüfpunkt gilt nur dann als technisch nachgewiesen, wenn eine erkannte Einstellung mit einem erkannten Sollwert konfiguriert und die Richtlinie zugewiesen ist. Konfigurationen, die der Sollvorgabe ausdrücklich widersprechen, werden gesondert ausgewiesen. Nicht unterstützte oder nicht eindeutig zuordenbare Einstellungen bleiben unbewertet. Organisatorische Anforderungen sind nicht Teil dieser automatisierten technischen Prüfung und müssen separat bewertet werden.",
-    footer: "Erstellt mit Intune Documentation (intunedocumentation.com)",
-    methodologyHeading: "Methodik",
-    notePrefix: "Hinweis: ",
-    continuationCaption: (controlId) => `${controlId} (Fortsetzung)`,
-    pageNumber: (page, total) => `Seite ${page} von ${total}`,
-    fileFrameworkLabels: {
-      "nist-800-53-r5": "NIST-800-53-R5",
-      "nist-csf-2": "NIST-CSF-2",
-      "iso-27001-2022": "ISO-27001",
-      "soc2-tsc": "SOC-2",
-      "def-stan-05-138-i4": "Def-Stan-05-138",
-      "cyber-essentials-v3": "Cyber-Essentials",
-      "essential-eight": "Essential-Eight",
-      "nist-800-171-r2": "NIST-800-171-R2",
-      "nist-800-171-r3": "NIST-800-171-R3",
-      "nis2-2022-2555": "NIS2",
-      "dora-2022-2554": "DORA",
-      "hipaa-security-rule": "HIPAA-Security-Rule",
-    },
+  capabilityStatuses: {
+    ...CAPABILITY_STATUS_LABELS,
+    enforced: "Setting configured and assigned",
+    configuredNotAssigned: "Setting configured, but not assigned",
+    disabledByPolicy: "Deviating configuration detected",
+    noEvidence: "No evidence",
   },
-};
-
-export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
-  "windows-lsa-protection": "LSA-Prozessschutz erforderlich",
-  "windows-remote-credential-guard": "Remote Credential Guard erforderlich",
-  "windows-laps-management": "Windows-LAPS-Kennwortverwaltung aktiviert",
-  "windows-process-creation-logging":
-    "Prozesserstellungsüberwachung mit Befehlszeilen",
-  "windows-powershell-module-logging":
-    "PowerShell-Protokollierung aller Module",
-  "windows-applocker-rule-collections":
-    "AppLocker-Regelsammlungstypen und Erzwingung",
-  "windows-office-v3-signatures": "VBA-V3-Signaturen erforderlich",
-  "windows-office-macros-disabled": "Office-VBA-Makros deaktiviert",
-  "windows-office-internet-macros-blocked":
-    "Office-Makros aus dem Internet blockiert",
-  "windows-office-macro-antivirus": "Laufzeitprüfung von Office-Makros",
-  "windows-office-signed-macros": "Nur signierte Office-Makros zugelassen",
-  "windows-office-macro-settings-managed":
-    "Office-Makroeinstellungen durch Richtlinien verwaltet",
-  "macos-office-macros-disabled": "Office-VBA-Makros unter macOS deaktiviert",
-  "windows-ie-disabled": "Internet Explorer 11 deaktiviert",
-  "windows-browser-java-blocked": "Java in der Internetzone blockiert",
-  "windows-browser-intrusive-ads-blocked":
-    "Aufdringliche Browserwerbung blockiert",
-  "macos-browser-intrusive-ads-blocked":
-    "Aufdringliche Browserwerbung unter macOS blockiert",
-  "windows-browser-security-settings-managed":
-    "Browsersicherheitseinstellungen durch Richtlinien verwaltet",
-  "windows-powershell-scriptblock-logging":
-    "PowerShell-Skriptblockprotokollierung aktiviert",
-  "windows-powershell-transcription": "PowerShell-Transkription aktiviert",
-  "tenant-mfa-all-apps":
-    "MFA für alle Cloud-Apps im Richtlinienumfang erforderlich",
-  "tenant-phishing-resistant-mfa": "Phishingresistente MFA erforderlich",
-  "tenant-phishing-resistant-method-enabled":
-    "Phishingresistente Anmeldemethode aktiviert (Entra ID)",
-  "tenant-weak-methods-disabled":
-    "SMS, Sprachanruf und E-Mail-Einmalcode für Benutzer nicht aktiviert (Entra ID)",
-  "tenant-security-defaults-enabled":
-    "Sicherheitsstandards aktiviert (Entra ID)",
-  "windows-inactivity-lock": "Bildschirmsperre nach Inaktivität (Windows)",
-  "macos-inactivity-lock": "Bildschirmsperre nach Inaktivität (macOS)",
-  "ios-inactivity-lock": "Bildschirmsperre nach Inaktivität (iOS/iPadOS)",
-  "android-inactivity-lock": "Bildschirmsperre nach Inaktivität (Android)",
-
-  "windows-office-macro-win32-block":
-    "Win32-Aufrufe durch Office-Makros blockiert",
-  "windows-office-child-process-block": "Unterprozesse von Office blockiert",
-  "windows-office-executable-block": "Ausführbare Office-Inhalte blockiert",
-  "windows-office-injection-block": "Prozessinjektion durch Office blockiert",
-  "windows-adobe-child-process-block":
-    "Unterprozesse von Adobe Reader blockiert",
-
-  "windows-antivirus-required": "Antivirenschutz als Konformitätsanforderung",
-  "windows-periodic-antimalware-scan": "Regelmäßige Schadsoftwareprüfungen",
-  "windows-quality-update-deadline": "Qualitätsupdate-Frist bis 14 Tage",
-  "windows-application-control": "Anwendungssteuerung im Erzwingungsmodus",
-  "windows-behavior-monitoring": "Verhaltensüberwachung",
-  "windows-network-inspection": "Netzwerkprüfung gegen Schadsoftware",
-  "windows-memory-integrity": "Speicherintegrität (HVCI)",
-  "windows-virtualization-security": "Virtualisierungsbasierte Sicherheit",
-  "windows-credential-guard": "Credential Guard konfiguriert",
-  "windows-credential-theft-protection":
-    "Schutz vor Diebstahl von Anmeldeinformationen",
-  "tenant-mfa-required": "MFA-Anforderung durch bedingten Zugriff",
-  "tenant-compliant-device-required":
-    "Gerätekonformität durch bedingten Zugriff",
-  "ios-app-data-transfer":
-    "Datentransferbeschränkungen für verwaltete iOS-Apps",
-  "android-app-data-transfer":
-    "Datentransferbeschränkungen für verwaltete Android-Apps",
-  "windows-disk-encryption": "Festplattenverschlüsselung (BitLocker)",
-  "windows-realtime-antimalware":
-    "Echtzeitschutz durch Microsoft Defender Antivirus",
-  "windows-firewall": "Windows-Firewall",
-  "windows-password-required": "Kennwort oder PIN erforderlich (Windows)",
-  "windows-automatic-updates": "Automatische Updates (Windows)",
-  "windows-secure-boot": "Sicherer Start (Secure Boot)",
-  "windows-code-integrity": "Codeintegrität erforderlich",
-  "windows-minimum-os-version": "Mindestversion des Betriebssystems (Windows)",
-  "windows-telemetry-minimized": "Minimierte Diagnosedaten (Windows)",
-  "windows-cortana-disabled": "Cortana deaktiviert",
-  "windows-microsoft-account-blocked": "Private Microsoft-Konten gesperrt",
-  "macos-disk-encryption": "Festplattenverschlüsselung (FileVault)",
-  "macos-firewall": "macOS-Firewall",
-  "macos-password-required": "Kennwort oder PIN erforderlich (macOS)",
-  "macos-system-integrity": "System Integrity Protection",
-  "macos-gatekeeper": "Beschränkung der App-Quellen durch Gatekeeper",
-  "macos-minimum-os-version": "Mindestversion des Betriebssystems (macOS)",
-  "ios-passcode-required": "Gerätecode erforderlich (iOS/iPadOS)",
-  "ios-jailbreak-block": "Blockierung von Jailbreak-Geräten",
-  "ios-minimum-os-version": "Mindestversion des Betriebssystems (iOS/iPadOS)",
-  "android-storage-encryption": "Speicherverschlüsselung (Android)",
-  "android-password-required": "Kennwort oder PIN erforderlich (Android)",
-  "android-device-integrity": "Geräteintegrität (Android)",
-  "android-app-source-restriction":
-    "Blockierung unbekannter App-Quellen (Android)",
-  "android-minimum-os-version": "Mindestversion des Betriebssystems (Android)",
+  counterEvidenceStatuses: {
+    unknown: "Assignment unknown; effective scope unverified",
+    assigned: "Deviating configuration detected and assigned (risk)",
+    notAssigned: "Deviating configuration detected, but not assigned",
+  },
+  notAssigned: "Not assigned",
+  assigned: "Assigned",
+  evidenceRefs: "Evidence",
+  gapIntro:
+    "No technical evidence was found. Possible implementation through these Intune settings:",
+  disclaimer:
+    "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is not a compliance certification and does not replace an audit. Missing evidence means that no supported configuration with a known assignment was detected in the evaluated dataset.",
+  appendixHeading: "Appendix A: Evidence Register",
+  appendixContinuation: "Appendix A (continued)",
+  appendixHeaders: [
+    "Ref",
+    "Policy",
+    "Type",
+    "Setting",
+    "Value",
+    "Assignment",
+  ],
+  appendixNote:
+    "Referenced assessment points for each item of evidence are listed in the relevant sections.",
+  methodology:
+    "Evidence is determined exclusively from concrete Intune settings: An assessment point is considered technically evidenced only when a recognized setting is configured with a recognized value and the policy is assigned. Configurations that explicitly contradict the target state are reported separately. Unsupported settings or settings that cannot be mapped unambiguously remain unassessed. Organizational requirements are not part of this automated technical assessment and must be assessed separately.",
+  footer: "Generated with Intune Documentation (intunedocumentation.com)",
+  methodologyHeading: "Methodology",
+  notePrefix: "Note: ",
+  continuationCaption: (controlId) => `${controlId} (continued)`,
+  pageNumber: (page, total) => `Page ${page} of ${total}`,
+  fileFrameworkLabels: {
+    "nist-800-53-r5": "NIST-800-53-R5",
+    "nist-csf-2": "NIST-CSF-2",
+    "iso-27001-2022": "ISO-27001",
+    "soc2-tsc": "SOC-2",
+    "def-stan-05-138-i4": "Def-Stan-05-138",
+    "cyber-essentials-v3": "Cyber-Essentials",
+    "essential-eight": "Essential-Eight",
+    "nist-800-171-r2": "NIST-800-171-R2",
+    "nist-800-171-r3": "NIST-800-171-R3",
+    "nis2-2022-2555": "NIS2",
+    "dora-2022-2554": "DORA",
+    "hipaa-security-rule": "HIPAA-Security-Rule",
+  },
 };
 
 const PRODUCT_TERMS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -528,131 +307,6 @@ const VERIFIED_SETTING_NAMES: ReadonlyMap<string, string> = new Map(
 
 const ASSIGNED_COUNTER_EVIDENCE_COLOR: RgbColor = [190, 45, 45];
 const UNASSIGNED_COUNTER_EVIDENCE_COLOR: RgbColor = [171, 95, 0];
-
-const GERMAN_EVIDENCE_VALUE_TRANSLATIONS: Readonly<Record<string, string>> = {
-  "Settings Catalog": "Einstellungskatalog",
-  "Compliance Policy": "Gerätekonformitätsrichtlinie",
-  "All Users": "Alle Benutzer",
-  "All Devices": "Alle Geräte",
-  "Custom target": "Benutzerdefinierte Zuweisung",
-  "Not assigned": "Nicht zugewiesen",
-};
-
-const GERMAN_COMPLIANCE_NOTE_TRANSLATIONS: Readonly<Record<string, string>> = {
-  "Compliance policy with a block action for noncompliant devices.":
-    "Gerätekonformitätsrichtlinie mit Blockierungsaktion für nicht konforme Geräte.",
-  "Compliance policy: marks devices noncompliant. Access enforcement depends on Conditional Access.":
-    "Die Gerätekonformitätsrichtlinie kennzeichnet Geräte als nicht konform. Die Zugriffsdurchsetzung hängt von Richtlinien für bedingten Zugriff ab.",
-};
-
-function translateEvidenceValue(value: string, locale: Locale): string {
-  if (locale !== "de") return value;
-  if (value.startsWith("Group: ")) {
-    return `Gruppe: ${value.slice("Group: ".length)}`;
-  }
-  if (value.startsWith("Excluded: ")) {
-    return `Ausgeschlossen: ${translateEvidenceValue(value.slice("Excluded: ".length), locale)}`;
-  }
-  return GERMAN_EVIDENCE_VALUE_TRANSLATIONS[value] ?? value;
-}
-
-function translateEvidenceNote(value: string, locale: Locale): string {
-  if (locale !== "de") return value;
-  return GERMAN_COMPLIANCE_NOTE_TRANSLATIONS[value] ?? value;
-}
-
-/**
- * German for the plain check values and not configured reasons the engine
- * writes in English (tenant method states, security defaults, Intune enum
- * defaults and update ring deadlines). Other text passes through unchanged.
- */
-export function translateCheckText(text: string): string {
-  const exact: Record<string, string> = {
-    On: "Ein",
-    Off: "Aus",
-    "No quality update deadline is configured in this update ring.":
-      "In diesem Updatering ist keine Frist für Qualitätsupdates konfiguriert.",
-    "No scheduled scan is configured in this policy: the scan type or day is userDefined, the default with no intent.":
-      "In dieser Richtlinie ist keine geplante Überprüfung konfiguriert: Art oder Tag der Überprüfung steht auf userDefined, dem Standard ohne Vorgabe.",
-    "Not configured in this policy: userDefined is the default with no intent, so the device or the user decides.":
-      "In dieser Richtlinie nicht konfiguriert: userDefined ist der Standard ohne Vorgabe, daher entscheidet das Gerät oder der Benutzer.",
-    "Not configured in this policy: notConfigured leaves the device default.":
-      "In dieser Richtlinie nicht konfiguriert: notConfigured belässt den Gerätestandard.",
-  };
-  if (exact[text]) return exact[text];
-  const method =
-    /^(Enabled for (\d+) targets?|Enabled, no users targeted|Enabled, include targets not readable|Disabled)(; (single-factor default mode|multifactor default mode|default mode not readable))?$/.exec(
-      text,
-    );
-  if (!method) return text;
-  const count = Number(method[2]);
-  const state = method[2]
-    ? `Aktiviert für ${count} ${count === 1 ? "Ziel" : "Ziele"}`
-    : {
-        "Enabled, no users targeted": "Aktiviert, keine Benutzer als Ziel",
-        "Enabled, include targets not readable": "Aktiviert, Ziele nicht lesbar",
-        Disabled: "Deaktiviert",
-      }[method[1]!];
-  const mode = method[4]
-    ? {
-        "single-factor default mode": "Standardmodus Einzelfaktor",
-        "multifactor default mode": "Standardmodus Mehrfaktor",
-        "default mode not readable": "Standardmodus nicht lesbar",
-      }[method[4]]
-    : undefined;
-  return mode ? `${state}; ${mode}` : state!;
-}
-
-function translateAssessmentLimitation(text: string): string {
-  const sourceGap =
-    /^(\w+): (not collected|collection incomplete)\. Refresh the policies to retry collection\. See collection coverage for the API error details\.$/.exec(
-      text,
-    );
-  if (sourceGap)
-    return `${sourceGap[1]}: ${sourceGap[2] === "not collected" ? "nicht erhoben" : "Datenerhebung unvollständig"}. Richtlinien aktualisieren, um die Erhebung erneut zu versuchen. API-Fehlerdetails stehen im Abschnitt zur Datenerhebung.`;
-  const translations: Record<string, string> = {
-    "Conditional Access policies were not collected. Enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies to assess MFA and access requirements.":
-      "Richtlinien für bedingten Zugriff wurden nicht erhoben. In den Einstellungen den bedingten Zugriff einschließen, gegebenenfalls Anmeldung oder Zustimmung abschließen und die Richtlinien aktualisieren, um MFA- und Zugriffsanforderungen zu bewerten.",
-    "Assignment data is unavailable for some matching policies; effective targeting remains unknown.":
-      "Für einige passende Richtlinien fehlen Zuweisungsdaten; der tatsächliche Zielumfang bleibt unbekannt.",
-    "These settings support part of this control. Remaining technical and organizational requirements need separate assessment.":
-      "Diese Einstellungen liefern Teilnachweise. Weitere technische und organisatorische Anforderungen sind separat zu bewerten.",
-    "Relevant policy collection is incomplete; additional or contradictory evidence may be missing.":
-      "Die relevante Datenerhebung ist unvollständig. Weitere oder widersprüchliche Nachweise können fehlen.",
-    "Mixed policy evidence. Review profile settings and targeting overlap; a device conflict has not been established.":
-      "Widersprüchliche Richtliniennachweise. Profileinstellungen und überlappende Zuweisungen prüfen; ein Gerätekonflikt wurde nicht nachgewiesen.",
-    "Not all required settings are present together on an assigned policy.":
-      "Nicht alle erforderlichen Einstellungen sind gemeinsam in einer zugewiesenen Richtlinie vorhanden.",
-    "A minimum version is configured; whether it is current is not assessed.":
-      "Eine Mindestversion ist konfiguriert; ob sie aktuell ist, wird nicht bewertet.",
-    "No detector is available for this control in the selected platform scope.":
-      "Für diesen Prüfpunkt ist im gewählten Plattformumfang keine Erkennungsregel verfügbar.",
-    "Hardware support and installed OS security-update support are not verified. A configured minimum version does not establish currency.":
-      "Hardware-Unterstützung und Sicherheitsupdates für das installierte Betriebssystem sind nicht geprüft. Eine Mindestversion belegt keine Aktualität.",
-    "XProtect status, installed software and actual activation of macOS protections are unassessed.":
-      "XProtect-Status, installierte Software und tatsächliche Aktivierung der macOS-Schutzfunktionen sind unbewertet.",
-    "FileVault recovery key custody and storage location are unassessed.":
-      "Verwahrung und Speicherort der FileVault-Wiederherstellungsschlüssel sind unbewertet.",
-    "LSA protected-mode monitoring and applicable RDP restrictions are unassessed.":
-      "Überwachung des geschützten LSA-Modus und erforderliche RDP-Beschränkungen sind unbewertet.",
-    "Passcode complexity, lock timeout and effective device enforcement require separate review.":
-      "Code-Komplexität, Sperrfrist und tatsächliche Durchsetzung am Gerät sind separat zu prüfen.",
-    "Installed OS and app support, actual patch installation and replacement of unsupported devices are unassessed.":
-      "Support für Betriebssystem und Apps, tatsächliche Update-Installation und Ersatz nicht mehr unterstützter Geräte sind unbewertet.",
-    "Approved device models and organizational authorization are unassessed.":
-      "Freigegebene Gerätemodelle und organisatorische Genehmigungen sind unbewertet.",
-    "Alerts, wipe and lock actions, grace periods and effective Conditional Access coverage require separate review.":
-      "Warnungen, Lösch- und Sperraktionen, Karenzfristen und tatsächlicher Geltungsbereich des bedingten Zugriffs sind separat zu prüfen.",
-  };
-  return translations[text] ?? text;
-}
-
-function formatReportDate(date: Date, locale: Locale, utc = false): string {
-  const { year, month, day } = dateParts(date, utc);
-  return locale === "de"
-    ? `${day}.${month}.${year}`
-    : `${year}-${month}-${day}`;
-}
 
 function localIsoDate(date: Date, utc = false): string {
   const { year, month, day } = dateParts(date, utc);
@@ -721,16 +375,6 @@ function defaultReportId(
   return `IDOC-${frameworkReportCode(frameworkId)}-${localIsoDate(generatedAt, seed !== undefined).replaceAll("-", "")}-${reportSuffix(seed)}`;
 }
 
-function formatReportTimestamp(
-  date: Date,
-  locale: Locale,
-  utc = false,
-): string {
-  if (locale === "en") return date.toISOString();
-  const { hours, minutes } = dateParts(date, utc);
-  return `${formatReportDate(date, locale, utc)}, ${hours}:${minutes} Uhr${utc ? " UTC" : ""}`;
-}
-
 function truncate(value: string, maximumLength: number): string {
   return value.length <= maximumLength
     ? value
@@ -762,83 +406,47 @@ export interface ComplianceReportOptions {
    * detail pages are rendered only for the listed control ids.
    */
   excerpt?: { controlIds: readonly string[] };
-  /** Report language; English unless German is asked for. */
-  locale?: "en" | "de";
 }
 
 // Device status annex: Intune's per-policy status counts, context only.
-const DEVICE_STATUS_STRINGS: Record<
-  Locale,
-  {
-    eyebrow: string;
-    heading: string;
-    lead: string;
-    collected: (when: string) => string;
-    headers: readonly [string, string, string, string, string, string, string];
-    noStatus: string;
-    notCollected: string;
-    notReported: string;
-    sources: Record<PolicyStatusSource, string>;
-    sourceStates: Record<TenantPolicyCollectionStatus, string>;
-  }
-> = {
-  en: {
-    eyebrow: "Annex",
-    heading: "Policy device status",
-    lead: "Device counts as summarised by Intune for the device policies cited in this report. Context only: no status in this report depends on them, and they do not show the state of an individual device. Errors include devices reported as not compliant. No status reported means the Intune summary has no row for the policy, not a count of zero.",
-    collected: (when) => `Status summaries read on ${when}.`,
-    headers: [
-      "Policy",
-      "Source",
-      "Succeeded",
-      "Errors",
-      "Conflicts",
-      "Not applicable",
-      "Pending",
-    ],
-    noStatus: "No status reported",
-    notCollected: "Not collected",
-    notReported: "n/a",
-    sources: {
-      configurationPolicies: "Configuration report",
-      compliancePolicies: "Compliance report",
-      deviceConfigurations: "Profile status overview",
-    },
-    sourceStates: {
-      collected: "collected",
-      permissionDenied: "access denied",
-      failed: "failed",
-      skipped: "skipped",
-    },
+const DEVICE_STATUS_STRINGS: {
+  eyebrow: string;
+  heading: string;
+  lead: string;
+  collected: (when: string) => string;
+  headers: readonly [string, string, string, string, string, string, string];
+  noStatus: string;
+  notCollected: string;
+  notReported: string;
+  sources: Record<PolicyStatusSource, string>;
+  sourceStates: Record<TenantPolicyCollectionStatus, string>;
+} = {
+  eyebrow: "Annex",
+  heading: "Policy device status",
+  lead: "Device counts as summarised by Intune for the device policies cited in this report. Context only: no status in this report depends on them, and they do not show the state of an individual device. Errors include devices reported as not compliant. No status reported means the Intune summary has no row for the policy, not a count of zero.",
+  collected: (when) => `Status summaries read on ${when}.`,
+  headers: [
+    "Policy",
+    "Source",
+    "Succeeded",
+    "Errors",
+    "Conflicts",
+    "Not applicable",
+    "Pending",
+  ],
+  noStatus: "No status reported",
+  notCollected: "Not collected",
+  notReported: "n/a",
+  sources: {
+    configurationPolicies: "Configuration report",
+    compliancePolicies: "Compliance report",
+    deviceConfigurations: "Profile status overview",
   },
-  de: {
-    eyebrow: "Anhang",
-    heading: "Gerätestatus je Richtlinie",
-    lead: "Gerätezahlen, wie Intune sie für die in diesem Bericht zitierten Geräterichtlinien zusammenfasst. Nur Kontext: Kein Status in diesem Bericht hängt von ihnen ab, und sie zeigen nicht den Zustand eines einzelnen Geräts. Fehler schließen nicht konforme Geräte ein. Kein Status gemeldet bedeutet, dass die Intune-Zusammenfassung keine Zeile für die Richtlinie enthält; das ist keine Anzahl von null.",
-    collected: (when) => `Statuszusammenfassungen gelesen am ${when}.`,
-    headers: [
-      "Richtlinie",
-      "Quelle",
-      "Erfolgreich",
-      "Fehler",
-      "Konflikte",
-      "Nicht anwendbar",
-      "Ausstehend",
-    ],
-    noStatus: "Kein Status gemeldet",
-    notCollected: "Nicht erfasst",
-    notReported: "k. A.",
-    sources: {
-      configurationPolicies: "Konfigurationsbericht",
-      compliancePolicies: "Konformitätsbericht",
-      deviceConfigurations: "Profilstatusübersicht",
-    },
-    sourceStates: {
-      collected: "erfasst",
-      permissionDenied: "Zugriff verweigert",
-      failed: "fehlgeschlagen",
-      skipped: "übersprungen",
-    },
+  sourceStates: {
+    collected: "collected",
+    permissionDenied: "access denied",
+    failed: "failed",
+    skipped: "skipped",
   },
 };
 
@@ -930,264 +538,130 @@ interface LayoutStrings {
   outsideScopeRowNote: string;
 }
 
-const LAYOUT: Record<Locale, LayoutStrings> = {
-  en: {
-    productName: "Intune Documentation",
-    coverTenant: "Tenant",
-    coverFootRight: "Technical configuration evidence, not a certification",
-    sampleTag: "SAMPLE REPORT, FICTIONAL TENANT",
-    donutCaption: "Controls with supporting technical evidence",
-    donutSub: "Supporting evidence only, not a compliance score",
-    donutCount: (count, total) => `${count} of ${total} controls`,
-    atAGlance: "At a glance",
-    glanceNote: (ruleset) =>
-      `Evidence is read from the Microsoft Intune configuration export on the report date and mapped using ruleset ${ruleset}. Organizational aspects of each control are listed separately for review.`,
-    documentControl: "Document control",
-    frameworkLabel: "Framework",
-    aboutEyebrow: "About this report",
-    disclaimerHeading: "Read this first",
-    summaryEyebrow: "01 Executive summary",
-    heroLabel: "Controls with technical evidence",
-    tileCaptions: {
-      noEvidence: "controls without recognized evidence",
-      conflictingEvidence: "controls with mixed policy evidence",
-    },
-    withEvidenceLabel: "With technical evidence",
-    withEvidenceCaption: (configuration, supporting) =>
-      `${configuration} configuration, ${supporting} supporting or partial`,
-    safeguardsLabel: "Safeguards in place",
-    safeguardsCaption: (total) => `of ${total} mapped, set up and switched on`,
-    distributionHeading: "Status distribution",
-    controlsCount: (count) => `${count} controls`,
-    familyHeading: "Coverage by family",
-    familySmall: "controls with technical evidence",
-    heroLead: (count, total) =>
-      `${count} of ${total} assessable controls have supporting technical evidence in the Intune configuration.`,
-    findingsSmall: "ordered by severity, then control",
-    findingKinds: {
-      risk: "Assigned deviation",
-      gap: "No recognized evidence",
-      unassigned: "Not assigned",
-    },
-    moreFindings: (count) =>
-      count === 1
-        ? "1 further finding is listed on the control detail pages."
-        : `${count} further findings are listed on the control detail pages.`,
-    moreFindingsExcerpt: (count) =>
-      count === 1
-        ? "1 further finding is listed in the full report."
-        : `${count} further findings are listed in the full report.`,
-    moreFamilies: (count) =>
-      count === 1
-        ? "1 more family is listed in the results overview."
-        : `${count} more families are listed in the results overview.`,
-    seePage: (page) => `See page ${page}`,
-    scopeNote: "Scope note",
-    resultsEyebrow: "02 Results",
-    resultsLead:
-      "Each selected control, its rolled up status, how many of its capabilities are evidenced, and where the supporting evidence is recorded.",
-    overviewHeaders: ["Control", "Status", "Capabilities", "Evidence", "Page"],
-    groupSummary: (count, total) => `${count} of ${total} with evidence`,
-    ofCount: (count, total) => `${count} of ${total}`,
-    noneRecorded: "None recorded",
-    seeBelow: "See below",
-    seeRegister: (ref) => `(see register ${ref})`,
-    evidenceItems: (count) =>
-      count === 1 ? "1 evidence item" : `${count} evidence items`,
-    notAvailable: "n/a",
-    excerptNote: (ids) =>
-      `Sample report: detail pages are included for selected controls only (${ids}). A full report includes a detail page for every control.`,
-    dataEyebrow: "03 Data basis",
-    coverageHeaders: [
-      "Policy family",
-      "Collection",
-      "Policies",
-      "Recognized",
-      "Unrecognized",
-    ],
-    collectionStatuses: {
-      complete: "complete",
-      incomplete: "incomplete",
-      unknown: "unknown",
-      notCollected: "not collected",
-    },
-    detailEyebrow: "Control detail",
-    capabilitiesWord: "capabilities",
-    evidenceCount: (count) =>
-      count === 1 ? "1 evidence reference" : `${count} evidence references`,
-    checkHeaders: ["Check", "Expected", "Actual", "Result"],
-    policyLabel: "Policy",
-    evidenceLabel: "Evidence",
-    noPolicy: "No matching policy found",
-    assignmentUnknown: "Assignment unknown",
-    unassessedHeading:
-      "Additional verification: not assessed by technical evidence",
-    gapHeading: (title) => `Gap: ${title}`,
-    appendixEyebrow: "Appendix A",
-    appendixLead:
-      "Every configuration value cited in this report, as read from the tenant export. References are stable within a report ID.",
-    methodologyEyebrow: "Appendix B",
-    methodologyEarlyEyebrow: "About the method",
-    howToRead: "How to read this report",
-    howToReadNotes: [
-      "Status is shown by marker shape and label, never by colour alone.",
-      "A control rolls up from its capabilities. A capability rolls up from its checks.",
-      "Only assigned policies count as evidence. Configured but unassigned settings are reported separately.",
-      "Evidence references point to rows of the evidence register in Appendix A.",
-    ],
-    shortStatuses: CONTROL_STATUS_LABELS,
-    assessmentLabels: {
-      checked: "Checked",
-      unableToCheck: "Unable to check",
-      outsideScope: "Outside selected scope",
-    },
-    resultLabels: {
-      matches: "Matches expected value",
-      missing: "Missing",
-      different: "Different value",
-    },
-    notFound: "Not found",
-    unavailable: "Unavailable",
-    outsideScopeEyebrow: "Outside Intune scope",
-    outsideScopeCount: (count) =>
-      count === 1
-        ? "1 measure is outside Intune scope and needs its own assessment."
-        : `${count} measures are outside Intune scope; each needs its own assessment.`,
-    outsideScopeRowNote:
-      "Needs its own assessment; this report holds no evidence for it.",
+const LAYOUT: LayoutStrings = {
+  productName: "Intune Documentation",
+  coverTenant: "Tenant",
+  coverFootRight: "Technical configuration evidence, not a certification",
+  sampleTag: "SAMPLE REPORT, FICTIONAL TENANT",
+  donutCaption: "Controls with supporting technical evidence",
+  donutSub: "Supporting evidence only, not a compliance score",
+  donutCount: (count, total) => `${count} of ${total} controls`,
+  atAGlance: "At a glance",
+  glanceNote: (ruleset) =>
+    `Evidence is read from the Microsoft Intune configuration export on the report date and mapped using ruleset ${ruleset}. Organizational aspects of each control are listed separately for review.`,
+  documentControl: "Document control",
+  frameworkLabel: "Framework",
+  aboutEyebrow: "About this report",
+  disclaimerHeading: "Read this first",
+  summaryEyebrow: "01 Executive summary",
+  heroLabel: "Controls with technical evidence",
+  tileCaptions: {
+    noEvidence: "controls without recognized evidence",
+    conflictingEvidence: "controls with mixed policy evidence",
   },
-  de: {
-    productName: "Intune Documentation",
-    coverTenant: "Mandant",
-    coverFootRight: "Technischer Konfigurationsnachweis, keine Zertifizierung",
-    sampleTag: "MUSTERBERICHT, FIKTIVER MANDANT",
-    donutCaption: "Prüfpunkte mit unterstützendem technischem Nachweis",
-    donutSub: "Nur unterstützender Nachweis, keine Compliance-Bewertung",
-    donutCount: (count, total) => `${count} von ${total} Prüfpunkten`,
-    atAGlance: "Auf einen Blick",
-    glanceNote: (ruleset) =>
-      `Nachweise werden zum Berichtsstand aus dem Konfigurationsexport von Microsoft Intune gelesen und mit Regelwerk ${ruleset} zugeordnet. Organisatorische Aspekte der Prüfpunkte sind gesondert zur Prüfung aufgeführt.`,
-    documentControl: "Dokumentenlenkung",
-    frameworkLabel: "Rahmenwerk",
-    aboutEyebrow: "Zu diesem Bericht",
-    disclaimerHeading: "Bitte zuerst lesen",
-    summaryEyebrow: "01 Überblick",
-    heroLabel: "Prüfpunkte mit technischem Nachweis",
-    tileCaptions: {
-      noEvidence: "Prüfpunkte ohne erkannten Nachweis",
-      conflictingEvidence: "Prüfpunkte mit widersprüchlichen Nachweisen",
-    },
-    withEvidenceLabel: "Mit technischem Nachweis",
-    withEvidenceCaption: (configuration, supporting) =>
-      `${configuration} Konfiguration, ${supporting} unterstützend oder teilweise`,
-    safeguardsLabel: "Aktive Schutzfunktionen",
-    safeguardsCaption: (total) =>
-      `von ${total} zugeordneten, eingerichtet und eingeschaltet`,
-    distributionHeading: "Statusverteilung",
-    controlsCount: (count) => `${count} Prüfpunkte`,
-    familyHeading: "Abdeckung nach Gruppe",
-    familySmall: "Prüfpunkte mit technischem Nachweis",
-    heroLead: (count, total) =>
-      `${count} von ${total} bewertbaren Prüfpunkten haben unterstützende technische Nachweise in der Intune-Konfiguration.`,
-    findingsSmall: "nach Schweregrad, dann Prüfpunkt",
-    findingKinds: {
-      risk: "Zugewiesene Abweichung",
-      gap: "Kein Nachweis",
-      unassigned: "Nicht zugewiesen",
-    },
-    moreFindings: (count) =>
-      count === 1
-        ? "1 weitere Feststellung steht auf den Detailseiten der Prüfpunkte."
-        : `${count} weitere Feststellungen stehen auf den Detailseiten der Prüfpunkte.`,
-    moreFindingsExcerpt: (count) =>
-      count === 1
-        ? "1 weitere Feststellung steht im vollständigen Bericht."
-        : `${count} weitere Feststellungen stehen im vollständigen Bericht.`,
-    moreFamilies: (count) =>
-      count === 1
-        ? "1 weitere Gruppe steht in der Ergebnisübersicht."
-        : `${count} weitere Gruppen stehen in der Ergebnisübersicht.`,
-    seePage: (page) => `Siehe Seite ${page}`,
-    scopeNote: "Hinweis zum Umfang",
-    resultsEyebrow: "02 Ergebnisse",
-    resultsLead:
-      "Jeder ausgewählte Prüfpunkt mit zusammengefasstem Status, Anzahl der nachgewiesenen Fähigkeiten und Verweis auf die zugehörigen Belege.",
-    overviewHeaders: ["Prüfpunkt", "Status", "Fähigkeiten", "Belege", "Seite"],
-    groupSummary: (count, total) => `${count} von ${total} mit Nachweis`,
-    ofCount: (count, total) => `${count} von ${total}`,
-    noneRecorded: "Keine erfasst",
-    seeBelow: "Siehe unten",
-    seeRegister: (ref) => `(siehe Verzeichnis ${ref})`,
-    evidenceItems: (count) => (count === 1 ? "1 Beleg" : `${count} Belege`),
-    notAvailable: "n. v.",
-    excerptNote: (ids) =>
-      `Musterbericht: Detailseiten sind nur für ausgewählte Prüfpunkte enthalten (${ids}). Ein vollständiger Bericht enthält eine Detailseite für jeden Prüfpunkt.`,
-    dataEyebrow: "03 Datengrundlage",
-    coverageHeaders: [
-      "Richtlinienfamilie",
-      "Erhebung",
-      "Richtlinien",
-      "Erkannt",
-      "Nicht erkannt",
-    ],
-    collectionStatuses: {
-      complete: "vollständig",
-      incomplete: "unvollständig",
-      unknown: "unbekannt",
-      notCollected: "nicht erhoben",
-    },
-    detailEyebrow: "Prüfpunktdetails",
-    capabilitiesWord: "Fähigkeiten",
-    evidenceCount: (count) =>
-      count === 1 ? "1 Belegverweis" : `${count} Belegverweise`,
-    checkHeaders: ["Prüfung", "Sollwert", "Istwert", "Ergebnis"],
-    policyLabel: "Richtlinie",
-    evidenceLabel: "Belege",
-    noPolicy: "Keine passende Richtlinie gefunden",
-    assignmentUnknown: "Zuweisung unbekannt",
-    unassessedHeading:
-      "Zusätzliche Prüfung: nicht durch technische Nachweise bewertet",
-    gapHeading: (title) => `Lücke: ${title}`,
-    appendixEyebrow: "Anhang A",
-    appendixLead:
-      "Alle in diesem Bericht zitierten Konfigurationswerte, wie im Mandantenexport gelesen. Verweise sind innerhalb einer Berichts-ID stabil.",
-    methodologyEyebrow: "Anhang B",
-    methodologyEarlyEyebrow: "Zur Methode",
-    howToRead: "Lesehilfe",
-    howToReadNotes: [
-      "Der Status wird durch Form und Beschriftung angezeigt, nie allein durch Farbe.",
-      "Ein Prüfpunkt ergibt sich aus seinen Fähigkeiten, eine Fähigkeit aus ihren Prüfungen.",
-      "Nur zugewiesene Richtlinien zählen als Nachweis. Konfigurierte, aber nicht zugewiesene Einstellungen werden gesondert ausgewiesen.",
-      "Belegverweise zeigen auf Zeilen des Nachweisverzeichnisses in Anhang A.",
-    ],
-    shortStatuses: {
-      evidenceFound: "Konfigurationsnachweis",
-      partialEvidence: "Unterstützender oder teilweiser Nachweis",
-      noEvidence: "Kein erkannter Nachweis",
-      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
-      notAssessed: "Nicht bewertet",
-      notApplicable: "Außerhalb des Geltungsbereichs",
-    },
-    assessmentLabels: {
-      checked: "Geprüft",
-      unableToCheck: "Nicht prüfbar",
-      outsideScope: "Außerhalb des Umfangs",
-    },
-    resultLabels: {
-      matches: "Entspricht dem Sollwert",
-      missing: "Fehlt",
-      different: "Abweichender Wert",
-    },
-    notFound: "Nicht gefunden",
-    unavailable: "Nicht verfügbar",
-    outsideScopeEyebrow: "Außerhalb des Intune-Umfangs",
-    outsideScopeCount: (count) =>
-      count === 1
-        ? "1 Maßnahme liegt außerhalb des Intune-Umfangs und braucht eine eigene Bewertung."
-        : `${count} Maßnahmen liegen außerhalb des Intune-Umfangs; jede braucht eine eigene Bewertung.`,
-    outsideScopeRowNote:
-      "Braucht eine eigene Bewertung; dieser Bericht enthält dafür keinen Nachweis.",
+  withEvidenceLabel: "With technical evidence",
+  withEvidenceCaption: (configuration, supporting) =>
+    `${configuration} configuration, ${supporting} supporting or partial`,
+  safeguardsLabel: "Safeguards in place",
+  safeguardsCaption: (total) => `of ${total} mapped, set up and switched on`,
+  distributionHeading: "Status distribution",
+  controlsCount: (count) => `${count} controls`,
+  familyHeading: "Coverage by family",
+  familySmall: "controls with technical evidence",
+  heroLead: (count, total) =>
+    `${count} of ${total} assessable controls have supporting technical evidence in the Intune configuration.`,
+  findingsSmall: "ordered by severity, then control",
+  findingKinds: {
+    risk: "Assigned deviation",
+    gap: "No recognized evidence",
+    unassigned: "Not assigned",
   },
+  moreFindings: (count) =>
+    count === 1
+      ? "1 further finding is listed on the control detail pages."
+      : `${count} further findings are listed on the control detail pages.`,
+  moreFindingsExcerpt: (count) =>
+    count === 1
+      ? "1 further finding is listed in the full report."
+      : `${count} further findings are listed in the full report.`,
+  moreFamilies: (count) =>
+    count === 1
+      ? "1 more family is listed in the results overview."
+      : `${count} more families are listed in the results overview.`,
+  seePage: (page) => `See page ${page}`,
+  scopeNote: "Scope note",
+  resultsEyebrow: "02 Results",
+  resultsLead:
+    "Each selected control, its rolled up status, how many of its capabilities are evidenced, and where the supporting evidence is recorded.",
+  overviewHeaders: ["Control", "Status", "Capabilities", "Evidence", "Page"],
+  groupSummary: (count, total) => `${count} of ${total} with evidence`,
+  ofCount: (count, total) => `${count} of ${total}`,
+  noneRecorded: "None recorded",
+  seeBelow: "See below",
+  seeRegister: (ref) => `(see register ${ref})`,
+  evidenceItems: (count) =>
+    count === 1 ? "1 evidence item" : `${count} evidence items`,
+  notAvailable: "n/a",
+  excerptNote: (ids) =>
+    `Sample report: detail pages are included for selected controls only (${ids}). A full report includes a detail page for every control.`,
+  dataEyebrow: "03 Data basis",
+  coverageHeaders: [
+    "Policy family",
+    "Collection",
+    "Policies",
+    "Recognized",
+    "Unrecognized",
+  ],
+  collectionStatuses: {
+    complete: "complete",
+    incomplete: "incomplete",
+    unknown: "unknown",
+    notCollected: "not collected",
+  },
+  detailEyebrow: "Control detail",
+  capabilitiesWord: "capabilities",
+  evidenceCount: (count) =>
+    count === 1 ? "1 evidence reference" : `${count} evidence references`,
+  checkHeaders: ["Check", "Expected", "Actual", "Result"],
+  policyLabel: "Policy",
+  evidenceLabel: "Evidence",
+  noPolicy: "No matching policy found",
+  assignmentUnknown: "Assignment unknown",
+  unassessedHeading:
+    "Additional verification: not assessed by technical evidence",
+  gapHeading: (title) => `Gap: ${title}`,
+  appendixEyebrow: "Appendix A",
+  appendixLead:
+    "Every configuration value cited in this report, as read from the tenant export. References are stable within a report ID.",
+  methodologyEyebrow: "Appendix B",
+  methodologyEarlyEyebrow: "About the method",
+  howToRead: "How to read this report",
+  howToReadNotes: [
+    "Status is shown by marker shape and label, never by colour alone.",
+    "A control rolls up from its capabilities. A capability rolls up from its checks.",
+    "Only assigned policies count as evidence. Configured but unassigned settings are reported separately.",
+    "Evidence references point to rows of the evidence register in Appendix A.",
+  ],
+  shortStatuses: CONTROL_STATUS_LABELS,
+  assessmentLabels: {
+    checked: "Checked",
+    unableToCheck: "Unable to check",
+    outsideScope: "Outside selected scope",
+  },
+  resultLabels: {
+    matches: "Matches expected value",
+    missing: "Missing",
+    different: "Different value",
+  },
+  notFound: "Not found",
+  unavailable: "Unavailable",
+  outsideScopeEyebrow: "Outside Intune scope",
+  outsideScopeCount: (count) =>
+    count === 1
+      ? "1 measure is outside Intune scope and needs its own assessment."
+      : `${count} measures are outside Intune scope; each needs its own assessment.`,
+  outsideScopeRowNote:
+    "Needs its own assessment; this report holds no evidence for it.",
 };
 
 /** Short framework names for the cover title and the running header. */
@@ -1520,7 +994,7 @@ export function complianceReportFileName(
 ): string {
   const now = new Date();
   const frameworkLabel =
-    STRINGS.en.fileFrameworkLabels[frameworkId] +
+    STRINGS.fileFrameworkLabels[frameworkId] +
     (frameworkId === "essential-eight"
       ? `-ML${essentialEightMaturityLevel}`
       : "");
@@ -1620,9 +1094,8 @@ export async function generateComplianceReportPDF(
   data: DetailedExportData,
   options: ComplianceReportOptions,
 ): Promise<Uint8Array> {
-  const locale: Locale = options.locale ?? "en";
-  const strings = STRINGS[locale];
-  const layout = LAYOUT[locale];
+  const strings = STRINGS;
+  const layout = LAYOUT;
   const branding = options.branding ?? data.branding;
   const theme = brandingTheme(branding);
   const {
@@ -1686,7 +1159,7 @@ export async function generateComplianceReportPDF(
     if (name) return name;
     if (!result) return undefined;
     const { capability } = result;
-    if (settingId === capability.id) return capabilityName(result);
+    if (settingId === capability.id) return capability.name;
     const signal = capability.signals.find((item) =>
       item.source === "tenantPolicy"
         ? tenantPolicySettingId(item) === settingId
@@ -1700,7 +1173,7 @@ export async function generateComplianceReportPDF(
             : false,
     );
     if (signal?.source === "policyCheck" || signal?.source === "tenantPolicy")
-      return capabilityName(result);
+      return capability.name;
     if (signal?.source === "graphProperty")
       return readablePropertyName(signal.propertyPath);
     return undefined;
@@ -1756,8 +1229,7 @@ export async function generateComplianceReportPDF(
     metadata.reportId ??
     defaultReportId(options.frameworkId, generatedAt, deterministicSeed);
   const revision = metadata.revision ?? "1.0";
-  const classification =
-    metadata.classification ?? (locale === "de" ? "Intern" : "Internal");
+  const classification = metadata.classification ?? "Internal";
   const tenantName = metadata.tenantLabel ?? branding?.companyName;
   const shortName =
     options.frameworkId === "essential-eight"
@@ -1992,18 +1464,10 @@ export async function generateComplianceReportPDF(
       maxWidth,
     });
 
-  const capabilityName = (result: CapabilityResult) =>
-    locale === "de"
-      ? (GERMAN_CAPABILITY_NAMES[result.capability.id] ??
-        result.capability.name)
-      : result.capability.name;
-
   const assignmentLabel = (assignment: CapabilityEvidence["assignment"]) => {
     if (assignment.state === "notAssigned") return strings.notAssigned;
     if (assignment.state === "unknown") return layout.assignmentUnknown;
-    const targets = assignmentDetails(assignment).map((target) =>
-      translateEvidenceValue(target, locale),
-    );
+    const targets = assignmentDetails(assignment);
     return `${strings.assigned}: ${targets.join(", ") || strings.assigned}`;
   };
 
@@ -2033,7 +1497,7 @@ export async function generateComplianceReportPDF(
   const outsideScopeLines = [
     ...(outsideCount > 0 ? [layout.outsideScopeCount(outsideCount)] : []),
     ...(notEvaluatedCount > 0
-      ? [MANAGEMENT_REPORT_STRINGS[locale].notEvaluatedLine(notEvaluatedCount)]
+      ? [MANAGEMENT_REPORT_STRINGS.en.notEvaluatedLine(notEvaluatedCount)]
       : []),
   ];
   // Same formulas as the management summary so both reports agree.
@@ -2111,7 +1575,7 @@ export async function generateComplianceReportPDF(
     tenantEyebrow: layout.coverTenant,
     tenant: metadata.tenantLabel,
     facts: [
-      [strings.generatedOn, formatReportDate(generatedAt, locale, fixedDate)],
+      [strings.generatedOn, localIsoDate(generatedAt, fixedDate)],
       [strings.documentControlLabels[7], classification],
     ],
   });
@@ -2227,7 +1691,7 @@ export async function generateComplianceReportPDF(
     { label: controlLabels[7], value: classification },
     {
       label: strings.generatedOn,
-      value: formatReportDate(generatedAt, locale, fixedDate),
+      value: localIsoDate(generatedAt, fixedDate),
     },
   ]);
   drawCoverFooter(doc, frame, strings.footer, layout.coverFootRight);
@@ -2289,10 +1753,7 @@ export async function generateComplianceReportPDF(
     heroTextWidth,
     7.6,
   );
-  const scopeLine =
-    locale === "de"
-      ? `${framework.summary.applicableControls} im Geltungsbereich; ${framework.summary.notApplicable} außerhalb des gewählten Geltungsbereichs; ${framework.summary.notAssessed} unbewertet; ${framework.summary.conflicting} mit widersprüchlichen Nachweisen. Ausgewählte Zuordnungen, keine vollständige Rahmenwerksbewertung.`
-      : `${framework.summary.applicableControls} in scope; ${framework.summary.notApplicable} outside the selected scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed policy evidence. Entries are selected mappings, not full framework coverage.`;
+  const scopeLine = `${framework.summary.applicableControls} in scope; ${framework.summary.notApplicable} outside the selected scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed policy evidence. Entries are selected mappings, not full framework coverage.`;
   const scopeLines = [
     ...summaryCountLines,
     ...wrap(scopeLine, heroTextWidth, 7.6),
@@ -2301,7 +1762,7 @@ export async function generateComplianceReportPDF(
   const safeguardLines =
     metrics.safeguardsTotal > 0
       ? wrap(
-          MANAGEMENT_REPORT_STRINGS[locale].heroSentence(
+          MANAGEMENT_REPORT_STRINGS.en.heroSentence(
             metrics.safeguardsInPlace,
             metrics.safeguardsTotal,
           ),
@@ -2529,7 +1990,7 @@ export async function generateComplianceReportPDF(
           group.controls.length,
           { gap: 0.5 },
         );
-        const total = ` ${locale === "de" ? "von" : "of"} ${group.controls.length}`;
+        const total = ` of ${group.controls.length}`;
         setFont(doc, 7.8, "normal", PALETTE.muted);
         const totalWidth = doc.getTextWidth(total);
         doc.text(total, x + columnWidth, middle + capHeight(7.8) / 2, {
@@ -2661,11 +2122,8 @@ export async function generateComplianceReportPDF(
     if (ids.length === 0) continue;
     findings.push({
       kind: "risk",
-      title: capabilityName(result),
-      description:
-        locale === "de"
-          ? `Zugewiesene abweichende Konfiguration für ${ids.join(", ")}.`
-          : `Assigned deviating configuration affects ${ids.join(", ")}.`,
+      title: result.capability.name,
+      description: `Assigned deviating configuration affects ${ids.join(", ")}.`,
       controlIds: ids,
     });
   }
@@ -2674,11 +2132,8 @@ export async function generateComplianceReportPDF(
     if (ids.length === 0) continue;
     findings.push({
       kind: "unassigned",
-      title: capabilityName(result),
-      description:
-        locale === "de"
-          ? `Konfigurierte Einstellung ohne Zuweisung für ${ids.join(", ")}.`
-          : `Configured setting without assignment affects ${ids.join(", ")}.`,
+      title: result.capability.name,
+      description: `Configured setting without assignment affects ${ids.join(", ")}.`,
       controlIds: ids,
     });
   }
@@ -2694,7 +2149,6 @@ export async function generateComplianceReportPDF(
       ...(includeNote && frameworkNote
         ? [`${strings.notePrefix}${frameworkNote}`]
         : []),
-      ...(strings.summaryScope ? [strings.summaryScope] : []),
     ];
     const lines = paragraphs.map((paragraph) =>
       wrap(paragraph, scopeTextWidth, 7, "normal"),
@@ -3573,7 +3027,7 @@ export async function generateComplianceReportPDF(
   // The same list as the management summary; a sample excerpt keeps only the
   // counts in the summary and the results overview.
   if (!isExcerpt && outsideMeasures.length > 0) {
-    const summaryStrings = MANAGEMENT_REPORT_STRINGS[locale];
+    const summaryStrings = MANAGEMENT_REPORT_STRINGS.en;
     addContentPage();
     drawPageTitle(
       layout.outsideScopeEyebrow,
@@ -3588,7 +3042,7 @@ export async function generateComplianceReportPDF(
     drawDataTable(
       summaryStrings.outsideScopeHeaders,
       outsideMeasures.map((measure) => ({
-        cells: [measure.id, measure.title[locale]],
+        cells: [measure.id, measure.title.en],
         note: measure.notEvaluated
           ? summaryStrings.notEvaluatedNote
           : layout.outsideScopeRowNote,
@@ -3605,7 +3059,7 @@ export async function generateComplianceReportPDF(
     {
       const innerWidth = contentWidth - 10;
       const timestampLines = wrap(
-        `${strings.generatedOn}: ${formatReportTimestamp(generatedAt, locale, fixedDate)}`,
+        `${strings.generatedOn}: ${generatedAt.toISOString()}`,
         innerWidth,
         8.6,
         "bold",
@@ -3704,29 +3158,23 @@ export async function generateComplianceReportPDF(
     ensureSpace(40);
     drawSectionHeading(strings.collectionHeading);
     drawWrappedText(
-      locale === "de"
-        ? `Erhoben: ${assessment.provenance.collectedAt ?? "unbekannt"}; Regelwerk ${assessment.provenance.rulesetVersion}. ${
-            assessment.provenance.policyStatusSummary === "collected"
-              ? "Der Zustand einzelner Geräte wird nicht bewertet; Intune-Statuszusammenfassungen je Richtlinie wurden nur als Kontext erhoben. Tatsächlicher Zugriff nicht geprüft."
-              : "Gerätezustand nicht erhoben; tatsächlicher Zugriff nicht geprüft."
-          }`
-        : `Collected: ${assessment.provenance.collectedAt ?? "unknown"}; ruleset ${assessment.provenance.rulesetVersion}. ${
-            assessment.provenance.policyStatusSummary === "collected"
-              ? "Per device state is not assessed; Intune status summaries per policy were collected as context only. Effective access unverified."
-              : "Device state not collected; effective access unverified."
-          }`,
+      `Collected: ${assessment.provenance.collectedAt ?? "unknown"}; ruleset ${assessment.provenance.rulesetVersion}. ${
+        assessment.provenance.policyStatusSummary === "collected"
+          ? "Per device state is not assessed; Intune status summaries per policy were collected as context only. Effective access unverified."
+          : "Device state not collected; effective access unverified."
+      }`,
       { fontSize: 8, lineHeight: 3.7, after: 1.5 },
     );
     drawWrappedText(
-      `${locale === "de" ? "Geltungsbereich" : "Scope"}: ${(assessment.scope.platforms ?? ["windows", "macos", "ios", "android"]).join(", ")}${options.frameworkId === "def-stan-05-138-i4" ? `; Cyber Risk Profile: ${assessment.scope.defStanRiskLevel ?? "all levels"}` : ""}.`,
+      `Scope: ${(assessment.scope.platforms ?? ["windows", "macos", "ios", "android"]).join(", ")}${options.frameworkId === "def-stan-05-138-i4" ? `; Cyber Risk Profile: ${assessment.scope.defStanRiskLevel ?? "all levels"}` : ""}.`,
       { fontSize: 8, lineHeight: 3.7, after: 2.5 },
     );
     for (const line of [
-      `${locale === "de" ? "Datenstand" : "Snapshot"} SHA-256: ${manifest.snapshotSha256}`,
-      `${locale === "de" ? "Regelwerk" : "Ruleset"} SHA-256: ${manifest.rulesetSha256}`,
+      `Snapshot SHA-256: ${manifest.snapshotSha256}`,
+      `Ruleset SHA-256: ${manifest.rulesetSha256}`,
       ...(framework.framework.source
         ? [
-            `${locale === "de" ? "Herausgeberquelle" : "Publisher reference"}: ${framework.framework.source.url}`,
+            `Publisher reference: ${framework.framework.source.url}`,
           ]
         : []),
     ]) {
@@ -3750,18 +3198,7 @@ export async function generateComplianceReportPDF(
             String(row.recognizedPolicies),
             String(row.unsupportedPolicies),
           ],
-          note: row.errors.length
-            ? row.errors
-                .map((message) =>
-                  locale === "de"
-                    ? message.replaceAll(
-                        "Settings Catalog",
-                        "Einstellungskatalog",
-                      )
-                    : message,
-                )
-                .join("; ")
-            : undefined,
+          note: row.errors.length ? row.errors.join("; ") : undefined,
         })),
         [68, 34, 26, 26, 26],
         ["left", "left", "right", "right", "right"],
@@ -3782,17 +3219,13 @@ export async function generateComplianceReportPDF(
           .slice(0, 12)
           .flatMap((error) =>
             wrap(
-              `${translateEvidenceValue(error.policyType, locale)}: ${truncate(error.error, 120)}${error.permissionHint ? ` (${error.permissionHint})` : ""}`,
+              `${error.policyType}: ${truncate(error.error, 120)}${error.permissionHint ? ` (${error.permissionHint})` : ""}`,
               innerWidth,
               7.3,
             ),
           ),
         ...(fetchErrors.length > 12
-          ? [
-              locale === "de"
-                ? `+${fetchErrors.length - 12} weitere Erhebungshinweise`
-                : `+${fetchErrors.length - 12} more collection notes`,
-            ]
+          ? [`+${fetchErrors.length - 12} more collection notes`]
           : []),
       ];
       const height = headingLines.length * 3.8 + detailLines.length * 3.4 + 10;
@@ -3852,7 +3285,7 @@ export async function generateComplianceReportPDF(
       (platform) => platforms.has(platform),
     );
     drawWrappedText(
-      `${strings.platformScope}: ${orderedPlatforms.length > 0 ? orderedPlatforms.join(", ") : locale === "de" ? "Keine Plattform erkannt" : "No platform detected"}`,
+      `${strings.platformScope}: ${orderedPlatforms.length > 0 ? orderedPlatforms.join(", ") : "No platform detected"}`,
       { fontSize: 8.4, style: "bold", after: 4 },
     );
   }
@@ -3935,7 +3368,7 @@ export async function generateComplianceReportPDF(
     // An alternative in use or a setting that cannot be combined with
     // Conditional Access is no gap: a neutral label replaces the status.
     const statusLabel =
-      alternativeLabel(result, locale) ??
+      alternativeLabel(result) ??
       strings.capabilityStatuses[result.status];
     const pillOptions = {
       tone: toneForCapabilityStatus(result.status),
@@ -3949,7 +3382,7 @@ export async function generateComplianceReportPDF(
     const pillWidth = pillMetrics(doc, statusLabel, pillOptions).width;
     const platform = platformFromValue(result.capability.platform);
     const nameWidth = innerWidth - pillWidth - 4;
-    const nameLines = wrap(capabilityName(result), nameWidth, 9, "bold");
+    const nameLines = wrap(result.capability.name, nameWidth, 9, "bold");
     const platformFits =
       platform &&
       nameLines.length === 1 &&
@@ -3986,7 +3419,7 @@ export async function generateComplianceReportPDF(
 
     const caveat =
       result.evidence.length > 0
-        ? result.capability.caveat?.[locale]
+        ? result.capability.caveat?.en
         : undefined;
     if (caveat) {
       const lines = wrap(caveat, innerWidth, 7.2, "italic");
@@ -4086,11 +3519,7 @@ export async function generateComplianceReportPDF(
                 }),
               )),
           ...(check.policyName
-            ? wrap(
-                translateEvidenceValue(check.policyName, locale),
-                widths[0] - 3,
-                6.3,
-              ).map((text) => ({
+            ? wrap(check.policyName, widths[0] - 3, 6.3).map((text) => ({
                 text,
                 size: 6.3,
                 color: PALETTE.muted,
@@ -4106,10 +3535,7 @@ export async function generateComplianceReportPDF(
         const expectedLong = expectedText.length > longValue;
         const actualLabelled =
           check.actualValue === null ? null : labelledValue(check.actualValue);
-        const actualValue =
-          actualLabelled && locale === "de"
-            ? translateCheckText(actualLabelled.label)
-            : (actualLabelled?.label ?? null);
+        const actualValue = actualLabelled?.label ?? null;
         const actualMissing = actualValue === null;
         const actualLong = (actualValue?.length ?? 0) > longValue;
         // Labels lead; the raw option id stays visible, small and muted.
@@ -4182,17 +3608,7 @@ export async function generateComplianceReportPDF(
         ];
         const isLastCheck = checkIndex === result.checks.length - 1;
         const reasonLines = check.reason
-          ? wrap(
-              locale === "de"
-                ? translateCheckText(check.reason).replaceAll(
-                    "Settings Catalog",
-                    "Einstellungskatalog",
-                  )
-                : check.reason,
-              innerWidth - 2,
-              6.6,
-              "italic",
-            )
+          ? wrap(check.reason, innerWidth - 2, 6.6, "italic")
           : [];
         // Very long values continue across pages in row chunks.
         const lineCount = Math.max(
@@ -4392,7 +3808,7 @@ export async function generateComplianceReportPDF(
       });
     }
     policyEntries.forEach((policy, index) => {
-      const name = translateEvidenceValue(policy.name, locale);
+      const name = policy.name;
       const chipLabel = policy.assignment
         ? assignmentLabel(policy.assignment)
         : layout.assignmentUnknown;
@@ -4525,12 +3941,7 @@ export async function generateComplianceReportPDF(
           .filter((note): note is string => Boolean(note)),
       );
       for (const note of notes) {
-        const lines = wrap(
-          translateEvidenceNote(note, locale),
-          innerWidth,
-          6.9,
-          "italic",
-        );
+        const lines = wrap(note, innerWidth, 6.9, "italic");
         for (const chunk of chunkLines(lines, maxBlockLines))
           blocks.push({
             height: chunk.length * 3 + 1.4,
@@ -4558,23 +3969,11 @@ export async function generateComplianceReportPDF(
         const assignment = assigned
           ? strings.assigned.toLowerCase()
           : evidence.assignment.state === "unknown"
-            ? locale === "de"
-              ? "Zuweisung unbekannt"
-              : "assignment unknown"
+            ? "assignment unknown"
             : strings.notAssigned.toLowerCase();
         const observed = labelledValue(evidence.observedValue);
-        const refPrefix =
-          locale === "de"
-            ? assigned
-              ? "Risiko"
-              : "Abweichung"
-            : assigned
-              ? "Risk"
-              : "Deviation";
-        const sentence =
-          locale === "de"
-            ? `${refPrefix} ${entry.ref}: ${evidence.policyName} setzt ${evidence.settingId} auf ${observed.label} (${assignment}).`
-            : `${refPrefix} ${entry.ref}: ${evidence.policyName} sets ${evidence.settingId} to ${observed.label} (${assignment}).`;
+        const refPrefix = assigned ? "Risk" : "Deviation";
+        const sentence = `${refPrefix} ${entry.ref}: ${evidence.policyName} sets ${evidence.settingId} to ${observed.label} (${assignment}).`;
         const lines = [
           ...wrapTechnicalId(sentence, innerWidth - 5, 7.2, "bold"),
           ...wrap(
@@ -4714,11 +4113,7 @@ export async function generateComplianceReportPDF(
       },
     ];
     control.unassessedAspects.forEach((aspect, index) => {
-      const lines = wrap(
-        locale === "de" ? translateAssessmentLimitation(aspect) : aspect,
-        innerWidth - 2,
-        7.4,
-      );
+      const lines = wrap(aspect, innerWidth - 2, 7.4);
       const isLast = index === control.unassessedAspects.length - 1;
       chunkLines(lines, maxBlockLines).forEach((chunk, chunkIndex, chunks) => {
         const lastChunk = chunkIndex === chunks.length - 1;
@@ -4764,11 +4159,7 @@ export async function generateComplianceReportPDF(
     const comparisonSummary =
       control.status === "notApplicable"
         ? strings.controlStatuses.notApplicable
-        : locale === "de"
-          ? controlChecks.length
-            ? `${controlChecks.filter((check) => check.result === "matches").length} Sollwert; ${controlChecks.filter((check) => check.result === "missing").length} fehlt; ${controlChecks.filter((check) => check.result === "different").length} abweichend; ${controlChecks.filter((check) => check.assessmentStatus === "unableToCheck").length} nicht prüfbar`
-            : "Nicht prüfbar"
-          : checkSummary(controlChecks);
+        : checkSummary(controlChecks);
     const mappedCapabilities = mappedCapabilitiesFor(control);
     const requirementText =
       options.frameworkId === "essential-eight"
@@ -4976,14 +4367,13 @@ export async function generateComplianceReportPDF(
   });
   {
     const order = [0, 1, 2, 3, 4, 5] as const;
-    // The type column grows to fit its longest word (German compounds such
-    // as "Gerätekonformitätsrichtlinie"), taking the space from the policy
-    // column, so a word never breaks mid-word.
+    // The type column grows to fit its longest word, taking the space from
+    // the policy column, so a word never breaks mid-word.
     const typeFont = 6.9;
     const longestTypeWord = Math.max(
       0,
       ...evidenceRegistry.flatMap(({ evidence }) =>
-        translateEvidenceValue(evidence.policyType, locale)
+        evidence.policyType
           .split(/\s+/)
           .map((word) => textWidth(doc, word, typeFont)),
       ),
@@ -4999,9 +4389,7 @@ export async function generateComplianceReportPDF(
 
     const buildRow = (entry: EvidenceRegistryEntry) => {
       const { evidence } = entry;
-      const targetLabels = assignmentDetails(evidence.assignment).map(
-        (target) => translateEvidenceValue(target, locale),
-      );
+      const targetLabels = assignmentDetails(evidence.assignment);
       const assignment =
         targetLabels.length > 0 ? targetLabels.join(", ") : strings.notAssigned;
       const longAssignment = assignment.length > 110;
@@ -5022,11 +4410,7 @@ export async function generateComplianceReportPDF(
       const cells = [
         [entry.ref],
         wrap(evidence.policyName, widths[1] - 3, 6.9),
-        wrap(
-          translateEvidenceValue(evidence.policyType, locale),
-          widths[2] - 3,
-          typeFont,
-        ),
+        wrap(evidence.policyType, widths[2] - 3, typeFont),
         registerName
           ? wrap(registerName, widths[3] - 3, 6.9)
           : wrapTechnicalId(evidence.settingId, widths[3] - 3, 6.9),
@@ -5262,7 +4646,7 @@ export async function generateComplianceReportPDF(
       )
     : [];
   if (hasPolicyDeviceStatus(deviceStatus) && annexRows.length) {
-    const annex = DEVICE_STATUS_STRINGS[locale];
+    const annex = DEVICE_STATUS_STRINGS;
     // Shares the register's last page when more than half of it is free.
     if (yPosition > contentTop + (contentBottom - contentTop) / 2)
       addContentPage();
@@ -5288,7 +4672,7 @@ export async function generateComplianceReportPDF(
         margin + widths.slice(0, index).reduce((sum, width) => sum + width, 0),
     );
     // Header words wrap within their column, so long labels such as "Not
-    // applicable" or "Nicht anwendbar" never run into the next column.
+    // applicable" never run into the next column.
     const headerColumns = annex.headers.map((header, index) => ({
       x: columnX[index] ?? margin,
       lines: tableHeaderLines(doc, header, widths[index] ?? 0),

@@ -56,7 +56,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.8";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.22";
 
 const TENANT_POLICY_FAMILY_KEYS = new Set(
   Object.values(TENANT_POLICY_FAMILIES),

@@ -183,7 +183,7 @@ describe("policy device status annex", () => {
     ).toHaveLength(1);
   });
 
-  it("adds the annex to the framework PDF in English and German only when data exists", async () => {
+  it("adds the annex to the framework PDF only when data exists", async () => {
     const english = extractPdfStreamText(
       await generateComplianceReportPDF(CONTOSO_TENANT, {
         frameworkId: "iso-27001-2022",
@@ -192,15 +192,6 @@ describe("policy device status annex", () => {
     expect(english).toContain("Policy device status");
     expect(english).toContain("No status reported");
     expect(english).toContain("SUCCEEDED");
-
-    const german = extractPdfStreamText(
-      await generateComplianceReportPDF(CONTOSO_TENANT, {
-        frameworkId: "iso-27001-2022",
-        locale: "de",
-      }),
-    );
-    expect(german).toContain("Gerätestatus je Richtlinie");
-    expect(german).toContain("Kein Status gemeldet");
 
     const without = extractPdfStreamText(
       await generateComplianceReportPDF(

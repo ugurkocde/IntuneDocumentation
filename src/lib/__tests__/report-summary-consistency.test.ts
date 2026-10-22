@@ -156,45 +156,39 @@ function annexHeaderLabels(page: string): HeaderLabel[] {
 }
 
 describe("device status annex header", () => {
-  it.each([
-    ["en", "SUCCEEDED"],
-    ["de", "ERFOLGREICH"],
-  ] as const)(
-    "keeps every %s header label inside its column",
-    async (locale: "en" | "de", marker: string) => {
-      const pages = readPdfPageTexts(
-        await generateComplianceReportPDF(CONTOSO_TENANT, {
-          frameworkId: "iso-27001-2022",
-          locale,
-        }),
-      );
-      const page = pages.find((text) => text.includes(`(${marker}) Tj`));
-      expect(page).toBeDefined();
-      // The annex header rows sit at and just below the marker's baseline;
-      // the evidence register header on the same page is further up.
-      const all = annexHeaderLabels(page!);
-      const top = all.find((label) => label.text === marker)!.y;
-      const labels = all.filter(
-        (label) => label.y <= top + 0.1 && label.y >= top - 10,
-      );
-      expect(labels.length).toBeGreaterThanOrEqual(7);
-      const columns = [...new Set(labels.map((label) => label.x))].sort(
-        (left, right) => left - right,
-      );
-      const measure = new jsPDF({ unit: "pt" });
-      measure.setFont("helvetica", "bold");
-      measure.setFontSize(5.6);
-      for (const label of labels) {
-        const next = columns.find((x) => x > label.x);
-        if (next === undefined) continue;
-        const width =
-          measure.getTextWidth(label.text) +
-          label.charSpace * Math.max(label.text.length - 1, 0);
-        expect(
-          label.x + width,
-          `${label.text} runs into the next column`,
-        ).toBeLessThan(next);
-      }
-    },
-  );
+  it("keeps every header label inside its column", async () => {
+    const marker = "SUCCEEDED";
+    const pages = readPdfPageTexts(
+      await generateComplianceReportPDF(CONTOSO_TENANT, {
+        frameworkId: "iso-27001-2022",
+      }),
+    );
+    const page = pages.find((text) => text.includes(`(${marker}) Tj`));
+    expect(page).toBeDefined();
+    // The annex header rows sit at and just below the marker's baseline;
+    // the evidence register header on the same page is further up.
+    const all = annexHeaderLabels(page!);
+    const top = all.find((label) => label.text === marker)!.y;
+    const labels = all.filter(
+      (label) => label.y <= top + 0.1 && label.y >= top - 10,
+    );
+    expect(labels.length).toBeGreaterThanOrEqual(7);
+    const columns = [...new Set(labels.map((label) => label.x))].sort(
+      (left, right) => left - right,
+    );
+    const measure = new jsPDF({ unit: "pt" });
+    measure.setFont("helvetica", "bold");
+    measure.setFontSize(5.6);
+    for (const label of labels) {
+      const next = columns.find((x) => x > label.x);
+      if (next === undefined) continue;
+      const width =
+        measure.getTextWidth(label.text) +
+        label.charSpace * Math.max(label.text.length - 1, 0);
+      expect(
+        label.x + width,
+        `${label.text} runs into the next column`,
+      ).toBeLessThan(next);
+    }
+  });
 });

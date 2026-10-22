@@ -469,11 +469,11 @@ function aboutSheet(
   );
   block("Capability alternative", [
     [
-      ALTERNATIVE_STATE_LABELS.inUse.en,
+      ALTERNATIVE_STATE_LABELS.inUse,
       "No gap: a capability that delivers the same safeguard is configured and assigned. Not counted in Capabilities.",
     ],
     [
-      ALTERNATIVE_STATE_LABELS.notCombinable.en,
+      ALTERNATIVE_STATE_LABELS.notCombinable,
       "No gap: the setting cannot be turned on while any Conditional Access policy exists, disabled ones included. Not counted in Capabilities.",
     ],
   ]);

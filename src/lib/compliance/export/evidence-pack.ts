@@ -6,8 +6,6 @@ import { toCsv } from "./csv";
 import { purviewTemplateFor } from "./purview-templates";
 import { assessmentScopeText, controlEvidenceCounts } from "./register";
 
-export const NO_PURVIEW_TEMPLATE = "No Purview template";
-
 export type EvidenceManifest = Awaited<
   ReturnType<typeof createEvidenceManifest>
 >;
@@ -87,8 +85,7 @@ export async function buildEvidencePack(
     meta.generatedAt ?? assessment.generatedAt,
   ).toISOString();
   const template = purviewTemplateFor(frameworkId, assessment.scope);
-  // Undefined is a framework missing from the template data, never "no template".
-  if (template === undefined)
+  if (!template)
     throw new Error(
       `No Purview template mapping for framework: ${frameworkId}`,
     );
@@ -118,12 +115,12 @@ export async function buildEvidencePack(
     ],
     ...framework.controls.map((control) => {
       const counts = controlEvidenceCounts(control, capabilities);
-      const note = [STATUS_NOTES[control.status], template?.note]
+      const note = [STATUS_NOTES[control.status], template.note]
         .filter(Boolean)
         .join(" ");
       return [
         frameworkLabel,
-        template?.displayName ?? NO_PURVIEW_TEMPLATE,
+        template.displayName,
         control.control.id,
         control.control.title,
         CONTROL_STATUS_LABELS[control.status],
@@ -156,10 +153,8 @@ export async function buildEvidencePack(
     assessment.disclaimer,
     "",
     "PURVIEW COMPLIANCE MANAGER TEMPLATE",
-    template
-      ? `Template: ${template.displayName}`
-      : `${NO_PURVIEW_TEMPLATE}. Purview Compliance Manager lists no template for this framework. Keep this pack with your own audit records.`,
-    ...(template?.note ? [template.note] : []),
+    `Template: ${template.displayName}`,
+    ...(template.note ? [template.note] : []),
     "",
     "HOW TO ATTACH THE EVIDENCE IN PURVIEW COMPLIANCE MANAGER",
     "1. In the Microsoft Purview portal, open Compliance Manager and open the assessment that uses the template above.",

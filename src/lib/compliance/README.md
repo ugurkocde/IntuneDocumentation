@@ -665,8 +665,8 @@ into assigned evidence (enforcing values on assigned policies),
 counter-evidence (non-enforcing values) and evidence on unassigned policies or
 with unknown assignment, so counter-evidence never reads as support. The index
 note says "No policy evidence found" only for `noEvidence` and "Not assessed,
-see the PDF for the reason." for `notAssessed`. A framework without Purview
-template data throws instead of reading as "No Purview template". XLSX cells
+see the PDF for the reason." for `notAssessed`. Every assessed framework has
+a Purview template; a framework missing from the template data throws. XLSX cells
 with formula-like text keep their value under a `quotePrefix` cell style;
 CSV keeps the leading apostrophe. The XLSX About sheet states the assessment
 scope from `assessment.scope`: platforms, the Essential Eight target level
@@ -760,6 +760,15 @@ Corrections from the live PDF review of 21 October 2026.
   collected as context only.
 - **Headline.** "N of M technical safeguards are set up and switched on in
   Intune and Entra."
+
+## Framework set and ISO titles (ruleset 2026.10.22)
+
+BSI IT-Grundschutz is no longer assessed, and the ISO/IEC 27001:2022 control
+titles are paraphrased in original words with the IDs unchanged. Both change
+framework metadata that the ruleset fingerprint covers; detectors, mappings
+of the remaining frameworks and statuses are unchanged. The framework
+evidence report is English only; the management summary keeps English and
+German.
 
 ## Removed frameworks and stored data
 

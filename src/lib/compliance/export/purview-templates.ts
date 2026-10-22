@@ -37,14 +37,14 @@ const NIST_171_NOTE =
   "Purview lists one NIST 800-171 regulation. Check in the tenant which revision the template covers before attaching evidence.";
 
 /**
- * Purview Compliance Manager regulation per framework, or null where Purview
- * has no template. Compliance Manager has no API for templates, so this is
- * data checked by hand against the Microsoft Learn list. Names are copied
- * exactly; the spaced hyphens in names such as "UK - Cyber Security for
- * Defence Suppliers" are Microsoft's, so they must not be rewritten.
+ * Purview Compliance Manager regulation per framework. Compliance Manager has
+ * no API for templates, so this is data checked by hand against the Microsoft
+ * Learn list. Names are copied exactly; the spaced hyphens in names such as
+ * "UK - Cyber Security for Defence Suppliers" are Microsoft's, so they must
+ * not be rewritten.
  */
 export const PURVIEW_TEMPLATES: Readonly<
-  Record<ExportFrameworkId, PurviewTemplateEntry | null>
+  Record<ExportFrameworkId, PurviewTemplateEntry>
 > = {
   "iso-27001-2022": { displayName: "ISO/IEC 27001:2022", verifiedAt },
   "soc2-tsc": {
@@ -94,17 +94,16 @@ export function isExportFrameworkId(value: string): value is ExportFrameworkId {
 }
 
 /**
- * The Purview template for an assessed framework. Null means Purview has no
- * template; undefined means the framework id is not known to this module.
- * Essential Eight resolves to the template of the assessed maturity level.
+ * The Purview template for an assessed framework, or undefined when the
+ * framework id is not known to this module. Essential Eight resolves to the
+ * template of the assessed maturity level.
  */
 export function purviewTemplateFor(
   frameworkId: string,
   scope: AssessmentScope = {},
-): PurviewTemplate | null | undefined {
+): PurviewTemplate | undefined {
   if (!isExportFrameworkId(frameworkId)) return undefined;
   const entry = PURVIEW_TEMPLATES[frameworkId];
-  if (!entry) return null;
   const level = scope.essentialEightMaturityLevel;
   if (entry.maturityLevels && level)
     return {

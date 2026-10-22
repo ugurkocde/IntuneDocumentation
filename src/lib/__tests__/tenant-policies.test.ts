@@ -15,7 +15,6 @@ import {
   safeguardPolicies,
   safeguardState,
 } from "../compliance/management/management-summary";
-import { GERMAN_CAPABILITY_NAMES } from "../compliance/report-pdf";
 import { diffAssessments } from "../snapshots/diff";
 import { compactAssessment } from "../snapshots/projection";
 import {
@@ -976,9 +975,6 @@ describe("readable Entra tenant policy values", () => {
     const weak = TENANT_POLICY_CAPABILITIES.find((item) => item.id === WEAK)!;
     expect(weak.name).toBe(
       "SMS, voice call and email one-time passcode not enabled for users (Entra ID)",
-    );
-    expect(GERMAN_CAPABILITY_NAMES[WEAK]).toBe(
-      "SMS, Sprachanruf und E-Mail-Einmalcode für Benutzer nicht aktiviert (Entra ID)",
     );
     // Email OTP enabled without targets is the Microsoft default and matches.
     const result = capability(

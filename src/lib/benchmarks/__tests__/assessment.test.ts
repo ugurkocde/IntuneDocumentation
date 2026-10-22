@@ -240,6 +240,23 @@ describe("a tenant root without a definition id", () => {
   }
 });
 
+describe("a tenant settings row without an instance", () => {
+  for (const row of [{ id: "0" }, null])
+    it(`makes the collection incomplete, with ${JSON.stringify(row)}`, () => {
+      const run = assess([
+        { ...tenantPolicy({ settings: [] }), settings: [row] },
+      ]);
+      expect(run.collection.complete).toBe(false);
+      for (const id of [ALPHA, LENGTH])
+        expect(statusOf(run, id)).toEqual([
+          "Review",
+          "Review",
+          "collectionIncomplete",
+        ]);
+      expect(generateBenchmarkDrafts(run, settingsPack).drafts).toEqual([]);
+    });
+});
+
 describe("settings outside the Settings Catalog (owner decision D2)", () => {
   const present = () => tenantPolicy({ settings: [choice(ALPHA, "1")] });
   const macPack = pack([

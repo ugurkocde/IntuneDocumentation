@@ -5,7 +5,7 @@
 // checksum detects damage, not authorship: anyone can recompute it.
 // Desktop only (Node).
 import { createHash } from "node:crypto";
-import { unidentifiedSources } from "../compliance/engine";
+import { unidentifiedSources } from "../compliance/graph-rows";
 import { sha256 } from "../compliance/manifest";
 import { flattenItemSettings } from "../settings-flatten";
 import {
@@ -310,7 +310,9 @@ export function projectionSettings(projection: SnapshotProjection): SettingSet {
     if (
       section.status !== "complete" ||
       section.items.some(
-        (item) => item.incomplete || unidentifiedSources(item.data).size > 0,
+        (item) =>
+          item.incomplete ||
+          unidentifiedSources(item.data, section.familyKey).size > 0,
       )
     ) {
       notCompared.push(family);

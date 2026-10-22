@@ -2223,3 +2223,339 @@ describe("identifiers Graph returned empty", () => {
     });
   });
 });
+
+// Round 28: rows are checked where collected data enters the engines
+// (graph-rows.ts), so a row of a known family without its identifier is
+// unknown in every consumer, whatever else the row lacks.
+describe("row shapes checked where collected data enters", () => {
+  const firewall = (profile: string) => ({
+    "@odata.type":
+      "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
+    settingDefinitionId: `vendor_msft_firewall_mdmstore_${profile}profile_enablefirewall`,
+    choiceSettingValue: {
+      value: `vendor_msft_firewall_mdmstore_${profile}profile_enablefirewall_true`,
+      children: [],
+    },
+  });
+  const catalog = (
+    settings: unknown[],
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id: "catalog-1",
+    name: "Synthetic catalog",
+    platforms: "windows10",
+    technologies: "mdm",
+    configType: "Settings Catalog",
+    settings,
+    assignments: assigned,
+    collectionStatus: { settings: "complete", assignments: "complete" },
+    ...extra,
+  });
+  const withSection = (
+    key: string,
+    items: Record<string, unknown>[],
+    parts: Parameters<typeof data>[0] = {},
+  ): DetailedExportData => {
+    const base = data(parts);
+    return {
+      ...base,
+      ...(key === "settingsCatalog" || key === "securityBaselines"
+        ? { [key]: items }
+        : {}),
+      sections: [...base.sections!, section(key, items)],
+    } as DetailedExportData;
+  };
+  const withCatalog = (items: Record<string, unknown>[]) =>
+    withSection("settingsCatalog", items);
+  const definite = withCatalog([
+    catalog([{ id: "0", settingInstance: firewall("public") }]),
+  ]);
+  const unidentifiedRows: Array<[string, unknown[]]> = [
+    ["a row without an instance", [{ id: "0" }]],
+    ["a null row", [null]],
+  ];
+
+  describe("a Settings Catalog policy whose only rows have no instance", () => {
+    it.each(unidentifiedRows)(
+      "is unable to check with %s, never missing",
+      (_label, settings) => {
+        const unknown = withCatalog([catalog(settings)]);
+        for (const id of ["windows-firewall", "windows-lsa-protection"]) {
+          const result = capability(unknown, id);
+          expect(
+            result.checks.filter((check) => check.result === "missing"),
+            id,
+          ).toEqual([]);
+          expect(result.checks, id).toContainEqual(
+            expect.objectContaining({
+              assessmentStatus: "unableToCheck",
+              result: null,
+              policyId: "catalog-1",
+            }),
+          );
+        }
+      },
+    );
+
+    it.each(unidentifiedRows)(
+      "generates no fix pack draft with %s",
+      (_label, settings) => {
+        const drafted = (exportData: DetailedExportData) =>
+          generateFixPack(assessCompliance(exportData), {
+            collection: exportData,
+          }).policies;
+        expect(drafted(withCatalog([catalog([])])).length).toBeGreaterThan(0);
+        expect(drafted(withCatalog([catalog(settings)]))).toEqual([]);
+      },
+    );
+
+    it.each(unidentifiedRows)(
+      "is not compared in history or against a reference with %s, in both directions",
+      (_label, settings) => {
+        const unknown = withCatalog([catalog(settings)]);
+        for (const [from, to] of [
+          [definite, unknown],
+          [unknown, definite],
+        ] as const) {
+          const diff = diffSnapshots(projection(from), projection(to));
+          expect(diff.policies).toEqual([]);
+          expect(diff.totals.notComparedItems).toBe(1);
+          const comparison = compareSettings(
+            projectionSettings(projection(from)),
+            projectionSettings(projection(to)),
+          );
+          expect(comparison.totals).toMatchObject({
+            different: 0,
+            missing: 0,
+            extra: 0,
+          });
+          expect(comparison.notCompared.length).toBeGreaterThan(0);
+        }
+      },
+    );
+
+    it("keeps the row in the snapshot as a setting without its id", () => {
+      const stored = projection(withCatalog([catalog([{ id: "0" }, null])]));
+      expect(stored.sections.at(-1)!.items[0]!.data.settings).toEqual([
+        { id: "0", settingInstance: {} },
+        { settingInstance: {} },
+      ]);
+    });
+
+    it("treats an intent row without a definition id the same way", () => {
+      const intent = (settings: unknown[]) =>
+        withSection("securityBaselines", [
+          {
+            id: "intent-1",
+            displayName: "Synthetic intent",
+            settings,
+            assignments: assigned,
+          },
+        ]);
+      const known = intent([
+        { id: "0", definitionId: "synthetic_intent_setting", valueJson: "1" },
+      ]);
+      for (const settings of [[{ id: "0", valueJson: "1" }], [null]]) {
+        const unknown = intent(settings);
+        for (const [from, to] of [
+          [known, unknown],
+          [unknown, known],
+        ] as const) {
+          expect(
+            diffSnapshots(projection(from), projection(to)).totals,
+          ).toMatchObject({ policies: 0, notComparedItems: 1 });
+          expect(
+            compareSettings(
+              projectionSettings(projection(from)),
+              projectionSettings(projection(to)),
+            ).totals,
+          ).toMatchObject({ different: 0, missing: 0, extra: 0 });
+        }
+      }
+    });
+
+    it("keeps app configuration rows outside these layouts", () => {
+      const app = withSection("appConfigurations", [
+        {
+          id: "app-config-1",
+          displayName: "Synthetic app configuration",
+          settings: [
+            { appConfigKey: "SyntheticKey", appConfigKeyValue: "1" },
+            { id: "0" },
+          ],
+          assignments: assigned,
+        },
+      ]);
+      expect(
+        capability(app, "windows-firewall").checks.filter(
+          (check) => check.result === "missing",
+        ).length,
+      ).toBeGreaterThan(0);
+      const stored = projection(app);
+      expect(stored.sections.at(-1)!.items[0]!.data.settings).toBeUndefined();
+      expect(
+        projectionSettings(stored).families.map((family) => family.key),
+      ).toContain("appConfigurations");
+    });
+
+    it("still proves a setting missing from a policy whose rows have their ids", () => {
+      expect(
+        capability(definite, "windows-lsa-protection").checks,
+      ).toContainEqual(
+        expect.objectContaining({
+          assessmentStatus: "checked",
+          result: "missing",
+        }),
+      );
+    });
+  });
+
+  describe("policies without an id of their own", () => {
+    it("never pairs two policies by position", () => {
+      const named = (name: string) =>
+        withCatalog([
+          {
+            ...catalog([{ id: "0", settingInstance: firewall("public") }]),
+            id: undefined,
+            name,
+          },
+        ]);
+      const diff = diffSnapshots(
+        projection(named("Synthetic first")),
+        projection(named("Synthetic second")),
+      );
+      expect(diff.policies).toEqual([]);
+      expect(diff.totals).toMatchObject({ renamed: 0, notComparedItems: 1 });
+    });
+
+    it("never pairs collection items the collector named by position", () => {
+      const filters = (displayName: string) =>
+        withSection("assignmentFilters", [
+          { id: "singleton-assignmentFilters-0", displayName },
+        ]);
+      const diff = diffSnapshots(
+        projection(filters("Synthetic first")),
+        projection(filters("Synthetic second")),
+      );
+      expect(diff.totals).toMatchObject({ renamed: 0, notComparedItems: 1 });
+    });
+
+    it("still pairs the one resource of a singleton section", () => {
+      const settings = (displayName: string) =>
+        withSection("deviceManagementSettings", [{ displayName }]);
+      const diff = diffSnapshots(
+        projection(settings("Synthetic first")),
+        projection(settings("Synthetic second")),
+      );
+      expect(diff.totals).toMatchObject({ renamed: 1, notComparedItems: 0 });
+    });
+  });
+
+  describe("a custom OMA-URI row without its URI", () => {
+    const appLocker = (rows: Record<string, unknown>[]) =>
+      data({
+        deviceConfigurations: [
+          {
+            "@odata.type": "#microsoft.graph.windows10CustomConfiguration",
+            id: "custom-1",
+            displayName: "Synthetic custom",
+            omaSettings: rows,
+            assignments: assigned,
+          },
+        ],
+      });
+    const ruleCollections = Object.entries({
+      EXE: "Exe",
+      DLL: "Dll",
+      MSI: "Msi",
+      Script: "Script",
+    }).map(([node, type]) => ({
+      omaUri: `./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/synthetic/${node}/Policy`,
+      value: `<RuleCollection Type="${type}" EnforcementMode="Enabled"><FilePathRule Id="rule" Name="Synthetic" UserOrGroupSid="S-1-1-0" Action="Allow"><Conditions><FilePathCondition Path="%PROGRAMFILES%\\*"/></Conditions></FilePathRule></RuleCollection>`,
+    }));
+    const id = "windows-applocker-rule-collections";
+
+    it("makes the AppLocker check unknown, never checked or missing", () => {
+      for (const rows of [
+        [{ omaUri: "", value: ruleCollections[0]!.value }],
+        [{ value: "AuditOnly" }],
+      ]) {
+        const result = capability(appLocker(rows), id);
+        expect(
+          result.checks.filter((check) => check.assessmentStatus === "checked"),
+        ).toEqual([]);
+        expect(result.checks).toContainEqual(
+          expect.objectContaining({
+            assessmentStatus: "unableToCheck",
+            result: null,
+            policyId: "custom-1",
+          }),
+        );
+      }
+    });
+
+    it("keeps readable rule collections from evidence next to it", () => {
+      expect(capability(appLocker(ruleCollections), id).status).toBe(
+        "enforced",
+      );
+      const result = capability(
+        appLocker([...ruleCollections, { omaUri: "", value: "AuditOnly" }]),
+        id,
+      );
+      expect(result.status).not.toBe("enforced");
+      expect(result.evidence).toEqual([]);
+    });
+  });
+
+  describe("an assignment filter type Graph returned empty", () => {
+    const filtered = (filterType: unknown) =>
+      withCatalog([
+        catalog([{ id: "0", settingInstance: firewall("public") }], {
+          assignments: [
+            {
+              id: "assignment-1",
+              target: {
+                "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+                groupId: "group-1",
+                deviceAndAppManagementAssignmentFilterId: "filter-1",
+                deviceAndAppManagementAssignmentFilterType: filterType,
+              },
+            },
+          ],
+        }),
+      ]);
+
+    it("is not compared in history, in both directions", () => {
+      for (const known of ["include", "exclude", "none"])
+        for (const [from, to] of [
+          [filtered(known), filtered("")],
+          [filtered(""), filtered(known)],
+        ] as const) {
+          const diff = diffSnapshots(projection(from), projection(to));
+          expect(diff.policies, known).toEqual([]);
+          expect(diff.totals, known).toMatchObject({
+            assignmentChanges: 0,
+            notComparedItems: 1,
+          });
+        }
+    });
+
+    it("keeps include, exclude and none changes definite", () => {
+      for (const [from, to] of [
+        ["include", "exclude"],
+        ["exclude", "include"],
+        ["include", "none"],
+        ["none", "exclude"],
+      ]) {
+        const diff = diffSnapshots(
+          projection(filtered(from)),
+          projection(filtered(to)),
+        );
+        expect(diff.totals, `${from} to ${to}`).toMatchObject({
+          assignmentChanges: 2,
+          notComparedItems: 0,
+        });
+      }
+    });
+  });
+});

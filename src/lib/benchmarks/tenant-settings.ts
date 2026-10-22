@@ -30,6 +30,7 @@
 import type { DetailedExportData } from "../configuration-analyzer";
 import { summarizeAssignments } from "../compliance/assignments";
 import { buildCollectionCoverage } from "../compliance/coverage";
+import { catalogRoot } from "../compliance/graph-rows";
 import { record, type RecordJson } from "./policies";
 
 export type AssignmentState = "assigned" | "notAssigned" | "unknown";
@@ -309,13 +310,7 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
     // not read whole: it may hold any recommended setting unseen.
     const settings = Array.isArray(item.settings)
       ? item.settings
-          .map((setting) =>
-            record(setting) &&
-            record(setting.settingInstance) &&
-            text(setting.settingInstance.settingDefinitionId)
-              ? setting.settingInstance
-              : null,
-          )
+          .map(catalogRoot)
           .filter((instance): instance is RecordJson => instance !== null)
       : [];
     const settingsComplete =

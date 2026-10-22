@@ -1,3 +1,4 @@
+import { unreadableAssignment } from "./graph-rows";
 import type { AssignmentSummary } from "./types";
 
 export function summarizeAssignments(
@@ -15,11 +16,11 @@ export function summarizeAssignments(
   if (!Array.isArray(assignments)) return summary;
   let unknownTarget = false;
   for (const assignment of assignments) {
+    // An assignment without its target type, group id, filter type or
+    // filter id may target anyone (graph-rows.ts).
+    if (unreadableAssignment(assignment)) unknownTarget = true;
     const target = assignment?.target;
-    if (!target || typeof target["@odata.type"] !== "string") {
-      unknownTarget = true;
-      continue;
-    }
+    if (!target || typeof target["@odata.type"] !== "string") continue;
     const type = target["@odata.type"]
       .replace(/^#?(microsoft\.graph\.)?/, "")
       .toLowerCase();
@@ -54,11 +55,9 @@ export function summarizeAssignments(
         id,
         mode: typeof mode === "string" ? mode : "unknown",
       });
-      if (!["include", "exclude"].includes(mode)) unknownTarget = true;
     } else if (mode !== undefined && mode !== null && mode !== "none") {
       // A filter type other than none without a filter id, or an empty one,
       // leaves the filter unknown.
-      unknownTarget = true;
       summary.filters.push({
         target: label,
         id: "unknown",

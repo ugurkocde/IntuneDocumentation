@@ -10,6 +10,7 @@ import {
 } from "../configuration-sections";
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
+import { settingsLayout } from "../compliance/graph-rows";
 import { canonicalOmaUri } from "../compliance/oma-uri";
 import { frameworkCoverageLabel } from "../compliance/presentation";
 import { REDACTED_VALUE, redactedDigests } from "../intune-policy-registry";
@@ -635,14 +636,16 @@ function projectDefinitions(value: unknown): Json[] | undefined {
 
 function projectSettings(
   value: unknown,
+  family: string,
   dropped?: DroppedValue,
 ): Json[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const records = value.filter(isRecord);
-  // A row of the layout that is no record, or lacks its instance or
+  if (!Array.isArray(value) || !value.length) return undefined;
+  // The layout comes from the family where it has one (graph-rows.ts). A
+  // row of the layout that is no record, or lacks its instance or
   // definition id, is kept with an empty one, so it reads as a setting
   // without its id instead of one setting fewer.
-  if (records.some((setting) => "settingInstance" in setting)) {
+  const layout = settingsLayout(family, value);
+  if (layout === "settingsCatalog") {
     return asRecords(value).map((setting) => {
       const definitions = projectDefinitions(setting.settingDefinitions);
       return {
@@ -655,7 +658,7 @@ function projectSettings(
   }
   // Security baseline and endpoint security intents. Other layouts, such as
   // app configuration keys and values, are not kept.
-  return records.some((setting) => "definitionId" in setting)
+  return layout === "intent"
     ? asRecords(value).map((setting) => ({
         ...pick(setting, ["@odata.type", "definitionId", "value", "valueJson"]),
         definitionId:
@@ -824,12 +827,13 @@ function projectItem(
     if (content !== REDACTED_VALUE)
       valueFingerprint(settingId, contentDigest(content));
   };
-  const settings = projectSettings(raw.settings, dropped);
+  const settings = projectSettings(raw.settings, section.familyKey, dropped);
   if (settings) data.settings = settings;
   if (Array.isArray(raw.categories))
     data.categories = raw.categories.filter(isRecord).map((category) => ({
       ...pick(category, ["id", "displayName"]),
-      settings: projectSettings(category.settings, dropped) ?? [],
+      settings:
+        projectSettings(category.settings, section.familyKey, dropped) ?? [],
     }));
   const definitionValues = projectDefinitionValues(raw.definitionValues);
   if (definitionValues) data.definitionValues = definitionValues;

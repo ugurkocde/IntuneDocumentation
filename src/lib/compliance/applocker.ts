@@ -1,4 +1,5 @@
 import { DOMParser } from "@xmldom/xmldom";
+import { unidentifiedOmaRow } from "./graph-rows";
 import { canonicalOmaUri } from "./oma-uri";
 
 // Public CSP schema: https://learn.microsoft.com/windows/client-management/mdm/applocker-csp
@@ -7,8 +8,25 @@ const APPLOCKER_NODE =
   /^\.\/Vendor\/MSFT\/AppLocker\/ApplicationLaunchRestrictions\/([^/]+)\/(EXE|DLL|MSI|Script)\/(Policy|EnforcementMode)$/;
 const MODES = ["Enabled", "AuditOnly", "NotConfigured"];
 
+// Custom profile types of other platforms, which have no AppLocker CSP.
+const OTHER_PLATFORM = /^#?(microsoft\.graph\.)?(android|aosp|ios|macos)/i;
+
 export function inspectAppLocker(config: Record<string, any>) {
   if (!Array.isArray(config.omaSettings)) return;
+  // A row without its URI may be any AppLocker node, a rule collection or an
+  // enforcement mode override, so the rule collections of a Windows profile
+  // are unknown.
+  if (
+    config.omaSettings.some(unidentifiedOmaRow) &&
+    !OTHER_PLATFORM.test(String(config["@odata.type"] ?? ""))
+  )
+    return {
+      complete: false,
+      matches: false,
+      actual: "A custom OMA-URI row has no URI.",
+      reason:
+        "Graph returned a custom OMA-URI setting of this profile without its URI, so it may be an AppLocker node. Refresh policy details.",
+    };
   const nodes = config.omaSettings.flatMap((setting: any) => {
     const match = APPLOCKER_NODE.exec(canonicalOmaUri(setting?.omaUri) ?? "");
     return match

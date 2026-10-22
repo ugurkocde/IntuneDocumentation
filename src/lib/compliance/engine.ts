@@ -10,6 +10,7 @@ import { comparableValue, expectedValue } from "./check-results";
 import { policyCheckObservation } from "./policy-check-observation";
 import { graphPropertyValues } from "./documented-values";
 import { canonicalOmaUri } from "./oma-uri";
+import { isIdentifier, unidentifiedSources } from "./graph-rows";
 import {
   buildCollectionCoverage,
   collectConfigurations,
@@ -165,95 +166,12 @@ export function collectCatalogValues(
   return values;
 }
 
-/** An identifier Graph returned: a nonempty string. An empty one names nothing. */
-export const isIdentifier = (value: unknown): value is string =>
-  typeof value === "string" && value !== "";
-
-export type IdentifiedSource =
-  | "settingsCatalog"
-  | "securityBaseline"
-  | "omaUri"
-  | "administrativeTemplate";
-
-const isObject = (value: unknown): value is Record<string, any> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
-
-// A Settings Catalog instance, or one of its child instances, without a
-// definition id.
-function unidentifiedInstance(instance: unknown, depth = 0): boolean {
-  if (!isObject(instance) || !isIdentifier(instance.settingDefinitionId))
-    return true;
-  if (depth > 16) return false;
-  const entries = (value: unknown) => (Array.isArray(value) ? value : []);
-  return [
-    instance.choiceSettingValue?.children,
-    ...entries(instance.choiceSettingCollectionValue).map(
-      (entry) => entry?.children,
-    ),
-    instance.groupSettingValue?.children,
-    ...entries(instance.groupSettingCollectionValue).map(
-      (entry) => entry?.children,
-    ),
-  ].some(
-    (children) =>
-      Array.isArray(children) &&
-      children.some((child) => unidentifiedInstance(child, depth + 1)),
-  );
-}
-
-/**
- * The setting sources of a configuration that hold a row Graph returned
- * without its identifier: a Settings Catalog instance without a definition
- * id, an intent setting without a definition id, a custom OMA-URI row
- * without a URI or an administrative template value without a definition.
- * Such a row may be any setting of its source, so a setting the
- * configuration does not show is unknown there, never missing.
- */
-export function unidentifiedSources(
-  config: Record<string, unknown>,
-): Set<IdentifiedSource> {
-  const found = new Set<IdentifiedSource>();
-  const list = (value: unknown): unknown[] =>
-    Array.isArray(value) ? value : [];
-  // The layout of a settings list is read from its rows: Settings Catalog
-  // rows hold an instance, intent rows a definition id. A row of that layout
-  // without it is unidentified; other layouts, such as app configuration
-  // keys, have no identifier read here.
-  const has = (rows: unknown[], key: string) =>
-    rows.some((row) => isObject(row) && key in row);
-  for (const rows of [
-    list(config.settings),
-    ...list(config.categories).map((category) =>
-      list(isObject(category) ? category.settings : undefined),
-    ),
-  ]) {
-    if (has(rows, "settingInstance")) {
-      if (
-        rows.some(
-          (row) => !isObject(row) || unidentifiedInstance(row.settingInstance),
-        )
-      )
-        found.add("settingsCatalog");
-    } else if (
-      has(rows, "definitionId") &&
-      rows.some((row) => !isObject(row) || !isIdentifier(row.definitionId))
-    )
-      found.add("securityBaseline");
-  }
-  if (
-    list(config.omaSettings).some(
-      (row) => !isObject(row) || !isIdentifier(row.omaUri),
-    )
-  )
-    found.add("omaUri");
-  if (
-    list(config.definitionValues).some(
-      (row) => !isObject(row) || !isIdentifier(row.definition?.id),
-    )
-  )
-    found.add("administrativeTemplate");
-  return found;
-}
+// The row shape checks live in graph-rows.ts, where every engine reads them.
+export {
+  isIdentifier,
+  unidentifiedSources,
+  type IdentifiedSource,
+} from "./graph-rows";
 
 function normalizeGroupNames(value: unknown): Map<string, string> {
   if (value instanceof Map) {

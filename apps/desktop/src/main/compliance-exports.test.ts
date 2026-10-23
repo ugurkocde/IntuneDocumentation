@@ -237,4 +237,25 @@ describe("group names to resolve", () => {
     } as never);
     expect(ids.sort()).toEqual([group, excluded].sort());
   });
+
+  it("include the group a scope tag targets by its Entra object id, skipping empty ids", () => {
+    const tagged = "d46af1fd-84d5-485b-ba5b-86b7abe448ca";
+    const scopeTag = (entraObjectId: string) => ({
+      target: {
+        "@odata.type": "#microsoft.graph.scopeTagGroupAssignmentTarget",
+        entraObjectId,
+        targetType: "user",
+      },
+    });
+    const ids = referencedGroupIds({
+      sections: [
+        {
+          key: "roleScopeTags",
+          familyKey: "assignmentAndRbac",
+          items: [{ id: "1", displayName: "Synthetic tag", assignments: [scopeTag(tagged), scopeTag("")] }],
+        },
+      ],
+    } as never);
+    expect(ids).toEqual([tagged]);
+  });
 });

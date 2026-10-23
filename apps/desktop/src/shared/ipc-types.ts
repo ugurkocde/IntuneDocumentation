@@ -163,7 +163,23 @@ export interface CollectProgress {
   loaded: number;
 }
 
-export interface SectionItemSummary {
+// What a policy is assigned to (main/collect.ts assignmentTargets).
+export interface AssignmentTargets {
+  // Included group targets, scope tag groups among them. Null when the
+  // resource type has no assignments (for example Conditional Access or
+  // tenant wide settings).
+  assignmentCount: number | null;
+  // An assignment Graph returned of an undocumented type or without what
+  // its type targets, or assignments not fully collected: the targeting is
+  // unknown, never "not assigned".
+  assignmentUnknown: boolean;
+  assignedToAllUsers: boolean;
+  assignedToAllDevices: boolean;
+  assignedToCollections: number;
+  assignedToOrganizationalUnits: number;
+}
+
+export interface SectionItemSummary extends AssignmentTargets {
   id: string;
   displayName: string;
   odataType: string | null;
@@ -171,11 +187,6 @@ export interface SectionItemSummary {
   platforms: string | null;
   technologies: string | null;
   lastModifiedDateTime: string | null;
-  // Null when the resource type has no assignments (for example Conditional
-  // Access or tenant wide settings).
-  assignmentCount: number | null;
-  assignedToAllUsers: boolean;
-  assignedToAllDevices: boolean;
   hasFetchError: boolean;
   // Display family when the section is split across families.
   familyKey?: string;
@@ -200,16 +211,13 @@ export interface SettingsSearchRequest {
   limit?: number;
 }
 
-export interface SettingSearchHit {
+export interface SettingSearchHit extends AssignmentTargets {
   sectionKey: string;
   sectionLabel: string;
   familyKey: string;
   policyId: string;
   policyName: string;
   platforms: string[];
-  assignmentCount: number | null;
-  assignedToAllUsers: boolean;
-  assignedToAllDevices: boolean;
   name: string;
   value: string;
   definitionId: string | null;

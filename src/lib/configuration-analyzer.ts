@@ -1,5 +1,11 @@
-import { INTUNE_POLICY_REGISTRY } from "./intune-policy-registry";
-import { summarizeAssignments } from "./compliance/assignments";
+import {
+  assignmentsIncomplete,
+  itemFetchErrors,
+  summarizeAssignments,
+  UNASSIGNABLE_REGISTRY_KEYS,
+} from "./compliance/assignments";
+import { collectionFamilies } from "./compliance/coverage";
+import { targetGroupId } from "./compliance/graph-rows";
 import type {
   AssessmentScope,
   PolicyDeviceStatus,
@@ -114,14 +120,7 @@ export function analyzeConfigurations(
       ];
 
   // Registry types without an assignment relationship have no assignment coverage to assess.
-  const nonAssignableKeys = new Set(
-    INTUNE_POLICY_REGISTRY.filter(
-      (entry) =>
-        !entry.childCollections?.some(
-          (child) => child.property === "assignments",
-        ),
-    ).map((entry) => entry.key),
-  );
+  const nonAssignableKeys = UNASSIGNABLE_REGISTRY_KEYS;
   const nonAssignable = new Set([
     ...(data.conditionalAccessPolicies ?? []),
     ...(data.sections ?? [])
@@ -137,6 +136,11 @@ export function analyzeConfigurations(
   let assignedCount = 0;
   let unassignedCount = 0;
   let unknownCount = 0;
+  // The family of every item, so its collection errors are matched as the
+  // engine matches them (itemFetchErrors).
+  const familyOf = new Map<unknown, string>();
+  for (const { family, items } of collectionFamilies(data))
+    for (const item of items) familyOf.set(item, family);
   const assignmentState = (config: any) =>
     nonAssignable.has(config) ||
     nonAssignableKeys.has(config.registryKey) ||
@@ -145,7 +149,10 @@ export function analyzeConfigurations(
       : summarizeAssignments(
           config.assignments,
           undefined,
-          config.collectionStatus?.assignments === "incomplete",
+          assignmentsIncomplete(
+            config,
+            itemFetchErrors(data.fetchErrors, config, familyOf.get(config)),
+          ),
         ).state;
   const inventoryCounts = (items: any[]) => ({
     total: items.length,
@@ -170,15 +177,13 @@ export function analyzeConfigurations(
             : "";
 
         if (odataType.includes("exclusiongroupassignmenttarget")) return;
-        if (assignment.target?.groupId) {
-          uniqueGroups.add(assignment.target.groupId);
-          const groupId = assignment.target.groupId;
+        // A scope tag target names its group by entraObjectId.
+        const groupId = targetGroupId(assignment.target);
+        if (groupId) {
+          uniqueGroups.add(groupId);
           groupAssignmentCount[groupId] =
             (groupAssignmentCount[groupId] || 0) + 1;
-        } else if (
-          odataType.includes("alllicensedusers") ||
-          odataType.includes("allusers")
-        ) {
+        } else if (odataType.includes("alllicensedusers")) {
           uniqueGroups.add("All Users");
           groupAssignmentCount["All Users"] =
             (groupAssignmentCount["All Users"] || 0) + 1;

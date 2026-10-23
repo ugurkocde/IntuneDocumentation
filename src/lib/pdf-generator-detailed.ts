@@ -58,10 +58,16 @@ import {
   parseComplianceRules,
   parseSecurityBaseline,
   parseAssignments,
+  ASSIGNMENTS_NOT_APPLICABLE,
   formatValue,
   parseDocumentableProperties,
   extractAppConfigurationSettings,
 } from "./configuration-parser";
+import {
+  assignable,
+  assignmentStatus,
+  itemFetchErrors,
+} from "./compliance/assignments";
 import {
   analyzeConfigurations,
   type DetailedExportData,
@@ -1356,6 +1362,10 @@ export async function generateDetailedPDF(
     }
   }
 
+  // The assignment collection status of an item, with its collection
+  // errors matched by family as the engine matches them.
+  const statusOf = (item: Record<string, unknown>, family: string) =>
+    assignmentStatus(item, itemFetchErrors(data.fetchErrors, item, family));
   // Settings Catalog Section
   const enhanceAssignmentText = (text: string): string => {
     if (!text) return text;
@@ -1383,7 +1393,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "settingsCatalog"),
             ),
           ),
           policy.createdDateTime,
@@ -1471,7 +1481,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               config.assignments,
-              config.collectionStatus?.assignments,
+              statusOf(config, "deviceConfigurations"),
             ),
           ),
           config.createdDateTime,
@@ -1524,7 +1534,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               template.assignments,
-              template.collectionStatus?.assignments,
+              statusOf(template, "administrativeTemplates"),
             ),
           ),
           template.createdDateTime,
@@ -1593,7 +1603,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "compliancePolicies"),
             ),
           ),
           policy.createdDateTime,
@@ -1650,7 +1660,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "appProtectionPolicies"),
             ),
           ),
           policy.createdDateTime,
@@ -1854,7 +1864,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               baseline.assignments,
-              baseline.collectionStatus?.assignments,
+              statusOf(baseline, "securityBaselines"),
             ),
           ),
           baseline.createdDateTime,
@@ -1935,10 +1945,7 @@ export async function generateDetailedPDF(
           addConfigHeader(
             script.displayName,
             enhanceAssignmentText(
-              parseAssignments(
-                script.assignments,
-                script.collectionStatus?.assignments,
-              ),
+              parseAssignments(script.assignments, statusOf(script, "scripts")),
             ),
             script.createdDateTime,
             script.lastModifiedDateTime,
@@ -2026,10 +2033,7 @@ export async function generateDetailedPDF(
           addConfigHeader(
             script.displayName,
             enhanceAssignmentText(
-              parseAssignments(
-                script.assignments,
-                script.collectionStatus?.assignments,
-              ),
+              parseAssignments(script.assignments, statusOf(script, "scripts")),
             ),
             script.createdDateTime,
             script.lastModifiedDateTime,
@@ -2118,7 +2122,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               config.assignments,
-              config.collectionStatus?.assignments,
+              statusOf(config, "appConfigurations"),
             ),
           ),
           config.createdDateTime,
@@ -2274,7 +2278,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "windowsUpdatePolicies"),
             ),
           ),
           policy.createdDateTime,
@@ -2444,7 +2448,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               config.assignments,
-              config.collectionStatus?.assignments,
+              statusOf(config, "enrollmentConfigurations"),
             ),
           ),
           config.createdDateTime,
@@ -2631,12 +2635,14 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           item.displayName || item.name || section.label,
-          enhanceAssignmentText(
-            parseAssignments(
-              item.assignments,
-              item.collectionStatus?.assignments,
-            ),
-          ),
+          assignable(item)
+            ? enhanceAssignmentText(
+                parseAssignments(
+                  item.assignments,
+                  statusOf(item, section.familyKey),
+                ),
+              )
+            : ASSIGNMENTS_NOT_APPLICABLE,
           item.createdDateTime,
           item.lastModifiedDateTime || item.modifiedDateTime,
         );

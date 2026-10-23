@@ -49,7 +49,10 @@ describe("documentation value integrity", () => {
     (kind) => {
       const target =
         kind === "group"
-          ? { groupId: "group" }
+          ? {
+              "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+              groupId: "group",
+            }
           : { "@odata.type": `#microsoft.graph.${kind}AssignmentTarget` };
       expect(
         parseAssignments([
@@ -68,7 +71,17 @@ describe("documentation value integrity", () => {
     expect(parseAssignments([], "incomplete")).toContain("unavailable");
     expect(parseAssignments([], "complete")).toBe("Not assigned");
     expect(
-      parseAssignments([{ target: { groupId: "group" } }], "incomplete"),
+      parseAssignments(
+        [
+          {
+            target: {
+              "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+              groupId: "group",
+            },
+          },
+        ],
+        "incomplete",
+      ),
     ).toBe("Group: group (collection incomplete)");
   });
   it("omits collection metadata and preserves unavailable action status", () => {

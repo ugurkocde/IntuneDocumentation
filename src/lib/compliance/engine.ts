@@ -4,7 +4,7 @@ import {
 } from "./frameworks/essential-eight";
 import type { DetailedExportData } from "../configuration-analyzer";
 import type { ConfigurationSettingInstance } from "../intune-detailed-client";
-import { summarizeAssignments } from "./assignments";
+import { assignmentsIncomplete, summarizeAssignments } from "./assignments";
 import { evaluatePolicyCheck } from "./policy-checks";
 import { comparableValue, expectedValue } from "./check-results";
 import { policyCheckObservation } from "./policy-check-observation";
@@ -304,10 +304,7 @@ function evaluateConfiguration(
   const assignment = summarizeAssignments(
     config.assignments,
     groupNames,
-    Boolean(
-      config.collectionStatus &&
-        (config.collectionStatus as any).assignments !== "complete",
-    ),
+    assignmentsIncomplete(config),
   );
   const kind: EvidenceKind = odataType.endsWith("compliancepolicy")
     ? "complianceRequirement"

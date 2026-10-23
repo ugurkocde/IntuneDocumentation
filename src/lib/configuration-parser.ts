@@ -3,6 +3,10 @@ import type {
   ConfigurationSettingDefinition,
   ConfigurationSettingInstance,
 } from "./intune-detailed-client";
+import {
+  normalizeTargetType,
+  unreadableAssignment,
+} from "./compliance/graph-rows";
 
 function collectDefinitionIdsFromInstance(
   instance: ConfigurationSettingInstance | undefined,
@@ -718,54 +722,52 @@ export function parseSecurityBaseline(
   });
 }
 
+/** The assignment line of a resource type without an assignment relationship. */
+export const ASSIGNMENTS_NOT_APPLICABLE =
+  "Not applicable (this resource type has no assignments)";
+
+/** The label of an assignment whose target cannot be read. */
+export const UNREADABLE_ASSIGNMENT = "Assignment could not be read";
+
+// The label of one assignment, read by its documented target type as the
+// engine reads it (compliance/graph-rows.ts): an assignment of a type Graph
+// does not document, or without what its type targets, may target anyone,
+// so it is marked unreadable rather than labelled.
+function assignmentLabel(assignment: unknown): string {
+  if (unreadableAssignment(assignment)) return UNREADABLE_ASSIGNMENT;
+  const target = (assignment as { target: Record<string, any> }).target;
+  const type = normalizeTargetType(target["@odata.type"]);
+  let label: string;
+  if (type === "groupassignmenttarget") label = `Group: ${target.groupId}`;
+  else if (type === "exclusiongroupassignmenttarget")
+    label = `Excluded: ${target.groupId}`;
+  else if (type === "alldevicesassignmenttarget") label = "All Devices";
+  else if (type === "alllicensedusersassignmenttarget") label = "All Users";
+  else if (type === "configurationmanagercollectionassignmenttarget")
+    label = `CM Collection: ${target.collectionId}`;
+  else if (type === "organizationalunitassignmenttarget")
+    label = `Organizational unit: ${target.organizationalUnitId}`;
+  else if (type === "scopetaggroupassignmenttarget")
+    // "Group: <id>" so the exports put the group name in its place.
+    label = `${target.targetType === "device" ? "Devices" : "Users"} in Group: ${target.entraObjectId}`;
+  else return UNREADABLE_ASSIGNMENT;
+  const filterType = target.deviceAndAppManagementAssignmentFilterType;
+  if (filterType !== "include" && filterType !== "exclude") return label;
+  return `${label} [Filter (${filterType === "include" ? "Include" : "Exclude"}): ${target.deviceAndAppManagementAssignmentFilterId}]`;
+}
+
 // Parse assignment information
-export function parseAssignments(assignments: any[], status?: string): string {
-  if (!assignments || assignments.length === 0) {
+export function parseAssignments(
+  assignments: unknown,
+  status?: string,
+): string {
+  if (!Array.isArray(assignments) || assignments.length === 0) {
     return status === "incomplete"
       ? "Assignments unavailable (collection incomplete)"
       : "Not assigned";
   }
-
-  const labels: string[] = [];
-
-  for (const assn of assignments) {
-    const target = assn?.target ?? assn ?? {};
-    const typeRaw = target["@odata.type"] || "";
-    const type = typeof typeRaw === "string" ? typeRaw.toLowerCase() : "";
-
-    let label: string | undefined;
-    if (target.groupId) {
-      label = `${type.includes("exclusiongroup") ? "Excluded" : "Group"}: ${target.groupId}`;
-    } else if (type.includes("alldevices")) {
-      label = "All Devices";
-    } else if (type.includes("alllicensedusers") || type.includes("allusers")) {
-      label = "All Users";
-    }
-    if (target.deviceAndAppManagementAssignmentFilterId) {
-      const filterType = target.deviceAndAppManagementAssignmentFilterType;
-      const filter = `Filter (${filterType === "include" ? "Include" : filterType === "exclude" ? "Exclude" : "Unknown"}): ${target.deviceAndAppManagementAssignmentFilterId}`;
-      label = label ? `${label} [${filter}]` : filter;
-    }
-    if (label) {
-      labels.push(label);
-      continue;
-    }
-
-    // ConfigMgr collections
-    if (
-      type.includes("configurationmanagercollectionassignmenttarget") &&
-      target.collectionId
-    ) {
-      labels.push(`CM Collection: ${target.collectionId}`);
-      continue;
-    }
-
-    // Fallback
-    labels.push("Custom Assignment");
-  }
-
   return (
-    labels.join(", ") +
+    assignments.map(assignmentLabel).join(", ") +
     (status === "incomplete" ? " (collection incomplete)" : "")
   );
 }

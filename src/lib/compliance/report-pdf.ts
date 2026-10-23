@@ -1,5 +1,11 @@
 import { displayCheckValue, checkSummary } from "./check-results";
-import { assignmentDetails, summarizeAssignments } from "./assignments";
+import {
+  assignmentDetails,
+  assignmentsIncomplete,
+  itemFetchErrors,
+  summarizeAssignments,
+} from "./assignments";
+import { collectionFamilies } from "./coverage";
 import {
   CONTROL_STATUS_LABELS,
   CAPABILITY_STATUS_LABELS,
@@ -3110,13 +3116,21 @@ export async function generateComplianceReportPDF(
       "deviceConfigurations",
       "compliancePolicies",
     ] as const;
+    // The family of every item, so its collection errors are matched as the
+    // engine matches them (itemFetchErrors).
+    const familyOf = new Map<unknown, string>();
+    for (const { family, items } of collectionFamilies(data))
+      for (const item of items) familyOf.set(item, family);
     const countAssigned = (items: Array<Record<string, unknown>>): number =>
       items.filter(
         (item) =>
           summarizeAssignments(
             item.assignments,
             undefined,
-            (item.collectionStatus as any)?.assignments === "incomplete",
+            assignmentsIncomplete(
+              item,
+              itemFetchErrors(data.fetchErrors, item, familyOf.get(item)),
+            ),
           ).state === "assigned",
       ).length;
     const familyCounts = inventoryKeys.map((key) => familyItems(data, key));

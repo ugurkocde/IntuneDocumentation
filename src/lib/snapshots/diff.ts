@@ -2,7 +2,10 @@
 // changes per policy and control status changes from the stored assessments.
 import { flattenItemSettings, METADATA_KEYS } from "../settings-flatten";
 import type { CapabilityStatus, ControlStatus } from "../compliance/types";
+import { assignmentsIncomplete } from "../compliance/assignments";
 import {
+  normalizeTargetType,
+  TARGET_FIELDS,
   unidentifiedSources,
   unreadableAssignment,
 } from "../compliance/graph-rows";
@@ -249,27 +252,28 @@ function droppedValueName(
 
 type AssignmentState = Map<string, string> | null;
 
+// What a target targets, by its documented type (graph-rows.ts). Only
+// readable assignments are compared, so every documented field is there.
 function targetLabel(
   target: Record<string, unknown>,
   groupNames: Readonly<Record<string, string>>,
 ): string {
-  const odataType = target["@odata.type"];
-  const type = (typeof odataType === "string" ? odataType : "")
-    .replace(/^#?(microsoft\.graph\.)?/, "")
-    .toLowerCase();
-  const groupId = typeof target.groupId === "string" ? target.groupId : "";
-  const group = groupId
-    ? `group ${groupNames[groupId] ?? (typeof target.groupName === "string" ? target.groupName : groupId)}`
-    : "";
+  const type = normalizeTargetType(target["@odata.type"]);
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const groupId = text(target.groupId);
+  const group = groupNames[groupId] ?? (text(target.groupName) || groupId);
+  const objectId = text(target.entraObjectId);
   if (type === "alldevicesassignmenttarget") return "All devices";
-  if (
-    type === "alllicensedusersassignmenttarget" ||
-    type === "allusersassignmenttarget"
-  )
-    return "All users";
-  if (type === "exclusiongroupassignmenttarget") return `Excluded ${group}`;
-  if (type === "groupassignmenttarget")
-    return group.charAt(0).toUpperCase() + group.slice(1);
+  if (type === "alllicensedusersassignmenttarget") return "All users";
+  if (type === "exclusiongroupassignmenttarget")
+    return `Excluded group ${group}`;
+  if (type === "groupassignmenttarget") return `Group ${group}`;
+  if (type === "configurationmanagercollectionassignmenttarget")
+    return `Configuration Manager collection ${text(target.collectionId)}`;
+  if (type === "organizationalunitassignmenttarget")
+    return `Organizational unit ${text(target.organizationalUnitId)}`;
+  if (type === "scopetaggroupassignmenttarget")
+    return `${target.targetType === "device" ? "Devices" : "Users"} in group ${groupNames[objectId] ?? objectId}`;
   return type || "Unknown target";
 }
 
@@ -301,10 +305,7 @@ function assignmentsOf(
   groupNames: Readonly<Record<string, string>>,
 ): AssignmentState {
   const list = item.data.assignments;
-  const status = item.data.collectionStatus as
-    | Record<string, unknown>
-    | undefined;
-  if (!Array.isArray(list) || status?.assignments === "incomplete") return null;
+  if (!Array.isArray(list) || assignmentsIncomplete(item.data)) return null;
   const result = new Map<string, string>();
   for (const entry of list as Array<Record<string, unknown>>) {
     const target = (entry.target ?? {}) as Record<string, unknown>;
@@ -317,7 +318,7 @@ function assignmentsOf(
     const intent = typeof entry.intent === "string" ? `${entry.intent}: ` : "";
     const key = [
       target["@odata.type"],
-      target.groupId,
+      ...TARGET_FIELDS.map((field) => target[field]),
       filterId,
       filterType,
       entry.intent,

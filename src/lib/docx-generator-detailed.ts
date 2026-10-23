@@ -32,10 +32,16 @@ import {
   parseComplianceRules,
   parseSecurityBaseline,
   parseAssignments,
+  ASSIGNMENTS_NOT_APPLICABLE,
   formatValue,
   parseDocumentableProperties,
   extractAppConfigurationSettings,
 } from "./configuration-parser";
+import {
+  assignable,
+  assignmentStatus,
+  itemFetchErrors,
+} from "./compliance/assignments";
 import type { BrandingOptions } from "~/types/branding";
 import { normalizeDocx } from "./docx-compatibility";
 import {
@@ -769,7 +775,7 @@ export async function generateDetailedDOCX(
   // ===== POLICY SECTION HELPERS =====
 
   /** Build assignment + description paragraphs for a policy. */
-  const policyMeta = (policy: any): Paragraph[] => {
+  const policyMeta = (policy: any, family: string): Paragraph[] => {
     const parts: Paragraph[] = [];
 
     // Created / Modified dates
@@ -779,14 +785,18 @@ export async function generateDetailedDOCX(
     if (modified) parts.push(metaText(`Last Modified: ${modified}`));
 
     // Assignments
-    const rawAssignment = parseAssignments(
-      policy.assignments,
-      policy.collectionStatus?.assignments,
-    );
-    const assignmentText = enhanceAssignmentText(
-      rawAssignment,
-      data.groupNames,
-    );
+    const assignmentText = assignable(policy)
+      ? enhanceAssignmentText(
+          parseAssignments(
+            policy.assignments,
+            assignmentStatus(
+              policy,
+              itemFetchErrors(data.fetchErrors, policy, family),
+            ),
+          ),
+          data.groupNames,
+        )
+      : ASSIGNMENTS_NOT_APPLICABLE;
     parts.push(
       new Paragraph({
         children: [
@@ -838,7 +848,7 @@ export async function generateDetailedDOCX(
         const policyName =
           policy.displayName || policy.name || "Settings Catalog Policy";
         sectionChildren.push(heading2(policyName));
-        sectionChildren.push(...policyMeta(policy));
+        sectionChildren.push(...policyMeta(policy, "settingsCatalog"));
 
         if (policy.settings?.length) {
           const formatted: Array<{
@@ -901,7 +911,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(config.displayName || "Device Configuration"),
         );
-        sectionChildren.push(...policyMeta(config));
+        sectionChildren.push(...policyMeta(config, "deviceConfigurations"));
 
         const categories = parseDeviceConfiguration(config);
         for (const cat of categories) {
@@ -944,7 +954,9 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(template.displayName || "Administrative Template"),
         );
-        sectionChildren.push(...policyMeta(template));
+        sectionChildren.push(
+          ...policyMeta(template, "administrativeTemplates"),
+        );
 
         const defs = parseAdministrativeTemplate(
           template.definitionValues || [],
@@ -999,7 +1011,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(policy.displayName || "Compliance Policy"),
         );
-        sectionChildren.push(...policyMeta(policy));
+        sectionChildren.push(...policyMeta(policy, "compliancePolicies"));
 
         const rules = parseComplianceRules(policy);
         if (rules.length > 0) {
@@ -1043,7 +1055,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(policy.displayName || "App Protection Policy"),
         );
-        sectionChildren.push(...policyMeta(policy));
+        sectionChildren.push(...policyMeta(policy, "appProtectionPolicies"));
 
         if (policy.platformType) {
           sectionChildren.push(metaText(`Platform: ${policy.platformType}`));
@@ -1201,7 +1213,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(baseline.displayName || "Security Baseline"),
         );
-        sectionChildren.push(...policyMeta(baseline));
+        sectionChildren.push(...policyMeta(baseline, "securityBaselines"));
 
         if (baseline.collectionStatus?.settings === "incomplete") {
           sectionChildren.push(
@@ -1439,7 +1451,7 @@ export async function generateDetailedDOCX(
         const configName =
           config.displayName || config.name || "Unnamed Configuration";
         sectionChildren.push(heading2(configName));
-        sectionChildren.push(...policyMeta(config));
+        sectionChildren.push(...policyMeta(config, "appConfigurations"));
 
         const configSettings: Array<{ name: string; value: string }> = [];
 
@@ -1584,7 +1596,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(policy.displayName || "Windows Update Policy"),
         );
-        sectionChildren.push(...policyMeta(policy));
+        sectionChildren.push(...policyMeta(policy, "windowsUpdatePolicies"));
 
         const settings: Array<{ name: string; value: string }> = [];
         const addIf = (label: string, val: any) => {
@@ -1704,7 +1716,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(config.displayName || "Enrollment Configuration"),
         );
-        sectionChildren.push(...policyMeta(config));
+        sectionChildren.push(...policyMeta(config, "enrollmentConfigurations"));
 
         const settings: Array<{ name: string; value: string }> = [];
         const addIf = (label: string, val: any) => {
@@ -1900,7 +1912,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(
           heading2(item.displayName || item.name || sourceSection.label),
         );
-        sectionChildren.push(...policyMeta(item));
+        sectionChildren.push(...policyMeta(item, sourceSection.familyKey));
         const settings = parseDocumentableProperties(item);
         if (settings.length > 0) {
           sectionChildren.push(

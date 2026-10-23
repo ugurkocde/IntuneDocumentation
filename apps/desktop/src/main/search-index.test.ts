@@ -22,8 +22,11 @@ function summarize(section: ConfigurationSectionData) {
       technologies: null,
       lastModifiedDateTime: null,
       assignmentCount: assignments.length,
+      assignmentUnknown: false,
       assignedToAllUsers: false,
       assignedToAllDevices: false,
+      assignedToCollections: 0,
+      assignedToOrganizationalUnits: 0,
       hasFetchError: false,
       // Endpoint security policies move to their own display family.
       ...(item.templateFamily === "endpointSecurityFirewall" ? { familyKey: "endpointSecurityPolicies" } : {}),

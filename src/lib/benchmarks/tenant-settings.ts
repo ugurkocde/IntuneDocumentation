@@ -28,7 +28,10 @@
  * unknown platform, may also hold profiles for any platform.
  */
 import type { DetailedExportData } from "../configuration-analyzer";
-import { summarizeAssignments } from "../compliance/assignments";
+import {
+  assignmentsIncomplete,
+  summarizeAssignments,
+} from "../compliance/assignments";
 import { buildCollectionCoverage } from "../compliance/coverage";
 import { catalogRoot } from "../compliance/graph-rows";
 import { record, type RecordJson } from "./policies";
@@ -323,15 +326,13 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
     if (!settingsComplete)
       gaps.push(`${name}: settings were not read completely.`);
     if (!platforms) gaps.push(`${name}: the platform was not returned.`);
-    const assignmentsIncomplete =
-      status.assignments !== "complete" ||
-      policyErrors.some((error) =>
-        /assignments/i.test(`${error.endpoint ?? ""} ${error.error}`),
-      );
+    // The Settings Catalog collector always records a collection status,
+    // so a policy without one was not read whole.
     const assignment = summarizeAssignments(
       item.assignments,
       data.groupNames ?? new Map(),
-      assignmentsIncomplete,
+      !record(item.collectionStatus) ||
+        assignmentsIncomplete(item, policyErrors),
     ).state;
     const reference = record(item.templateReference)
       ? item.templateReference

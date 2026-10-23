@@ -31,6 +31,15 @@ vi.mock("../../../../src/lib/intune-detailed-client", () => ({
             familyKey: "enrollmentAndProvisioning",
             error: "Partial",
           },
+          // Synthetic: read only by the assignment summary test below.
+          {
+            policyId: "assignments-error",
+            policyName: "Synthetic assignments-error",
+            policyType: "deviceConfigurations",
+            familyKey: "deviceConfigurations",
+            endpoint: "/deviceManagement/deviceConfigurations/assignments-error/assignments",
+            error: "Synthetic failure",
+          },
         ],
         permissionErrors: [],
         // The web app's own total, which the desktop app must not change.
@@ -89,5 +98,107 @@ describe("collectAll redaction digests", () => {
     expect(typeof digest.duringCollection[2]).toBe("function");
     // Nothing else, such as an export, digests afterwards.
     expect(digest.current).toBeNull();
+  });
+});
+
+// Round 29: the policy list reads targets by the documented target types
+// (src/lib/compliance/graph-rows.ts), as the engine and history do.
+describe("assignment summary of listed policies", () => {
+  const assignment = (target: Record<string, unknown>) => ({ id: "assignment-1", target });
+  const policy = (id: string, assignments: unknown[], collectionStatus?: Record<string, string>) => ({
+    id,
+    displayName: `Synthetic ${id}`,
+    "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
+    assignments,
+    ...(collectionStatus ? { collectionStatus } : {}),
+  });
+  const items = [
+    policy("collection", [
+      assignment({
+        "@odata.type": "#microsoft.graph.configurationManagerCollectionAssignmentTarget",
+        collectionId: "SMS00001",
+      }),
+    ]),
+    policy("unit", [
+      assignment({
+        "@odata.type": "#microsoft.graph.organizationalUnitAssignmentTarget",
+        organizationalUnitId: "synthetic-ou-1",
+      }),
+    ]),
+    policy("group-without-id", [assignment({ "@odata.type": "#microsoft.graph.groupAssignmentTarget" })]),
+    policy("undocumented", [assignment({ "@odata.type": "#microsoft.graph.allUsersAssignmentTarget" })]),
+    policy("lookalike", [
+      assignment({ "@odata.type": "#microsoft.graph.syntheticAllDevicesAssignmentTarget" }),
+    ]),
+    policy("incomplete", [], { assignments: "incomplete" }),
+    policy("status-without-assignments", [], { settings: "complete" }),
+    { ...policy("fetch-failed", []), hasFetchError: true },
+    policy("assignments-error", []),
+    policy("unassigned", []),
+    policy("unassigned-complete", [], { assignments: "complete" }),
+    policy("excluded-only", [
+      assignment({ "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget", groupId: "synthetic-group-1" }),
+    ]),
+    // A registry type with assignments whose assignments were not collected
+    // has no list; a type without an assignment relationship has none.
+    {
+      id: "registry-assignments-failed",
+      displayName: "Synthetic terms",
+      registryKey: "termsAndConditions",
+      collectionStatus: { assignments: "incomplete" },
+    },
+    {
+      id: "registry-unassignable",
+      displayName: "Synthetic notification template",
+      registryKey: "notificationMessageTemplates",
+      collectionStatus: { localizedNotificationMessages: "complete" },
+    },
+    policy("scope-tag-group", [
+      assignment({
+        "@odata.type": "#microsoft.graph.scopeTagGroupAssignmentTarget",
+        entraObjectId: "synthetic-group-1",
+        targetType: "user",
+      }),
+    ]),
+  ];
+  const synthetic = {
+    key: "deviceConfigurations",
+    familyKey: "deviceConfigurations",
+    label: "Synthetic configurations",
+    selectionPrefix: "deviceConfigurations",
+    items,
+  };
+
+  it("reads documented targets and leaves unreadable ones unknown, never not assigned", async () => {
+    const index = sections.findIndex((section: { key: string }) => section.key === "deviceConfigurations");
+    const original = sections[index];
+    sections[index] = synthetic as never;
+    try {
+      await collectAll(async () => "token", () => undefined, { owner: "owner" });
+      const byId = new Map(getSectionItems("deviceConfigurations", "owner").items.map((item) => [item.id, item]));
+      expect(byId.get("collection")).toMatchObject({ assignmentUnknown: false, assignedToCollections: 1 });
+      expect(byId.get("unit")).toMatchObject({ assignmentUnknown: false, assignedToOrganizationalUnits: 1 });
+      expect(byId.get("scope-tag-group")).toMatchObject({ assignmentUnknown: false, assignmentCount: 1 });
+      for (const id of [
+        "group-without-id",
+        "undocumented",
+        "lookalike",
+        "incomplete",
+        "status-without-assignments",
+        "fetch-failed",
+        "assignments-error",
+      ])
+        expect(byId.get(id), id).toMatchObject({
+          assignmentUnknown: true,
+          assignedToAllUsers: false,
+          assignedToAllDevices: false,
+        });
+      for (const id of ["unassigned", "unassigned-complete", "excluded-only"])
+        expect(byId.get(id), id).toMatchObject({ assignmentUnknown: false, assignmentCount: 0 });
+      expect(byId.get("registry-assignments-failed")).toMatchObject({ assignmentUnknown: true, assignmentCount: 0 });
+      expect(byId.get("registry-unassignable")).toMatchObject({ assignmentUnknown: false, assignmentCount: null });
+    } finally {
+      sections[index] = original!;
+    }
   });
 });

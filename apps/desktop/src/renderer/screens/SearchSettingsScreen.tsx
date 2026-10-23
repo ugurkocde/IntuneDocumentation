@@ -24,6 +24,7 @@ import {
   type SettingsSearchFacet,
   type SettingsSearchResult,
 } from "../../shared/ipc-types";
+import { assignmentNeedsReview, assignmentText } from "../../shared/assignment-text";
 import { CollectButton } from "../components/collection/CollectButton";
 import { Header } from "../components/layout/Header";
 import { Alert } from "../components/ui/Alert";
@@ -48,19 +49,6 @@ function familyLabel(
   hit: Pick<SettingSearchHit, "familyKey" | "sectionLabel">,
 ): string {
   return familyMeta(hit.familyKey)?.label ?? hit.sectionLabel;
-}
-
-function assignmentText(hit: SettingSearchHit): string | null {
-  if (hit.assignmentCount === null) return null;
-  const parts: string[] = [];
-  if (hit.assignedToAllUsers) parts.push("All users");
-  if (hit.assignedToAllDevices) parts.push("All devices");
-  if (hit.assignmentCount > 0) {
-    parts.push(
-      `${hit.assignmentCount} ${hit.assignmentCount === 1 ? "group" : "groups"}`,
-    );
-  }
-  return parts.length ? `Assigned to ${parts.join(" and ")}` : "Not assigned";
 }
 
 function escapeRegExp(value: string): string {
@@ -367,7 +355,7 @@ function PolicyCard({
             {assignment && (
               <span
                 className={`inline-flex items-center gap-1.5 text-[11px] ${
-                  assignment === "Not assigned"
+                  assignmentNeedsReview(assignment)
                     ? "text-amber-800"
                     : "text-petrol-600"
                 }`}

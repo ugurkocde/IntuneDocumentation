@@ -408,8 +408,11 @@ describe("redacted values in history", () => {
         technologies: null,
         lastModifiedDateTime: null,
         assignmentCount: 0,
+        assignmentUnknown: false,
         assignedToAllUsers: false,
         assignedToAllDevices: false,
+        assignedToCollections: 0,
+        assignedToOrganizationalUnits: 0,
         hasFetchError: false,
       })),
     }));

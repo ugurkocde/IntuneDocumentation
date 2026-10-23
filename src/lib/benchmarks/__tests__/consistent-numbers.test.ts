@@ -197,6 +197,49 @@ describe("collection markers the adapter reads", () => {
     ]);
   });
 
+  it("reads assignments by the shared rule: a status decides, none leaves them unknown", () => {
+    const readable = {
+      ...tenantPolicy({
+        name: "Synthetic status complete",
+        settings: [choice("synthetic_a", "on")],
+      }),
+      hasFetchError: true,
+    };
+    const unstated = tenantPolicy({
+      name: "Synthetic no status",
+      settings: [choice("synthetic_a", "on")],
+      settingsStatus: null,
+      assignmentsStatus: null,
+    });
+    const failed = tenantPolicy({
+      name: "Synthetic failed request",
+      settings: [choice("synthetic_a", "on")],
+    });
+    const failedId = String(failed.id);
+    const tenant = tenantSettings(
+      collection({
+        policies: [readable, unstated, failed],
+        fetchErrors: [
+          {
+            policyId: failedId,
+            policyName: "Synthetic failed request",
+            policyType: "Settings Catalog",
+            familyKey: "settingsCatalog",
+            endpoint: `/deviceManagement/configurationPolicies('${failedId}')/assignments`,
+            error: "Synthetic failure",
+          },
+        ],
+      }),
+    );
+    expect(
+      tenant.policies.map((policy) => [policy.name, policy.assignment]),
+    ).toEqual([
+      ["Synthetic status complete", "assigned"],
+      ["Synthetic no status", "unknown"],
+      ["Synthetic failed request", "unknown"],
+    ]);
+  });
+
   it("reads the legacy settingsCatalog array when the collection has no sections", () => {
     const data = collection({
       policies: [tenantPolicy({ settings: [choice("synthetic_a", "on")] })],

@@ -1,4 +1,5 @@
 import type { DetailedExportData } from "../configuration-analyzer";
+import { assignmentsIncomplete, itemFetchErrors } from "./assignments";
 import type {
   CapabilityResult,
   CollectionCoverage,
@@ -10,7 +11,10 @@ import {
   TENANT_POLICY_FAMILIES,
 } from "./tenant-policies";
 
-function families(data: Omit<DetailedExportData, "groupNames">) {
+/** The collected items of every collection family, by family key. */
+export function collectionFamilies(
+  data: Omit<DetailedExportData, "groupNames">,
+) {
   if (data.sections?.length)
     return data.sections.map((section) => ({
       family: section.familyKey,
@@ -45,27 +49,20 @@ function families(data: Omit<DetailedExportData, "groupNames">) {
 export function collectConfigurations(
   data: Omit<DetailedExportData, "groupNames">,
 ): Record<string, any>[] {
-  return families(data).flatMap(({ family, items }) =>
+  return collectionFamilies(data).flatMap(({ family, items }) =>
     items
       .filter((item: any) => item && typeof item === "object")
       .map((item: any) => {
-        const errors =
-          data.fetchErrors?.filter(
-            (error) =>
-              error.policyId === item.id &&
-              (!error.familyKey || error.familyKey === family),
-          ) ?? [];
-        const assignmentsIncomplete =
-          (item.hasFetchError && !item.collectionStatus) ||
-          errors.some((error) =>
-            /assignments/i.test(`${error.endpoint ?? ""} ${error.error}`),
-          );
+        const incomplete = assignmentsIncomplete(
+          item,
+          itemFetchErrors(data.fetchErrors, item, family),
+        );
         return {
           ...item,
           ...(family === "conditionalAccessPolicies"
             ? { "@odata.type": "#microsoft.graph.conditionalAccessPolicy" }
             : {}),
-          ...(assignmentsIncomplete
+          ...(incomplete
             ? {
                 collectionStatus: {
                   ...item.collectionStatus,
@@ -90,7 +87,7 @@ export function buildCollectionCoverage(
       result.evidence.map((item) => `${item.familyKey}:${item.policyId}`),
     ),
   );
-  for (const { family, items, error } of families(data)) {
+  for (const { family, items, error } of collectionFamilies(data)) {
     const row = rows.get(family) ?? {
       family,
       collectedPolicies: 0,

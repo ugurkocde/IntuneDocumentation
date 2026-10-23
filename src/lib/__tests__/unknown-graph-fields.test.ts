@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ConfigurationSectionData } from "../configuration-sections";
-import type { DetailedExportData } from "../configuration-analyzer";
+import {
+  analyzeConfigurations,
+  type DetailedExportData,
+} from "../configuration-analyzer";
+import { parseAssignments } from "../configuration-parser";
 import { assessCompliance } from "../compliance";
 import type { CapabilityResult } from "../compliance/types";
 import {
@@ -17,7 +21,11 @@ import { compareSettings, projectionSettings } from "../snapshots/reference";
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { graphPropertyValues } from "../compliance/documented-values";
 import { generateFixPack } from "../compliance/fix-pack";
-import { summarizeAssignments } from "../compliance/assignments";
+import {
+  assignmentsIncomplete,
+  assignmentStatus,
+  summarizeAssignments,
+} from "../compliance/assignments";
 
 // Round 14: a field Graph did not return is unknown. It never becomes a
 // different or missing result, evidence added or removed, or a change.
@@ -2557,5 +2565,315 @@ describe("row shapes checked where collected data enters", () => {
         });
       }
     });
+  });
+});
+
+// Round 29: assignment targets are read by one documented table of target
+// types (graph-rows.ts), never by a suffix of the type name. Every field
+// that says what a documented type targets is kept, checked and compared;
+// a type outside the table is unknown in the engine and not compared in
+// history.
+describe("assignment targets by their documented type", () => {
+  const target = (fields: Record<string, unknown>) => [
+    { id: "assignment-1", target: fields },
+  ];
+  const scopeTagTarget = (entraObjectId: unknown, targetType: unknown) => ({
+    "@odata.type": "#microsoft.graph.scopeTagGroupAssignmentTarget",
+    deviceAndAppManagementAssignmentFilterId: null,
+    deviceAndAppManagementAssignmentFilterType: "none",
+    entraObjectId,
+    targetType,
+  });
+  const collection = (collectionId: unknown) => ({
+    "@odata.type":
+      "#microsoft.graph.configurationManagerCollectionAssignmentTarget",
+    collectionId,
+  });
+  const unit = (organizationalUnitId: unknown) => ({
+    "@odata.type": "#microsoft.graph.organizationalUnitAssignmentTarget",
+    organizationalUnitId,
+  });
+  const scopeTags = (displayName: string, fields: Record<string, unknown>) => {
+    const base = data();
+    const items = [
+      {
+        id: "1",
+        displayName,
+        description: "",
+        isBuiltIn: false,
+        assignments: target(fields),
+      },
+    ];
+    return {
+      ...base,
+      sections: [...base.sections!, section("roleScopeTags", items)],
+    } as DetailedExportData;
+  };
+  const configuration = (fields: Record<string, unknown>) =>
+    data({
+      deviceConfigurations: [
+        {
+          "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
+          id: "config-1",
+          displayName: "Synthetic configuration",
+          assignments: target(fields),
+        },
+      ],
+    });
+  const diff = (from: DetailedExportData, to: DetailedExportData) =>
+    diffSnapshots(projection(from), projection(to));
+
+  it("still compares a scope tag with its documented target, a rename included", () => {
+    const tag = scopeTagTarget("synthetic-group-1", "user");
+    const result = diff(
+      scopeTags("Synthetic tag", tag),
+      scopeTags("Synthetic tag renamed", tag),
+    );
+    expect(result.totals).toMatchObject({
+      renamed: 1,
+      assignmentChanges: 0,
+      notComparedItems: 0,
+    });
+  });
+
+  it("reports a scope tag retargeted to another group or another target type", () => {
+    for (const [from, to, added] of [
+      [
+        scopeTagTarget("synthetic-group-1", "user"),
+        scopeTagTarget("synthetic-group-2", "user"),
+        "Users in group synthetic-group-2",
+      ],
+      [
+        scopeTagTarget("synthetic-group-1", "user"),
+        scopeTagTarget("synthetic-group-1", "device"),
+        "Devices in group synthetic-group-1",
+      ],
+    ] as const) {
+      const result = diff(
+        scopeTags("Synthetic tag", from),
+        scopeTags("Synthetic tag", to),
+      );
+      expect(result.totals).toMatchObject({
+        assignmentChanges: 2,
+        notComparedItems: 0,
+      });
+      expect(result.policies[0]!.assignments).toContainEqual({
+        change: "added",
+        label: added,
+      });
+    }
+  });
+
+  it("reports a Configuration Manager collection or organizational unit changed", () => {
+    for (const [from, to, added] of [
+      [
+        collection("SMS00001"),
+        collection("SMS00002"),
+        "Configuration Manager collection SMS00002",
+      ],
+      [
+        unit("synthetic-ou-1"),
+        unit("synthetic-ou-2"),
+        "Organizational unit synthetic-ou-2",
+      ],
+    ] as const) {
+      const result = diff(configuration(from), configuration(to));
+      expect(result.totals).toMatchObject({
+        assignmentChanges: 2,
+        notComparedItems: 0,
+      });
+      expect(result.policies[0]!.assignments).toContainEqual({
+        change: "added",
+        label: added,
+      });
+    }
+  });
+
+  it("reads documented targets as assigned in the engine", () => {
+    for (const fields of [
+      collection("SMS00001"),
+      unit("synthetic-ou-1"),
+      scopeTagTarget("synthetic-group-1", "device"),
+      { "@odata.type": "#microsoft.graph.allLicensedUsersAssignmentTarget" },
+      {
+        "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget",
+        groupId: "synthetic-group-2",
+      },
+    ])
+      expect(
+        summarizeAssignments([...assigned, ...target(fields)]).state,
+        String(fields["@odata.type"]),
+      ).toBe("assigned");
+  });
+
+  const unreadable: Array<[string, Record<string, unknown>]> = [
+    ["a collection target without its collection id", collection("")],
+    ["an organizational unit target without its id", unit(undefined)],
+    [
+      "a scope tag target without its Entra object id",
+      scopeTagTarget(undefined, "user"),
+    ],
+    [
+      "a scope tag target without its target type",
+      scopeTagTarget("synthetic-group-1", undefined),
+    ],
+    [
+      "a scope tag target of type none",
+      scopeTagTarget("synthetic-group-1", "none"),
+    ],
+    [
+      "a scope tag target of the unknown future value",
+      scopeTagTarget("synthetic-group-1", "unknownFutureValue"),
+    ],
+    [
+      "a group target with only an Entra object id",
+      {
+        "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+        entraObjectId: "synthetic-group-1",
+      },
+    ],
+    [
+      "a target type Graph does not document",
+      { "@odata.type": "#microsoft.graph.allUsersAssignmentTarget" },
+    ],
+    [
+      "a target type ending like a group target",
+      {
+        "@odata.type": "#microsoft.graph.syntheticGroupAssignmentTarget",
+        groupId: "synthetic-group-1",
+      },
+    ],
+  ];
+
+  it.each(unreadable)(
+    "is unknown in the engine and not compared in history with %s",
+    (_label, fields) => {
+      expect(summarizeAssignments([...assigned, ...target(fields)]).state).toBe(
+        "unknown",
+      );
+      const definite = configuration(collection("SMS00001"));
+      const unknown = configuration(fields);
+      for (const [from, to] of [
+        [definite, unknown],
+        [unknown, definite],
+      ]) {
+        const result = diff(from!, to!);
+        expect(result.policies).toEqual([]);
+        expect(result.totals.notComparedItems).toBe(1);
+      }
+    },
+  );
+});
+
+// Every reader of an item's assignments uses one rule (assignments.ts):
+// a collection status, when there is one, decides; without it a fetch
+// error or a failed assignment request leaves the assignments unknown.
+describe("assignments not fully collected, one rule for every reader", () => {
+  const failedFetch = [
+    {
+      endpoint:
+        "/deviceManagement/deviceConfigurations('config-1')/assignments",
+      error: "Synthetic failure",
+    },
+  ];
+  const rows: Array<[string, Record<string, unknown>, unknown[], boolean]> = [
+    [
+      "a complete status with a fetch error elsewhere",
+      { collectionStatus: { assignments: "complete" }, hasFetchError: true },
+      [],
+      false,
+    ],
+    [
+      "an incomplete status",
+      { collectionStatus: { assignments: "incomplete" } },
+      [],
+      true,
+    ],
+    [
+      "a status that does not cover assignments",
+      { collectionStatus: { settings: "complete" } },
+      [],
+      true,
+    ],
+    ["a fetch error without a status", { hasFetchError: true }, [], true],
+    ["a failed assignment request", {}, failedFetch, true],
+    ["neither a status nor an error", {}, [], false],
+    [
+      "a registry type without an assignment relationship",
+      {
+        registryKey: "notificationMessageTemplates",
+        collectionStatus: { localizedNotificationMessages: "complete" },
+        hasFetchError: true,
+      },
+      failedFetch,
+      false,
+    ],
+  ];
+
+  it.each(rows)("reads %s", (_label, item, errors, incomplete) => {
+    expect(assignmentsIncomplete(item, errors as never)).toBe(incomplete);
+    expect(assignmentStatus(item, errors as never)).toBe(
+      incomplete ? "incomplete" : "complete",
+    );
+  });
+
+  const config = (fields: Record<string, unknown>) => ({
+    "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
+    id: "config-1",
+    displayName: "Synthetic configuration",
+    ...fields,
+  });
+
+  it("keeps assignments readable when the status says complete despite a fetch error", () => {
+    const item = config({
+      assignments: assigned,
+      collectionStatus: { assignments: "complete" },
+      hasFetchError: true,
+    });
+    const analytics = analyzeConfigurations(
+      data({ deviceConfigurations: [item] }),
+    );
+    expect(analytics).toMatchObject({
+      assignedConfigs: 1,
+      unknownAssignmentConfigs: 0,
+    });
+    expect(parseAssignments([], assignmentStatus(item))).toBe("Not assigned");
+  });
+
+  it("reads a failed fetch without a status as unknown, never not assigned", () => {
+    const item = config({ assignments: [], hasFetchError: true });
+    expect(
+      analyzeConfigurations(data({ deviceConfigurations: [item] })),
+    ).toMatchObject({
+      assignedConfigs: 0,
+      unassignedConfigs: 0,
+      unknownAssignmentConfigs: 1,
+    });
+    expect(parseAssignments([], assignmentStatus(item))).toContain(
+      "unavailable",
+    );
+  });
+
+  it("does not compare assignments a status does not cover", () => {
+    const at = (target: Record<string, unknown>) =>
+      data({
+        deviceConfigurations: [
+          config({
+            assignments: [{ id: "assignment-1", target }],
+            collectionStatus: { details: "complete" },
+          }),
+        ],
+      });
+    const result = diffSnapshots(
+      projection(
+        at({ "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget" }),
+      ),
+      projection(
+        at({
+          "@odata.type": "#microsoft.graph.allLicensedUsersAssignmentTarget",
+        }),
+      ),
+    );
+    expect(result.totals.assignmentChanges).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 import { Activity, AlertCircle, Clock, FileText, ListFilter, Search, SearchX, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { assignmentNeedsReview, assignmentText } from "../../shared/assignment-text";
 import { scopeKey } from "../../shared/export-scope";
 import type { PolicyDeviceStatusCounts, PolicyDeviceStatusView, SectionItemSummary } from "../../shared/ipc-types";
 import { CollectButton } from "../components/collection/CollectButton";
@@ -26,17 +27,6 @@ import {
 import { useApp } from "../state/context";
 import { quickExportBlocker } from "../state/selectors";
 import type { ExportFormat } from "../state/types";
-
-function assignmentText(item: SectionItemSummary): string | null {
-  if (item.assignmentCount === null) return null;
-  const parts: string[] = [];
-  if (item.assignedToAllUsers) parts.push("All users");
-  if (item.assignedToAllDevices) parts.push("All devices");
-  if (item.assignmentCount > 0) {
-    parts.push(`${item.assignmentCount} ${item.assignmentCount === 1 ? "group" : "groups"}`);
-  }
-  return parts.length ? `Assigned to ${parts.join(" and ")}` : "Not assigned";
-}
 
 const DEVICE_STATUS_STATES: Record<PolicyDeviceStatusView["state"], string> = {
   collected: "collected",
@@ -158,7 +148,7 @@ function ItemRow({
           )}
           {assignment && (
             <span
-              className={`inline-flex items-center gap-1.5 ${assignment === "Not assigned" ? "text-amber-800" : ""}`}
+              className={`inline-flex items-center gap-1.5 ${assignmentNeedsReview(assignment) ? "text-amber-800" : ""}`}
             >
               <Users className="h-3 w-3" aria-hidden="true" />
               {assignment}

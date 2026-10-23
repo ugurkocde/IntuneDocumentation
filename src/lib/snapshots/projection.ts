@@ -10,7 +10,7 @@ import {
 } from "../configuration-sections";
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
-import { settingsLayout } from "../compliance/graph-rows";
+import { settingsLayout, TARGET_FIELDS } from "../compliance/graph-rows";
 import { canonicalOmaUri } from "../compliance/oma-uri";
 import { frameworkCoverageLabel } from "../compliance/presentation";
 import { REDACTED_VALUE, redactedDigests } from "../intune-policy-registry";
@@ -533,9 +533,11 @@ function projectAssignments(value: unknown): Json[] | undefined {
     const target = isRecord(assignment.target) ? assignment.target : {};
     return {
       ...pick(assignment, ["intent"]),
+      // Every field that says what a documented target type targets
+      // (graph-rows.ts), so history compares each of them.
       target: pick(target, [
         "@odata.type",
-        "groupId",
+        ...TARGET_FIELDS,
         "groupName",
         "deviceAndAppManagementAssignmentFilterId",
         "deviceAndAppManagementAssignmentFilterType",

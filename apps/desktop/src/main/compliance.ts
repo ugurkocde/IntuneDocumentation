@@ -51,6 +51,7 @@ import {
   generateFixPack,
   type FixPack,
 } from "../../../../src/lib/compliance/fix-pack";
+import { assignmentGroupIds } from "../../../../src/lib/compliance/graph-rows";
 import { getStableItemId } from "../../../../src/lib/configuration-sections";
 import type {
   AssessmentScope,
@@ -195,12 +196,8 @@ export function referencedGroupIds(collection: Collection): string[] {
   }
   for (const section of collection.sections) {
     for (const item of section.items as Array<Record<string, any>>) {
-      for (const assignment of Array.isArray(item.assignments)
-        ? item.assignments
-        : []) {
-        const groupId = assignment?.target?.groupId;
-        if (typeof groupId === "string" && groupId) ids.add(groupId);
-      }
+      // A scope tag target names its group by entraObjectId.
+      for (const groupId of assignmentGroupIds(item)) ids.add(groupId);
       const users = item.conditions?.users;
       for (const id of [
         ...(Array.isArray(users?.includeGroups) ? users.includeGroups : []),

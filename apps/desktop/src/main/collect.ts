@@ -12,6 +12,16 @@ import { estimatePdfPageCount } from "../../../../src/lib/pdf-page-estimate";
 import { contentDigest } from "../../../../src/lib/snapshots/projection";
 import type { DetailedExportData } from "../../../../src/lib/configuration-analyzer";
 import {
+  assignable,
+  assignmentsIncomplete,
+  itemFetchErrors,
+  summarizeAssignments,
+} from "../../../../src/lib/compliance/assignments";
+import {
+  normalizeTargetType,
+  unreadableAssignment,
+} from "../../../../src/lib/compliance/graph-rows";
+import {
   classifyItem,
   collectionBreakdown,
   errorFamilyKey,
@@ -20,6 +30,7 @@ import {
   sectionLabel,
 } from "./classify";
 import type {
+  AssignmentTargets,
   FullCollectionSummary,
   PdfEstimate,
   SectionItemSummary,
@@ -146,16 +157,17 @@ function summarizeItem(
   section: { key: string; familyKey: string; label: string },
   item: Record<string, unknown>,
   index: number,
+  fetchErrors: FullCollection["fetchErrors"],
 ): SectionItemSummary {
   const classification = classifyItem(section, item);
+  const incomplete = assignmentsIncomplete(item, itemFetchErrors(fetchErrors, item, section.familyKey));
+  // A type with assignments whose assignments were not collected has no
+  // list, and reads unknown rather than as a type without assignments.
   const assignments = Array.isArray(item.assignments)
-    ? (item.assignments as Array<{ target?: Record<string, unknown> }>)
-    : null;
-  const targetType = (assignment: { target?: Record<string, unknown> }) =>
-    String(assignment.target?.["@odata.type"] ?? "");
-  const included = assignments?.filter(
-    (assignment) => !targetType(assignment).includes("exclusion"),
-  );
+    ? (item.assignments as unknown[])
+    : incomplete && assignable(item, section.familyKey)
+      ? []
+      : null;
   return {
     id: getStableItemId(section, item, index),
     displayName: getItemLabel(section, item),
@@ -164,23 +176,57 @@ function summarizeItem(
     platforms: text(item.platforms) ?? text(item.platformType),
     technologies: text(item.technologies),
     lastModifiedDateTime: text(item.lastModifiedDateTime),
-    assignmentCount: included
-      ? included.filter((assignment) => assignment.target?.groupId).length
-      : null,
-    assignedToAllUsers: Boolean(
-      included?.some((assignment) =>
-        targetType(assignment).includes("allLicensedUsers"),
-      ),
-    ),
-    assignedToAllDevices: Boolean(
-      included?.some((assignment) =>
-        targetType(assignment).includes("allDevices"),
-      ),
-    ),
+    ...assignmentTargets(assignments, incomplete),
     hasFetchError: item.hasFetchError === true,
     familyKey: classification.familyKey,
     ...(classification.microsoftDefault ? { microsoftDefault: true } : {}),
   };
+}
+
+/**
+ * What a policy is assigned to, read by the documented target types
+ * (graph-rows.ts) through the engine's summarizeAssignments. An assignment
+ * of an undocumented type or without what its type targets, or assignments
+ * that were not fully collected (assignmentsIncomplete, as the engine reads
+ * it), leave the targeting unknown rather than read as not assigned.
+ */
+export function assignmentTargets(
+  assignments: unknown[] | null,
+  incomplete: boolean,
+): AssignmentTargets {
+  const targets: AssignmentTargets = {
+    assignmentCount: null,
+    assignmentUnknown: false,
+    assignedToAllUsers: false,
+    assignedToAllDevices: false,
+    assignedToCollections: 0,
+    assignedToOrganizationalUnits: 0,
+  };
+  if (!assignments) return targets;
+  targets.assignmentUnknown =
+    summarizeAssignments(assignments, undefined, incomplete).state ===
+    "unknown";
+  targets.assignmentCount = 0;
+  for (const assignment of assignments) {
+    if (unreadableAssignment(assignment)) continue;
+    const type = normalizeTargetType(
+      (assignment as { target: Record<string, unknown> }).target["@odata.type"],
+    );
+    if (type === "alllicensedusersassignmenttarget")
+      targets.assignedToAllUsers = true;
+    else if (type === "alldevicesassignmenttarget")
+      targets.assignedToAllDevices = true;
+    else if (
+      type === "groupassignmenttarget" ||
+      type === "scopetaggroupassignmenttarget"
+    )
+      targets.assignmentCount += 1;
+    else if (type === "configurationmanagercollectionassignmenttarget")
+      targets.assignedToCollections += 1;
+    else if (type === "organizationalunitassignmenttarget")
+      targets.assignedToOrganizationalUnits += 1;
+  }
+  return targets;
 }
 
 // Returns display metadata only; full settings never leave the main process.
@@ -195,13 +241,14 @@ export function getSectionItems(
   if (!section) {
     throw new Error("This section is not part of the last collection.");
   }
+  const fetchErrors = lastCollection.fetchErrors;
   return {
     key: section.key,
     familyKey: sectionFamilyKey(section),
     label: sectionLabel(section),
     error: section.error?.message ?? null,
     items: section.items.map((item, index) =>
-      summarizeItem(section, item as Record<string, unknown>, index),
+      summarizeItem(section, item as Record<string, unknown>, index, fetchErrors),
     ),
   };
 }

@@ -1,5 +1,93 @@
-import { unreadableAssignment } from "./graph-rows";
+import { INTUNE_POLICY_REGISTRY } from "../intune-policy-registry";
+import { normalizeTargetType, unreadableAssignment } from "./graph-rows";
 import type { AssignmentSummary } from "./types";
+
+type FetchError = {
+  endpoint?: string;
+  error: string;
+  policyId?: string;
+  familyKey?: string;
+};
+
+/** A collection error that concerns an item's assignments. */
+export const assignmentFetchFailed = (errors: readonly FetchError[]) =>
+  errors.some((error) =>
+    /assignments/i.test(`${error.endpoint ?? ""} ${error.error}`),
+  );
+
+/**
+ * The collection errors of one item of a collection family: those of its
+ * policy id that name its family or no family. Every assignment reader
+ * matches errors this way (collectConfigurations, the documentation
+ * exports, the analyzer and the desktop policy list).
+ */
+export const itemFetchErrors = <E extends FetchError>(
+  errors: readonly E[] | undefined,
+  item: Record<string, unknown>,
+  family: unknown,
+): E[] =>
+  (errors ?? []).filter(
+    (error) =>
+      error.policyId === item.id &&
+      (!error.familyKey || error.familyKey === family),
+  );
+
+/**
+ * Registry resource types without an assignment relationship: no
+ * assignments child collection, so their items carry no assignments to
+ * collect, read or report.
+ */
+export const UNASSIGNABLE_REGISTRY_KEYS: ReadonlySet<string> = new Set(
+  INTUNE_POLICY_REGISTRY.filter(
+    (entry) =>
+      !entry.childCollections?.some(
+        (child) => child.property === "assignments",
+      ),
+  ).map((entry) => entry.key),
+);
+
+/**
+ * Whether an item's resource type has an assignment relationship: not a
+ * registry type without one and, when the family is known, not a
+ * Conditional Access policy (it targets users in its conditions).
+ */
+export const assignable = (item: Record<string, unknown>, family?: unknown) =>
+  family !== "conditionalAccessPolicies" &&
+  !(
+    typeof item.registryKey === "string" &&
+    UNASSIGNABLE_REGISTRY_KEYS.has(item.registryKey)
+  );
+
+/**
+ * Whether an item's assignments were not fully collected: its collection
+ * status says other than complete, its fetch failed before a status was
+ * recorded, or one of its collection errors concerns assignments. An item
+ * of a type without an assignment relationship has none to miss. The
+ * engine (coverage.ts), the documentation exports, the history diff and the
+ * desktop policy list read it the same way.
+ */
+export function assignmentsIncomplete(
+  item: Record<string, unknown>,
+  errors: readonly FetchError[] = [],
+): boolean {
+  if (!assignable(item)) return false;
+  const status = item.collectionStatus;
+  return (
+    (status && typeof status === "object"
+      ? (status as Record<string, unknown>).assignments !== "complete"
+      : Boolean(item.hasFetchError)) || assignmentFetchFailed(errors)
+  );
+}
+
+/**
+ * The assignment collection status of an item, by assignmentsIncomplete,
+ * for readers that take a status string (parseAssignments).
+ */
+export const assignmentStatus = (
+  item: Record<string, unknown>,
+  errors: readonly FetchError[] = [],
+): "complete" | "incomplete" =>
+  assignmentsIncomplete(item, errors) ? "incomplete" : "complete";
 
 export function summarizeAssignments(
   assignments: unknown,
@@ -16,30 +104,43 @@ export function summarizeAssignments(
   if (!Array.isArray(assignments)) return summary;
   let unknownTarget = false;
   for (const assignment of assignments) {
-    // An assignment without its target type, group id, filter type or
-    // filter id may target anyone (graph-rows.ts).
+    // An assignment of a type Graph does not document, or without what its
+    // type targets, its filter type or filter id, may target anyone
+    // (graph-rows.ts).
     if (unreadableAssignment(assignment)) unknownTarget = true;
     const target = assignment?.target;
     if (!target || typeof target["@odata.type"] !== "string") continue;
-    const type = target["@odata.type"]
-      .replace(/^#?(microsoft\.graph\.)?/, "")
-      .toLowerCase();
+    const type = normalizeTargetType(target["@odata.type"]);
+    const field = (name: string) =>
+      typeof target[name] === "string" ? target[name] : "";
+    const group = (groupId: string) =>
+      groupNames.get(groupId) ?? (target.groupName || groupId);
     let label: string;
     if (type === "alldevicesassignmenttarget") label = "All Devices";
-    else if (
-      ["alllicensedusersassignmenttarget", "allusersassignmenttarget"].includes(
-        type,
-      )
-    )
-      label = "All Users";
+    else if (type === "alllicensedusersassignmenttarget") label = "All Users";
     else if (
       ["groupassignmenttarget", "exclusiongroupassignmenttarget"].includes(
         type,
       ) &&
-      typeof target.groupId === "string" &&
-      target.groupId
+      field("groupId")
     )
-      label = `Group: ${groupNames.get(target.groupId) ?? target.groupName ?? target.groupId}`;
+      label = `Group: ${group(field("groupId"))}`;
+    else if (
+      type === "configurationmanagercollectionassignmenttarget" &&
+      field("collectionId")
+    )
+      label = `Configuration Manager collection: ${field("collectionId")}`;
+    else if (
+      type === "organizationalunitassignmenttarget" &&
+      field("organizationalUnitId")
+    )
+      label = `Organizational unit: ${field("organizationalUnitId")}`;
+    else if (
+      type === "scopetaggroupassignmenttarget" &&
+      field("entraObjectId") &&
+      ["user", "device"].includes(target.targetType)
+    )
+      label = `${target.targetType === "device" ? "Devices" : "Users"} in group: ${groupNames.get(field("entraObjectId")) ?? field("entraObjectId")}`;
     else {
       unknownTarget = true;
       continue;

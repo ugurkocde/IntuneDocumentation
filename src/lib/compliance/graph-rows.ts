@@ -135,29 +135,109 @@ export function unidentifiedSources(
   return found;
 }
 
-const normalizeType = (value: unknown) =>
+/** An assignment target type without the namespace, in lower case. */
+export const normalizeTargetType = (value: unknown) =>
   typeof value === "string"
     ? value.replace(/^#?(microsoft\.graph\.)?/, "").toLowerCase()
     : "";
+
+/** A field that says what an assignment target targets. */
+export type TargetField =
+  | "groupId"
+  | "collectionId"
+  | "organizationalUnitId"
+  | "entraObjectId"
+  | "targetType";
+
+// The documented scopeTagTargetType values that name who in the group a
+// scope tag applies to. none ("unused value, do not use") and the
+// unknownFutureValue sentinel name neither, so they leave the target
+// unknown.
+const SCOPE_TAG_TARGETS = ["user", "device"];
+
+/**
+ * Every documented subtype of deviceAndAppManagementAssignmentTarget, by
+ * normalized type, with the fields that say what it targets. Sources: the
+ * Graph beta and v1.0 $metadata (allDevicesAssignmentTarget,
+ * allLicensedUsersAssignmentTarget, groupAssignmentTarget,
+ * exclusionGroupAssignmentTarget, configurationManagerCollectionAssignmentTarget)
+ * and Microsoft Learn, intune-shared-organizationalunitassignmenttarget
+ * (beta) and intune-shared-scopetaggroupassignmenttarget (beta and v1.0),
+ * the target of roleScopeTagAutoAssignment. A type outside this table may
+ * target anyone, so its assignment is unreadable. Cloud PC targets derive
+ * from cloudPcManagementAssignmentTarget, which no collected policy uses.
+ */
+export const ASSIGNMENT_TARGET_FIELDS: Readonly<
+  Record<string, readonly TargetField[]>
+> = {
+  alldevicesassignmenttarget: [],
+  alllicensedusersassignmenttarget: [],
+  groupassignmenttarget: ["groupId"],
+  exclusiongroupassignmenttarget: ["groupId"],
+  configurationmanagercollectionassignmenttarget: ["collectionId"],
+  organizationalunitassignmenttarget: ["organizationalUnitId"],
+  scopetaggroupassignmenttarget: ["entraObjectId", "targetType"],
+};
+
+/** Every field of ASSIGNMENT_TARGET_FIELDS, for projections and keys. */
+export const TARGET_FIELDS: readonly TargetField[] = [
+  ...new Set(Object.values(ASSIGNMENT_TARGET_FIELDS).flat()),
+];
+
+/**
+ * The Entra group an assignment target names, for group name lookup: the
+ * entraObjectId of a scope tag target, otherwise the groupId. Empty ids name
+ * nothing.
+ */
+export function targetGroupId(target: unknown): string | undefined {
+  if (!isObject(target)) return undefined;
+  const id =
+    normalizeTargetType(target["@odata.type"]) ===
+    "scopetaggroupassignmenttarget"
+      ? target.entraObjectId
+      : target.groupId;
+  return isIdentifier(id) ? id : undefined;
+}
+
+/**
+ * The Entra groups an item's assignments name (targetGroupId), for group
+ * name lookup. Assignments that are not a list name none.
+ */
+export function assignmentGroupIds(item: unknown): string[] {
+  if (!isObject(item)) return [];
+  return list(item.assignments).flatMap((assignment) => {
+    const id = targetGroupId(isObject(assignment) ? assignment.target : null);
+    return id ? [id] : [];
+  });
+}
+
+const readableField = (field: TargetField, value: unknown) =>
+  field === "targetType"
+    ? SCOPE_TAG_TARGETS.includes(value as string)
+    : isIdentifier(value);
 
 // The documented deviceAndAppManagementAssignmentFilterType values that
 // apply a filter.
 const FILTER_MODES = ["include", "exclude"];
 
 /**
- * An assignment Graph returned without what tells it apart: a target with
- * its type, the group id of a group target, a filter type Graph documents
- * (none, include or exclude, or no filter at all) with the filter id of a
- * filter that applies, and an intent that is not empty. Such an assignment
- * may target anyone, so its policy's targeting is unknown and two
- * snapshots of it are not compared.
+ * An assignment Graph returned without what tells it apart: a target of a
+ * documented type (ASSIGNMENT_TARGET_FIELDS) with every field that says
+ * what it targets, a filter type Graph documents (none, include or exclude,
+ * or no filter at all) with the filter id of a filter that applies, and an
+ * intent that is not empty. Such an assignment may target anyone, so its
+ * policy's targeting is unknown and two snapshots of it are not compared.
  */
 export function unreadableAssignment(entry: unknown): boolean {
   if (!isObject(entry) || !isObject(entry.target)) return true;
   const target = entry.target;
-  const type = normalizeType(target["@odata.type"]);
-  if (!type) return true;
-  if (type.endsWith("groupassignmenttarget") && !isIdentifier(target.groupId))
+  const type = normalizeTargetType(target["@odata.type"]);
+  if (!Object.hasOwn(ASSIGNMENT_TARGET_FIELDS, type)) return true;
+  if (
+    !ASSIGNMENT_TARGET_FIELDS[type]!.every((field) =>
+      readableField(field, target[field]),
+    )
+  )
     return true;
   const filterId = target.deviceAndAppManagementAssignmentFilterId;
   const filterType = target.deviceAndAppManagementAssignmentFilterType;

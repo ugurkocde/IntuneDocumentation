@@ -709,6 +709,18 @@ export class DetailedIntuneService {
     });
   }
 
+  // A policy whose detail fetch failed: every part it collects is marked
+  // incomplete, so its assignments read as unknown, never as not assigned.
+  private failedDetails(parts: readonly string[], error: unknown) {
+    return {
+      collectionStatus: Object.fromEntries(
+        parts.map((part) => [part, "incomplete"]),
+      ),
+      hasFetchError: true,
+      fetchErrorMessage: this.graphError(error).message,
+    };
+  }
+
   private partialCollectionItems(error: unknown, configType: string) {
     if (!(error instanceof GraphPaginationError)) return [];
     const message = this.graphError(error).message;
@@ -1205,6 +1217,7 @@ export class DetailedIntuneService {
               ...config,
               configType: this.getConfigurationType(config["@odata.type"]),
               assignments: [],
+              ...this.failedDetails(["assignments"], error),
             };
           }
         }),
@@ -1426,9 +1439,7 @@ export class DetailedIntuneService {
               definitionValues: [],
               assignments: [],
               version: 1,
-              hasFetchError: true,
-              fetchErrorMessage:
-                error instanceof Error ? error.message : "Detail fetch failed",
+              ...this.failedDetails(["assignments", "settings"], error),
             };
           }
         },
@@ -1499,6 +1510,10 @@ export class DetailedIntuneService {
               configType: "Compliance Policy",
               scheduledActionsForRule: [],
               assignments: [],
+              ...this.failedDetails(
+                ["scheduledActionsForRule", "assignments"],
+                error,
+              ),
             };
           }
         }),
@@ -1639,6 +1654,7 @@ export class DetailedIntuneService {
               configType: "App Protection Policy",
               platformType: policy.platform,
               assignments: [],
+              ...this.failedDetails(["assignments", "apps"], error),
             };
           }
         }),
@@ -1729,6 +1745,10 @@ export class DetailedIntuneService {
               configType: "Security Baseline",
               categories: [],
               assignments: [],
+              ...this.failedDetails(
+                ["categories", "assignments", "settings"],
+                error,
+              ),
             };
           }
         }),
@@ -1823,6 +1843,7 @@ export class DetailedIntuneService {
               configType: "PowerShell Script",
               platformType: "Windows",
               assignments: [],
+              ...this.failedDetails(["details", "assignments"], error),
             };
           }
         }),
@@ -1916,6 +1937,7 @@ export class DetailedIntuneService {
               configType: "Shell Script",
               platformType: "macOS",
               assignments: [],
+              ...this.failedDetails(["details", "assignments"], error),
             };
           }
         }),
@@ -2082,6 +2104,7 @@ export class DetailedIntuneService {
               ...config,
               configType: "App Configuration",
               assignments: [],
+              ...this.failedDetails(["details", "assignments"], error),
             };
           }
         }),

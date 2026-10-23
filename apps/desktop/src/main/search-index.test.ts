@@ -51,13 +51,15 @@ const contosoSections = [
   section("conditionalAccessPolicies", "conditionalAccessPolicies", CONTOSO_TENANT.conditionalAccessPolicies),
 ];
 
+const STRING_VALUE = "#microsoft.graph.deviceManagementConfigurationStringSettingValue";
+
 const firewallSettings = {
   settings: [
     {
       settingInstance: {
         "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
         settingDefinitionId: "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_name",
-        simpleSettingValue: { value: "Allow RDP" },
+        simpleSettingValue: { "@odata.type": STRING_VALUE, value: "Allow RDP" },
       },
     },
   ],
@@ -192,12 +194,18 @@ function syntheticCollection() {
           choiceSettingValue: {
             value: `${id}_1`,
             children: [
-              { settingDefinitionId: `${id}_child_a`, simpleSettingValue: { value: `value ${settingIndex}` } },
+              {
+                settingDefinitionId: `${id}_child_a`,
+                simpleSettingValue: { "@odata.type": STRING_VALUE, value: `value ${settingIndex}` },
+              },
               {
                 settingDefinitionId: `${id}_child_group`,
                 groupSettingCollectionValue: [1, 2].map((entry) => ({
                   children: [
-                    { settingDefinitionId: `${id}_child_group_name`, simpleSettingValue: { value: `rule ${entry}` } },
+                    {
+                      settingDefinitionId: `${id}_child_group_name`,
+                      simpleSettingValue: { "@odata.type": STRING_VALUE, value: `rule ${entry}` },
+                    },
                   ],
                 })),
               },

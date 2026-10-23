@@ -10,7 +10,11 @@ import {
 } from "../configuration-sections";
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
-import { settingsLayout, TARGET_FIELDS } from "../compliance/graph-rows";
+import {
+  settingsLayout,
+  TARGET_FIELDS,
+  unreadableOmaValue,
+} from "../compliance/graph-rows";
 import { canonicalOmaUri } from "../compliance/oma-uri";
 import { frameworkCoverageLabel } from "../compliance/presentation";
 import { REDACTED_VALUE, redactedDigests } from "../intune-policy-registry";
@@ -711,7 +715,26 @@ function projectSettings(
 const asRecords = (value: unknown[]): Json[] =>
   value.map((entry) => (isRecord(entry) ? entry : {}));
 
-function projectDefinitionValues(value: unknown): Json[] | undefined {
+// Presentation values that hold name and value pairs (a list presentation)
+// are not kept: they are stored as one redacted value and compared by
+// fingerprint, under the definition and presentation ids. Values of another
+// shape are kept as null, so they read as unreadable (graph-rows.ts).
+function projectPresentationValues(
+  values: unknown,
+  settingId: string,
+  dropped?: DroppedValue,
+): unknown {
+  if (values === undefined || plainValue(values) !== undefined)
+    return plainValue(values);
+  if (!Array.isArray(values) || !values.every(isRecord)) return null;
+  dropped?.(settingId, JSON.stringify(values));
+  return [REDACTED_VALUE];
+}
+
+function projectDefinitionValues(
+  value: unknown,
+  dropped?: DroppedValue,
+): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return asRecords(value).map((row) => {
     const definition = isRecord(row.definition) ? row.definition : {};
@@ -739,8 +762,14 @@ function projectDefinitionValues(value: unknown): Json[] | undefined {
           const presentation = isRecord(presentationValue.presentation)
             ? presentationValue.presentation
             : {};
+          const values = projectPresentationValues(
+            presentationValue.values,
+            `${text(definition.id) ?? ""}/${text(presentation.id) ?? ""}`,
+            dropped,
+          );
           return {
-            ...pick(presentationValue, ["@odata.type", "value", "values"]),
+            ...pick(presentationValue, ["@odata.type", "value"]),
+            ...(values !== undefined ? { values } : {}),
             presentation: pick(presentation, ["@odata.type", "id", "label"]),
           };
         }),
@@ -764,11 +793,21 @@ function projectOmaSettings(
       (read ||
         typeof setting.value === "number" ||
         typeof setting.value === "boolean");
-    if (!keep && isPrimitive(setting.value))
+    // A value Graph did not return, or returned with another type than its
+    // row documents, is kept as null, so it reads as unreadable
+    // (graph-rows.ts) instead of as a value that is not stored.
+    const unread =
+      setting.isEncrypted !== true &&
+      (!Object.hasOwn(setting, "value") || unreadableOmaValue(setting));
+    if (!keep && !unread && isPrimitive(setting.value))
       dropped?.(text(setting.omaUri) ?? "", String(setting.value));
     return {
       ...pick(setting, ["@odata.type", "omaUri", "displayName", "isEncrypted"]),
-      ...(keep && isPrimitive(setting.value) ? { value: setting.value } : {}),
+      ...(unread
+        ? { value: null }
+        : keep && isPrimitive(setting.value)
+          ? { value: setting.value }
+          : {}),
     };
   });
 }
@@ -892,7 +931,10 @@ function projectItem(
             : { settings: categorySettings({}) },
         )
       : [{ settings: categorySettings({}) }];
-  const definitionValues = projectDefinitionValues(raw.definitionValues);
+  const definitionValues = projectDefinitionValues(
+    raw.definitionValues,
+    dropped,
+  );
   if (definitionValues) data.definitionValues = definitionValues;
   const omaSettings = projectOmaSettings(raw.omaSettings, dropped);
   if (omaSettings) data.omaSettings = omaSettings;

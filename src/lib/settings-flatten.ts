@@ -1,4 +1,10 @@
 import {
+  unreadableCatalogValue,
+  unreadableIntentValue,
+  unreadableOmaValue,
+  unreadableTemplateValue,
+} from "./compliance/graph-rows";
+import {
   extractAppConfigurationSettings,
   extractSettingValue,
   formatValue,
@@ -7,6 +13,7 @@ import {
   parseDeviceConfiguration,
   parseDocumentableProperties,
   parseSecurityBaseline,
+  UNREADABLE_VALUE,
 } from "./configuration-parser";
 import type {
   ConfigurationSettingDefinition,
@@ -24,7 +31,16 @@ export interface FlatSettingRow {
   /** Parent settings or properties, outermost first. */
   path: string[];
   category?: string;
+  /**
+   * Graph did not return the setting's value readably
+   * (compliance/graph-rows.ts); value says so. Comparisons treat it as
+   * unknown, never as a value.
+   */
+  unreadable?: true;
 }
+
+const flag = (unreadable: boolean) =>
+  unreadable ? { unreadable: true as const } : {};
 
 const NOT_CONFIGURED = "Not configured";
 
@@ -124,6 +140,7 @@ function walkCatalogInstance(
       value: String(extracted.value),
       ...(definitionId ? { definitionId } : {}),
       path,
+      ...flag(unreadableCatalogValue(instance)),
     });
   }
   // Repeated groups (for example firewall rules) are numbered so rows of
@@ -220,7 +237,12 @@ function omaRows(omaSettings: unknown): FlatSettingRow[] {
   return omaSettings.flatMap((setting) => {
     if (!setting || typeof setting !== "object") return [];
     const record = setting as Record<string, unknown>;
-    const value = formatValue(record.value ?? record.omaSettingStringValue);
+    // A row without a value holds one that is not stored; it is compared
+    // by fingerprint.
+    const unreadable = unreadableOmaValue(record);
+    const value = unreadable
+      ? UNREADABLE_VALUE
+      : formatValue(record.value ?? record.omaSettingStringValue);
     if (value === NOT_CONFIGURED) return [];
     const omaUri = definitionIdOf(record.omaUri);
     return [
@@ -230,6 +252,7 @@ function omaRows(omaSettings: unknown): FlatSettingRow[] {
         ...(omaUri ? { definitionId: omaUri } : {}),
         path: [],
         category: "Custom OMA-URI",
+        ...flag(unreadable),
       },
     ];
   });
@@ -296,6 +319,7 @@ function administrativeTemplateRows(
           ? setting.category.split("\\").filter(Boolean)
           : [],
       category: setting.category,
+      ...flag(unreadableTemplateValue(values[index])),
     };
   });
 }
@@ -334,6 +358,7 @@ function securityBaselineRows(item: Record<string, unknown>): FlatSettingRow[] {
         ...(definitionId ? { definitionId } : {}),
         path: [],
         category: source.category,
+        ...flag(unreadableIntentValue(setting)),
       });
     }
   }

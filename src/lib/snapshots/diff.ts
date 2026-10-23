@@ -8,6 +8,7 @@ import {
   TARGET_FIELDS,
   unidentifiedSources,
   unreadableAssignment,
+  unreadableSources,
 } from "../compliance/graph-rows";
 import { isItemIdentity } from "../configuration-sections";
 import {
@@ -228,7 +229,8 @@ function settingChanges(
 }
 
 // The display name of a setting whose value is not stored: the custom
-// OMA-URI row or the Settings Catalog definition.
+// OMA-URI row, the administrative template list (definition and
+// presentation ids) or the Settings Catalog definition.
 function droppedValueName(
   item: SnapshotItem,
   settingId: string,
@@ -238,6 +240,24 @@ function droppedValueName(
     .find((entry) => entry.omaUri === settingId);
   if (typeof oma?.displayName === "string" && oma.displayName)
     return oma.displayName;
+  for (const row of Array.isArray(item.data.definitionValues)
+    ? item.data.definitionValues
+    : []) {
+    const definition = isObject(row) && isObject(row.definition) ? row.definition : {};
+    for (const entry of isObject(row) && Array.isArray(row.presentationValues)
+      ? row.presentationValues
+      : []) {
+      const presentation =
+        isObject(entry) && isObject(entry.presentation) ? entry.presentation : {};
+      const id = (value: unknown) => (typeof value === "string" ? value : "");
+      // The id the snapshot projection fingerprints a list under.
+      if (`${id(definition.id)}/${id(presentation.id)}` !== settingId) continue;
+      const names = [definition.displayName, presentation.label].filter(
+        (name): name is string => typeof name === "string" && name !== "",
+      );
+      if (names.length) return names.join(": ");
+    }
+  }
   const labels: DefinitionLabels = { settings: new Map(), options: new Map() };
   collectDefinitions(item.data.settings, labels);
   for (const category of Array.isArray(item.data.categories)
@@ -280,9 +300,10 @@ function targetLabel(
 /**
  * Whether an item can be paired and compared: it has an id of its own (not
  * its position, see isItemIdentity), every setting row has its identifier
- * and every assignment can be read (graph-rows.ts). Otherwise a row may be
- * taken for another one, so the item is not compared rather than reported
- * with changes it may not have.
+ * and a readable value, and every assignment can be read (graph-rows.ts).
+ * Otherwise a row may be taken for another one, or a value Graph did not
+ * return may read as removed or changed, so the item is not compared rather
+ * than reported with changes it may not have.
  */
 export function comparableItem(
   section: Pick<SnapshotSection, "key" | "familyKey">,
@@ -291,6 +312,7 @@ export function comparableItem(
   return (
     isItemIdentity(section, item.id) &&
     unidentifiedSources(item.data, section.familyKey).size === 0 &&
+    unreadableSources(item.data, section.familyKey).size === 0 &&
     !(
       Array.isArray(item.data.assignments) &&
       item.data.assignments.some(unreadableAssignment)

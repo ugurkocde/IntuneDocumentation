@@ -303,7 +303,7 @@ function PolicyChanges({ diff }: { diff: HistoryDiffView }) {
       )}
       {totals.notComparedItems > 0 && (
         <Alert tone="warning" title={`${plural(totals.notComparedItems, "policy was", "policies were")} not compared`}>
-          <p>Their details or assignments were not fully collected in one of the snapshots.</p>
+          <p>Their details or assignments were not fully collected, or a value could not be read, in one of the snapshots.</p>
           <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
             {diff.notComparedItems.map((item) => (
               <li key={`${item.sectionKey}-${item.id}`} className="break-words">

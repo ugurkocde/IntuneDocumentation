@@ -218,7 +218,8 @@ function itemRows(
   const policy = snapshotItemLabel({ label: sectionLabel }, item);
   // A field Graph omitted is unknown: it is filled with a marker, so its
   // rows get the ids real values would have and read as not comparable
-  // rather than missing or extra.
+  // rather than missing or extra. A setting whose value Graph did not
+  // return readably (graph-rows.ts) is not comparable the same way.
   const omitted = omittedFields(section.familyKey, data);
   const filled = omitted.length ? structuredClone(data) : data;
   for (const path of omitted) setPath(filled, path, OMITTED);
@@ -228,6 +229,7 @@ function itemRows(
     const id = row.definitionId ?? row.name;
     const setting = catalog ? id : [...row.path, id].join(" / ");
     const redacted =
+      row.unreadable ||
       row.value.includes(REDACTED) ||
       row.value.includes(OMITTED) ||
       SECRET_SETTING.test(id);

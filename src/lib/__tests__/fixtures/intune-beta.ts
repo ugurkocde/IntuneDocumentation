@@ -34,6 +34,7 @@ export const administrativeTemplateFixture = [
     },
     presentationValues: [
       {
+        "@odata.type": "#microsoft.graph.groupPolicyPresentationValueText",
         value: "Configured value",
         presentation: { label: "Policy value" },
       },

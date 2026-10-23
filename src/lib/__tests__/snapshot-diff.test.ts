@@ -268,7 +268,11 @@ describe("diffSnapshots", () => {
       settingDefinitionId: "fw_rule_name",
       "@odata.type":
         "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
-      simpleSettingValue: { value: name },
+      simpleSettingValue: {
+        "@odata.type":
+          "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+        value: name,
+      },
     });
     const firewall = (names: string[]) => ({
       id: "fw-1",
@@ -468,7 +472,11 @@ describe("diffSnapshots", () => {
             settings: Array.from({ length: 4 }, (_, row) => ({
               settingInstance: {
                 settingDefinitionId: `setting_${row}`,
-                simpleSettingValue: { value: `${value}${"x".repeat(50)}` },
+                simpleSettingValue: {
+                  "@odata.type":
+                    "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                  value: `${value}${"x".repeat(50)}`,
+                },
               },
             })),
           })),

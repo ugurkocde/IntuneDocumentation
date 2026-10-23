@@ -1,10 +1,13 @@
 // Shape checks for the rows of collected Graph data, one per row family.
 // Every engine reads collected policies through these checks: the
 // compliance engine and its fix packs, the benchmark comparison, the
-// snapshot projection, the history diff and the reference comparison. A row
-// that fails its check is unidentified or unreadable, so each consumer treats
-// what it may hold as unknown, never as a pass, a difference, a missing
-// setting or a draft. Normal Graph rows always pass.
+// snapshot projection, the history diff, the reference comparison, the
+// documentation and the settings search. A row that fails its check is
+// unidentified or unreadable, so each consumer treats what it may hold as
+// unknown, never as a pass, a difference, a missing setting or a draft.
+// Normal Graph rows always pass.
+
+import { REDACTED_VALUE } from "../intune-policy-registry";
 
 /** An identifier Graph returned: a nonempty string. An empty one names nothing. */
 export const isIdentifier = (value: unknown): value is string =>
@@ -62,6 +65,159 @@ export function documentedValue(type: unknown, value: unknown): boolean {
   const name = normalizeTargetType(type);
   return Object.hasOwn(VALUE_TYPES, name) && VALUE_TYPES[name]!(value);
 }
+
+// A value the collector redacted, like a secret Settings Catalog value, is
+// not stored: it is compared by fingerprint or not at all, never read.
+const redacted = (value: unknown) =>
+  value === REDACTED_VALUE ||
+  (Array.isArray(value) && value.includes(REDACTED_VALUE));
+const SECRET_VALUE = "devicemanagementconfigurationsecretsettingvalue";
+
+// A Settings Catalog simple value record.
+const unreadableSimple = (entry: unknown) =>
+  !isObject(entry) ||
+  (normalizeTargetType(entry["@odata.type"]) !== SECRET_VALUE &&
+    !redacted(entry.value) &&
+    !documentedValue(entry["@odata.type"], entry.value));
+
+// A Settings Catalog choice value: an option id.
+const unreadableChoice = (entry: unknown) =>
+  !isObject(entry) || (!redacted(entry.value) && !isIdentifier(entry.value));
+
+const unreadableEntries = (
+  value: unknown,
+  check: (entry: unknown) => boolean,
+) => !Array.isArray(value) || value.some(check);
+
+// Settings Catalog instance types Graph documents without a value property
+// (deviceManagementConfigurationSettingGroupInstance and
+// ...SettingGroupCollectionInstance, Graph beta reference). The engine reads
+// them as present without a value too.
+const VALUELESS_INSTANCES: ReadonlySet<string> = new Set([
+  "devicemanagementconfigurationsettinggroupinstance",
+  "devicemanagementconfigurationsettinggroupcollectioninstance",
+]);
+
+/**
+ * Whether the own value of a Settings Catalog instance, without its child
+ * instances, is unreadable, as the compliance engine reads it: a simple
+ * value of another type than its record documents, a choice value that is
+ * no option id, a value collection that is no list or holds such an entry,
+ * or no value at all on an instance that is no group and of no type Graph
+ * documents without a value. Secret and redacted values are not stored
+ * rather than unreadable. A valid empty collection is readable.
+ */
+export function unreadableCatalogValue(instance: unknown): boolean {
+  if (!isObject(instance)) return true;
+  if (VALUELESS_INSTANCES.has(normalizeTargetType(instance["@odata.type"])))
+    return false;
+  const present = (key: string) => instance[key] != null;
+  if (present("groupSettingValue") || present("groupSettingCollectionValue"))
+    return false;
+  const checks: Array<[string, (value: unknown) => boolean]> = [
+    ["simpleSettingValue", unreadableSimple],
+    [
+      "simpleSettingCollectionValue",
+      (value) => unreadableEntries(value, unreadableSimple),
+    ],
+    ["choiceSettingValue", unreadableChoice],
+    [
+      "choiceSettingCollectionValue",
+      (value) => unreadableEntries(value, unreadableChoice),
+    ],
+  ];
+  const own = checks.filter(([key]) => present(key));
+  return !own.length || own.some(([key, check]) => check(instance[key]));
+}
+
+/**
+ * Whether the value of a custom OMA-URI row is unreadable: a value of
+ * another type than its record documents (Graph returns the value on every
+ * row, lab tenant, 23 October 2026). A row without a value holds one that
+ * is not stored: the snapshot projection drops the values it does not keep
+ * and keeps one Graph did not return readably as null. Encrypted and
+ * redacted values are not stored either.
+ */
+export const unreadableOmaValue = (row: unknown): boolean =>
+  !isObject(row) ||
+  (Object.hasOwn(row, "value") &&
+    row.isEncrypted !== true &&
+    !redacted(row.value) &&
+    !documentedValue(row["@odata.type"], row.value));
+
+// Intent setting instances that hold their value only as JSON text
+// (deviceManagementCollectionSettingInstance, ...ComplexSettingInstance and
+// ...AbstractComplexSettingInstance, Graph beta reference).
+const JSON_INTENT_TYPES: ReadonlySet<string> = new Set([
+  "devicemanagementcollectionsettinginstance",
+  "devicemanagementcomplexsettinginstance",
+  "devicemanagementabstractcomplexsettinginstance",
+]);
+
+const parsedJson = (text: unknown): { value: unknown } | null => {
+  if (typeof text !== "string") return null;
+  try {
+    return { value: JSON.parse(text) };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Whether the value of an intent setting row is unreadable. A boolean,
+ * integer or string instance holds a value of its documented type, or null
+ * with the JSON text "null" for a setting that is not configured (lab
+ * tenant, 23 October 2026); without a value its JSON text is read, as the
+ * engine does. A collection or complex instance holds JSON text. A row of
+ * another or no type is unreadable; a redacted value is not stored.
+ */
+export function unreadableIntentValue(row: unknown): boolean {
+  if (!isObject(row)) return true;
+  if (redacted(row.value)) return false;
+  const type = normalizeTargetType(row["@odata.type"]);
+  if (JSON_INTENT_TYPES.has(type)) return !parsedJson(row.valueJson);
+  const value =
+    row.value !== undefined ? row.value : parsedJson(row.valueJson)?.value;
+  if (value === null) return row.valueJson !== "null";
+  return !documentedValue(type, value);
+}
+
+// Presentation values that hold a list (Graph beta reference).
+const MULTI_TEXT = "grouppolicypresentationvaluemultitext";
+const LIST = "grouppolicypresentationvaluelist";
+
+/**
+ * Whether an administrative template presentation value has no value of
+ * its documented type: a boolean, a decimal, a long decimal or text, a list
+ * of text lines, or name and value pairs (the snapshot projection keeps
+ * pairs as one redacted value, compared by fingerprint, and snapshots saved
+ * before it did have none). A redacted value is not stored.
+ */
+export function unreadablePresentationValue(entry: unknown): boolean {
+  if (!isObject(entry)) return true;
+  if (redacted(entry.value) || redacted(entry.values)) return false;
+  const type = normalizeTargetType(entry["@odata.type"]);
+  if (type === MULTI_TEXT)
+    return unreadableEntries(entry.values, (line) => typeof line !== "string");
+  if (type === LIST)
+    return (
+      entry.values !== undefined &&
+      unreadableEntries(entry.values, (pair) => !isObject(pair))
+    );
+  return !documentedValue(type, entry.value);
+}
+
+/**
+ * Whether an administrative template definition value is unreadable: its
+ * state is no boolean, or a presentation value has no value of its
+ * documented type. Presentation values Graph returned as no list, or did
+ * not return, make the policy incomplete instead (snapshot projection).
+ */
+export const unreadableTemplateValue = (row: unknown): boolean =>
+  !isObject(row) ||
+  typeof row.enabled !== "boolean" ||
+  (Array.isArray(row.presentationValues) &&
+    row.presentationValues.some(unreadablePresentationValue));
 
 export type IdentifiedSource =
   | "settingsCatalog"
@@ -261,6 +417,77 @@ export function unidentifiedSources(
   }
   if (list(config.omaSettings).some(unidentifiedOmaRow)) found.add("omaUri");
   if (list(config.definitionValues).some(unidentifiedDefinitionValue))
+    found.add("administrativeTemplate");
+  return found;
+}
+
+// A Settings Catalog instance or one of its child instances with an
+// unreadable own value (unreadableCatalogValue).
+function unreadableInstance(instance: unknown, depth = 0): boolean {
+  if (unreadableCatalogValue(instance)) return true;
+  if (depth > 16) return false;
+  return (childLists(instance as Record<string, any>) ?? []).some((rows) =>
+    rows.some((child) => unreadableInstance(child, depth + 1)),
+  );
+}
+
+/**
+ * The setting sources of a configuration that hold an identified setting
+ * whose value Graph did not return readably: a Settings Catalog instance or
+ * child instance (unreadableCatalogValue), an intent setting
+ * (unreadableIntentValue), a custom OMA-URI row (unreadableOmaValue) or an
+ * administrative template value (unreadableTemplateValue). Such a value is
+ * unknown, so the setting is not compared, never changed, added, removed,
+ * matching or different. Rows without their identifier are
+ * unidentifiedSources.
+ */
+export function unreadableSources(
+  config: Record<string, unknown>,
+  family: unknown = config.__evidenceFamily,
+): Set<IdentifiedSource> {
+  const found = new Set<IdentifiedSource>();
+  for (const rows of [
+    list(config.settings),
+    ...list(config.categories).map((category) =>
+      list(isObject(category) ? category.settings : undefined),
+    ),
+  ]) {
+    const layout = settingsLayout(family, rows);
+    if (
+      layout === "settingsCatalog" &&
+      rows.some(
+        (row) =>
+          !unidentifiedCatalogRow(row) &&
+          unreadableInstance((row as Record<string, unknown>).settingInstance),
+      )
+    )
+      found.add("settingsCatalog");
+    else if (
+      layout === "intent" &&
+      rows.some(
+        (row) => !unidentifiedIntentRow(row) && unreadableIntentValue(row),
+      )
+    )
+      found.add("securityBaseline");
+  }
+  // Reusable policy settings hold one instance.
+  if (
+    isObject(config.settingInstance) &&
+    unreadableInstance(config.settingInstance)
+  )
+    found.add("settingsCatalog");
+  if (
+    list(config.omaSettings).some(
+      (row) => !unidentifiedOmaRow(row) && unreadableOmaValue(row),
+    )
+  )
+    found.add("omaUri");
+  if (
+    list(config.definitionValues).some(
+      (row) =>
+        !unidentifiedDefinitionValue(row) && unreadableTemplateValue(row),
+    )
+  )
     found.add("administrativeTemplate");
   return found;
 }

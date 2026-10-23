@@ -8,7 +8,18 @@ import {
   normalizeTargetType,
   unlistedSources,
   unreadableAssignment,
+  unreadableCatalogValue,
+  unreadableIntentValue,
+  unreadableOmaValue,
+  unreadablePresentationValue,
 } from "./compliance/graph-rows";
+
+/**
+ * The value shown for an identified setting whose value Graph did not
+ * return readably (compliance/graph-rows.ts): it is unknown, never "Not
+ * configured" or the malformed value.
+ */
+export const UNREADABLE_VALUE = "Value could not be read";
 
 function collectDefinitionIdsFromInstance(
   instance: ConfigurationSettingInstance | undefined,
@@ -310,7 +321,9 @@ export function extractSettingValue(
       settingDef?.displayName ||
       instance.settingDefinitionId ||
       "Unknown Setting",
-    value: formatValue(value),
+    value: unreadableCatalogValue(instance)
+      ? UNREADABLE_VALUE
+      : formatValue(value),
     type,
     description: settingDef?.description,
     nestedSettings,
@@ -465,6 +478,23 @@ export function extractAppConfigurationSettings(config: Record<string, any>) {
     .filter((setting) => setting.value !== "Not configured");
 }
 
+// Custom OMA-URI rows as formatValue shows them, with a value Graph did not
+// return readably shown as unreadable. Graph returns the value on every row
+// (compliance/graph-rows.ts), so a collected row without one is unreadable
+// too, unless it is encrypted.
+function formatOmaSettings(rows: unknown[]): string {
+  return formatValue(
+    rows.map((row: any) =>
+      row &&
+      typeof row === "object" &&
+      (unreadableOmaValue(row) ||
+        (!Object.hasOwn(row, "value") && row.isEncrypted !== true))
+        ? { ...row, value: UNREADABLE_VALUE }
+        : row,
+    ),
+  );
+}
+
 // Parse device configuration properties
 export function parseDeviceConfiguration(config: any): Array<{
   category: string;
@@ -498,7 +528,10 @@ export function parseDeviceConfiguration(config: any): Array<{
       config[key] !== null &&
       config[key] !== undefined
     ) {
-      const formattedValue = formatValue(config[key]);
+      const formattedValue =
+        key === "omaSettings" && Array.isArray(config[key])
+          ? formatOmaSettings(config[key])
+          : formatValue(config[key]);
 
       // Skip unconfigured settings
       if (formattedValue === "Not configured") {
@@ -549,6 +582,9 @@ export function parseAdministrativeTemplate(definitionValues: any[]): Array<{
     if (presentationValues.length > 0) {
       const values = presentationValues
         .map((pv: any) => {
+          if (unreadablePresentationValue(pv)) {
+            return `${pv?.presentation?.label || "Value"}: ${UNREADABLE_VALUE}`;
+          }
           if (Array.isArray(pv.values)) {
             return `${pv.presentation?.label || "Values"}: ${formatValue(pv.values)}`;
           }
@@ -687,23 +723,12 @@ export function parseSecurityBaseline(
       .map((setting: any) => {
         let value = "Not configured";
 
-        if (setting.value !== undefined && setting.value !== null) {
+        if (unreadableIntentValue(setting)) {
+          value = UNREADABLE_VALUE;
+        } else if (setting.value !== undefined && setting.value !== null) {
           value = formatValue(setting.value);
         } else if (typeof setting.valueJson === "string") {
-          try {
-            value = formatValue(JSON.parse(setting.valueJson));
-          } catch {
-            value = setting.valueJson;
-          }
-        } else if (
-          setting.stringValue !== undefined &&
-          setting.stringValue !== null
-        ) {
-          value = setting.stringValue;
-        } else if (setting.intValue !== undefined) {
-          value = setting.intValue.toString();
-        } else if (setting.boolValue !== undefined) {
-          value = setting.boolValue ? "Enabled" : "Disabled";
+          value = formatValue(JSON.parse(setting.valueJson));
         }
 
         return {

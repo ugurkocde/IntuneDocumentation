@@ -137,7 +137,11 @@ describe("secret redaction for shareable documentation", () => {
                 children: [
                   {
                     settingDefinitionId: "com.apple.wifi.managed_ssid_str",
-                    simpleSettingValue: { value: "Corp WiFi" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "Corp WiFi",
+                    },
                   },
                   {
                     settingDefinitionId: "com.apple.wifi.managed_password",
@@ -165,7 +169,11 @@ describe("secret redaction for shareable documentation", () => {
           settingInstance: {
             settingDefinitionId:
               "device_vendor_msft_policy_config_devicelock_minimumpasswordlength",
-            simpleSettingValue: { value: 14 },
+            simpleSettingValue: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationIntegerSettingValue",
+              value: 14,
+            },
           },
         },
       ],

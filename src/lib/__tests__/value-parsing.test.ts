@@ -6,6 +6,7 @@ import {
   parseComplianceRules,
   parseSecurityBaseline,
   extractSettingValue,
+  UNREADABLE_VALUE,
 } from "../configuration-parser";
 
 describe("documentation value integrity", () => {
@@ -27,7 +28,11 @@ describe("documentation value integrity", () => {
         id: "x",
         settingInstance: {
           settingDefinitionId: "x",
-          simpleSettingValue: { value: "device_vendor_msft_custom_value" },
+          simpleSettingValue: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+            value: "device_vendor_msft_custom_value",
+          },
         },
       } as any).value,
     ).toBe("device_vendor_msft_custom_value");
@@ -38,7 +43,11 @@ describe("documentation value integrity", () => {
         {
           enabled: true,
           presentationValues: [
-            { values: [{ name: "Site", value: "example.com" }] },
+            {
+              "@odata.type":
+                "#microsoft.graph.groupPolicyPresentationValueList",
+              values: [{ name: "Site", value: "example.com" }],
+            },
           ],
         },
       ])[0]?.value,
@@ -117,12 +126,28 @@ describe("documentation value integrity", () => {
     const settings = parseSecurityBaseline(
       [],
       [
-        { definitionId: "one", valueJson: "false" },
-        { definitionId: "two", valueJson: "0" },
-        { definitionId: "three", valueJson: '"literal"' },
+        {
+          "@odata.type":
+            "#microsoft.graph.deviceManagementBooleanSettingInstance",
+          definitionId: "one",
+          valueJson: "false",
+        },
+        {
+          "@odata.type":
+            "#microsoft.graph.deviceManagementIntegerSettingInstance",
+          definitionId: "two",
+          valueJson: "0",
+        },
+        {
+          "@odata.type":
+            "#microsoft.graph.deviceManagementStringSettingInstance",
+          definitionId: "three",
+          valueJson: '"literal"',
+        },
       ],
     )[0]?.settings;
     expect(settings?.map((s) => s.value)).toEqual(["Disabled", "0", "literal"]);
+    // A row of no documented intent setting type is unreadable.
     expect(
       parseSecurityBaseline([
         {
@@ -130,6 +155,6 @@ describe("documentation value integrity", () => {
           settings: [{ definitionId: "legacy", boolValue: false }],
         },
       ])[0]?.settings[0]?.value,
-    ).toBe("Disabled");
+    ).toBe(UNREADABLE_VALUE);
   });
 });

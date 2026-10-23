@@ -6,6 +6,7 @@ import {
   extractSettingValue,
   parseAdministrativeTemplate,
   parseDocumentableProperties,
+  UNREADABLE_VALUE,
 } from "../configuration-parser";
 import {
   administrativeTemplateFixture,
@@ -98,7 +99,9 @@ describe("configuration parser regressions", () => {
       ],
     });
 
-    expect(result.value).toBe("Not configured");
+    // An identified choice without an option id is unreadable, never
+    // matched against an option.
+    expect(result.value).toBe(UNREADABLE_VALUE);
   });
 
   it("shares expanded definitions with settings where Graph omitted them", () => {
@@ -167,7 +170,11 @@ describe("configuration parser regressions", () => {
                   "@odata.type":
                     "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                   settingDefinitionId: "child",
-                  simpleSettingValue: { value: "configured" },
+                  simpleSettingValue: {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                    value: "configured",
+                  },
                 },
               ],
             },
@@ -256,7 +263,11 @@ describe("configuration parser regressions", () => {
                   "@odata.type":
                     "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                   settingDefinitionId: "collection-child",
-                  simpleSettingValue: { value: "configured" },
+                  simpleSettingValue: {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                    value: "configured",
+                  },
                 },
               ],
             },
@@ -314,7 +325,11 @@ describe("configuration parser regressions", () => {
                     "@odata.type":
                       "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "group-child",
-                    simpleSettingValue: { value: "configured" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "configured",
+                    },
                   },
                 ],
               },
@@ -346,7 +361,11 @@ describe("configuration parser regressions", () => {
                       "@odata.type":
                         "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                       settingDefinitionId: "grandchild",
-                      simpleSettingValue: { value: "configured" },
+                      simpleSettingValue: {
+                        "@odata.type":
+                          "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                        value: "configured",
+                      },
                     },
                   ],
                 },

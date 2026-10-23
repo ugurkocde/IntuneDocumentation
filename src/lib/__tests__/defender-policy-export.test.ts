@@ -118,7 +118,12 @@ it.each(["PDF", "Word"])(
         id: "baseline",
         displayName: "Baseline example",
         settings: [
-          { definitionId: "sample", valueJson: '"baseline-value-example"' },
+          {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementStringSettingInstance",
+            definitionId: "sample",
+            valueJson: '"baseline-value-example"',
+          },
         ],
         categories: [{ id: "category", displayName: "Security" }],
         assignments: [],
@@ -135,7 +140,11 @@ it.each(["PDF", "Word"])(
             enabled: true,
             definition: { displayName: "Sites" },
             presentationValues: [
-              { values: [{ name: "Site", value: "list-value-example" }] },
+              {
+                "@odata.type":
+                  "#microsoft.graph.groupPolicyPresentationValueList",
+                values: [{ name: "Site", value: "list-value-example" }],
+              },
             ],
           },
         ],

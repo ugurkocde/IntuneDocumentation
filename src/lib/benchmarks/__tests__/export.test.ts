@@ -6,7 +6,7 @@ import {
   benchmarkJson,
   exportBenchmark,
 } from "../export";
-import { RESULT_LABELS } from "../display";
+import { REASON_LABELS, RESULT_LABELS } from "../display";
 import {
   PACK_POLICY,
   TENANT_POLICY,
@@ -14,6 +14,7 @@ import {
   richAssessment,
   richPack,
   unassessedAssessment,
+  unassignedAssessment,
 } from "./export-fixtures";
 
 // Local time: file names carry the local date and time.
@@ -84,6 +85,19 @@ describe("benchmark CSV", () => {
     expect(csv.startsWith("﻿")).toBe(true);
   });
 
+  it("tells matching, differing and mixed values on unassigned policies apart", () => {
+    const lines = benchmarkCsv(unassignedAssessment()).split("\r\n");
+    expect(lines).toContain(
+      "synthetic-bench,1.0.0,1,1,Recommendation,1.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_alpha",
+    );
+    expect(lines).toContain(
+      'synthetic-bench,1.0.0,1,1,Recommendation,1.2,review,Needs review,notAssignedDiffers,"Only policies that are not assigned hold this setting, and none of them matches the recommended value.",synthetic_bench_length',
+    );
+    expect(lines).toContain(
+      "synthetic-bench,1.0.0,1,1,Recommendation,1.3,review,Needs review,notAssignedMixed,Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.,synthetic_bench_gamma",
+    );
+  });
+
   it("neutralises cells a spreadsheet would read as a formula", () => {
     const assessment = richAssessment();
     assessment.recommendations[0] = {
@@ -144,6 +158,26 @@ describe("benchmark JSON summary", () => {
       expect(text).not.toContain(name);
     for (const item of richAssessment().recommendations)
       expect(text).not.toContain(item.title);
+  });
+
+  it("holds the reason code and text that fit the unassigned holders", () => {
+    const summary = JSON.parse(benchmarkJson(unassignedAssessment()));
+    expect(
+      summary.results.map(
+        (item: { id: string; reasonCode: string; reason: string }) => [
+          item.id,
+          item.reasonCode,
+          item.reason,
+        ],
+      ),
+    ).toEqual([
+      ["1.1", "notAssigned", REASON_LABELS.notAssigned],
+      ["1.2", "notAssignedDiffers", REASON_LABELS.notAssignedDiffers],
+      ["1.3", "notAssignedMixed", REASON_LABELS.notAssignedMixed],
+    ]);
+    expect(summary.results[1].settings[0]).toMatchObject({
+      reasonCode: "notAssignedDiffers",
+    });
   });
 
   it("keeps a null headline when nothing was assessed", () => {

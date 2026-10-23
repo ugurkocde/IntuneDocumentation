@@ -129,8 +129,8 @@ const ASSIGNMENT_LABELS: Readonly<Record<Observation["assignment"], string>> = {
 
 const METHOD_LINES = [
   "Each setting of the delivered pack is compared with the Settings Catalog policies of the last collection only. Device configurations, administrative templates, security baselines and endpoint security intents are not read. Nothing is written to the tenant.",
-  "Matches needs the recommended value on at least one assigned policy. A matching value only on policies that are not assigned, or whose assignment could not be read, needs review.",
-  "Differs needs a readable tenant value that differs, or a complete collection that shows the setting missing from every policy while no profile of another type exists for its platform. When such profiles exist, a setting missing from the Settings Catalog needs review, because it may be set outside it.",
+  "Matches needs the recommended value on at least one assigned policy. A matching value only on policies that are not assigned, or whose assignment could not be read, needs review. A policy that is not assigned applies to nobody, so another value held only there needs review too.",
+  "Differs needs a readable tenant value that differs on a policy that is assigned or whose assignment could not be read, or a complete collection that shows the setting missing from every policy while no profile of another type exists for its platform. When such profiles exist, a setting missing from the Settings Catalog needs review, because it may be set outside it.",
   "Absent, unreadable or incomplete data is Needs review or Not assessed, never Differs.",
   "A recommendation that names a setting outside the pack is Not assessed.",
 ];

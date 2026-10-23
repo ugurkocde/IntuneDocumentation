@@ -980,19 +980,20 @@ describe("review: a difference on an unassigned policy counts like its match", (
     { target: { "@odata.type": "#microsoft.graph.futureAssignmentTarget" } },
   ];
 
-  it("is Review notAssigned when only unassigned policies differ", () => {
+  // Round 39: the reason tells a differing from a mixed unassigned holding.
+  it("is Review notAssignedDiffers when only unassigned policies differ", () => {
     for (const assignments of [[], [include(GROUP_G), exclude(GROUP_G)]]) {
       const run = assess(
         tenantPolicy({ settings: [choice(ROOT, "0")], assignments }),
       );
-      expect(state(run)).toEqual(["Review", "Review", "notAssigned"]);
+      expect(state(run)).toEqual(["Review", "Review", "notAssignedDiffers"]);
       expect(run.levels[0]!.headline.rate).toBeNull();
     }
     const both = assess(
       tenantPolicy({ settings: [choice(ROOT, "0")], assignments: [] }),
       tenantPolicy({ settings: [choice(ROOT, "1")], assignments: [] }),
     );
-    expect(state(both)).toEqual(["Review", "Review", "notAssigned"]);
+    expect(state(both)).toEqual(["Review", "Review", "notAssignedMixed"]);
   });
 
   it("passes an assigned match next to an unassigned difference", () => {

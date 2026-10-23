@@ -25,6 +25,8 @@ import {
   tenantPolicy,
 } from "./fixtures";
 
+import { unassignedAssessment } from "./export-fixtures";
+
 const ALPHA = "synthetic_bench_alpha";
 const BETA = "synthetic_bench_beta";
 const LENGTH = "synthetic_bench_length";
@@ -804,11 +806,130 @@ describe("assignment of matching policies", () => {
 
   // An unassigned policy applies to nobody: its difference counts no more
   // than its match does (owner decision D1, round 38).
-  it("makes a readable difference on an unassigned policy only Review notAssigned", () => {
+  it("makes a readable difference on an unassigned policy only Review notAssignedDiffers", () => {
     const run = assess([
       tenantPolicy({ settings: [choice(BETA, "false")], assignments: [] }),
     ]);
-    expect(statusOf(run, BETA)).toEqual(["Review", "Review", "notAssigned"]);
+    expect(statusOf(run, BETA)).toEqual([
+      "Review",
+      "Review",
+      "notAssignedDiffers",
+    ]);
+  });
+
+  // Round 39: the reason says what the unassigned holders hold, so the
+  // advice fits. Only a match on every holder is notAssigned.
+  it("tells a matching, a differing and a mixed unassigned holding apart", () => {
+    const run = unassignedAssessment();
+    expect(
+      run.settings.map((item) => [item.settingId, item.status, item.reason]),
+    ).toEqual([
+      ["synthetic_bench_alpha", "Present", "notAssigned"],
+      ["synthetic_bench_length", "Review", "notAssignedDiffers"],
+      ["synthetic_bench_gamma", "Review", "notAssignedMixed"],
+    ]);
+    expect(
+      run.recommendations.map((item) => [
+        item.id,
+        item.result,
+        item.reason,
+        item.settings[0]!.reason,
+      ]),
+    ).toEqual([
+      ["1.1", "Review", "notAssigned", "notAssigned"],
+      ["1.2", "Review", "notAssignedDiffers", "notAssignedDiffers"],
+      ["1.3", "Review", "notAssignedMixed", "notAssignedMixed"],
+    ]);
+    expect(run.levels[0]!.headline.counts).toMatchObject({ pass: 0, fail: 0 });
+  });
+
+  it("is Review collectionIncomplete, not a claim about unassigned holders, on an incomplete collection", () => {
+    const run = unassignedAssessment({ complete: false });
+    expect(run.collection.complete).toBe(false);
+    expect(run.settings.map((item) => [item.settingId, item.reason])).toEqual([
+      ["synthetic_bench_alpha", "collectionIncomplete"],
+      ["synthetic_bench_length", "collectionIncomplete"],
+      ["synthetic_bench_gamma", "collectionIncomplete"],
+    ]);
+  });
+
+  // Round 39 review: a value that cannot be read is unknown, never a
+  // difference to change. Secret and wrong-type values are real tenant data.
+  const unreadableHolders = () => [
+    simpleSecret(LENGTH),
+    simpleInteger(LENGTH, "nine"),
+  ];
+
+  it("is Review unreadableValue, not notAssignedDiffers, when an unassigned holder cannot be read", () => {
+    for (const unreadable of unreadableHolders()) {
+      const run = assess([
+        tenantPolicy({ settings: [simpleInteger(LENGTH, 9)], assignments: [] }),
+        tenantPolicy({ settings: [unreadable], assignments: [] }),
+      ]);
+      expect(statusOf(run, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "unreadableValue",
+      ]);
+    }
+  });
+
+  it("passes an assigned match next to an unassigned value that cannot be read", () => {
+    for (const unreadable of unreadableHolders()) {
+      const run = assess([
+        tenantPolicy({ settings: [simpleInteger(LENGTH, 14)] }),
+        tenantPolicy({ settings: [unreadable], assignments: [] }),
+      ]);
+      expect(statusOf(run, LENGTH)).toEqual(["Present", "Pass", undefined]);
+      expect(run.levels[0]!.headline.counts).toMatchObject({ pass: 1 });
+    }
+  });
+
+  it("keeps an unreadable value on an assigned policy Review next to an assigned match", () => {
+    for (const unreadable of unreadableHolders()) {
+      const run = assess([
+        tenantPolicy({ settings: [simpleInteger(LENGTH, 14)] }),
+        tenantPolicy({ settings: [unreadable] }),
+      ]);
+      expect(statusOf(run, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "unreadableValue",
+      ]);
+    }
+  });
+
+  it("never reads an unassigned value that cannot be read as a match", () => {
+    for (const unreadable of unreadableHolders()) {
+      const alone = assess([
+        tenantPolicy({ settings: [unreadable], assignments: [] }),
+      ]);
+      expect(statusOf(alone, LENGTH)).toEqual([
+        "Review",
+        "Review",
+        "unreadableValue",
+      ]);
+      const withMatch = assess([
+        tenantPolicy({
+          settings: [simpleInteger(LENGTH, 14)],
+          assignments: [],
+        }),
+        tenantPolicy({ settings: [unreadable], assignments: [] }),
+      ]);
+      expect(statusOf(withMatch, LENGTH)).toEqual([
+        "Present",
+        "Review",
+        "notAssigned",
+      ]);
+    }
+  });
+
+  it("keeps a difference on an assigned policy a Fail next to unassigned holders", () => {
+    const run = assess([
+      tenantPolicy({ settings: [simpleInteger(LENGTH, 9)] }),
+      tenantPolicy({ settings: [simpleInteger(LENGTH, 14)], assignments: [] }),
+    ]);
+    expect(statusOf(run, LENGTH)).toEqual(["Different", "Fail", undefined]);
   });
 });
 

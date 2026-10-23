@@ -25,6 +25,7 @@
 // - Assignments and Entra identity targets are already compared as sets
 //   (diff.ts, identity.ts).
 import {
+  canonicalEdmValue,
   canonicalFlags,
   FLAGS_ENUMS,
   normalizeTargetType,
@@ -49,13 +50,20 @@ const flags = (type: string, value: unknown) =>
   canonicalFlags(type, value) ?? value;
 
 // Primitives sort by type and text, so a list of mixed entries, which reads
-// as unreadable anyway, still sorts the same way on both sides.
-const sorted = (list: unknown[]) =>
-  [...list].sort((a, b) => {
-    const x = `${typeof a}:${JSON.stringify(a)}`;
-    const y = `${typeof b}:${JSON.stringify(b)}`;
+// as unreadable anyway, still sorts the same way on both sides. The text is
+// the canonical form of the element type (typed-values.ts), so entries
+// Graph wrote in another form of the same value sort alike too.
+const sorted = (list: unknown[], element: string) => {
+  const key = (entry: unknown) => {
+    const value = canonicalEdmValue(element, entry);
+    return `${typeof value}:${JSON.stringify(value)}`;
+  };
+  return [...list].sort((a, b) => {
+    const x = key(a);
+    const y = key(b);
     return x < y ? -1 : x > y ? 1 : 0;
   });
+};
 
 /**
  * The item with every collection whose order Graph gives no meaning sorted
@@ -90,6 +98,7 @@ export function inComparisonOrder(family: string, data: Json): Json {
             FLAGS_ENUMS.has(element!)
               ? value.map((entry) => flags(element!, entry))
               : value,
+            element!,
           )
         : value
       : flags(type, value);

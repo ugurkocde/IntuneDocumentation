@@ -23,7 +23,11 @@ import {
   FIX_PACK_DESCRIPTION_MAX,
   FIX_PACK_WARNING,
 } from "../compliance/fix-pack";
-import type { BenchmarkAssessment, SettingFinding } from "./assessment";
+import type {
+  BenchmarkAssessment,
+  Observation,
+  SettingFinding,
+} from "./assessment";
 import { READINESS_DISCLAIMER, REASON_LABELS } from "./display";
 import type { BenchmarkPack } from "./pack";
 import {
@@ -110,13 +114,31 @@ function blocker(
   return null;
 }
 
-/** The README line for a finding that is neither a draft nor in place. */
+/**
+ * The README line for a finding that is neither a draft nor in place. Only
+ * unassigned policies hold a setting with a notAssigned reason: a policy that
+ * matches is the one to assign, a policy that differs needs its value changed
+ * before it is assigned, and a policy whose value cannot be read is named to
+ * check, never to change (notAssignedDiffers has none: such a value makes
+ * the reason unreadableValue).
+ */
 function gapReason(finding: SettingFinding): string {
-  const names = sorted(
-    finding.observations.map((observation) => observation.policyName),
-  );
+  const names = (comparison: Observation["comparison"]) =>
+    sorted(
+      finding.observations
+        .filter((observation) => observation.comparison === comparison)
+        .map((observation) => observation.policyName),
+    ).join(", ");
+  const unreadable = names("unknown");
+  const check = unreadable
+    ? ` The value in policy ${unreadable} could not be read; check it before assigning that policy.`
+    : "";
   if (finding.reason === "notAssigned")
-    return `${REASON_LABELS.notAssigned} Assign policy ${names.join(", ")} instead of importing a second one.`;
+    return `${REASON_LABELS.notAssigned} Assign policy ${names("match")} instead of importing a second one.`;
+  if (finding.reason === "notAssignedMixed")
+    return `${REASON_LABELS.notAssignedMixed} Assign policy ${names("match")} instead of importing a second one, and change the value in policy ${names("differ")} before assigning it.${check}`;
+  if (finding.reason === "notAssignedDiffers")
+    return `${REASON_LABELS.notAssignedDiffers} Change the value in policy ${names("differ")} before assigning it, or set the recommended value in a policy that is assigned. No draft is generated, because a second policy with this setting conflicts once both are assigned.`;
   if (finding.reason)
     return `${REASON_LABELS[finding.reason]} No draft is generated for a setting that needs review.`;
   return "No draft is generated for a setting that needs review.";

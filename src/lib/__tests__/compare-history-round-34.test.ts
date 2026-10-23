@@ -626,8 +626,12 @@ describe("finding 5: Edm syntax as the OData CSDL defines it", () => {
       defenderScanType: "quick",
       defenderScheduledScanTime: time,
     });
+    // Round 39: "02:00" is "02:00:00.0000000", one TimeOfDay.
     expect(
       changes(history(DEVICE, general("02:00:00.0000000"), general("02:00"))),
+    ).toEqual([]);
+    expect(
+      changes(history(DEVICE, general("02:00:00.0000000"), general("02:30"))),
     ).toEqual([["defenderScheduledScanTime", "changed"]]);
     expectUnknown(DEVICE, "defenderScheduledScanTime", [
       general("02:00:00.0000000"),

@@ -12,7 +12,6 @@ import {
   unreadableProperties,
 } from "../compliance/graph-rows";
 import { sha256 } from "../compliance/manifest";
-import { flattenItemSettings } from "../settings-flatten";
 import {
   identityCollected,
   identityRows,
@@ -20,6 +19,7 @@ import {
   type IdentityPolicyName,
 } from "./identity";
 import { inComparisonOrder } from "./order";
+import { comparedRows } from "./typed-values";
 import {
   omittedFields,
   snapshotItemLabel,
@@ -249,7 +249,9 @@ function itemRows(
   const omitted = omittedFields(section.familyKey, data);
   const filled = omitted.length ? structuredClone(data) : data;
   for (const path of omitted) setPath(filled, path, OMITTED);
-  const rows = flattenItemSettings(sectionKey, filled).map((row) => {
+  // A typed value is compared by its canonical form (typed-values.ts), shown
+  // as Graph returned it.
+  const rows = comparedRows(sectionKey, section.familyKey, filled).map((row) => {
     const id = row.definitionId ?? row.name;
     const setting = catalog ? id : [...row.path, id].join(" / ");
     const redacted =
@@ -905,9 +907,13 @@ function statusOf(
   // entries hold separators against a reference file saved before such
   // lists had one (settings-flatten.ts rawToken), is the same value only if
   // their shown values tell it: equal shown values may hide two different
-  // lists, so the setting is not comparable.
+  // lists, so the setting is not comparable. A typed value has a token only
+  // when Graph wrote it in another form than the canonical one
+  // (typed-values.ts), which the other side's value then is: the same
+  // compared text is the same value.
   const tokened = (list: readonly ReferenceSetting[]) => list.some((setting) => setting.token !== undefined);
-  if (tokened(expected) !== tokened(actual)) {
+  const tokens = (list: readonly ReferenceSetting[]) => [...new Set(list.map(token))].sort().join(SEPARATOR);
+  if (tokened(expected) !== tokened(actual) && tokens(expected) !== tokens(actual)) {
     const shown = (list: readonly ReferenceSetting[]) =>
       [...new Set(list.map((setting) => setting.sha256 ?? setting.value))].sort().join(SEPARATOR);
     return { status: shown(expected) === shown(actual) ? "notComparable" : "different" };

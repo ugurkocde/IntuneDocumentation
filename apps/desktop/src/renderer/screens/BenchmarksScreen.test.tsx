@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BenchmarkAssessment } from "../../../../../src/lib/benchmarks/assessment";
 import { assessBenchmark } from "../../../../../src/lib/benchmarks/assessment";
 import * as engine from "../../../../../src/lib/benchmarks/__tests__/fixtures";
+import { unassignedAssessment } from "../../../../../src/lib/benchmarks/__tests__/export-fixtures";
 import { SYNTHETIC_CATALOG, syntheticAssessment } from "../__fixtures__/benchmarks";
 
 const mocks = vi.hoisted(() => ({
@@ -367,6 +368,20 @@ describe("BenchmarksScreen review step", () => {
     await click(row("Synthetic nested difference"));
     detail = within(list()).getByRole("list", { name: "Policies holding this setting" });
     expect(within(detail).getByText("Differs")).toBeTruthy();
+  });
+
+  // Round 39: another value on an unassigned policy never reads as a matching value.
+  it("names matching, differing and mixed values on unassigned policies with their own reason", async () => {
+    await renderScreen();
+    await compare({ ...unassignedAssessment(), version: "2.0.0" });
+    const reasonOf = (title: string) => within(row(title)).getByText(/policies that are not assigned/).textContent;
+    expect(reasonOf("Synthetic alpha is on")).toBe("The matching value is only on policies that are not assigned.");
+    expect(reasonOf("Synthetic length is 14")).toBe(
+      "Only policies that are not assigned hold this setting, and none of them matches the recommended value.",
+    );
+    expect(reasonOf("Synthetic gamma is on")).toBe(
+      "Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.",
+    );
   });
 
   it("warns about an incomplete collection and offers no drafts", async () => {

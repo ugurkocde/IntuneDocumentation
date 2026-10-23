@@ -12,8 +12,11 @@ import {
   PACK_POLICY,
   TENANT_POLICY,
   UNASSIGNED_POLICY,
+  UNASSIGNED_MATCH,
+  UNASSIGNED_OTHER,
   richAssessment,
   unassessedAssessment,
+  unassignedAssessment,
 } from "./export-fixtures";
 import { assessBenchmark } from "../assessment";
 import {
@@ -191,6 +194,48 @@ describe("benchmark readiness PDF", () => {
 
   it("renders the same bytes for the same input and render date", () => {
     expect(Buffer.from(render()).equals(Buffer.from(render()))).toBe(true);
+  });
+});
+
+// Round 39: a value other than the recommended one on an unassigned policy
+// never reads as a matching value.
+describe("readiness PDF: values only on unassigned policies", () => {
+  const pages = pageTexts(render(unassignedAssessment()));
+  const all = pages.join(" ");
+  const count = (text: string) => all.split(text).length - 1;
+
+  it("names a matching, a differing and a mixed holding with their own reason", () => {
+    const detail = pages.find((text) =>
+      text.includes("Differs and Needs review"),
+    )!;
+    expect(detail).toContain(
+      "Matches. The matching value is only on policies that are not assigned.",
+    );
+    expect(detail).toContain(
+      "Needs review. Only policies that are not assigned hold this setting, and none of them matches the recommended value.",
+    );
+    expect(detail).toContain(
+      "Needs review. Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.",
+    );
+    expect(detail).toContain(
+      `Policy ${UNASSIGNED_OTHER}: Not assigned, Differs, value 9.`,
+    );
+    expect(detail).toContain(
+      `Policy ${UNASSIGNED_MATCH}: Not assigned, Matches`,
+    );
+    // Once in the summary reasons, the table and the detail: only for 1.1.
+    expect(
+      count("The matching value is only on policies that are not assigned."),
+    ).toBe(3);
+  });
+
+  it("explains that another value only on unassigned policies needs review", () => {
+    expect(all).toContain(
+      "A policy that is not assigned applies to nobody, so another value held only there needs review too.",
+    );
+    expect(all).toContain(
+      "Differs needs a readable tenant value that differs on a policy that is assigned or whose assignment could not be read",
+    );
   });
 });
 

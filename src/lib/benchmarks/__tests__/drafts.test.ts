@@ -17,9 +17,14 @@ import {
   PACK_POLICY,
   TEMPLATED,
   TENANT_POLICY,
+  UNASSIGNED_MATCH,
+  UNASSIGNED_OTHER,
   UNASSIGNED_POLICY,
+  UNASSIGNED_UNREADABLE,
   richAssessment,
   richPack,
+  unassignedAssessment,
+  unassignedPack,
 } from "./export-fixtures";
 import { deviceConfiguration } from "./fixtures";
 
@@ -108,6 +113,35 @@ describe("benchmark draft policies", () => {
     );
     expect(reasons[TEMPLATED]).toMatch(/created from a template/);
     expect(reasons[GAMMA]).toContain(`Assign policy ${UNASSIGNED_POLICY}`);
+  });
+
+  // Round 39: a policy that holds another value is never the one to assign.
+  it("advises assigning a matching unassigned policy and changing a differing one first", () => {
+    const assessment = unassignedAssessment();
+    const result = generateBenchmarkDrafts(assessment, unassignedPack());
+    expect(result.drafts).toEqual([]);
+    expect(result.changes).toEqual([]);
+    const reasons = Object.fromEntries(
+      result.notGenerated.map((gap) => [gap.settingId, gap.reason]),
+    );
+    expect(reasons[ALPHA]).toBe(
+      `The matching value is only on policies that are not assigned. Assign policy ${UNASSIGNED_MATCH} instead of importing a second one.`,
+    );
+    expect(reasons[LENGTH]).toBe(
+      `Only policies that are not assigned hold this setting, and none of them matches the recommended value. Change the value in policy ${UNASSIGNED_OTHER} before assigning it, or set the recommended value in a policy that is assigned. No draft is generated, because a second policy with this setting conflicts once both are assigned.`,
+    );
+    expect(reasons[GAMMA]).toBe(
+      `Only policies that are not assigned hold this setting: some match the recommended value and some hold another value. Assign policy ${UNASSIGNED_MATCH} instead of importing a second one, and change the value in policy ${UNASSIGNED_OTHER} before assigning it. The value in policy ${UNASSIGNED_UNREADABLE} could not be read; check it before assigning that policy.`,
+    );
+    for (const id of [LENGTH, GAMMA])
+      expect(reasons[id]).not.toContain(
+        "The matching value is only on policies that are not assigned",
+      );
+    const readme = benchmarkDraftsReadme(result, assessment);
+    expect(readme).toContain(
+      `${LENGTH}: ${reasons[LENGTH]} Recommendations 1.2.`,
+    );
+    expect(readme).not.toContain(`Assign policy ${UNASSIGNED_OTHER}`);
   });
 
   it("drafts nothing for a setting that may be set outside the Settings Catalog (D2)", () => {

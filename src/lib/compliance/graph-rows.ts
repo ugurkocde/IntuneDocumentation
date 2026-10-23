@@ -807,6 +807,133 @@ export const EDM_TYPES: Readonly<Record<string, (value: unknown) => boolean>> =
     Binary: isBinary,
   };
 
+// One text per value of the Edm primitives whose JSON text is not unique,
+// so equal values compare equal: OData JSON (v4.01 section 7.1) writes
+// TimeOfDay, DateTimeOffset, Duration, Guid and Binary as strings of the
+// OData ABNF rules, which allow several texts of one value, and Single and
+// Double as JSON numbers. The canonical text is the one Graph returns where
+// it has one, so a value Graph returned keeps its text:
+//
+// - TimeOfDay (CSDL: a clock time): seconds are added and fractional
+//   seconds written with at least seven digits, "02:00" and "02:00:00" are
+//   "02:00:00.0000000" as Graph returns it (the forms above); digits past
+//   the seventh are kept without trailing zeros.
+// - DateTimeOffset (CSDL: a date and time with a time-zone offset): seconds
+//   are added, trailing fractional zeros dropped and the zero offset
+//   "+00:00" or "-00:00" written Z, as Graph returns it
+//   ("2024-08-01T12:44:11.08861Z", lab tenant, 23 October 2026). Another
+//   offset is part of the value, so the same instant with another offset
+//   stays another value.
+// - Duration (CSDL: a signed duration in days, hours, minutes and
+//   seconds): a day is 24 hours, so the value is its number of seconds and
+//   "PT60M" is "PT1H" and "PT24H" is "P1D". Written normalized, days, hours
+//   below 24, minutes and seconds below 60, as Graph returns it ("PT0S",
+//   lab tenant deviceShellScripts, 23 October 2026).
+// - Guid: hexadecimal digits in either case are one value (ABNF HEXDIG);
+//   lower case, as Graph returns it.
+// - Binary: base64url (ABNF binaryValue) or base64, padded or not, of the
+//   same bytes; written as padded base64, the text Graph returns.
+// - Single (IEEE 754 binary32): two numbers that round to the same binary32
+//   value are one value; Single and Double read -0 as 0 (eq).
+// - Boolean, Int32, Int64, Date and String have one JSON text per value
+//   (true and false, an integer number, the ABNF dateValue, the text
+//   itself), and an enum member is its name, so they are kept.
+// A value that is no readable value of its type is kept as it is.
+const pad2 = (part: string | undefined) => part ?? "00";
+const trimZeros = (digits: string | undefined) =>
+  (digits ?? "").replace(/0+$/, "");
+
+const CANONICAL_EDM: Readonly<Record<string, (value: any) => unknown>> = {
+  TimeOfDay: (value: string) => {
+    const [, hour, minute, second, fraction] =
+      /^(\d\d):(\d\d)(?::(\d\d)(?:\.(\d+))?)?$/.exec(value)!;
+    const digits = trimZeros(fraction);
+    return `${hour}:${minute}:${pad2(second)}.${digits.padEnd(7, "0")}`;
+  },
+  DateTimeOffset: (value: string) => {
+    const [, date, hour, minute, second, fraction, offset] =
+      /^(.{10})T(\d\d):(\d\d)(?::(\d\d)(?:\.(\d+))?)?(Z|[+-]\d\d:\d\d)$/.exec(
+        value,
+      )!;
+    const digits = trimZeros(fraction);
+    const zone = offset === "+00:00" || offset === "-00:00" ? "Z" : offset;
+    return `${date}T${hour}:${minute}:${pad2(second)}${digits ? `.${digits}` : ""}${zone}`;
+  },
+  Duration: (value: string) => {
+    const [, sign, days, hours, minutes, seconds, fraction] =
+      /^([+-]?)P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.(\d+))?S)?)?$/.exec(
+        value,
+      )!;
+    const big = (part: string | undefined) => BigInt(part ?? "0");
+    let total =
+      big(days) * 86400n +
+      big(hours) * 3600n +
+      big(minutes) * 60n +
+      big(seconds);
+    const digits = trimZeros(fraction);
+    if (!total && !digits) return "PT0S";
+    const day = total / 86400n;
+    total %= 86400n;
+    const hour = total / 3600n;
+    total %= 3600n;
+    const minute = total / 60n;
+    const second = total % 60n;
+    const time = [
+      hour ? `${hour}H` : "",
+      minute ? `${minute}M` : "",
+      second || digits ? `${second}${digits ? `.${digits}` : ""}S` : "",
+    ].join("");
+    return `${sign === "-" ? "-" : ""}P${day ? `${day}D` : ""}${time ? `T${time}` : ""}`;
+  },
+  Guid: (value: string) => value.toLowerCase(),
+  Binary: (value: string) => {
+    const body = value.replace(/=+$/, "").replace(/-/g, "+").replace(/_/g, "/");
+    return body.padEnd(Math.ceil(body.length / 4) * 4, "=");
+  },
+  Single: (value: number | string) =>
+    typeof value === "number" ? Math.fround(value) || 0 : value,
+  Double: (value: number | string) =>
+    typeof value === "number" ? value || 0 : value,
+};
+
+/**
+ * The canonical form of a value of a documented Graph type (see
+ * CANONICAL_EDM), element by element for a collection, for comparing only:
+ * equal values of the type have one form. A value of another type, or one
+ * that is no readable value of its type, is returned as it is.
+ */
+export function canonicalEdmValue(type: string, value: unknown): unknown {
+  const collection = /^Collection\((.+)\)$/.exec(type);
+  if (collection)
+    return Array.isArray(value)
+      ? value.map((entry) => canonicalEdmValue(collection[1]!, entry))
+      : value;
+  return Object.hasOwn(CANONICAL_EDM, type) && EDM_TYPES[type]!(value)
+    ? CANONICAL_EDM[type]!(value)
+    : value;
+}
+
+// The Edm type of the value of the typed Graph records VALUE_TYPES reads
+// whose values have more than one JSON form: custom OMA-URI floating point
+// (Single), date and time (DateTimeOffset) and XML (Binary) values. The
+// other records hold integers, booleans and text, whose form is unique.
+const VALUE_EDM_TYPES: Readonly<Record<string, string>> = {
+  omasettingfloatingpoint: "Single",
+  omasettingdatetime: "DateTimeOffset",
+  omasettingstringxml: "Binary",
+};
+
+/**
+ * The canonical form (canonicalEdmValue) of the value of a typed Graph
+ * record, named by its @odata.type, for comparing only.
+ */
+export function canonicalRecordValue(type: unknown, value: unknown): unknown {
+  const name = normalizeTargetType(type);
+  return Object.hasOwn(VALUE_EDM_TYPES, name) && documentedValue(type, value)
+    ? canonicalEdmValue(VALUE_EDM_TYPES[name]!, value)
+    : value;
+}
+
 // Enum types whose members documented-values.ts lists, by Graph enum type.
 // Every enum type graph-property-types.ts uses is listed: a type without
 // members reads no value (graph-property-types.test.ts).

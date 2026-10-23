@@ -852,6 +852,13 @@ assessments, so the ruleset version stays the same.
   and multi-text lines keep their order (`snapshots/order.ts`). History
   compares fingerprints of values that are not stored as a multiset for
   each setting, so inserting an entry does not renumber the others.
+- **Typed values.** A value whose Edm type allows several texts of one value
+  (TimeOfDay, DateTimeOffset, Duration, Guid, Binary, Single, Double) is
+  compared in its canonical form, the one Graph returns, and shown as Graph
+  returned it (`canonicalEdmValue` in `graph-rows.ts`,
+  `snapshots/typed-values.ts`). Only properties the type table names and
+  custom OMA-URI values by their record type are canonicalized; Settings
+  Catalog, intent and template values are integers, booleans and text.
 - **Identity.** History pairs items by an id of their own: the `id` Graph
   returned on the resource (`getStableItemId`), never a `templateId`,
   `policyId` or name; only singleton sections are named by position. An

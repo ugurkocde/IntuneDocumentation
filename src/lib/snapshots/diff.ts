@@ -1,6 +1,6 @@
 // Pure comparison of two stored snapshots of one tenant: configuration
 // changes per policy and control status changes from the stored assessments.
-import { flattenItemSettings, METADATA_KEYS } from "../settings-flatten";
+import { METADATA_KEYS } from "../settings-flatten";
 import type { CapabilityStatus, ControlStatus } from "../compliance/types";
 import { assignmentsIncomplete } from "../compliance/assignments";
 import {
@@ -21,6 +21,7 @@ import {
   type IdentityRow,
 } from "./identity";
 import { inComparisonOrder } from "./order";
+import { comparedRows } from "./typed-values";
 import {
   FINGERPRINT_LABELS,
   MAX_CHECK_VALUE,
@@ -142,15 +143,18 @@ interface ComparedRow {
 // Rows are told apart by their ids where they have them (identity), so a
 // name or category Graph did not return in one snapshot never reads as a
 // removed and an added setting, and compared by the value Graph returned
-// (token), so an option name that changed or was not returned is no change.
+// (token), so an option name that changed or was not returned is no change,
+// and a typed value by its canonical form (typed-values.ts), so another text
+// of the same value is no change either.
 function settingRows(
   section: Pick<SnapshotSection, "key" | "familyKey">,
   item: SnapshotItem,
 ): Map<string, ComparedRow> {
   const rows = new Map<string, ComparedRow>();
   const seen = new Map<string, number>();
-  for (const row of flattenItemSettings(
+  for (const row of comparedRows(
     section.key,
+    section.familyKey,
     inComparisonOrder(section.familyKey, item.data),
   )) {
     const base = [

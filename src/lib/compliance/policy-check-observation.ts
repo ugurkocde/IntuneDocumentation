@@ -1,7 +1,7 @@
 import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
 import { isDocumented } from "./documented-values";
-import { isInt32 } from "./graph-rows";
+import { canonicalEdmValue, isInt32 } from "./graph-rows";
 import {
   AUTOMATIC_UPDATE_MODES,
   conditionalAccessOutcome,
@@ -139,7 +139,8 @@ export function policyCheckObservation(
         config.defenderSystemScanSchedule ??
         config.defenderScheduledScanDay ??
         (dayKeys.some((key) => key in config) ? null : undefined),
-      time: config.defenderScheduledScanTime,
+      // In its canonical form, as the enforced evidence shows it.
+      time: canonicalEdmValue("TimeOfDay", config.defenderScheduledScanTime),
     };
     // Only fields Graph returned as null mean nothing is configured; fields
     // it omitted leave the policy unreadable. Each type returns one of the

@@ -208,3 +208,77 @@ export function unassessedAssessment(): BenchmarkAssessment {
     { now: NOW },
   );
 }
+
+export const UNASSIGNED_MATCH = "Synthetic unassigned match";
+export const UNASSIGNED_OTHER = "Synthetic unassigned other value";
+export const UNASSIGNED_UNREADABLE = "Synthetic unassigned unreadable";
+
+export function unassignedPack(): BenchmarkPack {
+  return pack(
+    [
+      {
+        name: PACK_POLICY,
+        settings: [
+          choice(ALPHA, "1"),
+          simpleInteger(LENGTH, 14),
+          choice(GAMMA, "1"),
+        ],
+      },
+    ],
+    [
+      {
+        id: "1.1",
+        title: "Synthetic alpha is on",
+        level: 1,
+        settings: [ALPHA],
+      },
+      {
+        id: "1.2",
+        title: "Synthetic length is 14",
+        level: 1,
+        settings: [LENGTH],
+      },
+      {
+        id: "1.3",
+        title: "Synthetic gamma is on",
+        level: 1,
+        settings: [GAMMA],
+      },
+    ],
+  );
+}
+
+/**
+ * Only unassigned policies hold the settings of unassignedPack: ALPHA with
+ * the recommended value (notAssigned), LENGTH with another value
+ * (notAssignedDiffers), GAMMA with the recommended value, another value and
+ * a secret that cannot be read (notAssignedMixed).
+ */
+export function unassignedAssessment(
+  extra: { complete?: boolean } = {},
+): BenchmarkAssessment {
+  return assessBenchmark(
+    collection({
+      policies: [
+        tenantPolicy({
+          name: UNASSIGNED_MATCH,
+          settings: [choice(ALPHA, "1"), choice(GAMMA, "1")],
+          assignments: [],
+        }),
+        tenantPolicy({
+          name: UNASSIGNED_OTHER,
+          settings: [simpleInteger(LENGTH, 9), choice(GAMMA, "2")],
+          assignments: [],
+        }),
+        tenantPolicy({
+          name: UNASSIGNED_UNREADABLE,
+          settings: [simpleSecret(GAMMA)],
+          assignments: [],
+        }),
+      ],
+      ...(extra.complete === false ? { collectedAt: null } : {}),
+    }),
+    unassignedPack(),
+    { now: NOW },
+  );
+}

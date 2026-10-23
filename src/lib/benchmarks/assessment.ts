@@ -13,20 +13,26 @@
  *   that is assigned or of unknown assignment. A policy that is not
  *   assigned (an Intune group both included and excluded included) applies
  *   to nobody, so its difference counts no more than its match: without
- *   another such holder the setting is Review (notAssigned).
+ *   another such holder the setting is Review, notAssignedDiffers when no
+ *   holder matches and notAssignedMixed when one does, or
+ *   collectionIncomplete when an unread policy may hold it too.
  * - A nested setting applies only below the options its parents select, so
  *   it is judged with them (policies.ts compareDefinition): a readable
  *   tenant parent with another option is Different, never Pass or Missing,
  *   and a parent unreadable on either side, without such a difference above
  *   it, makes it Review.
- * - Present only when every observation holding the setting is readable and
- *   matches, and the collection is complete (an unread policy may hold
- *   another value).
+ * - Present only when a readable match exists, every observation holding
+ *   the setting on a policy that is assigned or of unknown assignment is
+ *   readable and matches, and the collection is complete (an unread policy
+ *   may hold another value). An unassigned policy whose value cannot be read
+ *   counts for nothing, like its readable difference; when only unassigned
+ *   policies hold the setting and none matches, an unreadable value there
+ *   makes it Review (unreadableValue), not notAssignedDiffers.
  * - Pass needs Present on at least one assigned policy (owner decision
  *   2026-10-22); unassigned policies holding the same value do not change
- *   that. Review (notAssigned) only when every matching policy is unassigned,
- *   Review (assignmentUnknown) when none is assigned and an assignment could
- *   not be read.
+ *   that. Review (notAssigned) only when every holder is unassigned and
+ *   matches, Review (assignmentUnknown) when none is assigned and an
+ *   assignment could not be read.
  * - A pack value this app cannot read is never compared: Review
  *   (packValueUnreadable), never Missing, and never Different on its own
  *   account. A readable difference that decides whatever that value is
@@ -87,6 +93,8 @@ export type ReasonCode =
   | "unreadableValue"
   | "profileChoice"
   | "notAssigned"
+  | "notAssignedDiffers"
+  | "notAssignedMixed"
   | "assignmentUnknown"
   | "settingOutsidePack"
   | "otherProfiles"
@@ -228,7 +236,10 @@ function judge(
   // difference in another branch of the same root still does. A policy that
   // is not assigned applies to nobody, so its difference counts no more
   // than its match does (owner decision D1): without another holder that
-  // is assigned or of unknown assignment the result is Review (notAssigned).
+  // is assigned or of unknown assignment the result is Review. The reason
+  // says what the unassigned holders hold, so the advice fits: change a
+  // differing value before assigning, or assign a matching policy. Only a
+  // complete collection shows that no other policy holds it.
   const differs = ({ state }: (typeof held)[number]) =>
     state.comparison === "differ";
   const notAssigned = ({ observation }: (typeof held)[number]) =>
@@ -236,17 +247,33 @@ function judge(
   if (held.some((item) => differs(item) && !notAssigned(item)))
     return { status: "Different", holders };
   const holding = held.filter((item) => !differs(item));
+  const maybe = states.some(({ state }) => state.holds === "maybe");
   const maybeApplies = states.some(
     (item) => item.state.holds === "maybe" && !notAssigned(item),
   );
+  const matched = holding.some(({ state }) => state.comparison === "match");
+  // An unassigned policy whose value cannot be read, or that may hold the
+  // setting below an unreadable parent: what it holds is unknown, so it is
+  // not named a difference to change.
+  const unknown =
+    maybe || holding.some(({ state }) => state.comparison === "unknown");
   if (
     holding.length < held.length &&
     holding.every(notAssigned) &&
     !maybeApplies
   )
-    return { status: "Review", reason: "notAssigned", holders };
+    return {
+      status: "Review",
+      reason: !proof.complete
+        ? "collectionIncomplete"
+        : matched
+          ? "notAssignedMixed"
+          : unknown
+            ? "unreadableValue"
+            : "notAssignedDiffers",
+      holders,
+    };
   const readable = readableRecommendation(recommended, definitionId);
-  const maybe = states.some(({ state }) => state.holds === "maybe");
   if (!holding.length && !maybe) {
     if (!proof.complete)
       return { status: "Review", reason: "collectionIncomplete", holders };
@@ -260,7 +287,16 @@ function judge(
   // the pack.
   if (!readable)
     return { status: "Review", reason: "packValueUnreadable", holders };
-  if (maybe || holding.some(({ state }) => state.comparison === "unknown"))
+  // Unassigned policies count for nothing here too: a value of theirs that
+  // cannot be read no more stands against an assigned match than their
+  // readable difference does. Without a readable match the value is unknown.
+  if (
+    maybeApplies ||
+    holding.some(
+      (item) => item.state.comparison === "unknown" && !notAssigned(item),
+    ) ||
+    !matched
+  )
     return { status: "Review", reason: "unreadableValue", holders };
   if (!proof.complete)
     return { status: "Review", reason: "collectionIncomplete", holders };

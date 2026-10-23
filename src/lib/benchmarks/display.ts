@@ -40,6 +40,10 @@ export const REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
   profileChoice:
     "The pack holds several values for this setting; choose one first.",
   notAssigned: "The matching value is only on policies that are not assigned.",
+  notAssignedDiffers:
+    "Only policies that are not assigned hold this setting, and none of them matches the recommended value.",
+  notAssignedMixed:
+    "Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.",
   assignmentUnknown:
     "No matching policy is known to be assigned: an assignment could not be read.",
   settingOutsidePack:
@@ -47,7 +51,7 @@ export const REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
   otherProfiles:
     "Not found in the Settings Catalog. It may be set outside the Settings Catalog, by a profile of another type for this platform.",
   packValueUnreadable:
-    "The delivered pack holds a value for this setting that cannot be compared.",
+    "The delivered pack holds a value for this setting, or a platform list for its policy, that cannot be compared.",
 };
 
 export const READINESS_DISCLAIMER = "Readiness comparison, not a certification";

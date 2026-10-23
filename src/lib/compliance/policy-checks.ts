@@ -2,6 +2,7 @@ import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
 import { isDocumented } from "./documented-values";
 import {
+  canonicalEdmValue,
   canonicalFlags,
   isInt32,
   isTimeOfDay,
@@ -361,12 +362,16 @@ export function evaluatePolicyCheck(
       "defenderScheduledScanTime" in config &&
       config.defenderScheduledScanTime === null;
     if (!defaultTime && !isTimeOfDay(config.defenderScheduledScanTime)) return;
+    // The time in its canonical form, the one Graph returns, so the same
+    // TimeOfDay in another form is the same evidence in History.
     return {
       verdict: "enforced",
       observed: `${scan}; ${day}; ${
         defaultTime
           ? "02:00:00 (Defender default, no time configured)"
-          : config.defenderScheduledScanTime
+          : String(
+              canonicalEdmValue("TimeOfDay", config.defenderScheduledScanTime),
+            )
       }`,
     };
   }

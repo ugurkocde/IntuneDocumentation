@@ -12,6 +12,7 @@ import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
 import {
   canonicalPlatforms,
+  canonicalRecordValue,
   isKeyValuePair,
   MAX_ITEM_JSON_DEPTH,
   MAX_SETTING_DEPTH,
@@ -928,8 +929,14 @@ function projectOmaSettings(
     const unread =
       setting.isEncrypted !== true &&
       (!Object.hasOwn(setting, "value") || unreadableOmaValue(setting));
+    // The fingerprint is of the canonical form of a typed value
+    // (graph-rows.ts canonicalRecordValue), so another text of the same
+    // date and time or XML is the same value in History.
     if (!keep && !unread && isPrimitive(setting.value))
-      dropped?.(idText(setting.omaUri) ?? "", String(setting.value));
+      dropped?.(
+        idText(setting.omaUri) ?? "",
+        String(canonicalRecordValue(setting["@odata.type"], setting.value)),
+      );
     return {
       ...pick(setting, ["@odata.type", "omaUri", "displayName", "isEncrypted"]),
       ...(unread

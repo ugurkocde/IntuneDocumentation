@@ -187,7 +187,7 @@ export const GRAPH_PROPERTY_TYPES: Readonly<
         ],
         [
           `conditions.users.${mode}GuestsOrExternalUsers.externalTenants.@odata.type`,
-          "String",
+          "conditionalAccessExternalTenants",
         ],
         [
           `conditions.users.${mode}GuestsOrExternalUsers.externalTenants.membershipKind`,
@@ -257,3 +257,177 @@ export const ITEM_PROPERTY_TYPES: Readonly<Record<string, GraphTypeName>> = {
 export const FAMILY_RESOURCE_TYPES: Readonly<Record<string, string>> = {
   conditionalAccessPolicies: "conditionalaccesspolicy",
 };
+
+// The documented item types of the families Graph lists from a polymorphic
+// collection, which returns the @odata.type of every item: every concrete
+// (not abstract) subtype of the collection's resource type in the Graph
+// beta $metadata (23 October 2026). Every type the lab tenant returns is
+// one of them (deviceConfigurations, deviceCompliancePolicies and
+// deviceEnrollmentConfigurations, 23 October 2026). Windows update rings
+// are the deviceConfigurations Graph filters by
+// isof('microsoft.graph.windowsUpdateForBusinessConfiguration'), which has
+// no subtype. The type selects which fields are kept and how they are
+// read, so an item of another type is incomplete (snapshot projection).
+
+// Every concrete subtype of deviceConfiguration.
+const DEVICE_CONFIGURATION_TYPES = [
+  "androidCustomConfiguration",
+  "androidDeviceOwnerDerivedCredentialAuthenticationConfiguration",
+  "androidDeviceOwnerEnterpriseWiFiConfiguration",
+  "androidDeviceOwnerGeneralDeviceConfiguration",
+  "androidDeviceOwnerImportedPFXCertificateProfile",
+  "androidDeviceOwnerPkcsCertificateProfile",
+  "androidDeviceOwnerScepCertificateProfile",
+  "androidDeviceOwnerTrustedRootCertificate",
+  "androidDeviceOwnerVpnConfiguration",
+  "androidDeviceOwnerWiFiConfiguration",
+  "androidEasEmailProfileConfiguration",
+  "androidEnterpriseWiFiConfiguration",
+  "androidForWorkCustomConfiguration",
+  "androidForWorkEnterpriseWiFiConfiguration",
+  "androidForWorkGeneralDeviceConfiguration",
+  "androidForWorkGmailEasConfiguration",
+  "androidForWorkImportedPFXCertificateProfile",
+  "androidForWorkNineWorkEasConfiguration",
+  "androidForWorkPkcsCertificateProfile",
+  "androidForWorkScepCertificateProfile",
+  "androidForWorkTrustedRootCertificate",
+  "androidForWorkVpnConfiguration",
+  "androidForWorkWiFiConfiguration",
+  "androidGeneralDeviceConfiguration",
+  "androidImportedPFXCertificateProfile",
+  "androidOmaCpConfiguration",
+  "androidPkcsCertificateProfile",
+  "androidScepCertificateProfile",
+  "androidTrustedRootCertificate",
+  "androidVpnConfiguration",
+  "androidWiFiConfiguration",
+  "androidWorkProfileCustomConfiguration",
+  "androidWorkProfileEnterpriseWiFiConfiguration",
+  "androidWorkProfileGeneralDeviceConfiguration",
+  "androidWorkProfileGmailEasConfiguration",
+  "androidWorkProfileNineWorkEasConfiguration",
+  "androidWorkProfilePkcsCertificateProfile",
+  "androidWorkProfileScepCertificateProfile",
+  "androidWorkProfileTrustedRootCertificate",
+  "androidWorkProfileVpnConfiguration",
+  "androidWorkProfileWiFiConfiguration",
+  "aospDeviceOwnerDeviceConfiguration",
+  "aospDeviceOwnerEnterpriseWiFiConfiguration",
+  "aospDeviceOwnerPkcsCertificateProfile",
+  "aospDeviceOwnerScepCertificateProfile",
+  "aospDeviceOwnerTrustedRootCertificate",
+  "aospDeviceOwnerWiFiConfiguration",
+  "editionUpgradeConfiguration",
+  "iosCustomConfiguration",
+  "iosDerivedCredentialAuthenticationConfiguration",
+  "iosDeviceFeaturesConfiguration",
+  "iosEasEmailProfileConfiguration",
+  "iosEduDeviceConfiguration",
+  "iosEducationDeviceConfiguration",
+  "iosEnterpriseWiFiConfiguration",
+  "iosExpeditedCheckinConfiguration",
+  "iosGeneralDeviceConfiguration",
+  "iosImportedPFXCertificateProfile",
+  "iosPkcsCertificateProfile",
+  "iosScepCertificateProfile",
+  "iosTrustedRootCertificate",
+  "iosUpdateConfiguration",
+  "iosVpnConfiguration",
+  "iosWiFiConfiguration",
+  "iosWiredNetworkConfiguration",
+  "iosikEv2VpnConfiguration",
+  "macOSCustomAppConfiguration",
+  "macOSCustomConfiguration",
+  "macOSDeviceFeaturesConfiguration",
+  "macOSEndpointProtectionConfiguration",
+  "macOSEnterpriseWiFiConfiguration",
+  "macOSExtensionsConfiguration",
+  "macOSGeneralDeviceConfiguration",
+  "macOSImportedPFXCertificateProfile",
+  "macOSPkcsCertificateProfile",
+  "macOSScepCertificateProfile",
+  "macOSSoftwareUpdateConfiguration",
+  "macOSTrustedRootCertificate",
+  "macOSVpnConfiguration",
+  "macOSWiFiConfiguration",
+  "macOSWiredNetworkConfiguration",
+  "sharedPCConfiguration",
+  "unsupportedDeviceConfiguration",
+  "windows10CustomConfiguration",
+  "windows10DeviceFirmwareConfigurationInterface",
+  "windows10EasEmailProfileConfiguration",
+  "windows10EndpointProtectionConfiguration",
+  "windows10EnterpriseModernAppManagementConfiguration",
+  "windows10GeneralConfiguration",
+  "windows10ImportedPFXCertificateProfile",
+  "windows10NetworkBoundaryConfiguration",
+  "windows10PFXImportCertificateProfile",
+  "windows10PkcsCertificateProfile",
+  "windows10SecureAssessmentConfiguration",
+  "windows10TeamGeneralConfiguration",
+  "windows10VpnConfiguration",
+  "windows81GeneralConfiguration",
+  "windows81SCEPCertificateProfile",
+  "windows81TrustedRootCertificate",
+  "windows81VpnConfiguration",
+  "windows81WifiImportConfiguration",
+  "windowsDefenderAdvancedThreatProtectionConfiguration",
+  "windowsDeliveryOptimizationConfiguration",
+  "windowsDomainJoinConfiguration",
+  "windowsHealthMonitoringConfiguration",
+  "windowsIdentityProtectionConfiguration",
+  "windowsKioskConfiguration",
+  "windowsPhone81CustomConfiguration",
+  "windowsPhone81GeneralConfiguration",
+  "windowsPhone81ImportedPFXCertificateProfile",
+  "windowsPhone81SCEPCertificateProfile",
+  "windowsPhone81TrustedRootCertificate",
+  "windowsPhone81VpnConfiguration",
+  "windowsPhoneEASEmailProfileConfiguration",
+  "windowsUpdateForBusinessConfiguration",
+  "windowsWifiConfiguration",
+  "windowsWifiEnterpriseEAPConfiguration",
+  "windowsWiredNetworkConfiguration",
+  "windowsZtdnsConfiguration",
+];
+
+// Every concrete subtype of deviceCompliancePolicy.
+const COMPLIANCE_POLICY_TYPES = [
+  "androidCompliancePolicy",
+  "androidDeviceOwnerCompliancePolicy",
+  "androidForWorkCompliancePolicy",
+  "androidWorkProfileCompliancePolicy",
+  "aospDeviceOwnerCompliancePolicy",
+  "defaultDeviceCompliancePolicy",
+  "iosCompliancePolicy",
+  "macOSCompliancePolicy",
+  "windows10CompliancePolicy",
+  "windows10MobileCompliancePolicy",
+  "windows81CompliancePolicy",
+  "windowsPhone81CompliancePolicy",
+];
+
+// Every concrete subtype of deviceEnrollmentConfiguration.
+const ENROLLMENT_CONFIGURATION_TYPES = [
+  "deviceComanagementAuthorityConfiguration",
+  "deviceEnrollmentLimitConfiguration",
+  "deviceEnrollmentNotificationConfiguration",
+  "deviceEnrollmentPlatformRestrictionConfiguration",
+  "deviceEnrollmentPlatformRestrictionsConfiguration",
+  "deviceEnrollmentWindowsHelloForBusinessConfiguration",
+  "windows10EnrollmentCompletionPageConfiguration",
+  "windowsRestoreDeviceEnrollmentConfiguration",
+];
+
+const lower = (types: readonly string[]): ReadonlySet<string> =>
+  new Set(types.map((type) => type.toLowerCase()));
+
+/** The documented item types of each typed family, normalized (lower case). */
+export const FAMILY_ITEM_TYPES: Readonly<Record<string, ReadonlySet<string>>> =
+  {
+    deviceConfigurations: lower(DEVICE_CONFIGURATION_TYPES),
+    compliancePolicies: lower(COMPLIANCE_POLICY_TYPES),
+    windowsUpdatePolicies: lower(["windowsUpdateForBusinessConfiguration"]),
+    enrollmentConfigurations: lower(ENROLLMENT_CONFIGURATION_TYPES),
+  };

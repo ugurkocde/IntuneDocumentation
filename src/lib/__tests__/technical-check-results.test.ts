@@ -30,6 +30,8 @@ function configured(value: string) {
       settings: [
         {
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
             settingDefinitionId: id,
             choiceSettingValue: { value: `${id}_${value}` },
           },
@@ -51,7 +53,15 @@ describe("independent assessment and configuration results", () => {
     input.settingsCatalog = [
       {
         id: "unreadable",
-        settings: [{ settingInstance: { settingDefinitionId: id } }],
+        settings: [
+          {
+            settingInstance: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+              settingDefinitionId: id,
+            },
+          },
+        ],
       } as any,
     ];
     expect(find(input).checks[0]).toMatchObject({

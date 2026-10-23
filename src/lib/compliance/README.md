@@ -788,7 +788,7 @@ assessments, so the ruleset version stays the same.
 - **Strict types.** Every type in `graph-property-types.ts` has a strict
   check in `graph-rows.ts`. Edm primitives are read by their syntax
   (TimeOfDay, Duration, Date, DateTimeOffset, Guid, Binary, Int32, Int64,
-  Double). Each enum is read against the members listed in
+  Double, Single). Each enum is read against the members listed in
   `documented-values.ts`. No type accepts every value: a property Graph
   does not document reads only as an empty list. A template list pair is a
   text name with a text or null value. A list on a presentation that holds
@@ -798,7 +798,7 @@ assessments, so the ruleset version stays the same.
   unreadable, never as null, `[Redacted]`, a fingerprint or a missing
   property. Device configuration, compliance, Windows Update and enrollment
   configuration items come from lists that type every item, so an item
-  without a readable `@odata.type` is incomplete.
+  without a documented `@odata.type` is incomplete.
 - **Reusable policy settings.** The list selects `settingInstance`, which
   Graph returns only when it is selected. That instance is stored and
   compared like Settings Catalog settings. An item without it is incomplete
@@ -811,3 +811,24 @@ assessments, so the ruleset version stays the same.
   and multi-text lines keep their order (`snapshots/order.ts`). History
   compares fingerprints of values that are not stored as a multiset for
   each setting, so inserting an entry does not renumber the others.
+- **Identity.** History pairs items by an id of their own. An item without
+  one, with an id that is no text, or with an id another item shares is not
+  compared, and while one snapshot holds such an item no policy of that
+  family is reported as added or removed. An item Graph returned as no
+  record is kept as an incomplete item without an id.
+- **Discriminators.** A type field decides how a row is read, so it must be
+  a documented one: typed family items by `FAMILY_ITEM_TYPES` (every
+  concrete subtype in the Graph beta `$metadata`), Settings Catalog
+  instances by their type and the one value property it documents,
+  Settings Catalog platforms by the documented flags members, external
+  tenants by subtype and matching membership kind, assignment intents by
+  the documented intent members. Anything else is incomplete or unknown.
+- **Limits.** `MAX_SETTING_DEPTH` (16) is shared by the projection, the
+  checks, flattening, Compare and History; a deeper child reads as an
+  unknown setting. `MAX_ITEM_JSON_DEPTH` bounds every walk over a stored
+  item. Stored check and evidence values longer than 500 characters keep a
+  digest of the full value, and a family whose rows a reference file
+  cannot hold is not compared. Edm syntax follows the OData CSDL ABNF:
+  Duration is a day-time duration, seconds of a time are optional, and
+  custom OMA-URI values are read by their Edm type (DateTimeOffset, Binary
+  and Single included).

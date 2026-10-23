@@ -6,6 +6,7 @@
 // Desktop only (Node).
 import { createHash } from "node:crypto";
 import {
+  MAX_ITEM_JSON_DEPTH,
   unidentifiedSources,
   unreadableProperties,
 } from "../compliance/graph-rows";
@@ -192,9 +193,10 @@ function isCatalog(data: Json): boolean {
 }
 
 // Secret Settings Catalog values have no value in a projection; they are
-// marked so they read as redacted instead of as an empty value.
+// marked so they read as redacted instead of as an empty value, as deep as
+// a stored item holds values.
 function markSecrets(value: unknown, depth = 0): unknown {
-  if (depth > 32 || !value || typeof value !== "object") return value;
+  if (depth > MAX_ITEM_JSON_DEPTH || !value || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map((entry) => markSecrets(entry, depth + 1));
   const record = value as Json;
   const out: Json = {};
@@ -216,6 +218,14 @@ function setPath(target: Json, path: string, value: unknown): void {
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+// A value as a reference stores it: longer values shortened, with the
+// digest of the full value, which is then what is compared.
+function shortened(value: string): { value: string; sha256?: string } {
+  return value.length > REFERENCE_MAX_VALUE
+    ? { value: `${value.slice(0, REFERENCE_MAX_VALUE)}...`, sha256: digest(value) }
+    : { value };
 }
 
 function itemRows(
@@ -255,10 +265,7 @@ function itemRows(
     };
     if (redacted) entry.redacted = true;
     else {
-      if (row.value.length > REFERENCE_MAX_VALUE) {
-        entry.value = `${row.value.slice(0, REFERENCE_MAX_VALUE)}...`;
-        entry.sha256 = digest(row.value);
-      } else entry.value = row.value;
+      Object.assign(entry, shortened(row.value));
       if (row.token !== undefined) entry.token = digest(row.token);
     }
     return entry;
@@ -339,10 +346,16 @@ export function projectionSettings(projection: SnapshotProjection): SettingSet {
       notCompared.push(family);
       continue;
     }
-    families.push(family);
-    for (const item of section.items) {
-      settings.push(...itemRows(section, item));
+    // A row a reference file cannot hold (isSetting), such as a name
+    // longer than a file allows, would make the file unreadable or read as
+    // a missing setting, so its family is not compared, on both paths.
+    const rows = section.items.flatMap((item) => itemRows(section, item));
+    if (!rows.every(isSetting)) {
+      notCompared.push(family);
+      continue;
     }
+    families.push(family);
+    settings.push(...rows);
   }
   return {
     rulesetVersion: projection.rulesetVersion,
@@ -381,7 +394,7 @@ export function identitySettings(
       ...(row.path.length ? { path: [...row.path] } : {}),
       ...(row.tenantObject || row.unreadable
         ? { redacted: true as const }
-        : { value: row.display.slice(0, REFERENCE_MAX_VALUE) }),
+        : shortened(row.display)),
       policy: IDENTITY_POLICY_LABELS[row.policy],
     }),
   );
@@ -885,6 +898,17 @@ function statusOf(
   if (all.some((setting) => token(setting) === null)) return { status: "notComparable" };
   if (!actual?.length) return { status: "missing" };
   if (!expected?.length) return { status: "extra" };
+  // A value compared by its token on one side only, such as a list whose
+  // entries hold separators against a reference file saved before such
+  // lists had one (settings-flatten.ts rawToken), is the same value only if
+  // their shown values tell it: equal shown values may hide two different
+  // lists, so the setting is not comparable.
+  const tokened = (list: readonly ReferenceSetting[]) => list.some((setting) => setting.token !== undefined);
+  if (tokened(expected) !== tokened(actual)) {
+    const shown = (list: readonly ReferenceSetting[]) =>
+      [...new Set(list.map((setting) => setting.sha256 ?? setting.value))].sort().join(SEPARATOR);
+    return { status: shown(expected) === shown(actual) ? "notComparable" : "different" };
+  }
   // A Settings Catalog choice is compared by its option id (token), so it
   // is the same choice whether Graph returned the option names with it or
   // not.

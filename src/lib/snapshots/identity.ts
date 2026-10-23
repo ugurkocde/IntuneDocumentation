@@ -72,25 +72,27 @@ function plain(value: unknown): string | null {
 
 // Whether the policy was read on this side: collected, and for the
 // authentication methods policy with its method configurations, which the
-// engine also needs to read it, each with its id: a configuration without
-// one may be any method.
+// engine also needs to read it, each with its own id: a configuration
+// without one, or with the id of another (rows are keyed by the id in lower
+// case), may be any method.
 export function identityCollected(
   identity: SnapshotTenantIdentityPolicies | undefined,
   policy: IdentityPolicyName,
 ): boolean {
   const data = identity?.[policy];
-  return (
-    identity?.status?.[policy] === "collected" &&
-    isRecord(data) &&
-    (policy !== "authenticationMethods" ||
-      (Array.isArray(data.authenticationMethodConfigurations) &&
-        data.authenticationMethodConfigurations.every(
-          (configuration) =>
-            isRecord(configuration) &&
-            typeof configuration.id === "string" &&
-            configuration.id !== "",
-        )))
+  if (identity?.status?.[policy] !== "collected" || !isRecord(data))
+    return false;
+  if (policy !== "authenticationMethods") return true;
+  const configurations = data.authenticationMethodConfigurations;
+  if (!Array.isArray(configurations)) return false;
+  const ids = configurations.map((configuration) =>
+    isRecord(configuration) &&
+    typeof configuration.id === "string" &&
+    configuration.id !== ""
+      ? configuration.id.toLowerCase()
+      : null,
   );
+  return ids.every((id) => id !== null) && new Set(ids).size === ids.length;
 }
 
 function unreadableRow(

@@ -249,6 +249,8 @@ describe("compliance report PDF", () => {
           settings: [
             {
               settingInstance: {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
                 settingDefinitionId: disabledSettingId,
                 choiceSettingValue: { value: disabledValue },
               },
@@ -292,6 +294,8 @@ describe("compliance report PDF", () => {
         settings: [
           {
             settingInstance: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
               settingDefinitionId:
                 "device_vendor_msft_policy_config_defender_allowrealtimemonitoring",
               choiceSettingValue: {

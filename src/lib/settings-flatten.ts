@@ -1,4 +1,5 @@
 import {
+  MAX_SETTING_DEPTH,
   METADATA_KEYS,
   unreadableCatalogValue,
   unreadableIntentValue,
@@ -102,6 +103,25 @@ function textOf(value: unknown): string | undefined {
 
 const definitionIdOf = textOf;
 
+// The value as Graph returned it, for a value the formatted text cannot
+// tell apart from another one: a list whose entries are records or text
+// holding the separators formatValue joins entries with (["a, b"] and
+// ["a", "b"] both read "a, b"), or a record with a value, which formatValue
+// shows by its name and value only. Other values read the same as their
+// text, so they need no token.
+function rawToken(value: unknown): string | undefined {
+  const ambiguous = Array.isArray(value)
+    ? value.some(
+        (entry) =>
+          (entry !== null && typeof entry === "object") ||
+          (typeof entry === "string" && /, |\n/.test(entry)),
+      )
+    : value !== null &&
+      typeof value === "object" &&
+      Object.hasOwn(value, "value");
+  return ambiguous ? JSON.stringify(value) : undefined;
+}
+
 // --- Settings Catalog -------------------------------------------------------
 
 // The instance without its children, so extractSettingValue resolves only
@@ -159,7 +179,19 @@ function walkCatalogInstance(
   depth: number,
   identity: string[] = [],
 ): void {
-  if (!instance || typeof instance !== "object" || depth > 12) return;
+  if (!instance || typeof instance !== "object") return;
+  // A child below the depth limit is not kept (compliance/graph-rows.ts),
+  // so it reads as unknown, never as no setting.
+  if (depth > MAX_SETTING_DEPTH) {
+    rows.push({
+      name: "Setting below the depth limit",
+      value: UNREADABLE_VALUE,
+      path,
+      ...(path.length ? { identity } : {}),
+      unreadable: true,
+    });
+    return;
+  }
   const own = withoutChildren(instance);
   const extracted = extractSettingValue({
     id: instance.settingDefinitionId ?? "",
@@ -174,6 +206,11 @@ function walkCatalogInstance(
     const choice = Boolean(
       instance.choiceSettingValue || instance.choiceSettingCollectionValue,
     );
+    const collection = Array.isArray(instance.simpleSettingCollectionValue)
+      ? rawToken(
+          instance.simpleSettingCollectionValue.map((entry) => entry?.value),
+        )
+      : undefined;
     rows.push({
       name: extracted.name,
       value: String(extracted.value),
@@ -190,7 +227,9 @@ function walkCatalogInstance(
               }).value,
             ),
           }
-        : {}),
+        : collection !== undefined
+          ? { token: collection }
+          : {}),
       ...flag(unreadableCatalogValue(instance)),
     });
   }
@@ -404,6 +443,15 @@ function administrativeTemplateRows(
   });
 }
 
+function parsedJson(text: unknown): unknown {
+  if (typeof text !== "string") return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 // Security baseline intents keep their settings as definitionId and
 // valueJson pairs; each one goes through parseSecurityBaseline so the id
 // stays attached to its row.
@@ -429,16 +477,24 @@ function securityBaselineRows(item: Record<string, unknown>): FlatSettingRow[] {
       const [parsed] = parseSecurityBaseline([], [setting]);
       const row = parsed?.settings[0];
       if (!row) continue;
-      const definitionId = definitionIdOf(
-        (setting as Record<string, unknown>)?.definitionId,
-      );
+      const record = (setting ?? {}) as Record<string, unknown>;
+      const definitionId = definitionIdOf(record.definitionId);
+      const unreadable = unreadableIntentValue(setting);
+      const token = unreadable
+        ? undefined
+        : rawToken(
+            record.value !== undefined && record.value !== null
+              ? record.value
+              : parsedJson(record.valueJson),
+          );
       rows.push({
         name: row.name,
         value: row.value,
+        ...(token !== undefined ? { token } : {}),
         ...(definitionId ? { definitionId } : {}),
         path: [],
         category: source.category,
-        ...flag(unreadableIntentValue(setting)),
+        ...flag(unreadable),
       });
     }
   }

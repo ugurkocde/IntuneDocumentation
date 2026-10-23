@@ -54,6 +54,8 @@ describe("flattenItemSettings", () => {
               {
                 children: [
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId:
                       "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_name",
                     simpleSettingValue: {
@@ -67,6 +69,8 @@ describe("flattenItemSettings", () => {
               {
                 children: [
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId:
                       "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_name",
                     simpleSettingValue: {
@@ -76,6 +80,8 @@ describe("flattenItemSettings", () => {
                     },
                   },
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId:
                       "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_description",
                     simpleSettingValue: {

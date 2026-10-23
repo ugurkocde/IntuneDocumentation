@@ -23,6 +23,7 @@ import {
 import { inComparisonOrder } from "./order";
 import {
   FINGERPRINT_LABELS,
+  MAX_CHECK_VALUE,
   snapshotItemLabel,
   VALUE_FINGERPRINT,
   type SnapshotItem,
@@ -558,12 +559,21 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 // that the other omits under a parent it did return: Graph did not return
 // the policy's details completely on one side, so the value is unknown
 // there, never added or removed. A property returned as null is a value;
-// one both omit is no change.
+// one both omit is no change. Records of two different subtypes, such as
+// all and enumerated external tenants, have different properties, so one
+// that only the other subtype documents is no omission.
 function omitsValue(
   a: Record<string, unknown>,
   b: Record<string, unknown>,
   top = true,
 ): boolean {
+  if (
+    !top &&
+    a["@odata.type"] !== undefined &&
+    b["@odata.type"] !== undefined &&
+    a["@odata.type"] !== b["@odata.type"]
+  )
+    return false;
   for (const [x, y] of [
     [a, b],
     [b, a],
@@ -584,6 +594,23 @@ const named = (section: SnapshotSection, item: SnapshotItem) =>
 
 function byId(section: SnapshotSection): Map<string, SnapshotItem> {
   return new Map(section.items.map((item) => [item.id, item]));
+}
+
+/**
+ * Whether an item of the section cannot be told apart from the others: it
+ * has no id of its own (isItemIdentity), or shares its id with another
+ * item, which Graph never returns. Such an item may be any policy of the
+ * family, so it is never paired, and a policy the other snapshot lacks is
+ * not reported as added or removed while this one may be it.
+ */
+function anonymousItems(
+  section: SnapshotSection,
+): (item: SnapshotItem) => boolean {
+  const counts = new Map<string, number>();
+  for (const item of section.items)
+    counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
+  return (item) =>
+    !isItemIdentity(section, item.id) || (counts.get(item.id) ?? 0) > 1;
 }
 
 export function diffSnapshots(
@@ -662,18 +689,27 @@ export function diffSnapshots(
         id: item.id,
         displayName: snapshotItemLabel(section, item),
       });
+    const anonymousFrom = anonymousItems(a);
+    const anonymousTo = anonymousItems(b);
+    // An item without its own id in one snapshot may be any policy the
+    // other snapshot has alone, so no policy reads as added or removed
+    // against it.
+    const fromAnonymous = a.items.some(anonymousFrom);
+    const toAnonymous = b.items.some(anonymousTo);
     for (const item of b.items) {
       // Without an id an item cannot be paired with its earlier version.
-      if (!isItemIdentity(b, item.id)) {
+      if (anonymousTo(item)) {
         notComparable(b, item);
         continue;
       }
       const old = before.get(item.id);
       if (!old) {
-        policies.push(change(item, "added"));
+        if (fromAnonymous) notComparable(b, item);
+        else policies.push(change(item, "added"));
         continue;
       }
       if (
+        anonymousFrom(old) ||
         old.incomplete ||
         item.incomplete ||
         omitsValue(old.data, item.data) ||
@@ -707,7 +743,7 @@ export function diffSnapshots(
       if (after.has(item.id)) continue;
       // An item without an id is listed once, by the newer snapshot when it
       // has one too.
-      if (!isItemIdentity(a, item.id)) notComparable(a, item);
+      if (anonymousFrom(item) || toAnonymous) notComparable(a, item);
       else
         policies.push({
           ...change(item, "removed"),
@@ -869,12 +905,20 @@ export interface AssessmentDiff {
   frameworks: FrameworkChanges[];
 }
 
+// Values longer than MAX_CHECK_VALUE are stored shortened, with the digest
+// of the full value, which is compared. A snapshot saved before the digest
+// was kept holds such a value shortened without one, so whether it is the
+// same as another value with that start is unknown.
+const possiblyShortened = (value: string | null, sha256: string | undefined) =>
+  value !== null && value.length === MAX_CHECK_VALUE && sha256 === undefined;
+
 function evidenceKey(evidence: StoredEvidence): string {
   return [
     evidence.policyId,
     evidence.settingId,
     evidence.verdict,
     evidence.observedValue,
+    evidence.observedValueSha256 ?? "",
     evidence.assignment,
   ].join(OCCURRENCE);
 }
@@ -894,9 +938,12 @@ function checkKey(check: StoredCheck): string {
 }
 
 function checkValueKey(check: StoredCheck): string {
-  return [checkKey(check), check.result ?? "", check.actualValue ?? ""].join(
-    OCCURRENCE,
-  );
+  return [
+    checkKey(check),
+    check.result ?? "",
+    check.actualValue ?? "",
+    check.actualValueSha256 ?? "",
+  ].join(OCCURRENCE);
 }
 
 // The entries of list that other does not have, counted as a multiset, so
@@ -955,6 +1002,10 @@ function capabilityChange(
   // in order, so each of several checks of one setting keeps its own change.
   const fromChecks = a?.checks ?? [];
   const toChecks = b?.checks ?? [];
+  const unmatchedChecks = [
+    ...unmatched(fromChecks, toChecks, checkValueKey),
+    ...unmatched(toChecks, fromChecks, checkValueKey),
+  ];
   const pending = new Map<string, { old: StoredCheck[]; next: StoredCheck[] }>();
   const slot = (check: StoredCheck) => {
     const key = checkKey(check);
@@ -991,8 +1042,19 @@ function capabilityChange(
   )
     return null;
   // Evidence read from an incomplete collection on either side is not
-  // compared, so a collection gap never reads as a change in the tenant.
-  const notCompared = incomplete(a) || incomplete(b);
+  // compared, so a collection gap never reads as a change in the tenant;
+  // neither is a change that rests on a value stored shortened without its
+  // digest.
+  const shortened =
+    unmatched(fromEvidence, toEvidence, evidenceKey)
+      .concat(unmatched(toEvidence, fromEvidence, evidenceKey))
+      .some((evidence) =>
+        possiblyShortened(evidence.observedValue, evidence.observedValueSha256),
+      ) ||
+    unmatchedChecks.some((check) =>
+      possiblyShortened(check.actualValue, check.actualValueSha256),
+    );
+  const notCompared = incomplete(a) || incomplete(b) || shortened;
   return {
     capabilityId: id,
     name: (b ?? a)?.name ?? id,

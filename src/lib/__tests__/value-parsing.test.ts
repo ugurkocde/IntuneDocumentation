@@ -27,6 +27,8 @@ describe("documentation value integrity", () => {
       extractSettingValue({
         id: "x",
         settingInstance: {
+          "@odata.type":
+            "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
           settingDefinitionId: "x",
           simpleSettingValue: {
             "@odata.type":

@@ -72,12 +72,34 @@ describe("graph property types", () => {
   it("reads every Edm primitive by its syntax", () => {
     const cases: Record<string, [unknown[], unknown[]]> = {
       TimeOfDay: [
-        ["02:00:00", "02:00:00.0000000", "23:59:59.5"],
-        ["garbage", "24:00:00", "2:00:00", "02:00", 7200],
+        // CSDL ABNF: seconds are optional, 60 is a leap second, fractional
+        // seconds have 1 to 12 digits.
+        ["02:00:00", "02:00:00.0000000", "23:59:59.5", "02:00", "23:59:60"],
+        [
+          "garbage",
+          "24:00:00",
+          "2:00:00",
+          "02:00:61",
+          "02:00:00.1234567890123",
+          "02:00:00.",
+          7200,
+        ],
       ],
       Duration: [
-        ["PT1H", "P1D", "PT0.5S", "P1Y2M3DT4H5M6S", "PT0S", "-PT1M"],
-        ["garbage", "P", "PT", "P1DT", "1H", 3600],
+        // A day-time duration: days, hours, minutes and seconds only.
+        ["PT1H", "P1D", "PT0.5S", "P3DT4H5M6S", "PT0S", "-PT1M", "+P1D"],
+        [
+          "garbage",
+          "P",
+          "PT",
+          "P1DT",
+          "1H",
+          "P1Y",
+          "P1M",
+          "P1W",
+          "P1Y2M3DT4H5M6S",
+          3600,
+        ],
       ],
       Date: [
         ["2026-10-23", "2024-02-29"],
@@ -88,12 +110,18 @@ describe("graph property types", () => {
           "2026-10-23T09:00:00Z",
           "2026-10-23T09:00:00.1234567+02:00",
           "2026-10-23T09:00Z",
+          // As Graph returns it, seven fractional digits.
+          "2026-10-23T10:00:00.0000000Z",
+          "2026-12-31T23:59:60Z",
         ],
         [
           "garbage",
           "2026-10-23",
           "2026-10-23T25:00:00Z",
           "2026-02-30T09:00:00Z",
+          "2026-10-23T09:00:00",
+          "2026-10-23T09:00:00.1234567890123Z",
+          "2026-10-23T09:00:00+24:00",
         ],
       ],
       Guid: [
@@ -102,16 +130,32 @@ describe("graph property types", () => {
       ],
       Binary: [
         // base64 and base64url, padded or not.
-        ["", "c3ludGhldGlj", "c3ludA==", "c3ludA", "-_8", "a+/="],
-        ["garbage!", "a", "abcde", "ab=", "a+b_", "c3ludA==="],
+        ["", "c3ludGhldGlj", "c3ludA==", "c3ludA", "-_8", "a+8="],
+        [
+          "garbage!",
+          "a",
+          "abcde",
+          "ab=",
+          "a+b_",
+          "c3ludA===",
+          // A last character with bits beyond the bytes it encodes.
+          "a+/=",
+          "c3ludB",
+          "c3ludA=",
+        ],
       ],
       Int64: [
         [0, -5, 2 ** 40],
         [1.5, "1", 2 ** 60],
       ],
+      // OData JSON: a number, or NaN, INF and -INF as strings.
       Double: [
-        [0, 1.5, -2],
-        [Number.NaN, "1.5"],
+        [0, 1.5, -2, 1e300, "NaN", "INF", "-INF"],
+        [Number.NaN, Number.POSITIVE_INFINITY, "1.5", "Infinity"],
+      ],
+      Single: [
+        [0, 1.5, -2, 3.4e38, 3.4028235e38, "INF"],
+        [1e39, Number.NaN, "1.5"],
       ],
     };
     for (const [type, [valid, invalid]] of Object.entries(cases)) {

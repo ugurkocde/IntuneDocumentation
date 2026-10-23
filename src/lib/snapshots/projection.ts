@@ -11,8 +11,10 @@ import {
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
 import {
-  isIdentifier,
+  documentedPropertyValue,
   isKeyValuePair,
+  MAX_ITEM_JSON_DEPTH,
+  MAX_SETTING_DEPTH,
   METADATA_KEYS,
   normalizeTargetType,
   settingsLayout,
@@ -21,6 +23,7 @@ import {
 } from "../compliance/graph-rows";
 import { canonicalOmaUri } from "../compliance/oma-uri";
 import { frameworkCoverageLabel } from "../compliance/presentation";
+import { FAMILY_ITEM_TYPES } from "../compliance/graph-property-types";
 import { REDACTED_VALUE, redactedDigests } from "../intune-policy-registry";
 import type { StoredBenchmarkRun } from "../benchmarks/history";
 import type {
@@ -79,6 +82,10 @@ export interface StoredEvidence {
   policyName: string;
   settingId: string;
   observedValue: string;
+  // SHA-256 of the full value when observedValue was shortened to
+  // MAX_CHECK_VALUE, so a change past it is still a change. Absent in
+  // snapshots saved before it was kept.
+  observedValueSha256?: string;
   verdict: "enforced" | "disabled";
   assignment: "assigned" | "notAssigned" | "unknown";
 }
@@ -90,6 +97,8 @@ export interface StoredCheck {
   assessmentStatus: TechnicalCheck["assessmentStatus"];
   result: TechnicalCheck["result"];
   actualValue: string | null;
+  // SHA-256 of the full value when actualValue was shortened.
+  actualValueSha256?: string;
   // Assignment state of the policy checked, when the check names one.
   // Absent in snapshots saved before ruleset 2026.10.8.
   assignment?: "assigned" | "notAssigned" | "unknown";
@@ -203,7 +212,9 @@ type Json = Record<string, unknown>;
 type Primitive = string | number | boolean;
 
 const MAX_TEXT = 1000;
-const MAX_CHECK_VALUE = 500;
+// Stored check and evidence values are shortened to this length, with the
+// digest of the full value (storedValue).
+export const MAX_CHECK_VALUE = 500;
 
 // Item metadata kept for every family: identity, type, timing and the
 // collection state the engine and the change report read.
@@ -289,18 +300,27 @@ const REUSABLE_SETTINGS = "reusablePolicySettings";
 // @odata.type of every item (deviceConfigurations, deviceCompliancePolicies
 // and deviceEnrollmentConfigurations, lab tenant, 23 October 2026). The
 // fields kept and the types they are read by follow that type, so an item
-// without a readable one is incomplete: its kept fields would read as
-// missing instead of unknown. Conditional Access is typed by its family
-// (graph-property-types.ts); Settings Catalog, intent and administrative
-// template rows carry their own identifiers; the app protection lists
-// return no type at all (lab tenant, 23 October 2026), so a missing one
-// there is how Graph returns them, not a gap.
-const TYPED_FAMILIES: ReadonlySet<string> = new Set([
-  "deviceConfigurations",
-  "compliancePolicies",
-  "windowsUpdatePolicies",
-  "enrollmentConfigurations",
-]);
+// without one of the types Graph documents for its family
+// (graph-property-types.ts FAMILY_ITEM_TYPES) is incomplete: its kept
+// fields would read as missing instead of unknown. Conditional Access is
+// typed by its family (graph-property-types.ts); Settings Catalog, intent
+// and administrative template rows carry their own identifiers; the app
+// protection lists return no type at all (lab tenant, 23 October 2026), so
+// a missing one there is how Graph returns them, not a gap.
+const undocumentedItemType = (familyKey: string, raw: Json) =>
+  Object.hasOwn(FAMILY_ITEM_TYPES, familyKey) &&
+  !FAMILY_ITEM_TYPES[familyKey]!.has(normalizeTargetType(raw["@odata.type"]));
+
+// The platforms of a Settings Catalog policy select the platform Compare
+// groups its settings under, so a value that is no set of documented
+// deviceManagementConfigurationPlatforms members leaves them unknown.
+const undocumentedPlatforms = (raw: Json) =>
+  raw.platforms !== undefined &&
+  raw.platforms !== null &&
+  !documentedPropertyValue(
+    "deviceManagementConfigurationPlatforms",
+    raw.platforms,
+  );
 
 const APPLOCKER_NODE =
   /^\.\/Vendor\/MSFT\/AppLocker\/ApplicationLaunchRestrictions\/[^/]+\/(EXE|DLL|MSI|Script)\/(Policy|EnforcementMode)$/;
@@ -412,6 +432,11 @@ function isPrimitive(value: unknown): value is Primitive {
 
 function text(value: unknown, max = MAX_TEXT): string | undefined {
   return typeof value === "string" ? value.slice(0, max) : undefined;
+}
+
+// An id as Graph returned it, never shortened, so two settings stay apart.
+function idText(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 // A primitive or a list of primitives; anything else is dropped.
@@ -669,8 +694,8 @@ function projectInstance(
   depth = 0,
   dropped?: DroppedValue,
 ): Json | undefined {
-  if (!isRecord(instance) || depth > 16) return undefined;
-  const definitionId = text(instance.settingDefinitionId);
+  if (!isRecord(instance) || depth > MAX_SETTING_DEPTH) return undefined;
+  const definitionId = idText(instance.settingDefinitionId);
   const drop =
     dropped && definitionId
       ? (content: string) => dropped(definitionId, content)
@@ -864,7 +889,7 @@ function projectDefinitionValues(
           const values = projectPresentationValues(
             presentationValue["@odata.type"],
             presentationValue.values,
-            `${text(definition.id) ?? ""}/${text(presentation.id) ?? ""}`,
+            `${idText(definition.id) ?? ""}/${idText(presentation.id) ?? ""}`,
             dropped,
           );
           return {
@@ -900,7 +925,7 @@ function projectOmaSettings(
       setting.isEncrypted !== true &&
       (!Object.hasOwn(setting, "value") || unreadableOmaValue(setting));
     if (!keep && !unread && isPrimitive(setting.value))
-      dropped?.(text(setting.omaUri) ?? "", String(setting.value));
+      dropped?.(idText(setting.omaUri) ?? "", String(setting.value));
     return {
       ...pick(setting, ["@odata.type", "omaUri", "displayName", "isEncrypted"]),
       ...(unread
@@ -935,35 +960,43 @@ function settingName(record: Json): string | undefined {
     ? record.presentation
     : undefined;
   return (
-    text(record.settingDefinitionId) ??
-    text(record.omaUri) ??
-    text(record.appConfigKey) ??
-    text(presentation?.id) ??
-    text(presentation?.label) ??
-    text(record.name)
+    idText(record.settingDefinitionId) ??
+    idText(record.omaUri) ??
+    idText(record.appConfigKey) ??
+    idText(presentation?.id) ??
+    idText(presentation?.label) ??
+    idText(record.name)
   );
 }
 
 // Every digest the collector took of a value it redacted on this item, with
 // the nearest setting the value belongs to; undefined on the item itself.
+// False when the item nests deeper than any value a stored item holds
+// (MAX_ITEM_JSON_DEPTH): a redacted value below it would go unseen, so the
+// item is incomplete.
 function walkRedacted(
   value: unknown,
   owner: string | undefined,
   depth: number,
   found: (owner: string | undefined, field: string, digest: string) => void,
-): void {
-  if (depth > 64) return;
-  if (Array.isArray(value)) {
-    for (const entry of value) walkRedacted(entry, owner, depth + 1, found);
-    return;
-  }
-  if (!isRecord(value)) return;
-  const name = depth === 0 ? undefined : (settingName(value) ?? owner);
+): boolean {
+  if (value === null || typeof value !== "object") return true;
+  if (depth > MAX_ITEM_JSON_DEPTH) return false;
+  if (Array.isArray(value))
+    return value.every((entry) => walkRedacted(entry, owner, depth + 1, found));
+  const name = depth === 0 ? undefined : (settingName(value as Json) ?? owner);
   for (const [field, digest] of redactedDigests(value))
     found(name, field, digest);
-  for (const nested of Object.values(value))
-    walkRedacted(nested, name, depth + 1, found);
+  return Object.values(value).every((nested) =>
+    walkRedacted(nested, name, depth + 1, found),
+  );
 }
+
+// The id getStableItemId falls back to when an item has none: its
+// position, which names no item outside a singleton section
+// (isItemIdentity).
+const positionalId = (section: ConfigurationSectionData, index: number) =>
+  getStableItemId(section, {}, index);
 
 function projectItem(
   section: ConfigurationSectionData,
@@ -972,7 +1005,15 @@ function projectItem(
   itemErrors: ReadonlySet<string>,
   fingerprint?: SnapshotFingerprint,
 ): SnapshotItem {
-  const id = getStableItemId(section, raw, index);
+  // Graph ids are text. An id of another type, such as a number or a
+  // record, names no item, so the item keeps only its position.
+  const candidate = raw.id ?? raw.policyId ?? raw.templateId;
+  const id =
+    candidate === undefined ||
+    candidate === null ||
+    typeof candidate === "string"
+      ? getStableItemId(section, raw, index)
+      : positionalId(section, index);
   const data: Json = {};
   for (const key of ITEM_KEYS) {
     // Metadata is never compared; the other item keys are plain properties.
@@ -1078,12 +1119,12 @@ function projectItem(
     )
       fingerprints[key] = fingerprint(contentDigest(content));
   }
-  if (fingerprint)
-    walkRedacted(raw, undefined, 0, (owner, field, digest) => {
-      if (owner === undefined && Object.hasOwn(FINGERPRINT_LABELS, field))
-        fingerprints[field] = fingerprint(digest);
-      else valueFingerprint(owner ?? field, digest);
-    });
+  const walked = walkRedacted(raw, undefined, 0, (owner, field, digest) => {
+    if (!fingerprint) return;
+    if (owner === undefined && Object.hasOwn(FINGERPRINT_LABELS, field))
+      fingerprints[field] = fingerprint(digest);
+    else valueFingerprint(owner ?? field, digest);
+  });
   const incomplete =
     raw.hasFetchError === true ||
     Object.values(collectionStatus ?? {}).includes("incomplete") ||
@@ -1094,8 +1135,9 @@ function projectItem(
     // The content of a reusable setting Graph did not return is unknown,
     // never no setting.
     (reusable && !isRecord(raw.settingInstance)) ||
-    (TYPED_FAMILIES.has(section.familyKey) &&
-      !isIdentifier(raw["@odata.type"]));
+    undocumentedItemType(section.familyKey, raw) ||
+    undocumentedPlatforms(raw) ||
+    !walked;
   return {
     id,
     data,
@@ -1256,6 +1298,16 @@ function projectDeviceStatus(
   };
 }
 
+// A check or evidence value as stored: shortened to MAX_CHECK_VALUE, with
+// the digest of the full value, so the history diff compares the full
+// value. A value of exactly that length gets one too, so only a snapshot
+// saved before digests were kept holds one without (diff.ts).
+function storedValue(value: string): { value: string; sha256?: string } {
+  return value.length >= MAX_CHECK_VALUE
+    ? { value: value.slice(0, MAX_CHECK_VALUE), sha256: contentDigest(value) }
+    : { value };
+}
+
 // The Conditional Access compound checks report the policy's state, grant
 // controls and conditions as JSON; only their allowlisted fields are kept.
 function storedActualValue(check: TechnicalCheck): string | null {
@@ -1276,7 +1328,7 @@ function storedActualValue(check: TechnicalCheck): string | null {
       // Plain text, as the engine reports it for other checks.
     }
   }
-  return value?.slice(0, MAX_CHECK_VALUE) ?? null;
+  return value ?? null;
 }
 
 // A snapshot saved by an earlier version can hold a framework that was
@@ -1312,23 +1364,32 @@ export function compactAssessment(
       name: result.capability.name,
       platform: result.capability.platform,
       status: result.status,
-      evidence: result.evidence.map((evidence) => ({
-        policyId: evidence.policyId,
-        policyName: evidence.policyName,
-        settingId: evidence.settingId,
-        observedValue: evidence.observedValue.slice(0, MAX_CHECK_VALUE),
-        verdict: evidence.verdict,
-        assignment: evidence.assignment.state,
-      })),
-      checks: result.checks.map((check) => ({
-        settingId: check.settingId,
-        ...(check.policyId ? { policyId: check.policyId } : {}),
-        ...(check.policyName ? { policyName: check.policyName } : {}),
-        assessmentStatus: check.assessmentStatus,
-        result: check.result,
-        actualValue: storedActualValue(check),
-        ...(check.assignment ? { assignment: check.assignment.state } : {}),
-      })),
+      evidence: result.evidence.map((evidence) => {
+        const observed = storedValue(evidence.observedValue);
+        return {
+          policyId: evidence.policyId,
+          policyName: evidence.policyName,
+          settingId: evidence.settingId,
+          observedValue: observed.value,
+          ...(observed.sha256 ? { observedValueSha256: observed.sha256 } : {}),
+          verdict: evidence.verdict,
+          assignment: evidence.assignment.state,
+        };
+      }),
+      checks: result.checks.map((check) => {
+        const full = storedActualValue(check);
+        const actual = full === null ? null : storedValue(full);
+        return {
+          settingId: check.settingId,
+          ...(check.policyId ? { policyId: check.policyId } : {}),
+          ...(check.policyName ? { policyName: check.policyName } : {}),
+          assessmentStatus: check.assessmentStatus,
+          result: check.result,
+          actualValue: actual?.value ?? null,
+          ...(actual?.sha256 ? { actualValueSha256: actual.sha256 } : {}),
+          ...(check.assignment ? { assignment: check.assignment.state } : {}),
+        };
+      }),
     })),
     frameworks: assessment.frameworks.map((framework) => {
       const coverageLabel = frameworkCoverageLabel(framework);
@@ -1382,13 +1443,15 @@ export function projectSnapshot(
         label: section.label,
         status,
         ...(error ? { error } : {}),
-        items: section.items
-          .map((item, index) =>
-            isRecord(item)
-              ? projectItem(section, item, index, itemErrors, fingerprint)
-              : null,
-          )
-          .filter((item): item is SnapshotItem => item !== null),
+        // An item Graph returned as no record is kept without an id, which
+        // names no item in any section (isItemIdentity), and incomplete,
+        // so it reads as an unknown policy (diff.ts), never as one policy
+        // fewer or as a removed singleton.
+        items: section.items.map((item, index) =>
+          isRecord(item)
+            ? projectItem(section, item, index, itemErrors, fingerprint)
+            : { id: "", data: {}, incomplete: true },
+        ),
       };
     },
   );

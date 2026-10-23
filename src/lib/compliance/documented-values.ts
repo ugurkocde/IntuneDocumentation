@@ -179,6 +179,36 @@ export const DOCUMENTED_VALUES = {
   ],
   authenticationStrengthPolicyType: ["builtIn", "custom"],
   runAsAccountType: ["system", "user"],
+  // The intent of an assignment, where its type has one (Graph beta
+  // $metadata, 23 October 2026): installIntent of mobileAppAssignment, and
+  // deviceConfigAssignmentIntent of deviceConfigurationAssignment and
+  // deviceManagementResourceAccessProfileAssignment (lab tenant: "required"
+  // and "available" on app assignments, "apply" on device configurations).
+  assignmentIntent: [
+    "available",
+    "required",
+    "uninstall",
+    "availableWithoutEnrollment",
+    "apply",
+    "remove",
+  ],
+  // deviceManagementConfigurationPlatforms, a flags enum: the platforms of
+  // a Settings Catalog policy ("windows10", "macOS", lab tenant).
+  // unknownFutureValue is the sentinel; the members after it are returned
+  // only to clients that ask for them.
+  deviceManagementConfigurationPlatforms: [
+    "none",
+    "android",
+    "iOS",
+    "macOS",
+    "windows10X",
+    "windows10",
+    "linux",
+    "androidEnterprise",
+    "aosp",
+    "visionOS",
+    "tvOS",
+  ],
 } as const satisfies Record<string, readonly string[]>;
 
 export type DocumentedField = keyof typeof DOCUMENTED_VALUES;

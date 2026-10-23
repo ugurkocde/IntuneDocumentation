@@ -136,6 +136,8 @@ describe("secret redaction for shareable documentation", () => {
               {
                 children: [
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "com.apple.wifi.managed_ssid_str",
                     simpleSettingValue: {
                       "@odata.type":
@@ -144,6 +146,8 @@ describe("secret redaction for shareable documentation", () => {
                     },
                   },
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "com.apple.wifi.managed_password",
                     simpleSettingValue: { value: "DUMMY-child" },
                   },
@@ -155,6 +159,8 @@ describe("secret redaction for shareable documentation", () => {
         {
           id: "3",
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
             settingDefinitionId: "vendor_msft_example_unrelatedname",
             simpleSettingValue: {
               "@odata.type":
@@ -167,6 +173,8 @@ describe("secret redaction for shareable documentation", () => {
         {
           id: "4",
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
             settingDefinitionId:
               "device_vendor_msft_policy_config_devicelock_minimumpasswordlength",
             simpleSettingValue: {

@@ -33,10 +33,20 @@ const isBoolean = (value: unknown) => typeof value === "boolean";
 const isUnsigned = (value: unknown) =>
   Number.isSafeInteger(value) && (value as number) >= 0;
 
-/** A TimeOfDay value as Graph returns it, for example "02:00:00.0000000". */
+// The Edm primitive syntax below follows the OData CSDL ABNF (OData v4.01,
+// odata-abnf-construction-rules) and keeps every form Graph returns, such as
+// "02:00:00.0000000", "2026-10-23T10:00:00.0000000Z" and "PT0S".
+// Seconds run to 60 for a leap second; their fraction has 1 to 12 digits.
+const SECONDS = "(:([0-5]\\d|60)(\\.\\d{1,12})?)?";
+
+const TIME_OF_DAY = new RegExp(`^([01]\\d|2[0-3]):[0-5]\\d${SECONDS}$`);
+
+/**
+ * An Edm.TimeOfDay: hour and minute, with optional seconds and fractional
+ * seconds ("02:00", "02:00:00", "02:00:00.0000000" as Graph returns it).
+ */
 export const isTimeOfDay = (value: unknown): boolean =>
-  typeof value === "string" &&
-  /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?$/.test(value);
+  typeof value === "string" && TIME_OF_DAY.test(value);
 
 // An Edm.Date ("2026-10-23") that names a day of the calendar.
 const isDate = (value: unknown) =>
@@ -44,20 +54,23 @@ const isDate = (value: unknown) =>
   /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value) &&
   new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
 
-// An Edm.DateTimeOffset in the ISO 8601 form Graph returns
-// ("2026-10-23T09:00:00Z", fractional seconds and an offset allowed).
+// An Edm.DateTimeOffset: a date, T, hour and minute with optional seconds
+// and fractional seconds, and Z or an offset ("2026-10-23T10:00:00Z",
+// "2026-10-23T10:00:00.0000000Z", "2026-10-23T12:00:00+02:00").
+const DATE_TIME_OFFSET = new RegExp(
+  `^.{10}T([01]\\d|2[0-3]):[0-5]\\d${SECONDS}(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)$`,
+);
 const isDateTimeOffset = (value: unknown) =>
   typeof value === "string" &&
   isDate(value.slice(0, 10)) &&
-  /^.{10}T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/.test(
-    value,
-  );
+  DATE_TIME_OFFSET.test(value);
 
-// An Edm.Duration in the ISO 8601 form Graph returns ("PT1H", "P1D",
-// "PT0.5S"), with at least one component.
+// An Edm.Duration is a day-time duration: an optional sign, P, days, and
+// after T hours, minutes and seconds, with at least one component ("PT0S",
+// "P1D", "PT1H30M", "PT0.5S"). Years, months and weeks are no Edm.Duration.
 const isDuration = (value: unknown) =>
   typeof value === "string" &&
-  /^-?P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/.test(
+  /^[+-]?P(?=\d|T\d)(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/.test(
     value,
   );
 
@@ -66,16 +79,36 @@ const isGuid = (value: unknown) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 // An Edm.Binary as JSON carries it: base64url text (OData JSON format),
-// padded or not, or the base64 text Graph returns for some properties.
+// padded or not, or the base64 text Graph returns for some properties. The
+// last character of a partial group carries no bits beyond the bytes it
+// encodes (CSDL ABNF base64b8end and base64b16end).
 const isBinary = (value: unknown) => {
   if (typeof value !== "string") return false;
   const body = value.replace(/={1,2}$/, "");
   const padded = body.length !== value.length;
+  const rest = body.length % 4;
+  const last = body.slice(-1);
   return (
     (/^[A-Za-z0-9+/]*$/.test(body) || /^[A-Za-z0-9_-]*$/.test(body)) &&
-    (padded ? value.length % 4 === 0 : body.length % 4 !== 1)
+    (padded
+      ? value.length % 4 === 0 && value.length - body.length === 4 - rest
+      : rest !== 1) &&
+    (rest !== 2 || /[AQgw]/.test(last)) &&
+    (rest !== 3 || /[AEIMQUYcgkosw048]/.test(last))
   );
 };
+
+// Edm.Double and Edm.Single as OData JSON carries them: a number, or one of
+// the strings NaN, INF and -INF. A Single is within its range.
+const SPECIAL_FLOATS = ["NaN", "INF", "-INF"];
+const isDouble = (value: unknown) =>
+  (typeof value === "number" && Number.isFinite(value)) ||
+  SPECIAL_FLOATS.includes(value as string);
+// A number a binary32 rounds to a finite value, so the shortest decimal
+// form of its largest value ("3.4028235e38") is a Single too.
+const isSingle = (value: unknown) =>
+  isDouble(value) &&
+  (typeof value !== "number" || Number.isFinite(Math.fround(value)));
 
 /**
  * A name and value pair of an administrative template list presentation.
@@ -90,11 +123,14 @@ export const isKeyValuePair = (pair: unknown): boolean =>
   (isString(pair.value) || pair.value === null);
 
 // The documented type of the value of every typed Graph record a setting
-// value is read from, by normalized @odata.type (Graph beta reference on
-// Microsoft Learn, checked 23 October 2026; the lab tenant returns the type
-// on every one of them): Settings Catalog simple setting values, custom
-// OMA-URI rows, intent setting instances and administrative template
-// presentation values. Secret values are not listed, so they are never read.
+// value is read from, by normalized @odata.type (Graph beta $metadata and
+// the msgraph skill schemas, checked 23 October 2026; the lab tenant
+// returns the type on every one of them): Settings Catalog simple setting
+// values, every subtype of omaSetting (value Int32, Boolean, String,
+// Single, DateTimeOffset, String for omaSettingBase64 and Binary for
+// omaSettingStringXml), intent setting instances and administrative
+// template presentation values. Secret values are not listed, so they are
+// never read.
 const VALUE_TYPES: Readonly<Record<string, (value: unknown) => boolean>> = {
   devicemanagementconfigurationintegersettingvalue: isInt32,
   devicemanagementconfigurationstringsettingvalue: isString,
@@ -102,11 +138,10 @@ const VALUE_TYPES: Readonly<Record<string, (value: unknown) => boolean>> = {
   omasettinginteger: isInt32,
   omasettingboolean: isBoolean,
   omasettingstring: isString,
-  omasettingfloatingpoint: (value) =>
-    typeof value === "number" && Number.isFinite(value),
-  omasettingdatetime: isString,
+  omasettingfloatingpoint: isSingle,
+  omasettingdatetime: isDateTimeOffset,
   omasettingbase64: isString,
-  omasettingstringxml: isString,
+  omasettingstringxml: isBinary,
   devicemanagementintegersettinginstance: isInt32,
   devicemanagementbooleansettinginstance: isBoolean,
   devicemanagementstringsettinginstance: isString,
@@ -152,45 +187,108 @@ const unreadableEntries = (
   check: (entry: unknown) => boolean,
 ) => !Array.isArray(value) || value.some(check);
 
-// Settings Catalog instance types Graph documents without a value property
-// (deviceManagementConfigurationSettingGroupInstance and
-// ...SettingGroupCollectionInstance, Graph beta reference). The engine reads
-// them as present without a value too.
-const VALUELESS_INSTANCES: ReadonlySet<string> = new Set([
-  "devicemanagementconfigurationsettinggroupinstance",
-  "devicemanagementconfigurationsettinggroupcollectioninstance",
-]);
+/**
+ * How deep Settings Catalog child settings are kept and read, the root
+ * instance at depth 0. The snapshot projection, the checks here, flattening
+ * (settings-flatten.ts), Compare and History share it: a child below it is
+ * kept as an instance without its id, so it reads as an unknown setting,
+ * never as no setting.
+ */
+export const MAX_SETTING_DEPTH = 16;
+
+/**
+ * The JSON nesting depth of the deepest value a stored item holds: a
+ * Settings Catalog value in a group collection entry at MAX_SETTING_DEPTH
+ * (each level nests an instance, its value, an entry and its children)
+ * below the item, its setting list and a category. Readers that walk an
+ * item, such as the redacted value fingerprints and the secret marks of
+ * Compare, go this deep, so no kept value is out of their reach.
+ */
+export const MAX_ITEM_JSON_DEPTH = 4 * (MAX_SETTING_DEPTH + 1) + 8;
+
+// The value properties of Settings Catalog instances.
+const INSTANCE_VALUE_KEYS = [
+  "simpleSettingValue",
+  "simpleSettingCollectionValue",
+  "choiceSettingValue",
+  "choiceSettingCollectionValue",
+  "groupSettingValue",
+  "groupSettingCollectionValue",
+] as const;
+type InstanceValueKey = (typeof INSTANCE_VALUE_KEYS)[number];
+
+// Every documented subtype of deviceManagementConfigurationSettingInstance
+// (Graph beta $metadata, 23 October 2026; the lab tenant returns the type on
+// every instance and child), by normalized @odata.type, with the one
+// property it holds its value in. The setting group types
+// (...SettingGroupInstance and ...SettingGroupCollectionInstance) hold none;
+// the engine reads them as present without a value.
+const INSTANCE_VALUES: Readonly<Record<string, InstanceValueKey | null>> = {
+  devicemanagementconfigurationsimplesettinginstance: "simpleSettingValue",
+  devicemanagementconfigurationsimplesettingcollectioninstance:
+    "simpleSettingCollectionValue",
+  devicemanagementconfigurationchoicesettinginstance: "choiceSettingValue",
+  devicemanagementconfigurationchoicesettingcollectioninstance:
+    "choiceSettingCollectionValue",
+  devicemanagementconfigurationgroupsettinginstance: "groupSettingValue",
+  devicemanagementconfigurationgroupsettingcollectioninstance:
+    "groupSettingCollectionValue",
+  devicemanagementconfigurationsettinggroupinstance: null,
+  devicemanagementconfigurationsettinggroupcollectioninstance: null,
+};
+
+/**
+ * The value property a Settings Catalog instance's type holds its value
+ * in, null for a type that holds none, or undefined when the instance is
+ * no record, its type is not documented, or it holds a value in a property
+ * another type documents: its @odata.type selects how it is read, so such
+ * an instance cannot be read.
+ */
+function instanceValueKey(
+  instance: unknown,
+): InstanceValueKey | null | undefined {
+  if (!isObject(instance)) return undefined;
+  const type = normalizeTargetType(instance["@odata.type"]);
+  if (!Object.hasOwn(INSTANCE_VALUES, type)) return undefined;
+  const key = INSTANCE_VALUES[type]!;
+  return INSTANCE_VALUE_KEYS.some(
+    (other) => other !== key && instance[other] != null,
+  )
+    ? undefined
+    : key;
+}
+
+const OWN_VALUE_CHECKS: Readonly<
+  Record<InstanceValueKey, (value: unknown) => boolean>
+> = {
+  simpleSettingValue: unreadableSimple,
+  simpleSettingCollectionValue: (value) =>
+    unreadableEntries(value, unreadableSimple),
+  choiceSettingValue: unreadableChoice,
+  choiceSettingCollectionValue: (value) =>
+    unreadableEntries(value, unreadableChoice),
+  // A group's value is its children, read as settings of their own.
+  groupSettingValue: (value) => !isObject(value),
+  groupSettingCollectionValue: (value) => !Array.isArray(value),
+};
 
 /**
  * Whether the own value of a Settings Catalog instance, without its child
- * instances, is unreadable, as the compliance engine reads it: a simple
- * value of another type than its record documents, a choice value that is
- * no option id, a value collection that is no list or holds such an entry,
- * or no value at all on an instance that is no group and of no type Graph
- * documents without a value. Secret and redacted values are not stored
- * rather than unreadable. A valid empty collection is readable.
+ * instances, is unreadable, as the compliance engine reads it: an instance
+ * of a type Graph does not document, or with a value in another type's
+ * property (instanceValueKey); no value in the property its type documents;
+ * a simple value of another type than its record documents, a choice value
+ * that is no option id, or a value collection that is no list or holds such
+ * an entry. The setting group types hold no value. Secret and redacted
+ * values are not stored rather than unreadable. A valid empty collection is
+ * readable.
  */
 export function unreadableCatalogValue(instance: unknown): boolean {
-  if (!isObject(instance)) return true;
-  if (VALUELESS_INSTANCES.has(normalizeTargetType(instance["@odata.type"])))
-    return false;
-  const present = (key: string) => instance[key] != null;
-  if (present("groupSettingValue") || present("groupSettingCollectionValue"))
-    return false;
-  const checks: Array<[string, (value: unknown) => boolean]> = [
-    ["simpleSettingValue", unreadableSimple],
-    [
-      "simpleSettingCollectionValue",
-      (value) => unreadableEntries(value, unreadableSimple),
-    ],
-    ["choiceSettingValue", unreadableChoice],
-    [
-      "choiceSettingCollectionValue",
-      (value) => unreadableEntries(value, unreadableChoice),
-    ],
-  ];
-  const own = checks.filter(([key]) => present(key));
-  return !own.length || own.some(([key, check]) => check(instance[key]));
+  const key = instanceValueKey(instance);
+  if (key === undefined) return true;
+  if (key === null) return false;
+  const value = (instance as Record<string, unknown>)[key];
+  return value == null || OWN_VALUE_CHECKS[key](value);
 }
 
 /**
@@ -367,74 +465,53 @@ export function settingsLayout(
 const malformedList = (value: unknown) =>
   value !== undefined && value !== null && !Array.isArray(value);
 
-// The value each choice and group instance type holds its child settings in
-// (Graph beta reference): a record, or a list of records for a collection.
-const CHILD_VALUES: Readonly<Record<string, [string, "record" | "list"]>> = {
-  devicemanagementconfigurationchoicesettinginstance: [
-    "choiceSettingValue",
-    "record",
-  ],
-  devicemanagementconfigurationchoicesettingcollectioninstance: [
-    "choiceSettingCollectionValue",
-    "list",
-  ],
-  devicemanagementconfigurationgroupsettinginstance: [
-    "groupSettingValue",
-    "record",
-  ],
-  devicemanagementconfigurationgroupsettingcollectioninstance: [
-    "groupSettingCollectionValue",
-    "list",
-  ],
-};
-
-// The child lists of a Settings Catalog instance, or null when one that can
-// hold child settings is not a list: a choice value's children (which Graph
-// may omit), the choice and group collections, and a group value's
-// children, which Graph always returns. A choice or group instance without
-// the value its type holds its children in may hold any child setting too.
-function childLists(instance: Record<string, any>): unknown[][] | null {
-  const type = normalizeTargetType(instance["@odata.type"]);
-  if (Object.hasOwn(CHILD_VALUES, type)) {
-    const [key, shape] = CHILD_VALUES[type]!;
-    if (
-      shape === "list"
-        ? !Array.isArray(instance[key])
-        : !isObject(instance[key])
-    )
-      return null;
-  }
-  const choices = instance.choiceSettingCollectionValue;
-  const groups = instance.groupSettingCollectionValue;
-  if (malformedList(choices) || malformedList(groups)) return null;
-  const present = (value: unknown) => (value == null ? [] : [value]);
-  const choiceValues = [
-    ...present(instance.choiceSettingValue),
-    ...list(choices),
-  ];
-  const groupValues = [...present(instance.groupSettingValue), ...list(groups)];
+// The child lists of a Settings Catalog instance, read from the value its
+// type documents (instanceValueKey), or null when they are unknown: an
+// instance of a type that cannot be read, or a value or child list that
+// can hold child settings and is not of its documented shape. A choice
+// value's children may be omitted; a group value's children are always
+// returned.
+function childLists(instance: unknown): unknown[][] | null {
+  const key = instanceValueKey(instance);
+  if (key === undefined) return null;
+  const value =
+    key === null ? undefined : (instance as Record<string, any>)[key];
+  const choices =
+    key === "choiceSettingValue"
+      ? [value]
+      : key === "choiceSettingCollectionValue"
+        ? value
+        : [];
+  const groups =
+    key === "groupSettingValue"
+      ? [value]
+      : key === "groupSettingCollectionValue"
+        ? value
+        : [];
+  if (!Array.isArray(choices) || !Array.isArray(groups)) return null;
   if (
-    choiceValues.some(
-      (value) => !isObject(value) || malformedList(value.children),
+    choices.some(
+      (choice) => !isObject(choice) || malformedList(choice.children),
     ) ||
-    groupValues.some(
-      (value) => !isObject(value) || !Array.isArray(value.children),
-    )
+    groups.some((group) => !isObject(group) || !Array.isArray(group.children))
   )
     return null;
   return [
-    ...choiceValues.map((value) => list((value as any).children)),
-    ...groupValues.map((value) => (value as any).children as unknown[]),
+    ...choices.map((choice) => list(choice.children)),
+    ...groups.map((group) => group.children),
   ];
 }
 
 // A Settings Catalog instance, or one of its child instances, without a
-// definition id, or with a child list Graph did not return as a list, which
-// may hold any setting.
+// definition id, of a type that cannot be read, with a child list Graph did
+// not return as a list, or below MAX_SETTING_DEPTH: it may hold any setting.
 function unidentifiedInstance(instance: unknown, depth = 0): boolean {
-  if (!isObject(instance) || !isIdentifier(instance.settingDefinitionId))
+  if (
+    depth > MAX_SETTING_DEPTH ||
+    !isObject(instance) ||
+    !isIdentifier(instance.settingDefinitionId)
+  )
     return true;
-  if (depth > 16) return false;
   const children = childLists(instance);
   return (
     !children ||
@@ -481,12 +558,22 @@ const LAYOUT_SOURCES: Readonly<Record<SettingsLayout, IdentifiedSource>> = {
  * The setting sources of a configuration whose setting list Graph did not
  * return as a list: the settings of a Settings Catalog policy or an intent,
  * the definition values of an administrative template, the custom OMA-URI
- * rows of a Windows custom profile (Graph returns each on every such item,
+ * rows of a custom profile (OMA_TYPES; Graph returns each on every such item,
  * checked in the lab tenant, 21 and 23 October 2026), or an intent category
  * that is no record or holds settings that are no list. Such a source may
  * hold any setting, so a setting the configuration does not show is unknown
  * there, never missing. A list Graph returned empty holds no setting.
  */
+// Every type with custom OMA-URI rows (omaSettings in the Graph beta
+// $metadata, 23 October 2026).
+const OMA_TYPES: ReadonlySet<string> = new Set([
+  "androidcustomconfiguration",
+  "androidforworkcustomconfiguration",
+  "androidworkprofilecustomconfiguration",
+  "windows10customconfiguration",
+  "windowsphone81customconfiguration",
+]);
+
 export function unlistedSources(
   config: Record<string, unknown>,
   family: unknown = config.__evidenceFamily,
@@ -511,8 +598,7 @@ export function unlistedSources(
   )
     found.add("administrativeTemplate");
   if (
-    normalizeTargetType(config["@odata.type"]) ===
-      "windows10customconfiguration" &&
+    OMA_TYPES.has(normalizeTargetType(config["@odata.type"])) &&
     !Array.isArray(config.omaSettings)
   )
     found.add("omaUri");
@@ -566,8 +652,9 @@ export function unidentifiedSources(
 // unreadable own value (unreadableCatalogValue).
 function unreadableInstance(instance: unknown, depth = 0): boolean {
   if (unreadableCatalogValue(instance)) return true;
-  if (depth > 16) return false;
-  return (childLists(instance as Record<string, any>) ?? []).some((rows) =>
+  // Children below the limit are unidentified (unidentifiedInstance).
+  if (depth >= MAX_SETTING_DEPTH) return false;
+  return (childLists(instance) ?? []).some((rows) =>
     rows.some((child) => unreadableInstance(child, depth + 1)),
   );
 }
@@ -680,7 +767,8 @@ export const EDM_TYPES: Readonly<Record<string, (value: unknown) => boolean>> =
     Boolean: isBoolean,
     Int32: isInt32,
     Int64: (value) => Number.isSafeInteger(value),
-    Double: (value) => typeof value === "number" && Number.isFinite(value),
+    Double: isDouble,
+    Single: isSingle,
     String: isString,
     Duration: isDuration,
     TimeOfDay: isTimeOfDay,
@@ -723,6 +811,35 @@ export const ENUM_MEMBERS: Readonly<Record<string, DocumentedField>> = {
   conditionalAccessTransferMethods: "conditionalAccessTransferMethods",
   authenticationStrengthPolicyType: "authenticationStrengthPolicyType",
   runAsAccountType: "runAsAccountType",
+  deviceManagementConfigurationPlatforms:
+    "deviceManagementConfigurationPlatforms",
+};
+
+// Abstract Graph types a property holds a subtype of, named by its
+// @odata.type, with their documented concrete subtypes, normalized (Graph
+// beta $metadata, 23 October 2026). The type selects how the record is
+// read, so another one is unreadable.
+export const DERIVED_TYPES: Readonly<Record<string, ReadonlySet<string>>> = {
+  conditionalAccessExternalTenants: new Set([
+    "conditionalaccessallexternaltenants",
+    "conditionalaccessenumeratedexternaltenants",
+  ]),
+};
+
+// Subtypes Graph documents with the value a property of theirs always has
+// (Graph beta reference, conditionalAccessExternalTenants: the enumerated
+// membership kind references a conditionalAccessEnumeratedExternalTenants
+// object). A record whose type and that value disagree is not of either.
+const TYPE_IMPLIES: Readonly<Record<string, readonly [string, string]>> = {
+  conditionalaccessallexternaltenants: ["membershipKind", "all"],
+  conditionalaccessenumeratedexternaltenants: ["membershipKind", "enumerated"],
+};
+
+const contradictsType = (record: Record<string, unknown>) => {
+  const type = normalizeTargetType(record["@odata.type"]);
+  if (!Object.hasOwn(TYPE_IMPLIES, type)) return false;
+  const [key, value] = TYPE_IMPLIES[type]!;
+  return record[key] !== value;
 };
 
 // Flags enums hold several members, comma separated ("password,sms"), in no
@@ -734,6 +851,7 @@ export const FLAGS_ENUMS: ReadonlySet<string> = new Set([
   "conditionalAccessAgentIdRiskLevels",
   "conditionalAccessGuestOrExternalUserTypes",
   "conditionalAccessTransferMethods",
+  "deviceManagementConfigurationPlatforms",
 ]);
 
 // A primitive, or a list of primitives of one type: the values the
@@ -750,7 +868,8 @@ const plainValue = (value: unknown) => {
 /**
  * Whether a value has its documented Graph type, by type name
  * (graph-property-types.ts): every Edm primitive by its syntax (EDM_TYPES),
- * a collection as a list of values of its element type, and an enum as
+ * a collection as a list of values of its element type, the @odata.type of
+ * a record as a documented subtype (DERIVED_TYPES), and an enum as
  * members Graph documents (ENUM_MEMBERS), never the evolvable enum sentinel
  * unknownFutureValue. A type with no validator reads no value, so nothing
  * falls back to accepting any text. An Untyped property, one Graph does not
@@ -769,6 +888,11 @@ export function documentedPropertyValue(type: string, value: unknown): boolean {
     );
   if (type === "Untyped") return Array.isArray(value) && value.length === 0;
   if (Object.hasOwn(EDM_TYPES, type)) return EDM_TYPES[type]!(value);
+  if (Object.hasOwn(DERIVED_TYPES, type))
+    return (
+      typeof value === "string" &&
+      DERIVED_TYPES[type]!.has(normalizeTargetType(value))
+    );
   if (!Object.hasOwn(ENUM_MEMBERS, type) || typeof value !== "string")
     return false;
   const members = ENUM_MEMBERS[type]!;
@@ -787,9 +911,13 @@ export function hasValidator(type: string): boolean {
   return (
     type === "Untyped" ||
     Object.hasOwn(EDM_TYPES, type) ||
+    Object.hasOwn(DERIVED_TYPES, type) ||
     Object.hasOwn(ENUM_MEMBERS, type)
   );
 }
+
+// How deep plain properties are read; every documented path is shallower.
+const MAX_PROPERTY_DEPTH = 16;
 
 /** A plain property whose value Graph did not return readably. */
 export interface UnreadableProperty {
@@ -850,12 +978,29 @@ export function unreadableProperties(
   );
   const found: UnreadableProperty[] = [];
   const visit = (value: unknown, path: string[]) => {
-    if (value === null || value === undefined || path.length > 16) return;
+    if (value === null || value === undefined) return;
+    // A value nested deeper than any documented property is not read, so it
+    // may hold any setting.
+    if (path.length > MAX_PROPERTY_DEPTH) {
+      found.push({ path, container: true });
+      return;
+    }
     const name = path.join(".");
     if (Object.hasOwn(types, name)) {
-      if (!documentedPropertyValue(types[name]!, value))
-        found.push({ path, container: types[name] === "Untyped" });
+      if (documentedPropertyValue(types[name]!, value)) return;
+      // A record's @odata.type selects how the record is read, so a record
+      // of a type Graph does not document may hold any setting.
+      const discriminator = path[path.length - 1] === "@odata.type";
+      found.push(
+        discriminator
+          ? { path: path.slice(0, -1), container: true }
+          : { path, container: types[name] === "Untyped" },
+      );
     } else if (isObject(value)) {
+      if (contradictsType(value)) {
+        found.push({ path, container: true });
+        return;
+      }
       for (const [key, nested] of Object.entries(value))
         visit(nested, [...path, key]);
     } else if (records.has(name)) found.push({ path, container: true });
@@ -963,7 +1108,7 @@ const FILTER_MODES = ["include", "exclude"];
  * documented type (ASSIGNMENT_TARGET_FIELDS) with every field that says
  * what it targets, a filter type Graph documents (none, include or exclude,
  * or no filter at all) with the filter id of a filter that applies, and an
- * intent, where it has one, that is nonempty text. Such an assignment may
+ * intent, where it has one, that Graph documents. Such an assignment may
  * target anyone, so its policy's targeting is unknown and two snapshots of
  * it are not compared.
  */
@@ -996,10 +1141,10 @@ export function unreadableAssignment(entry: unknown): boolean {
       : filterType !== "none" && isIdentifier(filterId)
   )
     return true;
-  // An intent, where the assignment has one, is a documented name.
+  // An intent, where the assignment has one, is a documented member.
   return (
     entry.intent !== undefined &&
     entry.intent !== null &&
-    !isIdentifier(entry.intent)
+    !isDocumented("assignmentIntent", entry.intent)
   );
 }

@@ -283,6 +283,8 @@ describe("diffSnapshots", () => {
       settings: [
         {
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance",
             settingDefinitionId: "fw_rules",
             groupSettingCollectionValue: names.map((name) => ({
               children: [rule(name)],
@@ -474,6 +476,8 @@ describe("diffSnapshots", () => {
             name: `Policy ${index}`,
             settings: Array.from({ length: 4 }, (_, row) => ({
               settingInstance: {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                 settingDefinitionId: `setting_${row}`,
                 simpleSettingValue: {
                   "@odata.type":

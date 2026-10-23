@@ -32,6 +32,7 @@ import {
   propertyTypes,
 } from "../compliance/graph-rows";
 import { FAMILY_RESOURCE_TYPES } from "../compliance/graph-property-types";
+import { canonicalJson } from "../canonical-json";
 
 type Json = Record<string, unknown>;
 
@@ -52,11 +53,12 @@ const flags = (type: string, value: unknown) =>
 // Primitives sort by type and text, so a list of mixed entries, which reads
 // as unreadable anyway, still sorts the same way on both sides. The text is
 // the canonical form of the element type (typed-values.ts), so entries
-// Graph wrote in another form of the same value sort alike too.
+// Graph wrote in another form of the same value sort alike too, and an
+// entry that is a record is written with its keys sorted (canonical-json.ts).
 const sorted = (list: unknown[], element: string) => {
   const key = (entry: unknown) => {
     const value = canonicalEdmValue(element, entry);
-    return `${typeof value}:${JSON.stringify(value)}`;
+    return `${typeof value}:${canonicalJson(value)}`;
   };
   return [...list].sort((a, b) => {
     const x = key(a);

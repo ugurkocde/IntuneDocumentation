@@ -60,6 +60,7 @@ import {
   parseAssignments,
   ASSIGNMENTS_NOT_APPLICABLE,
   formatValue,
+  isUnsetValue,
   parseDocumentableProperties,
   extractAppConfigurationSettings,
   SETTINGS_UNAVAILABLE,
@@ -1420,8 +1421,8 @@ export async function generateDetailedPDF(
           for (const setting of policy.settings) {
             const extracted = extractSettingValue(setting);
 
-            // Skip unconfigured settings
-            if (extracted.value === "Not configured") {
+            // Skip unconfigured settings, told by the value Graph returned
+            if (!extracted.configured) {
               continue;
             }
 
@@ -1704,11 +1705,8 @@ export async function generateDetailedPDF(
 
         // Helper function to add setting if configured
         const addSettingIfConfigured = (name: string, value: any) => {
-          if (value !== undefined && value !== null) {
-            const formattedValue = formatValue(value);
-            if (formattedValue !== "Not configured") {
-              settings.push({ name, value: formattedValue });
-            }
+          if (!isUnsetValue(value)) {
+            settings.push({ name, value: formatValue(value) });
           }
         };
 
@@ -2212,12 +2210,11 @@ export async function generateDetailedPDF(
             try {
               const payload = JSON.parse(config.payloadJson);
               Object.entries(payload).forEach(([key, value]) => {
-                const formattedValue = formatValue(value);
-                // Skip unconfigured settings
-                if (formattedValue !== "Not configured") {
+                // Skip unconfigured settings, told by the value Graph returned
+                if (!isUnsetValue(value)) {
                   configSettings.push({
                     name: key,
-                    value: formattedValue,
+                    value: formatValue(value),
                   });
                 }
               });
@@ -2319,11 +2316,8 @@ export async function generateDetailedPDF(
 
         // Helper function to add setting if configured
         const addUpdateSettingIfConfigured = (name: string, value: any) => {
-          if (value !== undefined && value !== null) {
-            const formattedValue = formatValue(value);
-            if (formattedValue !== "Not configured") {
-              updateSettings.push({ name, value: formattedValue });
-            }
+          if (!isUnsetValue(value)) {
+            updateSettings.push({ name, value: formatValue(value) });
           }
         };
 

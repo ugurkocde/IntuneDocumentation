@@ -34,6 +34,7 @@ import {
   parseAssignments,
   ASSIGNMENTS_NOT_APPLICABLE,
   formatValue,
+  isUnsetValue,
   parseDocumentableProperties,
   extractAppConfigurationSettings,
   SETTINGS_UNAVAILABLE,
@@ -861,7 +862,7 @@ export async function generateDetailedDOCX(
           }> = [];
           for (const setting of policy.settings) {
             const extracted = extractSettingValue(setting);
-            if (extracted.value === "Not configured") continue;
+            if (!extracted.configured) continue;
             formatted.push({
               name: extracted.name,
               value: extracted.value,
@@ -1076,11 +1077,8 @@ export async function generateDetailedDOCX(
 
         const settings: Array<{ name: string; value: string }> = [];
         const addIf = (label: string, val: any) => {
-          if (val !== undefined && val !== null) {
-            const fv = formatValue(val);
-            if (fv !== "Not configured")
-              settings.push({ name: label, value: fv });
-          }
+          if (!isUnsetValue(val))
+            settings.push({ name: label, value: formatValue(val) });
         };
 
         // Data protection
@@ -1531,9 +1529,8 @@ export async function generateDetailedDOCX(
             try {
               const payload = JSON.parse(config.payloadJson);
               Object.entries(payload).forEach(([key, value]) => {
-                const fv = formatValue(value);
-                if (fv !== "Not configured") {
-                  configSettings.push({ name: key, value: fv });
+                if (!isUnsetValue(value)) {
+                  configSettings.push({ name: key, value: formatValue(value) });
                 }
               });
             } catch {
@@ -1614,11 +1611,8 @@ export async function generateDetailedDOCX(
 
         const settings: Array<{ name: string; value: string }> = [];
         const addIf = (label: string, val: any) => {
-          if (val !== undefined && val !== null) {
-            const fv = formatValue(val);
-            if (fv !== "Not configured")
-              settings.push({ name: label, value: fv });
-          }
+          if (!isUnsetValue(val))
+            settings.push({ name: label, value: formatValue(val) });
         };
 
         addIf("Delivery Optimization Mode", policy.deliveryOptimizationMode);
@@ -1734,11 +1728,8 @@ export async function generateDetailedDOCX(
 
         const settings: Array<{ name: string; value: string }> = [];
         const addIf = (label: string, val: any) => {
-          if (val !== undefined && val !== null) {
-            const fv = formatValue(val);
-            if (fv !== "Not configured")
-              settings.push({ name: label, value: fv });
-          }
+          if (!isUnsetValue(val))
+            settings.push({ name: label, value: formatValue(val) });
         };
 
         // Type and priority

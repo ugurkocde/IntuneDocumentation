@@ -1,3 +1,4 @@
+import { canonicalJson } from "./canonical-json";
 import {
   childLists,
   MAX_SETTING_DEPTH,
@@ -13,6 +14,7 @@ import {
   extractAppConfigurationSettings,
   extractSettingValue,
   formatValue,
+  isUnsetValue,
   parseAdministrativeTemplate,
   parseComplianceRules,
   parseDeviceConfiguration,
@@ -124,8 +126,11 @@ const typedValue = (record: Record<string, unknown>, value: unknown) => [
   value ?? null,
 ];
 
+// The members of a JSON object are unordered, so a parsed complex value is
+// serialized with its keys sorted (canonical-json.ts): the same object in
+// another key order is the same value.
 const typedToken = (token: unknown) => ({
-  token: JSON.stringify(token),
+  token: canonicalJson(token),
   typed: true as const,
 });
 
@@ -239,7 +244,10 @@ function walkCatalogInstance(
     !definitionId ||
     unknownChildren ||
     unreadableCatalogValue(instance);
-  if (unreadable || (!isGroup && extracted.value !== NOT_CONFIGURED)) {
+  // A row is kept by the value Graph returned (extractSettingValue
+  // configured), never by its display text, so a text value that reads
+  // "Not configured" is a setting like any other.
+  if (unreadable || (!isGroup && extracted.configured)) {
     const choice = Boolean(
       instance.choiceSettingValue || instance.choiceSettingCollectionValue,
     );
@@ -378,10 +386,10 @@ function omaRows(omaSettings: unknown): FlatSettingRow[] {
     // A row without a value holds one that is not stored; it is compared
     // by fingerprint.
     const unreadable = unreadableOmaValue(record);
-    const value = unreadable
-      ? UNREADABLE_VALUE
-      : formatValue(record.value ?? record.omaSettingStringValue);
-    if (value === NOT_CONFIGURED) return [];
+    const raw = record.value ?? record.omaSettingStringValue;
+    // Told by the value Graph returned, never by its display text.
+    if (!unreadable && isUnsetValue(raw)) return [];
+    const value = unreadable ? UNREADABLE_VALUE : formatValue(raw);
     const omaUri = definitionIdOf(record.omaUri);
     return [
       {
@@ -456,7 +464,7 @@ function administrativeTemplateRows(
       Array.isArray(raw?.presentationValues) ? raw.presentationValues : []
     )
       .map((entry: any) =>
-        JSON.stringify([
+        canonicalJson([
           entry?.presentation?.id ?? null,
           ...typedValue(isRecord(entry) ? entry : {}, entry?.value),
           entry?.values ?? null,

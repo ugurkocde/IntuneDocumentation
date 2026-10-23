@@ -131,6 +131,40 @@ describe("settings search index", () => {
     expect(mac.hits.every((hit) => hit.platforms.includes("macOS"))).toBe(true);
   });
 
+  it("indexes a text value that reads like a placeholder", () => {
+    // A valid Settings Catalog text that reads "Not configured" or "Value
+    // could not be read" is a setting like any other (round 41).
+    const policy = (value: string, id: string) => ({
+      id: `synthetic-${id}`,
+      name: `Synthetic ${id}`,
+      platforms: "windows10",
+      settings: [
+        {
+          settingInstance: {
+            "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+            settingDefinitionId: `synthetic_${id}`,
+            simpleSettingValue: { "@odata.type": STRING_VALUE, value },
+          },
+        },
+      ],
+    });
+    const placeholders = buildSettingsIndex(
+      [
+        section("settingsCatalog", "settingsCatalog", [
+          policy("Not configured", "banner"),
+          policy("Value could not be read", "footer"),
+        ]),
+      ],
+      summarize,
+    );
+    expect(searchSettingsIndex(placeholders, { query: "synthetic_banner" }).hits).toEqual([
+      expect.objectContaining({ definitionId: "synthetic_banner", value: "Not configured" }),
+    ]);
+    expect(searchSettingsIndex(placeholders, { query: "synthetic_footer" }).hits).toEqual([
+      expect.objectContaining({ definitionId: "synthetic_footer", value: "Value could not be read" }),
+    ]);
+  });
+
   it("returns nothing for an empty query", () => {
     const result = searchSettingsIndex(index, { query: "   " });
     expect(result).toMatchObject({ total: 0, hits: [] });

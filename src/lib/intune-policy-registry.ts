@@ -1,3 +1,5 @@
+import { canonicalJson } from "./canonical-json";
+
 export type AdditionalConfigurationFamily =
   | "windowsUpdateProfiles"
   | "scriptsAndRemediations"
@@ -480,14 +482,16 @@ export function redactedDigests(record: unknown): Array<[string, string]> {
 }
 
 // The content a digest is taken of; nothing for empty values and values
-// that were already redacted.
+// that were already redacted. A record is written with its keys sorted
+// (canonical-json.ts), so the same record in another key order has the same
+// fingerprint in History.
 function redactableContent(value: unknown): string | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   if (value === REDACTED_VALUE) return undefined;
   if (Array.isArray(value) && value.length === 1 && value[0] === REDACTED_VALUE)
     return undefined;
   if (typeof value === "string") return value;
-  return JSON.stringify(value);
+  return canonicalJson(value);
 }
 
 const SENSITIVE_FIELD_PATTERN =

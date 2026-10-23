@@ -186,10 +186,8 @@ function extractNestedSettings(
 
       const childResult = extractSettingValue(configSetting, depth);
 
-      // Skip unconfigured settings
-      if (!childResult || childResult.value === "Not configured") {
-        continue;
-      }
+      // Skip unconfigured settings, told by the value Graph returned
+      if (!childResult?.configured) continue;
 
       // Add the main setting with indentation
       results.push({
@@ -230,6 +228,13 @@ export function extractSettingValue(
 ): {
   name: string;
   value: any;
+  /**
+   * Whether the setting is shown: it holds a value as Graph returned it
+   * (isUnsetValue), is a group, or is unreadable. Decided from the raw
+   * value, never from the display text, so a text value that reads "Not
+   * configured" is still a setting.
+   */
+  configured: boolean;
   type: string;
   description?: string;
   nestedSettings?: Array<{ name: string; value: string; description?: string }>;
@@ -243,7 +248,10 @@ export function extractSettingValue(
       ? setting.settingDefinitions[0]
       : undefined);
 
-  let value: any = "Not configured";
+  let value: any;
+  // The value as Graph returned it, which decides whether the setting is
+  // shown; value is what the documentation shows of it.
+  let raw: unknown;
   let type = "Unknown";
   let nestedSettings:
     | Array<{ name: string; value: string; description?: string }>
@@ -254,6 +262,7 @@ export function extractSettingValue(
     return {
       name: settingDef?.displayName || setting.id || "Unknown Setting",
       value: "Not configured",
+      configured: false,
       type: "Unknown",
       description: settingDef?.description,
     };
@@ -261,7 +270,7 @@ export function extractSettingValue(
 
   // Extract value based on setting type
   if (instance.simpleSettingValue) {
-    value = instance.simpleSettingValue.value;
+    value = raw = instance.simpleSettingValue.value;
     type = "Simple";
   } else if (instance.simpleSettingCollectionValue) {
     // Handle array of simple values (strings, numbers, booleans). A
@@ -271,8 +280,9 @@ export function extractSettingValue(
     const values = list(instance.simpleSettingCollectionValue).map(
       (item) => item?.value,
     );
-    value = values; // formatValue will handle array formatting
+    value = raw = values; // formatValue will handle array formatting
   } else if (instance.choiceSettingValue) {
+    raw = instance.choiceSettingValue.value;
     value = resolveChoiceDisplayValue(
       instance.choiceSettingValue.value,
       settingDef,
@@ -291,6 +301,9 @@ export function extractSettingValue(
       );
     }
   } else if (instance.choiceSettingCollectionValue) {
+    raw = list(instance.choiceSettingCollectionValue).map(
+      (choice) => choice?.value,
+    );
     value = list(instance.choiceSettingCollectionValue).map((choice) =>
       resolveChoiceDisplayValue(choice?.value, settingDef),
     );
@@ -372,6 +385,12 @@ export function extractSettingValue(
       instance.settingDefinitionId ||
       "Unknown Setting",
     value: unreadable ? UNREADABLE_VALUE : formatValue(value),
+    // A group shows its children; it holds no value of its own.
+    configured:
+      unreadable ||
+      type === "Group" ||
+      type === "Group Collection" ||
+      !isUnsetValue(raw),
     type,
     description: settingDef?.description,
     nestedSettings: unknownChildren
@@ -383,6 +402,28 @@ export function extractSettingValue(
           }))
         : nestedSettings,
   };
+}
+
+/**
+ * Whether a value as Graph returned it holds no setting, so the
+ * documentation leaves it out: the values formatValue shows as "Not
+ * configured" (no value, an empty list, a list of one such value, or a
+ * value record without a label holding one). Text is always a value, also
+ * text that reads like a placeholder, such as "Not configured" or "Value
+ * could not be read", so presence is never decided from the display text.
+ */
+export function isUnsetValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (Array.isArray(value))
+    return value.length === 0 || (value.length === 1 && isUnsetValue(value[0]));
+  if (typeof value === "object" && Object.hasOwn(value, "value")) {
+    const record = value as Record<string, unknown>;
+    const label = record.displayName ?? record.name;
+    return (
+      (label === undefined || label === null) && isUnsetValue(record.value)
+    );
+  }
+  return false;
 }
 
 // Format values for display
@@ -502,9 +543,8 @@ export function parseDocumentableProperties(
       return;
     }
 
-    const formatted = formatValue(current);
-    if (formatted !== "Not configured" && path.length > 0) {
-      settings.push({ name: path.join(" › "), value: formatted });
+    if (!isUnsetValue(current) && path.length > 0) {
+      settings.push({ name: path.join(" › "), value: formatValue(current) });
     }
   };
 
@@ -514,39 +554,40 @@ export function parseDocumentableProperties(
 
 export function extractAppConfigurationSettings(config: Record<string, any>) {
   if (!Array.isArray(config.settings)) return [];
-  return config.settings
-    .map((setting: Record<string, any>) => ({
-      name:
-        setting.appConfigKey ||
-        setting.settingName ||
-        setting.name ||
-        setting.key ||
-        "Setting",
-      value: formatValue(
-        setting.appConfigKeyValue ??
-          setting.settingValue ??
-          setting.value ??
-          setting.valueJson,
-      ),
-      type: setting.appConfigKeyType,
-    }))
-    .filter((setting) => setting.value !== "Not configured");
+  return config.settings.flatMap((setting: Record<string, any>) => {
+    const value =
+      setting.appConfigKeyValue ??
+      setting.settingValue ??
+      setting.value ??
+      setting.valueJson;
+    if (isUnsetValue(value)) return [];
+    return [
+      {
+        name:
+          setting.appConfigKey ||
+          setting.settingName ||
+          setting.name ||
+          setting.key ||
+          "Setting",
+        value: formatValue(value),
+        type: setting.appConfigKeyType,
+      },
+    ];
+  });
 }
 
 // Custom OMA-URI rows as formatValue shows them, with a value Graph did not
 // return readably shown as unreadable. Graph returns the value on every row
 // (compliance/graph-rows.ts), so a collected row without one is unreadable
 // too, unless it is encrypted.
-function formatOmaSettings(rows: unknown[]): string {
-  return formatValue(
-    rows.map((row: any) =>
-      row &&
-      typeof row === "object" &&
-      (unreadableOmaValue(row) ||
-        (!Object.hasOwn(row, "value") && row.isEncrypted !== true))
-        ? { ...row, value: UNREADABLE_VALUE }
-        : row,
-    ),
+function shownOmaSettings(rows: unknown[]): unknown[] {
+  return rows.map((row: any) =>
+    row &&
+    typeof row === "object" &&
+    (unreadableOmaValue(row) ||
+      (!Object.hasOwn(row, "value") && row.isEncrypted !== true))
+      ? { ...row, value: UNREADABLE_VALUE }
+      : row,
   );
 }
 
@@ -583,15 +624,13 @@ export function parseDeviceConfiguration(config: any): Array<{
       config[key] !== null &&
       config[key] !== undefined
     ) {
-      const formattedValue =
+      const value =
         key === "omaSettings" && Array.isArray(config[key])
-          ? formatOmaSettings(config[key])
-          : formatValue(config[key]);
+          ? shownOmaSettings(config[key])
+          : config[key];
 
-      // Skip unconfigured settings
-      if (formattedValue === "Not configured") {
-        return;
-      }
+      // Skip unconfigured settings, told by the value Graph returned
+      if (isUnsetValue(value)) return;
 
       const category = getCategoryFromKey(key);
       if (!categories[category]) {
@@ -600,7 +639,7 @@ export function parseDeviceConfiguration(config: any): Array<{
 
       categories[category].push({
         name: formatKeyName(key),
-        value: formattedValue,
+        value: formatValue(value),
         description: getPropertyDescription(key),
       });
     }
@@ -696,17 +735,13 @@ export function parseComplianceRules(policy: any): Array<{
       policy[key] !== undefined &&
       policy[key] !== null
     ) {
-      const formattedValue = formatValue(policy[key]);
-
-      // Skip unconfigured settings
-      if (formattedValue === "Not configured") {
-        return;
-      }
+      // Skip unconfigured settings, told by the value Graph returned
+      if (isUnsetValue(policy[key])) return;
 
       rules.push({
         category: getCategoryFromKey(key),
         rule: formatKeyName(key),
-        value: formattedValue,
+        value: formatValue(policy[key]),
         action: getComplianceAction(
           policy.scheduledActionsForRule,
           policy.collectionStatus?.scheduledActionsForRule,
@@ -774,28 +809,30 @@ export function parseSecurityBaseline(
     ? [{ displayName: "Baseline settings", settings: flatSettings }]
     : categories;
   return sourceCategories.map((category) => {
-    const settings = (category.settings || [])
-      .map((setting: any) => {
-        let value = "Not configured";
-
-        if (unreadableIntentValue(setting)) {
-          value = UNREADABLE_VALUE;
-        } else if (setting.value !== undefined && setting.value !== null) {
-          value = formatValue(setting.value);
-        } else if (typeof setting.valueJson === "string") {
-          value = formatValue(JSON.parse(setting.valueJson));
-        }
-
-        return {
+    // Unconfigured settings are left out, told by the value Graph
+    // returned, never by its display text.
+    const settings = (category.settings || []).flatMap((setting: any) => {
+      let value: string;
+      if (unreadableIntentValue(setting)) {
+        value = UNREADABLE_VALUE;
+      } else {
+        const raw =
+          setting.value !== undefined && setting.value !== null
+            ? setting.value
+            : typeof setting.valueJson === "string"
+              ? JSON.parse(setting.valueJson)
+              : undefined;
+        if (isUnsetValue(raw)) return [];
+        value = formatValue(raw);
+      }
+      return [
+        {
           name: parseSecurityBaselineSettingName(setting.definitionId),
           value,
           description: setting.description,
-        };
-      })
-      .filter(
-        (setting: { name: string; value: string; description?: string }) =>
-          setting.value !== "Not configured",
-      ); // Filter out unconfigured settings
+        },
+      ];
+    });
 
     return {
       category: category.displayName || "General",

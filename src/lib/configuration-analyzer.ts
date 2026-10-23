@@ -133,6 +133,9 @@ export function analyzeConfigurations(
   ]);
   const uniqueGroups = new Set<string>();
   const groupAssignmentCount: Record<string, number> = {};
+  // Entra object ids are case insensitive, so a group is counted once
+  // however its ids are cased, under the id first seen for it.
+  const groupKeys = new Map<string, string>();
   let assignedCount = 0;
   let unassignedCount = 0;
   let unknownCount = 0;
@@ -170,19 +173,35 @@ export function analyzeConfigurations(
     const state = assignmentState(config);
     if (state === "assigned") {
       assignedCount++;
+      const typeOf = (assignment: any) =>
+        typeof assignment.target?.["@odata.type"] === "string"
+          ? assignment.target["@odata.type"].toLowerCase()
+          : "";
+      // An exclusion takes precedence over an inclusion of the same group
+      // in the policy (compliance/assignments.ts summarizeAssignments), so
+      // a group the policy both includes and excludes is not assigned.
+      const excluded = new Set<string>();
+      for (const assignment of config.assignments) {
+        const groupId = targetGroupId(assignment.target);
+        if (
+          groupId &&
+          typeOf(assignment).includes("exclusiongroupassignmenttarget")
+        )
+          excluded.add(groupId.toLowerCase());
+      }
       config.assignments.forEach((assignment: any) => {
-        const odataType =
-          typeof assignment.target?.["@odata.type"] === "string"
-            ? assignment.target["@odata.type"].toLowerCase()
-            : "";
+        const odataType = typeOf(assignment);
 
         if (odataType.includes("exclusiongroupassignmenttarget")) return;
         // A scope tag target names its group by entraObjectId.
         const groupId = targetGroupId(assignment.target);
+        if (groupId && excluded.has(groupId.toLowerCase())) return;
         if (groupId) {
-          uniqueGroups.add(groupId);
-          groupAssignmentCount[groupId] =
-            (groupAssignmentCount[groupId] || 0) + 1;
+          const lower = groupId.toLowerCase();
+          if (!groupKeys.has(lower)) groupKeys.set(lower, groupId);
+          const key = groupKeys.get(lower)!;
+          uniqueGroups.add(key);
+          groupAssignmentCount[key] = (groupAssignmentCount[key] || 0) + 1;
         } else if (odataType.includes("alllicensedusers")) {
           uniqueGroups.add("All Users");
           groupAssignmentCount["All Users"] =

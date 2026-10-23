@@ -112,7 +112,7 @@ function catalogRows(policy: Record<string, unknown>): TableRow[] {
   const rows: TableRow[] = [];
   for (const setting of policy.settings) {
     const extracted = extractSettingValue(setting as ConfigurationSetting);
-    if (extracted.value === "Not configured") continue;
+    if (!extracted.configured) continue;
     rows.push(extracted);
     if (extracted.nestedSettings) rows.push(...extracted.nestedSettings);
   }

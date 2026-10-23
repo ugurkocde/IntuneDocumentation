@@ -49,8 +49,14 @@ export const REFERENCE_MAX_SETTINGS = 100_000;
 export const REFERENCE_MAX_VALUE = 1000;
 
 const REDACTED = "[Redacted]";
-// Marks a field Graph omitted while a reference row is built; never stored.
-const OMITTED = "[Not returned by Graph]";
+// Marks a field Graph omitted while a reference row is built; never stored
+// or shown. It is set apart by NUL characters, as the unreadable mark of
+// settings-flatten.ts is, so a real value that reads "[Not returned by
+// Graph]" stays a value.
+const OMITTED = "\u0000Not returned by Graph\u0000";
+// The marker as a value shown as JSON text holds it (formatValue writes a
+// record as JSON, which escapes the NUL characters).
+const OMITTED_IN_JSON = JSON.stringify(OMITTED).slice(1, -1);
 const SEPARATOR = "\u0000";
 // Setting ids that name a secret, matched as the last word as the collector
 // does; their values are never stored, also when a collection kept one.
@@ -264,6 +270,7 @@ function itemRows(
       (ID_FAMILIES.has(sectionKey) && OBJECT_ID.test(row.value)) ||
       row.value.includes(REDACTED) ||
       row.value.includes(OMITTED) ||
+      row.value.includes(OMITTED_IN_JSON) ||
       SECRET_SETTING.test(id);
     const entry: ReferenceSetting = {
       platform,

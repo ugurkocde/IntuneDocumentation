@@ -58,19 +58,13 @@ export const assignable = (item: Record<string, unknown>, family?: unknown) =>
     UNASSIGNABLE_REGISTRY_KEYS.has(item.registryKey)
   );
 
-/**
- * Whether an item's assignments were not fully collected: its collection
- * status says other than complete, its fetch failed before a status was
- * recorded, or one of its collection errors concerns assignments. An item
- * of a type without an assignment relationship has none to miss. The
- * engine (coverage.ts), the documentation exports, the history diff and the
- * desktop policy list read it the same way.
- */
-export function assignmentsIncomplete(
+// Whether an item's assignments were not fully collected: its collection
+// status says other than complete, its fetch failed before a status was
+// recorded, or one of its collection errors concerns assignments.
+function collectionIncomplete(
   item: Record<string, unknown>,
-  errors: readonly FetchError[] = [],
+  errors: readonly FetchError[],
 ): boolean {
-  if (!assignable(item)) return false;
   const status = item.collectionStatus;
   return (
     (status && typeof status === "object"
@@ -80,14 +74,37 @@ export function assignmentsIncomplete(
 }
 
 /**
- * The assignment collection status of an item, by assignmentsIncomplete,
- * for readers that take a status string (parseAssignments).
+ * Whether an item's assignments are unknown: they were not fully collected
+ * (collectionIncomplete), or Graph returned no list or a value that is not
+ * one (an object, null, a string or a number), which may hold any
+ * assignment whatever the collection status says. A valid empty list is
+ * not assigned. An item of a type without an assignment relationship
+ * (assignable, by the family when given or the engine's __evidenceFamily)
+ * has none to miss. The engine (coverage.ts), the documentation exports,
+ * the snapshot projection, the history diff and the desktop policy list
+ * read it the same way.
+ */
+export function assignmentsIncomplete(
+  item: Record<string, unknown>,
+  errors: readonly FetchError[] = [],
+  family: unknown = item.__evidenceFamily,
+): boolean {
+  if (!assignable(item, family)) return false;
+  return !Array.isArray(item.assignments) || collectionIncomplete(item, errors);
+}
+
+/**
+ * The collection status of an item's assignments (collectionIncomplete),
+ * for parseAssignments, which reads the list itself: a value that is not a
+ * list reads unknown there whatever this status says.
  */
 export const assignmentStatus = (
   item: Record<string, unknown>,
   errors: readonly FetchError[] = [],
 ): "complete" | "incomplete" =>
-  assignmentsIncomplete(item, errors) ? "incomplete" : "complete";
+  assignable(item) && collectionIncomplete(item, errors)
+    ? "incomplete"
+    : "complete";
 
 export function summarizeAssignments(
   assignments: unknown,

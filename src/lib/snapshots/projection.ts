@@ -528,20 +528,34 @@ function getPath(source: unknown, path: string): unknown {
 }
 
 function projectAssignments(value: unknown): Json[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return asRecords(value).map((assignment) => {
+  if (value === undefined) return undefined;
+  // Assignments Graph returned as a value that is not a list (an object,
+  // null, a string or a number) may hold any assignment, so they are kept
+  // as a list holding one assignment without a target: a restored snapshot
+  // reads them as unreadable (graph-rows.ts), never as no assignments.
+  return asRecords(Array.isArray(value) ? value : [{}]).map((assignment) => {
     const target = isRecord(assignment.target) ? assignment.target : {};
+    const keys = [
+      "@odata.type",
+      ...TARGET_FIELDS,
+      "groupName",
+      "deviceAndAppManagementAssignmentFilterId",
+      "deviceAndAppManagementAssignmentFilterType",
+    ];
     return {
       ...pick(assignment, ["intent"]),
       // Every field that says what a documented target type targets
-      // (graph-rows.ts), so history compares each of them.
-      target: pick(target, [
-        "@odata.type",
-        ...TARGET_FIELDS,
-        "groupName",
-        "deviceAndAppManagementAssignmentFilterId",
-        "deviceAndAppManagementAssignmentFilterType",
-      ]),
+      // (graph-rows.ts), so history compares each of them. A field Graph
+      // returned as a value that is not kept is kept empty, so it reads as
+      // unreadable instead of absent.
+      target: {
+        ...Object.fromEntries(
+          keys
+            .filter((key) => target[key] !== undefined)
+            .map((key) => [key, ""]),
+        ),
+        ...pick(target, keys),
+      },
     };
   });
 }
@@ -583,41 +597,53 @@ function projectInstance(
       : undefined;
   // A child that is no instance, or too deep to keep, is kept as an empty
   // one, so the instance reads as holding a setting without its id instead
-  // of one setting fewer.
+  // of one setting fewer. A child list, or a value that holds one, that
+  // Graph returned as another shape is kept as one such child, so it reads
+  // as unknown (graph-rows.ts) instead of as holding no setting.
+  const unknownChild = [{}];
   const children = (list: unknown) =>
     Array.isArray(list)
       ? list.map((child) => projectInstance(child, depth + 1, dropped) ?? {})
-      : undefined;
-  const choice = (value: unknown) =>
-    isRecord(value)
-      ? {
-          ...(typeof value.value === "string" ? { value: value.value } : {}),
-          ...(Array.isArray(value.children)
-            ? { children: children(value.children) }
-            : {}),
-        }
-      : undefined;
+      : list == null
+        ? undefined
+        : unknownChild;
+  const choice = (value: unknown) => {
+    if (!isRecord(value)) return { children: unknownChild };
+    const kept = children(value.children);
+    return {
+      ...(typeof value.value === "string" ? { value: value.value } : {}),
+      ...(kept ? { children: kept } : {}),
+    };
+  };
+  const group = (value: unknown) => ({
+    children: (isRecord(value) && children(value.children)) || unknownChild,
+  });
+  const entries = (value: unknown, entry: (item: unknown) => Json) =>
+    Array.isArray(value) ? value.map(entry) : [entry(undefined)];
   const out: Json = pick(instance, ["@odata.type", "settingDefinitionId"]);
   const simple = projectSimpleValue(instance.simpleSettingValue, drop);
   if (simple) out.simpleSettingValue = simple;
-  if (Array.isArray(instance.simpleSettingCollectionValue))
-    out.simpleSettingCollectionValue = instance.simpleSettingCollectionValue
-      .map((entry) => projectSimpleValue(entry, drop))
-      .filter(Boolean);
-  const single = choice(instance.choiceSettingValue);
-  if (single) out.choiceSettingValue = single;
-  if (Array.isArray(instance.choiceSettingCollectionValue))
-    out.choiceSettingCollectionValue = instance.choiceSettingCollectionValue
-      .map(choice)
-      .filter(Boolean);
-  if (isRecord(instance.groupSettingValue))
-    out.groupSettingValue = {
-      children: children(instance.groupSettingValue.children) ?? [],
-    };
-  if (Array.isArray(instance.groupSettingCollectionValue))
-    out.groupSettingCollectionValue = instance.groupSettingCollectionValue
-      .filter(isRecord)
-      .map((group) => ({ children: children(group.children) ?? [] }));
+  // A simple value that is no record is kept as an empty one, which has no
+  // readable value.
+  if (instance.simpleSettingCollectionValue != null)
+    out.simpleSettingCollectionValue = entries(
+      instance.simpleSettingCollectionValue,
+      (entry) => projectSimpleValue(entry, drop) ?? {},
+    );
+  if (instance.choiceSettingValue != null)
+    out.choiceSettingValue = choice(instance.choiceSettingValue);
+  if (instance.choiceSettingCollectionValue != null)
+    out.choiceSettingCollectionValue = entries(
+      instance.choiceSettingCollectionValue,
+      choice,
+    );
+  if (instance.groupSettingValue != null)
+    out.groupSettingValue = group(instance.groupSettingValue);
+  if (instance.groupSettingCollectionValue != null)
+    out.groupSettingCollectionValue = entries(
+      instance.groupSettingCollectionValue,
+      group,
+    );
   return out;
 }
 
@@ -641,7 +667,9 @@ function projectSettings(
   family: string,
   dropped?: DroppedValue,
 ): Json[] | undefined {
-  if (!Array.isArray(value) || !value.length) return undefined;
+  // An empty list is kept: Graph returned the settings and there are none,
+  // which is not the same as settings it did not return (graph-rows.ts).
+  if (!Array.isArray(value)) return undefined;
   // The layout comes from the family where it has one (graph-rows.ts). A
   // row of the layout that is no record, or lacks its instance or
   // definition id, is kept with an empty one, so it reads as a setting
@@ -660,9 +688,15 @@ function projectSettings(
   }
   // Security baseline and endpoint security intents. Other layouts, such as
   // app configuration keys and values, are not kept.
+  // A value that is not kept is kept as null, which is unreadable too, so
+  // the restored row does not fall back to its JSON text.
   return layout === "intent"
     ? asRecords(value).map((setting) => ({
         ...pick(setting, ["@odata.type", "definitionId", "value", "valueJson"]),
+        ...(setting.value !== undefined &&
+        plainValue(setting.value) === undefined
+          ? { value: null }
+          : {}),
         definitionId:
           typeof setting.definitionId === "string" ? setting.definitionId : "",
       }))
@@ -681,8 +715,15 @@ function projectDefinitionValues(value: unknown): Json[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return asRecords(value).map((row) => {
     const definition = isRecord(row.definition) ? row.definition : {};
+    // Presentation values Graph returned as another shape than a list of
+    // records were not read, as when their fetch failed.
+    const unread =
+      row.presentationValues != null &&
+      (!Array.isArray(row.presentationValues) ||
+        !row.presentationValues.every(isRecord));
     return {
       ...pick(row, ["enabled", "presentationFetchError"]),
+      ...(unread ? { presentationFetchError: true } : {}),
       definition: pick(definition, [
         "id",
         "displayName",
@@ -831,12 +872,26 @@ function projectItem(
   };
   const settings = projectSettings(raw.settings, section.familyKey, dropped);
   if (settings) data.settings = settings;
-  if (Array.isArray(raw.categories))
-    data.categories = raw.categories.filter(isRecord).map((category) => ({
-      ...pick(category, ["id", "displayName"]),
-      settings:
-        projectSettings(category.settings, section.familyKey, dropped) ?? [],
-    }));
+  // Categories or category settings Graph returned as another shape than a
+  // list are kept as a list holding a row without its identifier, so they
+  // read as unknown (graph-rows.ts) instead of as holding no setting.
+  const categorySettings = (value: unknown) =>
+    projectSettings(
+      Array.isArray(value) || value == null ? value : [{}],
+      section.familyKey,
+      dropped,
+    ) ?? [];
+  if (raw.categories != null)
+    data.categories = Array.isArray(raw.categories)
+      ? raw.categories.map((category) =>
+          isRecord(category)
+            ? {
+                ...pick(category, ["id", "displayName"]),
+                settings: categorySettings(category.settings),
+              }
+            : { settings: categorySettings({}) },
+        )
+      : [{ settings: categorySettings({}) }];
   const definitionValues = projectDefinitionValues(raw.definitionValues);
   if (definitionValues) data.definitionValues = definitionValues;
   const omaSettings = projectOmaSettings(raw.omaSettings, dropped);
@@ -874,6 +929,9 @@ function projectItem(
   const incomplete =
     raw.hasFetchError === true ||
     Object.values(collectionStatus ?? {}).includes("incomplete") ||
+    (definitionValues ?? []).some(
+      (row) => row.presentationFetchError === true,
+    ) ||
     itemErrors.has(id);
   return {
     id,

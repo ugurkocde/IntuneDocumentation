@@ -56,6 +56,7 @@ export function collectConfigurations(
         const incomplete = assignmentsIncomplete(
           item,
           itemFetchErrors(data.fetchErrors, item, family),
+          family,
         );
         return {
           ...item,

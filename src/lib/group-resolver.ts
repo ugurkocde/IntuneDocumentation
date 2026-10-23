@@ -6,6 +6,13 @@ import {
   waitForGraph,
 } from "./graph-request";
 import type { Client } from "@microsoft/microsoft-graph-client";
+import {
+  assignmentGroupIds,
+  normalizeTargetType,
+  targetGroupId,
+  unreadableAssignment,
+} from "./compliance/graph-rows";
+import { UNREADABLE_ASSIGNMENT } from "./configuration-parser";
 
 export class GroupResolver {
   private client: Client;
@@ -119,52 +126,36 @@ export class GroupResolver {
   }
 
   // Parse assignments and resolve group names
-  async resolveAssignments(assignments: any[]): Promise<string[]> {
-    if (!assignments || assignments.length === 0) {
+  async resolveAssignments(assignments: unknown): Promise<string[]> {
+    // Assignments Graph returned as no list, or as a value that is not one,
+    // may hold any assignment, so they are unreadable, never not assigned.
+    if (!Array.isArray(assignments)) return [UNREADABLE_ASSIGNMENT];
+    if (assignments.length === 0) {
       return ["Not assigned"];
     }
 
-    const resolvedTargets: string[] = [];
-    const groupIds: string[] = [];
-
-    // First pass: collect all group IDs
-    for (const assignment of assignments) {
-      const target = assignment.target;
-      if (!target) continue;
-
-      const type = target["@odata.type"];
-      if (type?.includes("groupAssignmentTarget")) {
-        groupIds.push(target.groupId);
-      }
-    }
-
-    // Batch resolve group names
-    const groupNames = await this.getGroupNames(groupIds);
-
-    // Second pass: build resolved assignment list
-    for (const assignment of assignments) {
-      const target = assignment.target;
-      if (!target) {
-        resolvedTargets.push("Unknown");
-        continue;
-      }
-
-      const type = target["@odata.type"];
-
-      if (type?.includes("allDevicesAssignmentTarget")) {
-        resolvedTargets.push("All Devices");
-      } else if (type?.includes("allLicensedUsersAssignmentTarget")) {
-        resolvedTargets.push("All Users");
-      } else if (type?.includes("exclusionGroupAssignmentTarget")) {
-        const groupName = groupNames.get(target.groupId) || target.groupId;
-        resolvedTargets.push(`Excluded: ${groupName}`);
-      } else if (type?.includes("groupAssignmentTarget")) {
-        const groupName = groupNames.get(target.groupId) || target.groupId;
-        resolvedTargets.push(groupName);
-      } else {
-        resolvedTargets.push("Custom Assignment");
-      }
-    }
+    // An assignment of a type Graph does not document, or without what its
+    // type targets, may target anyone (compliance/graph-rows.ts).
+    const groupNames = await this.getGroupNames(
+      assignments.flatMap((assignment) => {
+        const id = unreadableAssignment(assignment)
+          ? undefined
+          : targetGroupId((assignment as { target: unknown }).target);
+        return id ? [id] : [];
+      }),
+    );
+    const resolvedTargets = assignments.map((assignment) => {
+      if (unreadableAssignment(assignment)) return UNREADABLE_ASSIGNMENT;
+      const target = (assignment as { target: Record<string, any> }).target;
+      const type = normalizeTargetType(target["@odata.type"]);
+      const group = () => groupNames.get(target.groupId) || target.groupId;
+      if (type === "alldevicesassignmenttarget") return "All Devices";
+      if (type === "alllicensedusersassignmenttarget") return "All Users";
+      if (type === "exclusiongroupassignmenttarget")
+        return `Excluded: ${group()}`;
+      if (type === "groupassignmenttarget") return group();
+      return "Custom Assignment";
+    });
 
     return resolvedTargets;
   }
@@ -176,14 +167,8 @@ export class GroupResolver {
     const allGroupIds = new Set<string>();
 
     for (const config of configurations) {
-      if (config.assignments) {
-        for (const assignment of config.assignments) {
-          const target = assignment.target;
-          if (target?.groupId) {
-            allGroupIds.add(target.groupId);
-          }
-        }
-      }
+      for (const groupId of assignmentGroupIds(config))
+        allGroupIds.add(groupId);
     }
 
     return this.getGroupNames(Array.from(allGroupIds));

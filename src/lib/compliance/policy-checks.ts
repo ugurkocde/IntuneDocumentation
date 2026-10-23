@@ -1,6 +1,7 @@
 import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
 import { isDocumented } from "./documented-values";
+import { isInt32 } from "./graph-rows";
 
 export interface PolicyCheckResult {
   verdict: "enforced" | "disabled";
@@ -279,8 +280,7 @@ export function evaluatePolicyCheck(
     const grace = defaultGrace ? 2 : config.deadlineGracePeriodInDays;
     if (
       ![deferral, deadline, grace].every(
-        (value) =>
-          typeof value === "number" && Number.isInteger(value) && value >= 0,
+        (value) => isInt32(value) && value >= 0,
       )
     )
       return;

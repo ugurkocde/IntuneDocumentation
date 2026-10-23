@@ -10,6 +10,59 @@
 export const isIdentifier = (value: unknown): value is string =>
   typeof value === "string" && value !== "";
 
+/** A Graph Int32: an integer from -2147483648 to 2147483647. */
+export const isInt32 = (value: unknown): value is number =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= -2147483648 &&
+  value <= 2147483647;
+
+const isString = (value: unknown) => typeof value === "string";
+const isBoolean = (value: unknown) => typeof value === "boolean";
+// A JSON number holds a Graph Int64 exactly only as a safe integer.
+const isUnsigned = (value: unknown) =>
+  Number.isSafeInteger(value) && (value as number) >= 0;
+
+// The documented type of the value of every typed Graph record a setting
+// value is read from, by normalized @odata.type (Graph beta reference on
+// Microsoft Learn, checked 23 October 2026; the lab tenant returns the type
+// on every one of them): Settings Catalog simple setting values, custom
+// OMA-URI rows, intent setting instances and administrative template
+// presentation values. Secret values are not listed, so they are never read.
+const VALUE_TYPES: Readonly<Record<string, (value: unknown) => boolean>> = {
+  devicemanagementconfigurationintegersettingvalue: isInt32,
+  devicemanagementconfigurationstringsettingvalue: isString,
+  devicemanagementconfigurationreferencesettingvalue: isString,
+  omasettinginteger: isInt32,
+  omasettingboolean: isBoolean,
+  omasettingstring: isString,
+  omasettingfloatingpoint: (value) =>
+    typeof value === "number" && Number.isFinite(value),
+  omasettingdatetime: isString,
+  omasettingbase64: isString,
+  omasettingstringxml: isString,
+  devicemanagementintegersettinginstance: isInt32,
+  devicemanagementbooleansettinginstance: isBoolean,
+  devicemanagementstringsettinginstance: isString,
+  // Decimal presentation values are unsigned.
+  grouppolicypresentationvaluedecimal: isUnsigned,
+  grouppolicypresentationvaluelongdecimal: isUnsigned,
+  grouppolicypresentationvalueboolean: isBoolean,
+  grouppolicypresentationvaluetext: isString,
+};
+
+/**
+ * Whether a value has the documented type of the typed Graph record that
+ * holds it, named by the record's @odata.type: an integer is an integer in
+ * its range, a boolean a boolean and a string a string. A value of another
+ * type, out of range, of a secret, or of a record whose type is missing or
+ * not documented is unreadable, never evidence.
+ */
+export function documentedValue(type: unknown, value: unknown): boolean {
+  const name = normalizeTargetType(type);
+  return Object.hasOwn(VALUE_TYPES, name) && VALUE_TYPES[name]!(value);
+}
+
 export type IdentifiedSource =
   | "settingsCatalog"
   | "securityBaseline"
@@ -52,25 +105,53 @@ export function settingsLayout(
   return undefined;
 }
 
+// A defined value that is no list where Graph returns one (null reads as
+// absent, as the snapshot projection drops it).
+const malformedList = (value: unknown) =>
+  value !== undefined && value !== null && !Array.isArray(value);
+
+// The child lists of a Settings Catalog instance, or null when one that can
+// hold child settings is not a list: a choice value's children (which Graph
+// may omit), the choice and group collections, and a group value's
+// children, which Graph always returns.
+function childLists(instance: Record<string, any>): unknown[][] | null {
+  const choices = instance.choiceSettingCollectionValue;
+  const groups = instance.groupSettingCollectionValue;
+  if (malformedList(choices) || malformedList(groups)) return null;
+  const present = (value: unknown) => (value == null ? [] : [value]);
+  const choiceValues = [
+    ...present(instance.choiceSettingValue),
+    ...list(choices),
+  ];
+  const groupValues = [...present(instance.groupSettingValue), ...list(groups)];
+  if (
+    choiceValues.some(
+      (value) => !isObject(value) || malformedList(value.children),
+    ) ||
+    groupValues.some(
+      (value) => !isObject(value) || !Array.isArray(value.children),
+    )
+  )
+    return null;
+  return [
+    ...choiceValues.map((value) => list((value as any).children)),
+    ...groupValues.map((value) => (value as any).children as unknown[]),
+  ];
+}
+
 // A Settings Catalog instance, or one of its child instances, without a
-// definition id.
+// definition id, or with a child list Graph did not return as a list, which
+// may hold any setting.
 function unidentifiedInstance(instance: unknown, depth = 0): boolean {
   if (!isObject(instance) || !isIdentifier(instance.settingDefinitionId))
     return true;
   if (depth > 16) return false;
-  return [
-    instance.choiceSettingValue?.children,
-    ...list(instance.choiceSettingCollectionValue).map(
-      (entry) => (entry as any)?.children,
-    ),
-    instance.groupSettingValue?.children,
-    ...list(instance.groupSettingCollectionValue).map(
-      (entry) => (entry as any)?.children,
-    ),
-  ].some(
-    (children) =>
-      Array.isArray(children) &&
-      children.some((child) => unidentifiedInstance(child, depth + 1)),
+  const children = childLists(instance);
+  return (
+    !children ||
+    children.some((rows) =>
+      rows.some((child) => unidentifiedInstance(child, depth + 1)),
+    )
   );
 }
 
@@ -102,21 +183,70 @@ export const unidentifiedOmaRow = (row: unknown): boolean =>
 export const unidentifiedDefinitionValue = (row: unknown): boolean =>
   !isObject(row) || !isIdentifier(row.definition?.id);
 
+const LAYOUT_SOURCES: Readonly<Record<SettingsLayout, IdentifiedSource>> = {
+  settingsCatalog: "settingsCatalog",
+  intent: "securityBaseline",
+};
+
+/**
+ * The setting sources of a configuration whose setting list Graph did not
+ * return as a list: the settings of a Settings Catalog policy or an intent,
+ * the definition values of an administrative template, the custom OMA-URI
+ * rows of a Windows custom profile (Graph returns each on every such item,
+ * checked in the lab tenant, 21 and 23 October 2026), or an intent category
+ * that is no record or holds settings that are no list. Such a source may
+ * hold any setting, so a setting the configuration does not show is unknown
+ * there, never missing. A list Graph returned empty holds no setting.
+ */
+export function unlistedSources(
+  config: Record<string, unknown>,
+  family: unknown = config.__evidenceFamily,
+): Set<IdentifiedSource> {
+  const found = new Set<IdentifiedSource>();
+  const layout =
+    typeof family === "string" && Object.hasOwn(FAMILY_LAYOUTS, family)
+      ? FAMILY_LAYOUTS[family]
+      : undefined;
+  if (
+    layout &&
+    (!Array.isArray(config.settings) ||
+      malformedList(config.categories) ||
+      list(config.categories).some(
+        (category) => !isObject(category) || malformedList(category.settings),
+      ))
+  )
+    found.add(LAYOUT_SOURCES[layout]);
+  if (
+    family === "administrativeTemplates" &&
+    !Array.isArray(config.definitionValues)
+  )
+    found.add("administrativeTemplate");
+  if (
+    normalizeTargetType(config["@odata.type"]) ===
+      "windows10customconfiguration" &&
+    !Array.isArray(config.omaSettings)
+  )
+    found.add("omaUri");
+  return found;
+}
+
 /**
  * The setting sources of a configuration that hold a row Graph returned
  * without its identifier: a Settings Catalog instance without a definition
- * id, an intent setting without a definition id, a custom OMA-URI row
- * without a URI or an administrative template value without a definition.
- * Such a row may be any setting of its source, so a setting the
- * configuration does not show is unknown there, never missing. The family
- * is the collection family of the configuration (collectConfigurations sets
- * it as __evidenceFamily); without one the layout is read from the rows.
+ * id or with a child list that is no list, an intent setting without a
+ * definition id, a custom OMA-URI row without a URI or an administrative
+ * template value without a definition. Such a row may be any setting of its
+ * source, so a setting the configuration does not show is unknown there,
+ * never missing. The sources whose list Graph did not return at all
+ * (unlistedSources) are included. The family is the collection family of
+ * the configuration (collectConfigurations sets it as __evidenceFamily);
+ * without one the layout is read from the rows.
  */
 export function unidentifiedSources(
   config: Record<string, unknown>,
   family: unknown = config.__evidenceFamily,
 ): Set<IdentifiedSource> {
-  const found = new Set<IdentifiedSource>();
+  const found = unlistedSources(config, family);
   for (const rows of [
     list(config.settings),
     ...list(config.categories).map((category) =>
@@ -135,7 +265,7 @@ export function unidentifiedSources(
   return found;
 }
 
-/** An assignment target type without the namespace, in lower case. */
+/** A Graph type name, such as an assignment target type, without the namespace, in lower case. */
 export const normalizeTargetType = (value: unknown) =>
   typeof value === "string"
     ? value.replace(/^#?(microsoft\.graph\.)?/, "").toLowerCase()

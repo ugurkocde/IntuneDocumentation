@@ -5,6 +5,7 @@ const types = { EXE: "Exe", DLL: "Dll", MSI: "Msi", Script: "Script" };
 function policy(mode = "Enabled") {
   return {
     omaSettings: Object.entries(types).map(([path, type]) => ({
+      "@odata.type": "#microsoft.graph.omaSettingString",
       omaUri: `./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/${path}/Policy`,
       value: `<RuleCollection Type="${type}" EnforcementMode="${mode}"><FilePathRule Id="rule" Name="Approved folder" UserOrGroupSid="S-1-1-0" Action="Allow"><Conditions><FilePathCondition Path="%PROGRAMFILES%\\*"/></Conditions></FilePathRule></RuleCollection>`,
     })),
@@ -14,6 +15,7 @@ describe("AppLocker rule inspection", () => {
   it("respects an explicit enforcement-mode override", () => {
     const input = policy();
     input.omaSettings.push({
+      "@odata.type": "#microsoft.graph.omaSettingString",
       omaUri: input.omaSettings[0]!.omaUri.replace(
         /\/Policy$/,
         "/EnforcementMode",
@@ -30,7 +32,11 @@ describe("AppLocker rule inspection", () => {
     "./device/vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
   ])("detects an override under the equivalent URI %s", (omaUri) => {
     const input = policy();
-    input.omaSettings.push({ omaUri, value: "AuditOnly" });
+    input.omaSettings.push({
+      "@odata.type": "#microsoft.graph.omaSettingString",
+      omaUri,
+      value: "AuditOnly",
+    });
     expect(inspectAppLocker(input)).toMatchObject({
       complete: true,
       matches: false,
@@ -41,8 +47,16 @@ describe("AppLocker rule inspection", () => {
     const uri =
       "./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode";
     input.omaSettings.push(
-      { omaUri: uri, value: "Enabled" },
-      { omaUri: uri.replace("./", "./Device/"), value: "AuditOnly" },
+      {
+        "@odata.type": "#microsoft.graph.omaSettingString",
+        omaUri: uri,
+        value: "Enabled",
+      },
+      {
+        "@odata.type": "#microsoft.graph.omaSettingString",
+        omaUri: uri.replace("./", "./Device/"),
+        value: "AuditOnly",
+      },
     );
     expect(inspectAppLocker(input)).toMatchObject({
       complete: false,
@@ -53,11 +67,13 @@ describe("AppLocker rule inspection", () => {
     const input = policy();
     input.omaSettings.push(
       {
+        "@odata.type": "#microsoft.graph.omaSettingString",
         omaUri:
           "./User/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
         value: "AuditOnly",
       },
       {
+        "@odata.type": "#microsoft.graph.omaSettingString",
         omaUri:
           "./Vendor/MSFT/applocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
         value: "AuditOnly",
@@ -69,6 +85,7 @@ describe("AppLocker rule inspection", () => {
     const override = (value: string) => ({
       omaSettings: [
         {
+          "@odata.type": "#microsoft.graph.omaSettingString",
           omaUri:
             "./Device/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/DLL/EnforcementMode",
           value,

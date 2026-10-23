@@ -2478,6 +2478,7 @@ describe("row shapes checked where collected data enters", () => {
       MSI: "Msi",
       Script: "Script",
     }).map(([node, type]) => ({
+      "@odata.type": "#microsoft.graph.omaSettingString",
       omaUri: `./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/synthetic/${node}/Policy`,
       value: `<RuleCollection Type="${type}" EnforcementMode="Enabled"><FilePathRule Id="rule" Name="Synthetic" UserOrGroupSid="S-1-1-0" Action="Allow"><Conditions><FilePathCondition Path="%PROGRAMFILES%\\*"/></Conditions></FilePathRule></RuleCollection>`,
     }));
@@ -2779,7 +2780,11 @@ describe("assignments not fully collected, one rule for every reader", () => {
   const rows: Array<[string, Record<string, unknown>, unknown[], boolean]> = [
     [
       "a complete status with a fetch error elsewhere",
-      { collectionStatus: { assignments: "complete" }, hasFetchError: true },
+      {
+        assignments: [],
+        collectionStatus: { assignments: "complete" },
+        hasFetchError: true,
+      },
       [],
       false,
     ],
@@ -2797,7 +2802,7 @@ describe("assignments not fully collected, one rule for every reader", () => {
     ],
     ["a fetch error without a status", { hasFetchError: true }, [], true],
     ["a failed assignment request", {}, failedFetch, true],
-    ["neither a status nor an error", {}, [], false],
+    ["neither a status nor an error", { assignments: [] }, [], false],
     [
       "a registry type without an assignment relationship",
       {

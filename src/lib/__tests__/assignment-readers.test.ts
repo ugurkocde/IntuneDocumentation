@@ -6,9 +6,11 @@ import {
 import {
   assignable,
   assignmentsIncomplete,
+  assignmentStatus,
   itemFetchErrors,
 } from "../compliance/assignments";
 import { collectConfigurations } from "../compliance/coverage";
+import { assessCompliance } from "../compliance/engine";
 import { assignmentGroupIds } from "../compliance/graph-rows";
 import { generateComplianceReportPDF } from "../compliance/report-pdf";
 import {
@@ -18,6 +20,9 @@ import {
 import { generateDetailedDOCX } from "../docx-generator-detailed";
 import { generateDetailedPDF } from "../pdf-generator-detailed";
 import type { ConfigurationSectionData } from "../configuration-sections";
+import { GroupResolver } from "../group-resolver";
+import { diffSnapshots } from "../snapshots/diff";
+import { projectSnapshot } from "../snapshots/projection";
 import { extractPdfStreamText } from "./helpers/pdf-text";
 import { extractZipEntry } from "./helpers/zip";
 
@@ -329,5 +334,181 @@ describe("resource types without an assignment relationship", () => {
     expect(assignable({ id: "synthetic-policy" }, "settingsCatalog")).toBe(
       true,
     );
+  });
+});
+
+// Assignments Graph returned as no list, or as a value that is not one, may
+// hold any assignment, so every reader reads them unknown whatever the
+// collection status says, while a valid empty list stays not assigned.
+describe("assignments that are not a list", () => {
+  const malformed: Array<[string, unknown]> = [
+    ["an object", {}],
+    ["null", null],
+    ["a string", "synthetic"],
+    ["a number", 1],
+    ["no value", undefined],
+  ];
+  const withAssignments = (id: string, assignments: unknown) => {
+    const policy: Record<string, unknown> = {
+      ...catalogPolicy(id),
+      assignments,
+    };
+    if (assignments === undefined) delete policy.assignments;
+    return policy;
+  };
+
+  it.each(malformed)(
+    "reads %s as unknown, never not assigned",
+    (_label, assignments) => {
+      const policy = withAssignments("synthetic-1", assignments);
+      expect(assignmentsIncomplete(policy)).toBe(true);
+      // The collection status stays complete; the list is read itself.
+      expect(assignmentStatus(policy)).toBe("complete");
+      expect(parseAssignments(assignments, "complete")).toBe(
+        UNREADABLE_ASSIGNMENT,
+      );
+      expect(parseAssignments(assignments, "incomplete")).toBe(
+        "Assignments unavailable (collection incomplete)",
+      );
+      const [collected] = collectConfigurations(
+        exportData({ settingsCatalog: [policy as never] }),
+      );
+      expect(collected?.collectionStatus).toMatchObject({
+        assignments: "incomplete",
+      });
+      expect(
+        analyzeConfigurations(
+          exportData({ settingsCatalog: [policy as never] }),
+        ),
+      ).toMatchObject({
+        assignedConfigs: 0,
+        unassignedConfigs: 0,
+        unknownAssignmentConfigs: 1,
+      });
+    },
+  );
+
+  it("keeps a valid empty list not assigned and valid assignments labelled", () => {
+    const empty = withAssignments("synthetic-1", []);
+    expect(assignmentsIncomplete(empty)).toBe(false);
+    expect(parseAssignments([], "complete")).toBe("Not assigned");
+    expect(parseAssignments(allDevices, "complete")).toBe("All Devices");
+    expect(
+      analyzeConfigurations(
+        exportData({
+          settingsCatalog: [empty as never, catalogPolicy("synthetic-2")],
+        }),
+      ),
+    ).toMatchObject({
+      assignedConfigs: 1,
+      unassignedConfigs: 1,
+      unknownAssignmentConfigs: 0,
+    });
+  });
+
+  it("keeps types without an assignment relationship not applicable", () => {
+    expect(
+      assignmentsIncomplete(
+        { id: "synthetic-ca" },
+        [],
+        "conditionalAccessPolicies",
+      ),
+    ).toBe(false);
+    expect(
+      assignmentsIncomplete({
+        id: "synthetic-ca",
+        __evidenceFamily: "conditionalAccessPolicies",
+      }),
+    ).toBe(false);
+    expect(
+      assignmentsIncomplete({
+        id: "synthetic-template",
+        registryKey: "notificationMessageTemplates",
+      }),
+    ).toBe(false);
+    const [collected] = collectConfigurations(
+      exportData({
+        conditionalAccessPolicies: [
+          { id: "synthetic-ca", displayName: "Synthetic CA" } as never,
+        ],
+      }),
+    );
+    expect(collected?.collectionStatus).toBeUndefined();
+  });
+
+  it.each(["PDF", "Word"])(
+    "says the assignments could not be read in the %s documentation",
+    async (format) => {
+      const render = async (assignments: unknown) => {
+        const data = exportData({
+          settingsCatalog: [withAssignments("synthetic-1", assignments)],
+          includeComplianceEvidence: false,
+        } as never);
+        const result =
+          format === "PDF"
+            ? await generateDetailedPDF(data)
+            : await generateDetailedDOCX(data);
+        return format === "PDF"
+          ? extractPdfStreamText(result.buffer)
+          : extractZipEntry(result.buffer, "word/document.xml");
+      };
+      expect(await render({})).toContain(UNREADABLE_ASSIGNMENT);
+      expect(await render([])).not.toContain(UNREADABLE_ASSIGNMENT);
+      expect(await render(allDevices)).not.toContain(UNREADABLE_ASSIGNMENT);
+    },
+  );
+
+  it("reads them unreadable in the group resolver", async () => {
+    const resolver = new GroupResolver("test");
+    for (const [, assignments] of malformed)
+      expect(await resolver.resolveAssignments(assignments)).toEqual([
+        UNREADABLE_ASSIGNMENT,
+      ]);
+    expect(await resolver.resolveAssignments([])).toEqual(["Not assigned"]);
+    expect(
+      await resolver.getAllGroupsFromConfigurations([
+        { assignments: {} },
+        { assignments: "synthetic" },
+      ]),
+    ).toEqual(new Map());
+  });
+
+  it("keeps them unknown in a stored snapshot, so history never compares them as no assignments", () => {
+    const snapshot = (assignments: unknown) => {
+      const data = exportData({
+        sections: [
+          {
+            key: "settingsCatalog",
+            familyKey: "settingsCatalog",
+            label: "Settings Catalog",
+            selectionPrefix: "catalog",
+            items: [withAssignments("synthetic-1", assignments)],
+          } as ConfigurationSectionData,
+        ],
+      });
+      // Through JSON, as the store keeps it.
+      return JSON.parse(
+        JSON.stringify(projectSnapshot(data, assessCompliance(data), {})),
+      );
+    };
+    const stored = (assignments: unknown) =>
+      snapshot(assignments).sections[0].items[0].data.assignments;
+    expect(stored([])).toEqual([]);
+    for (const value of [{}, null, "synthetic", 1])
+      expect(stored(value)).toEqual([{ target: {} }]);
+    expect(stored(undefined)).toBeUndefined();
+    for (const value of [{}, null, "synthetic", 1]) {
+      const changes = diffSnapshots(snapshot(allDevices), snapshot(value));
+      expect(changes.totals.notComparedItems).toBe(1);
+      expect(changes.policies).toEqual([]);
+      expect(
+        diffSnapshots(snapshot(value), snapshot([])).totals.notComparedItems,
+      ).toBe(1);
+    }
+    const valid = diffSnapshots(snapshot(allDevices), snapshot([]));
+    expect(valid.totals.notComparedItems).toBe(0);
+    expect(valid.policies[0]?.assignments).toEqual([
+      expect.objectContaining({ change: "removed" }),
+    ]);
   });
 });

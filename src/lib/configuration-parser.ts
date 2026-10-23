@@ -4,7 +4,9 @@ import type {
   ConfigurationSettingInstance,
 } from "./intune-detailed-client";
 import {
+  isInt32,
   normalizeTargetType,
+  unlistedSources,
   unreadableAssignment,
 } from "./compliance/graph-rows";
 
@@ -722,6 +724,22 @@ export function parseSecurityBaseline(
   });
 }
 
+/** The line of a policy whose settings Graph did not return. */
+export const SETTINGS_UNAVAILABLE = "Settings unavailable";
+
+/**
+ * Whether a policy's settings are unknown, so the documentation says they
+ * are unavailable instead of not configured: Graph did not return its
+ * setting list as a list (compliance/graph-rows.ts), or its settings were
+ * not collected completely.
+ */
+export const settingsUnavailable = (
+  item: Record<string, any>,
+  family: string,
+): boolean =>
+  unlistedSources(item, family).size > 0 ||
+  item.collectionStatus?.settings === "incomplete";
+
 /** The assignment line of a resource type without an assignment relationship. */
 export const ASSIGNMENTS_NOT_APPLICABLE =
   "Not applicable (this resource type has no assignments)";
@@ -756,7 +774,10 @@ function assignmentLabel(assignment: unknown): string {
   return `${label} [Filter (${filterType === "include" ? "Include" : "Exclude"}): ${target.deviceAndAppManagementAssignmentFilterId}]`;
 }
 
-// Parse assignment information
+// Parse assignment information. Assignments Graph returned as no list, or
+// as a value that is not one, may hold any assignment, so they are marked
+// unreadable rather than not assigned, as the engine reads them
+// (compliance/assignments.ts).
 export function parseAssignments(
   assignments: unknown,
   status?: string,
@@ -764,7 +785,9 @@ export function parseAssignments(
   if (!Array.isArray(assignments) || assignments.length === 0) {
     return status === "incomplete"
       ? "Assignments unavailable (collection incomplete)"
-      : "Not assigned";
+      : Array.isArray(assignments)
+        ? "Not assigned"
+        : UNREADABLE_ASSIGNMENT;
   }
   return (
     assignments.map(assignmentLabel).join(", ") +
@@ -828,7 +851,7 @@ function getComplianceAction(scheduledActions: any[], status?: string): string {
     .map((config: any) => {
       const hours = config.gracePeriodHours;
       const timing =
-        typeof hours !== "number" || !Number.isFinite(hours) || hours < 0
+        !isInt32(hours) || hours < 0
           ? " (timing unavailable)"
           : hours === 0
             ? " immediately"

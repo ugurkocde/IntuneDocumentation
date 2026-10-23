@@ -187,6 +187,7 @@ describe("working detectors across every framework", () => {
       definition: { id: "e92ea21b-8d97-4cc3-80c9-dd396c3d61e4" },
       presentationValues: [
         {
+          "@odata.type": "#microsoft.graph.groupPolicyPresentationValueText",
           presentation: { id: "e3040ad3-0f64-4b3b-8a39-20cca3793183" },
           value: "4",
         },
@@ -412,7 +413,13 @@ describe("additional verified policy detectors", () => {
       "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging";
     const child = (value: string) => ({
       settingDefinitionId: `${parent}_listbox_modulenames`,
-      simpleSettingCollectionValue: [{ value }],
+      simpleSettingCollectionValue: [
+        {
+          "@odata.type":
+            "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+          value,
+        },
+      ],
     });
     const status = (instances: any[]) =>
       result(instances).capabilities.find(

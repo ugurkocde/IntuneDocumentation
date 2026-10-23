@@ -12,7 +12,6 @@ import { estimatePdfPageCount } from "../../../../src/lib/pdf-page-estimate";
 import { contentDigest } from "../../../../src/lib/snapshots/projection";
 import type { DetailedExportData } from "../../../../src/lib/configuration-analyzer";
 import {
-  assignable,
   assignmentsIncomplete,
   itemFetchErrors,
   summarizeAssignments,
@@ -160,14 +159,15 @@ function summarizeItem(
   fetchErrors: FullCollection["fetchErrors"],
 ): SectionItemSummary {
   const classification = classifyItem(section, item);
-  const incomplete = assignmentsIncomplete(item, itemFetchErrors(fetchErrors, item, section.familyKey));
-  // A type with assignments whose assignments were not collected has no
-  // list, and reads unknown rather than as a type without assignments.
-  const assignments = Array.isArray(item.assignments)
-    ? (item.assignments as unknown[])
-    : incomplete && assignable(item, section.familyKey)
-      ? []
-      : null;
+  const incomplete = assignmentsIncomplete(
+    item,
+    itemFetchErrors(fetchErrors, item, section.familyKey),
+    section.familyKey,
+  );
+  // A type with assignments whose assignments were not collected, or that
+  // Graph returned as no list or a value that is not one, reads unknown
+  // rather than as a type without assignments or as not assigned.
+  const assignments = Array.isArray(item.assignments) ? (item.assignments as unknown[]) : incomplete ? [] : null;
   return {
     id: getStableItemId(section, item, index),
     displayName: getItemLabel(section, item),

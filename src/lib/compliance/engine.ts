@@ -10,7 +10,13 @@ import { comparableValue, expectedValue } from "./check-results";
 import { policyCheckObservation } from "./policy-check-observation";
 import { graphPropertyValues } from "./documented-values";
 import { canonicalOmaUri } from "./oma-uri";
-import { isIdentifier, unidentifiedSources } from "./graph-rows";
+import {
+  documentedValue,
+  isIdentifier,
+  isInt32,
+  unidentifiedSources,
+  unlistedSources,
+} from "./graph-rows";
 import {
   buildCollectionCoverage,
   collectConfigurations,
@@ -110,59 +116,58 @@ function resolvePropertyPath(config: unknown, path: string): unknown {
 
 // Flattens a settings catalog policy into definitionId -> configured primitive
 // values, walking choice/group children so nested settings are evaluated too.
+// A simple value is read only with the documented type of its record and a
+// choice value only as an option id (graph-rows.ts); a setting with a value
+// of another shape keeps no value, so it reads as present but unreadable,
+// never as a match or a difference.
 export function collectCatalogValues(
   settings: unknown,
 ): Map<string, Array<string | number | boolean>> {
   const values = new Map<string, Array<string | number | boolean>>();
+  const unreadable = new Set<string>();
+  const list = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 
-  const record = (definitionId: string | undefined, value: unknown) => {
-    if (!definitionId) return;
-    if (
-      typeof value !== "string" &&
-      typeof value !== "number" &&
-      typeof value !== "boolean"
-    ) {
-      return;
-    }
-    const existing = values.get(definitionId);
-    if (existing) existing.push(value);
-    else values.set(definitionId, [value]);
-  };
-
-  const visit = (instance: ConfigurationSettingInstance | undefined) => {
+  const visit = (instance: unknown) => {
     if (!instance || typeof instance !== "object") return;
-    const definitionId = instance.settingDefinitionId;
+    const setting = instance as ConfigurationSettingInstance;
+    const definitionId = isIdentifier(setting.settingDefinitionId)
+      ? setting.settingDefinitionId
+      : undefined;
     // Presence without a readable primitive is unknown, never a missing setting.
     if (definitionId && !values.has(definitionId)) values.set(definitionId, []);
-
-    if (instance.simpleSettingValue) {
-      record(definitionId, instance.simpleSettingValue.value);
-    }
-    for (const item of instance.simpleSettingCollectionValue ?? []) {
-      record(definitionId, item.value);
-    }
-    if (instance.choiceSettingValue) {
-      record(definitionId, instance.choiceSettingValue.value);
-      instance.choiceSettingValue.children?.forEach(visit);
-    }
-    for (const choice of instance.choiceSettingCollectionValue ?? []) {
-      record(definitionId, choice.value);
-      choice.children?.forEach(visit);
-    }
-    instance.groupSettingValue?.children?.forEach(visit);
-    for (const group of instance.groupSettingCollectionValue ?? []) {
-      group.children?.forEach(visit);
-    }
+    const record = (readable: boolean, value: unknown) => {
+      if (!definitionId) return;
+      if (!readable) unreadable.add(definitionId);
+      else values.get(definitionId)!.push(value as string | number);
+    };
+    const simple = (entry: any) =>
+      record(
+        documentedValue(entry?.["@odata.type"], entry?.value),
+        entry?.value,
+      );
+    const choice = (entry: any) => {
+      record(isIdentifier(entry?.value), entry?.value);
+      list(entry?.children).forEach(visit);
+    };
+    const collection = (value: unknown, read: (entry: any) => void) => {
+      if (value == null) return;
+      if (Array.isArray(value)) value.forEach(read);
+      else record(false, value);
+    };
+    if (setting.simpleSettingValue != null) simple(setting.simpleSettingValue);
+    collection(setting.simpleSettingCollectionValue, simple);
+    if (setting.choiceSettingValue != null) choice(setting.choiceSettingValue);
+    collection(setting.choiceSettingCollectionValue, choice);
+    for (const group of [
+      setting.groupSettingValue,
+      ...list(setting.groupSettingCollectionValue),
+    ])
+      list(group?.children).forEach(visit);
   };
 
-  if (Array.isArray(settings)) {
-    for (const setting of settings) {
-      visit(
-        (setting as { settingInstance?: ConfigurationSettingInstance })
-          ?.settingInstance,
-      );
-    }
-  }
+  for (const setting of list(settings))
+    visit((setting as { settingInstance?: unknown })?.settingInstance);
+  for (const definitionId of unreadable) values.set(definitionId, []);
   return values;
 }
 
@@ -205,7 +210,7 @@ function compliancePolicyNote(
     .flatMap((rule: any) => rule?.scheduledActionConfigurations ?? [])
     .filter((action: any) => action?.actionType === "block");
   const grace = blockActions.map((action: any) =>
-    typeof action.gracePeriodHours === "number"
+    isInt32(action.gracePeriodHours) && action.gracePeriodHours >= 0
       ? `${action.gracePeriodHours} hours`
       : "unknown grace period",
   );
@@ -228,54 +233,82 @@ function verdictsFor(
   });
 }
 
+const rowList = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+
+// The values of a legacy setting: a value is read only with the documented
+// type of its record (graph-rows.ts). unreadable says a row of the setting
+// holds a value of another shape, so the setting is present but unknown.
 function legacyValues(
   config: Record<string, any>,
   signal: Extract<DetectionSignal, { settingId: string }>,
-): unknown[] {
+): { values: unknown[]; unreadable: boolean } {
+  let unreadable = false;
+  const read = (readable: boolean, value: unknown) => {
+    if (!readable) unreadable = true;
+    return readable ? [value] : [];
+  };
+  let values: unknown[];
   if (signal.source === "administrativeTemplate") {
-    const definitions = Array.isArray(config.definitionValues)
-      ? config.definitionValues
-      : [];
-    return definitions
+    values = rowList(config.definitionValues)
       .filter((row: any) => row?.definition?.id === signal.settingId)
       .flatMap((row: any) => {
         if (!signal.presentationId)
-          return typeof row.enabled === "boolean" ? [row.enabled] : [];
+          return read(typeof row.enabled === "boolean", row.enabled);
         if (row.enabled !== true || row.presentationFetchError) return [];
-        return (row.presentationValues ?? [])
+        // Presentation values Graph returned as no list, or with an entry
+        // that is no record, are unknown.
+        if (
+          row.presentationValues != null &&
+          (!Array.isArray(row.presentationValues) ||
+            !row.presentationValues.every(
+              (value: unknown) =>
+                Boolean(value) &&
+                typeof value === "object" &&
+                !Array.isArray(value),
+            ))
+        )
+          return read(false, undefined);
+        return rowList(row.presentationValues)
           .filter(
             (value: any) => value?.presentation?.id === signal.presentationId,
           )
-          .map((value: any) => value.value);
+          .flatMap((value: any) =>
+            read(
+              documentedValue(value["@odata.type"], value.value),
+              value.value,
+            ),
+          );
+      });
+  } else if (signal.source === "omaUri") {
+    const uri = canonicalOmaUri(signal.settingId);
+    values = rowList(config.omaSettings)
+      .filter((value: any) => canonicalOmaUri(value?.omaUri) === uri)
+      .flatMap((value: any) =>
+        read(documentedValue(value["@odata.type"], value.value), value.value),
+      );
+  } else {
+    const settings = [
+      ...rowList(config.settings),
+      ...rowList(config.categories).flatMap((category: any) =>
+        rowList(category?.settings),
+      ),
+    ];
+    values = settings
+      .filter((setting: any) => setting?.definitionId === signal.settingId)
+      .flatMap((setting: any) => {
+        // Graph returns the value and its JSON text; the text is read only
+        // when the value is not there.
+        let value = setting.value;
+        if (value === undefined && typeof setting.valueJson === "string")
+          try {
+            value = JSON.parse(setting.valueJson);
+          } catch {
+            return read(false, undefined);
+          }
+        return read(documentedValue(setting["@odata.type"], value), value);
       });
   }
-  if (signal.source === "omaUri") {
-    const uri = canonicalOmaUri(signal.settingId);
-    return (config.omaSettings ?? [])
-      .filter((value: any) => canonicalOmaUri(value?.omaUri) === uri)
-      .map((value: any) => value.value);
-  }
-  const settings = [
-    ...(Array.isArray(config.settings) ? config.settings : []),
-    ...(config.categories ?? []).flatMap(
-      (category: any) => category?.settings ?? [],
-    ),
-  ];
-  return settings
-    .filter((setting: any) => setting?.definitionId === signal.settingId)
-    .flatMap((setting: any) => {
-      if (["boolean", "string", "number"].includes(typeof setting.value))
-        return [setting.value];
-      if (typeof setting.valueJson !== "string") return [];
-      try {
-        const value = JSON.parse(setting.valueJson);
-        return typeof value === "object" && value !== null
-          ? [value.value]
-          : [value];
-      } catch {
-        return [];
-      }
-    });
+  return { values: unreadable ? [] : values, unreadable };
 }
 
 /**
@@ -300,6 +333,7 @@ function evaluateConfiguration(
   const evidence: CapabilityEvidence[] = [];
   const catalogValues = collectCatalogValues(config.settings);
   const unidentified = unidentifiedSources(config);
+  const unlisted = unlistedSources(config);
   const odataType = normalizeOdataType(config["@odata.type"]);
   const assignment = summarizeAssignments(
     config.assignments,
@@ -448,15 +482,9 @@ function evaluateConfiguration(
           settingId = signal.presentationId
             ? `${signal.settingId}/${signal.presentationId}`
             : signal.settingId;
-          values = legacyValues(config, signal);
-          // Graph returns the custom OMA-URI rows on every custom profile
-          // (checked in the lab tenant, 21 October 2026); without them, the
-          // profile's values are unknown, not absent.
-          if (
-            signal.source === "omaUri" &&
-            !Array.isArray(config.omaSettings) &&
-            odataType === "windows10customconfiguration"
-          )
+          const legacy = legacyValues(config, signal);
+          values = legacy.values;
+          if (legacy.unreadable)
             checks.push({
               assessmentStatus: "unableToCheck",
               result: null,
@@ -464,7 +492,7 @@ function evaluateConfiguration(
               expectedValue: expectedValue(signal),
               actualValue: null,
               reason:
-                "Graph did not return the custom OMA-URI settings of this profile. Refresh policy details.",
+                "The setting is present but Graph did not return a readable configured value.",
               policyId,
               policyName,
               assignment,
@@ -472,7 +500,8 @@ function evaluateConfiguration(
           if (
             signal.source === "administrativeTemplate" &&
             signal.presentationId &&
-            !values.length
+            !values.length &&
+            !legacy.unreadable
           ) {
             const rows = (config as any).definitionValues;
             const row = Array.isArray(rows)
@@ -497,8 +526,9 @@ function evaluateConfiguration(
               });
           }
         }
-        // A row without its identifier may be this setting, so its absence
-        // from this configuration is unknown.
+        // A row without its identifier, or a setting list Graph did not
+        // return, may hold this setting, so its absence from this
+        // configuration is unknown.
         if (
           signal.source !== "graphProperty" &&
           unidentified.has(signal.source) &&
@@ -511,8 +541,11 @@ function evaluateConfiguration(
             settingId,
             expectedValue: expectedValue(signal),
             actualValue: null,
-            reason:
-              "Graph returned a setting of this policy without its identifier, so this setting may be configured in it. Refresh policy details.",
+            reason: unlisted.has(signal.source)
+              ? signal.source === "omaUri"
+                ? "Graph did not return the custom OMA-URI settings of this profile. Refresh policy details."
+                : "Graph did not return the settings of this policy as a list, so this setting may be configured in it. Refresh policy details."
+              : "Graph returned a setting of this policy without its identifier, so this setting may be configured in it. Refresh policy details.",
             policyId,
             policyName,
             assignment,
@@ -528,9 +561,7 @@ function evaluateConfiguration(
           comparableValue(value, signal.enforcedWhen) &&
           (signal.source !== "graphProperty" ||
             (typeof value === "number"
-              ? Number.isInteger(value) &&
-                value >= -2147483648 &&
-                value <= 2147483647
+              ? isInt32(value)
               : typeof value !== "string" ||
                 !documented ||
                 documented.includes(value)));

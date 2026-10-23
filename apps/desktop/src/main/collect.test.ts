@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { labCollectionSections } from "./__fixtures__/lab-collection";
+import { ASSIGNMENT_UNREADABLE, NOT_ASSIGNED, assignmentText } from "../shared/assignment-text";
 
 const sections = labCollectionSections();
 
@@ -105,7 +106,7 @@ describe("collectAll redaction digests", () => {
 // (src/lib/compliance/graph-rows.ts), as the engine and history do.
 describe("assignment summary of listed policies", () => {
   const assignment = (target: Record<string, unknown>) => ({ id: "assignment-1", target });
-  const policy = (id: string, assignments: unknown[], collectionStatus?: Record<string, string>) => ({
+  const policy = (id: string, assignments: unknown, collectionStatus?: Record<string, string>) => ({
     id,
     displayName: `Synthetic ${id}`,
     "@odata.type": "#microsoft.graph.windows10GeneralConfiguration",
@@ -136,6 +137,13 @@ describe("assignment summary of listed policies", () => {
     policy("assignments-error", []),
     policy("unassigned", []),
     policy("unassigned-complete", [], { assignments: "complete" }),
+    // Assignments Graph returned as no list, or a value that is not one,
+    // may hold any assignment, whatever the status says.
+    policy("assignments-object", {}, { assignments: "complete" }),
+    policy("assignments-null", null, { assignments: "complete" }),
+    policy("assignments-string", "synthetic", { assignments: "complete" }),
+    policy("assignments-number", 1, { assignments: "complete" }),
+    policy("assignments-omitted", undefined, { assignments: "complete" }),
     policy("excluded-only", [
       assignment({ "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget", groupId: "synthetic-group-1" }),
     ]),
@@ -195,10 +203,38 @@ describe("assignment summary of listed policies", () => {
         });
       for (const id of ["unassigned", "unassigned-complete", "excluded-only"])
         expect(byId.get(id), id).toMatchObject({ assignmentUnknown: false, assignmentCount: 0 });
+      for (const id of [
+        "assignments-object",
+        "assignments-null",
+        "assignments-string",
+        "assignments-number",
+        "assignments-omitted",
+      ]) {
+        expect(byId.get(id), id).toMatchObject({ assignmentUnknown: true, assignmentCount: 0 });
+        expect(assignmentText(byId.get(id)!), id).toBe(ASSIGNMENT_UNREADABLE);
+      }
+      expect(assignmentText(byId.get("unassigned-complete")!)).toBe(NOT_ASSIGNED);
       expect(byId.get("registry-assignments-failed")).toMatchObject({ assignmentUnknown: true, assignmentCount: 0 });
       expect(byId.get("registry-unassignable")).toMatchObject({ assignmentUnknown: false, assignmentCount: null });
     } finally {
       sections[index] = original!;
+    }
+  });
+
+  it("keeps Conditional Access without an assignment line, never unknown", async () => {
+    sections.push({
+      key: "conditionalAccessPolicies",
+      familyKey: "conditionalAccessPolicies",
+      label: "Synthetic Conditional Access",
+      items: [{ id: "synthetic-ca", displayName: "Synthetic Conditional Access policy", state: "enabled" }],
+    } as never);
+    try {
+      await collectAll(async () => "token", () => undefined, { owner: "owner" });
+      const [item] = getSectionItems("conditionalAccessPolicies", "owner").items;
+      expect(item).toMatchObject({ assignmentUnknown: false, assignmentCount: null });
+      expect(assignmentText(item!)).toBeNull();
+    } finally {
+      sections.pop();
     }
   });
 });

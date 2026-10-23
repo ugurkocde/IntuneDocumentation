@@ -1,6 +1,7 @@
 import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
 import { isDocumented } from "./documented-values";
+import { isInt32 } from "./graph-rows";
 import {
   AUTOMATIC_UPDATE_MODES,
   conditionalAccessOutcome,
@@ -111,10 +112,7 @@ export function policyCheckObservation(
       fields.deadlineForQualityUpdatesInDays,
       grace,
     ];
-    const timed = days.every(
-      (value) =>
-        typeof value === "number" && Number.isInteger(value) && value >= 0,
-    );
+    const timed = days.every((value) => isInt32(value) && value >= 0);
     const mode = fields.automaticUpdateMode;
     // A documented manual mode, or more than 14 days without a pause, fails
     // the check whatever other field Graph omitted.

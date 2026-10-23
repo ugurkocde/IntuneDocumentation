@@ -62,6 +62,8 @@ import {
   formatValue,
   parseDocumentableProperties,
   extractAppConfigurationSettings,
+  SETTINGS_UNAVAILABLE,
+  settingsUnavailable,
 } from "./configuration-parser";
 import {
   assignable,
@@ -87,6 +89,7 @@ import {
   REDACTED_VALUE,
 } from "./intune-policy-registry";
 import { assessCompliance } from "./compliance";
+import { unlistedSources } from "./compliance/graph-rows";
 import { withoutDesktopOnlyFrameworks } from "./compliance/framework-availability";
 import {
   buildConditionalAccessReportRows,
@@ -1406,7 +1409,7 @@ export async function generateDetailedPDF(
         }
 
         // Extract and display settings
-        if (policy.settings && policy.settings.length > 0) {
+        if (Array.isArray(policy.settings) && policy.settings.length > 0) {
           const formattedSettings: Array<{
             name: string;
             value: string;
@@ -1445,7 +1448,14 @@ export async function generateDetailedPDF(
             yPosition += 5;
           }
         } else {
-          addText("No settings configured", 9, "normal", PALETTE.muted);
+          addText(
+            settingsUnavailable(policy, "settingsCatalog")
+              ? SETTINGS_UNAVAILABLE
+              : "No settings configured",
+            9,
+            "normal",
+            PALETTE.muted,
+          );
           yPosition += 5;
         }
 
@@ -1547,7 +1557,10 @@ export async function generateDetailedPDF(
         }
 
         // Parse and display definition values
-        if (template.definitionValues && template.definitionValues.length > 0) {
+        if (
+          Array.isArray(template.definitionValues) &&
+          template.definitionValues.length > 0
+        ) {
           const settings = parseAdministrativeTemplate(
             template.definitionValues,
           );
@@ -1567,7 +1580,14 @@ export async function generateDetailedPDF(
             },
           );
         } else {
-          addText("No settings configured", 9, "normal", PALETTE.muted);
+          addText(
+            settingsUnavailable(template, "administrativeTemplates")
+              ? SETTINGS_UNAVAILABLE
+              : "No settings configured",
+            9,
+            "normal",
+            PALETTE.muted,
+          );
           yPosition += 5;
         }
 
@@ -1886,7 +1906,11 @@ export async function generateDetailedPDF(
           yPosition += 5;
         }
         // Parse and display baseline settings
-        if (baseline.settings?.length || baseline.categories?.length) {
+        const unlisted = unlistedSources(baseline, "securityBaselines").size;
+        if (
+          !unlisted &&
+          (baseline.settings?.length || baseline.categories?.length)
+        ) {
           const categories = parseSecurityBaseline(
             baseline.categories || [],
             baseline.settings,
@@ -1899,8 +1923,8 @@ export async function generateDetailedPDF(
           });
         } else {
           addText(
-            baseline.collectionStatus?.settings === "incomplete"
-              ? "Settings unavailable"
+            settingsUnavailable(baseline, "securityBaselines")
+              ? SETTINGS_UNAVAILABLE
               : "No settings configured",
             9,
             "normal",

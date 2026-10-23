@@ -558,7 +558,13 @@ describe("compound detectors and legacy representations", () => {
       capability(
         data(
           policy("windows10CustomConfiguration", {
-            omaSettings: [{ omaUri: uri, value: 1 }],
+            omaSettings: [
+              {
+                "@odata.type": "#microsoft.graph.omaSettingInteger",
+                omaUri: uri,
+                value: 1,
+              },
+            ],
           }),
         ),
         "windows-disk-encryption",
@@ -568,7 +574,13 @@ describe("compound detectors and legacy representations", () => {
       capability(
         data(
           policy("windows10CustomConfiguration", {
-            omaSettings: [{ omaUri: uri, value: "1" }],
+            omaSettings: [
+              {
+                "@odata.type": "#microsoft.graph.omaSettingString",
+                omaUri: uri,
+                value: "1",
+              },
+            ],
           }),
         ),
         "windows-disk-encryption",
@@ -582,7 +594,15 @@ describe("compound detectors and legacy representations", () => {
           ...uris.map(([omaUri, value], index) =>
             policy(
               "windows10CustomConfiguration",
-              { omaSettings: [{ omaUri, value }] },
+              {
+                omaSettings: [
+                  {
+                    "@odata.type": "#microsoft.graph.omaSettingInteger",
+                    omaUri,
+                    value,
+                  },
+                ],
+              },
               `policy-${index}`,
             ),
           ),
@@ -608,6 +628,7 @@ describe("compound detectors and legacy representations", () => {
       "windows10CustomConfiguration",
       {
         omaSettings: Object.entries(types).map(([path, type]) => ({
+          "@odata.type": "#microsoft.graph.omaSettingString",
           omaUri: `./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/${path}/Policy`,
           value: `<RuleCollection Type="${type}" EnforcementMode="Enabled"><FilePathRule Id="rule" Name="Approved" UserOrGroupSid="S-1-1-0" Action="Allow"><Conditions><FilePathCondition Path="%PROGRAMFILES%\\*"/></Conditions></FilePathRule></RuleCollection>`,
         })),
@@ -619,6 +640,7 @@ describe("compound detectors and legacy representations", () => {
       {
         omaSettings: [
           {
+            "@odata.type": "#microsoft.graph.omaSettingString",
             omaUri:
               "./Device/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
             value: "AuditOnly",
@@ -659,7 +681,12 @@ describe("compound detectors and legacy representations", () => {
           categories: [
             {
               settings: [
-                { definitionId: "verified-definition", valueJson: "true" },
+                {
+                  "@odata.type":
+                    "#microsoft.graph.deviceManagementBooleanSettingInstance",
+                  definitionId: "verified-definition",
+                  valueJson: "true",
+                },
               ],
             },
           ],

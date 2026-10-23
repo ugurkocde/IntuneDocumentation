@@ -36,6 +36,8 @@ import {
   formatValue,
   parseDocumentableProperties,
   extractAppConfigurationSettings,
+  SETTINGS_UNAVAILABLE,
+  settingsUnavailable,
 } from "./configuration-parser";
 import {
   assignable,
@@ -49,6 +51,7 @@ import {
   REDACTED_VALUE,
 } from "./intune-policy-registry";
 import { assessCompliance, compareControlIds } from "./compliance";
+import { unlistedSources } from "./compliance/graph-rows";
 import { withoutDesktopOnlyFrameworks } from "./compliance/framework-availability";
 import {
   buildConditionalAccessReportRows,
@@ -850,7 +853,7 @@ export async function generateDetailedDOCX(
         sectionChildren.push(heading2(policyName));
         sectionChildren.push(...policyMeta(policy, "settingsCatalog"));
 
-        if (policy.settings?.length) {
+        if (Array.isArray(policy.settings) && policy.settings.length) {
           const formatted: Array<{
             name: string;
             value: string;
@@ -882,7 +885,13 @@ export async function generateDetailedDOCX(
             sectionChildren.push(bodyText("No settings configured"));
           }
         } else {
-          sectionChildren.push(bodyText("No settings configured"));
+          sectionChildren.push(
+            bodyText(
+              settingsUnavailable(policy, "settingsCatalog")
+                ? SETTINGS_UNAVAILABLE
+                : "No settings configured",
+            ),
+          );
         }
         sectionChildren.push(spacer());
         successfulPolicies++;
@@ -958,8 +967,12 @@ export async function generateDetailedDOCX(
           ...policyMeta(template, "administrativeTemplates"),
         );
 
+        if (unlistedSources(template, "administrativeTemplates").size)
+          sectionChildren.push(bodyText(SETTINGS_UNAVAILABLE));
         const defs = parseAdministrativeTemplate(
-          template.definitionValues || [],
+          Array.isArray(template.definitionValues)
+            ? template.definitionValues
+            : [],
         );
 
         // Group by category
@@ -1220,10 +1233,11 @@ export async function generateDetailedDOCX(
             bodyText("Baseline settings collection incomplete"),
           );
         }
-        const cats = parseSecurityBaseline(
-          baseline.categories || [],
-          baseline.settings,
-        );
+        const unlisted = unlistedSources(baseline, "securityBaselines").size;
+        if (unlisted) sectionChildren.push(bodyText(SETTINGS_UNAVAILABLE));
+        const cats = unlisted
+          ? []
+          : parseSecurityBaseline(baseline.categories || [], baseline.settings);
         for (const cat of cats) {
           if (cat.settings.length === 0) continue;
           sectionChildren.push(heading3(cat.category));

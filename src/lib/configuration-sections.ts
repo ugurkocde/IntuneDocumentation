@@ -27,14 +27,20 @@ export type AdditionalConfigurationSection = ConfigurationSectionData & {
   familyKey: AdditionalConfigurationFamily;
 };
 
+/**
+ * The id of an item: the id Graph returned on the resource. Graph ids are
+ * text; an item without one, or with an id of another type, keeps its
+ * position, which names an item only in a singleton section
+ * (isItemIdentity). Other properties never stand in for it: a templateId
+ * names the template an intent was created from, and many intents share it.
+ */
 export function getStableItemId(
   section: Pick<ConfigurationSectionData, "key">,
   item: Record<string, unknown>,
   index?: number,
 ): string {
-  const candidate = item.id ?? item.policyId ?? item.templateId;
-  return typeof candidate === "string" || typeof candidate === "number"
-    ? String(candidate)
+  return typeof item.id === "string"
+    ? item.id
     : `singleton-${section.key}${index === undefined ? "" : `-${index}`}`;
 }
 

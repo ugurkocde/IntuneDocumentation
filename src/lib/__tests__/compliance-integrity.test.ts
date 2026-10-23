@@ -248,6 +248,8 @@ describe("evidence integrity regressions", () => {
         policy("deviceManagementConfigurationPolicy", {
           settings: [0, 1].map((value) => ({
             settingInstance: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
               settingDefinitionId: id,
               choiceSettingValue: { value: `${id}_${value}` },
             },

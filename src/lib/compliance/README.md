@@ -811,21 +811,26 @@ assessments, so the ruleset version stays the same.
   and multi-text lines keep their order (`snapshots/order.ts`). History
   compares fingerprints of values that are not stored as a multiset for
   each setting, so inserting an entry does not renumber the others.
-- **Identity.** History pairs items by an id of their own. An item without
-  one, with an id that is no text, or with an id another item shares is not
-  compared, and while one snapshot holds such an item no policy of that
+- **Identity.** History pairs items by an id of their own: the `id` Graph
+  returned on the resource (`getStableItemId`), never a `templateId`,
+  `policyId` or name; only singleton sections are named by position. An
+  item without one, with an id that is no text, or with an id another item
+  shares is not compared, and while one snapshot holds such an item no policy of that
   family is reported as added or removed. An item Graph returned as no
   record is kept as an incomplete item without an id.
 - **Discriminators.** A type field decides how a row is read, so it must be
   a documented one: typed family items by `FAMILY_ITEM_TYPES` (every
   concrete subtype in the Graph beta `$metadata`), Settings Catalog
-  instances by their type and the one value property it documents,
+  instances by their type and the one value property it documents (every
+  reader, the compliance engine and the benchmark comparison included,
+  uses `instanceValueKey` and `childLists` in `graph-rows.ts`),
   Settings Catalog platforms by the documented flags members, external
   tenants by subtype and matching membership kind, assignment intents by
   the documented intent members. Anything else is incomplete or unknown.
 - **Limits.** `MAX_SETTING_DEPTH` (16) is shared by the projection, the
-  checks, flattening, Compare and History; a deeper child reads as an
-  unknown setting. `MAX_ITEM_JSON_DEPTH` bounds every walk over a stored
+  checks, the compliance engine, the benchmark comparison, the
+  documentation, flattening, Compare and History; a deeper child reads as
+  an unknown setting. `MAX_ITEM_JSON_DEPTH` bounds every walk over a stored
   item. Stored check and evidence values longer than 500 characters keep a
   digest of the full value, and a family whose rows a reference file
   cannot hold is not compared. Edm syntax follows the OData CSDL ABNF:

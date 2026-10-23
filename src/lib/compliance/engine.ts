@@ -11,12 +11,17 @@ import { policyCheckObservation } from "./policy-check-observation";
 import { graphPropertyValues } from "./documented-values";
 import { canonicalOmaUri } from "./oma-uri";
 import {
+  childLists,
   documentedValue,
+  instanceValueKey,
   isIdentifier,
   isInt32,
+  MAX_SETTING_DEPTH,
   unidentifiedSources,
   unlistedSources,
+  unreadableCatalogValue,
 } from "./graph-rows";
+import { REDACTED_VALUE } from "../intune-policy-registry";
 import {
   buildCollectionCoverage,
   collectConfigurations,
@@ -116,10 +121,15 @@ function resolvePropertyPath(config: unknown, path: string): unknown {
 
 // Flattens a settings catalog policy into definitionId -> configured primitive
 // values, walking choice/group children so nested settings are evaluated too.
-// A simple value is read only with the documented type of its record and a
-// choice value only as an option id (graph-rows.ts); a setting with a value
-// of another shape keeps no value, so it reads as present but unreadable,
-// never as a match or a difference.
+// Instances are read with the shared rules (graph-rows.ts): a value only from
+// the property its @odata.type documents, a simple value only with the
+// documented type of its record, a choice value only as an option id, and
+// children only through the documented value, to MAX_SETTING_DEPTH. A
+// setting whose instance fails those rules keeps no value, so it reads as
+// present but unreadable, never as a match or a difference. Children of an
+// instance that cannot be read, and settings below the depth limit, are not
+// read, and the instance itself keeps no value: the source is unidentified
+// (unidentifiedSources), so a setting there is unknown.
 export function collectCatalogValues(
   settings: unknown,
 ): Map<string, Array<string | number | boolean>> {
@@ -127,7 +137,8 @@ export function collectCatalogValues(
   const unreadable = new Set<string>();
   const list = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 
-  const visit = (instance: unknown) => {
+  const visit = (instance: unknown, depth: number) => {
+    if (depth > MAX_SETTING_DEPTH) return;
     if (!instance || typeof instance !== "object") return;
     const setting = instance as ConfigurationSettingInstance;
     const definitionId = isIdentifier(setting.settingDefinitionId)
@@ -135,38 +146,39 @@ export function collectCatalogValues(
       : undefined;
     // Presence without a readable primitive is unknown, never a missing setting.
     if (definitionId && !values.has(definitionId)) values.set(definitionId, []);
-    const record = (readable: boolean, value: unknown) => {
-      if (!definitionId) return;
-      if (!readable) unreadable.add(definitionId);
-      else values.get(definitionId)!.push(value as string | number);
-    };
-    const simple = (entry: any) =>
-      record(
-        documentedValue(entry?.["@odata.type"], entry?.value),
-        entry?.value,
-      );
-    const choice = (entry: any) => {
-      record(isIdentifier(entry?.value), entry?.value);
-      list(entry?.children).forEach(visit);
-    };
-    const collection = (value: unknown, read: (entry: any) => void) => {
-      if (value == null) return;
-      if (Array.isArray(value)) value.forEach(read);
-      else record(false, value);
-    };
-    if (setting.simpleSettingValue != null) simple(setting.simpleSettingValue);
-    collection(setting.simpleSettingCollectionValue, simple);
-    if (setting.choiceSettingValue != null) choice(setting.choiceSettingValue);
-    collection(setting.choiceSettingCollectionValue, choice);
-    for (const group of [
-      setting.groupSettingValue,
-      ...list(setting.groupSettingCollectionValue),
-    ])
-      list(group?.children).forEach(visit);
+    // An instance whose child lists cannot be read is unknown as a whole:
+    // which option or group it configures is not certain either.
+    const children = childLists(instance);
+    if (definitionId && (children === null || unreadableCatalogValue(instance)))
+      unreadable.add(definitionId);
+    else if (definitionId) {
+      const key = instanceValueKey(instance);
+      const own = key ? (instance as Record<string, unknown>)[key] : undefined;
+      const entries =
+        key === "simpleSettingValue" || key === "choiceSettingValue"
+          ? [own]
+          : key === "simpleSettingCollectionValue" ||
+              key === "choiceSettingCollectionValue"
+            ? list(own)
+            : [];
+      const simple = key?.startsWith("simple");
+      for (const entry of entries) {
+        // A secret or redacted value is not stored, so it is unknown here.
+        const readable =
+          entry?.value !== REDACTED_VALUE &&
+          (simple
+            ? documentedValue(entry?.["@odata.type"], entry?.value)
+            : isIdentifier(entry?.value));
+        if (!readable) unreadable.add(definitionId);
+        else values.get(definitionId)!.push(entry.value);
+      }
+    }
+    for (const rows of children ?? [])
+      for (const child of rows) visit(child, depth + 1);
   };
 
   for (const setting of list(settings))
-    visit((setting as { settingInstance?: unknown })?.settingInstance);
+    visit((setting as { settingInstance?: unknown })?.settingInstance, 0);
   for (const definitionId of unreadable) values.set(definitionId, []);
   return values;
 }

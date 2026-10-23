@@ -33,6 +33,8 @@ const vbaWarnings =
 const vbaChoice = `${vbaWarnings}_l_empty19`;
 function setting(id: string, suffix: string, children: any[] = []) {
   return {
+    "@odata.type":
+      "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
     settingDefinitionId: id,
     choiceSettingValue: { value: `${id}_${suffix}`, children },
   };
@@ -412,6 +414,8 @@ describe("additional verified policy detectors", () => {
     const parent =
       "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging";
     const child = (value: string) => ({
+      "@odata.type":
+        "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance",
       settingDefinitionId: `${parent}_listbox_modulenames`,
       simpleSettingCollectionValue: [
         {

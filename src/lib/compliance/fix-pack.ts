@@ -301,7 +301,11 @@ function deliberateChoice(
         const other = row.values.find((value) => String(value) !== entry.value);
         if (row.values.length && other === undefined) continue;
         const name = definitionById.get(entry.id)?.name ?? entry.id;
-        return `The policy "${row.policyName}" sets ${name} to ${other === undefined ? "a value that could not be read" : optionLabel(entry.id, other)}, so the setting is deliberately configured differently. Change that policy instead of importing a draft.`;
+        // A value that could not be read may be any option, so whether the
+        // policy configures it differently is unknown, never a choice.
+        if (other === undefined)
+          return `The policy "${row.policyName}" holds ${name} with a value that could not be read, so whether it is configured differently is unknown. Refresh policy details or review that policy instead of importing a draft.`;
+        return `The policy "${row.policyName}" sets ${name} to ${optionLabel(entry.id, other)}, so the setting is deliberately configured differently. Change that policy instead of importing a draft.`;
       }
   return undefined;
 }

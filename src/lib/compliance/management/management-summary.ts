@@ -11,6 +11,7 @@ import type {
   ControlStatus,
   FrameworkAssessment,
 } from "../types";
+import { isIdentifier } from "../graph-rows";
 import { portalAreaFor, PORTAL_AREAS } from "./portal-links";
 import type {
   ManagementMetrics,
@@ -92,7 +93,9 @@ function hasUnreadablePolicyValue(result: CapabilityResult): boolean {
     result.checks.some(
       (check) =>
         check.assessmentStatus === "unableToCheck" &&
-        Boolean(check.policyId) &&
+        // A policy check names its policy, also one Graph returned without
+        // an id (""); collection checks name none.
+        check.policyId !== undefined &&
         check.assignment?.state !== "notAssigned",
     )
   );
@@ -247,7 +250,13 @@ export function safeguardPolicies(
   result: CapabilityResult,
 ): { name: string; assigned: boolean }[] {
   const byId = new Map<string, { name: string; assigned: boolean }>();
-  const add = (id: string, name: string, assigned: boolean) => {
+  // Only a Graph id names one policy. Policies without one are told apart
+  // by name and assignment, so one is never shown with the assignment of
+  // another.
+  const add = (policyId: string, name: string, assigned: boolean) => {
+    const id = isIdentifier(policyId)
+      ? policyId
+      : `\u0000${name}\u0000${assigned}`;
     const known = byId.get(id);
     if (known) known.assigned ||= assigned;
     else byId.set(id, { name, assigned });
@@ -256,7 +265,7 @@ export function safeguardPolicies(
     add(item.policyId, item.policyName, item.assignment.state === "assigned");
   for (const check of result.checks)
     if (
-      check.policyId &&
+      check.policyId !== undefined &&
       check.policyName &&
       check.assessmentStatus !== "outsideScope"
     )

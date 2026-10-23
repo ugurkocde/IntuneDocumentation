@@ -171,12 +171,32 @@ const redacted = (value: unknown) =>
   (Array.isArray(value) && value.includes(REDACTED_VALUE));
 const SECRET_VALUE = "devicemanagementconfigurationsecretsettingvalue";
 
-// A Settings Catalog simple value record.
-const unreadableSimple = (entry: unknown) =>
-  !isObject(entry) ||
-  (normalizeTargetType(entry["@odata.type"]) !== SECRET_VALUE &&
-    !redacted(entry.value) &&
-    !documentedValue(entry["@odata.type"], entry.value));
+// The documented subtypes of deviceManagementConfigurationSimpleSettingValue
+// that hold a readable value (Graph beta $metadata, 23 October 2026), by
+// normalized @odata.type. A record of another type, such as a custom
+// OMA-URI or intent value, is no Settings Catalog simple value.
+const SIMPLE_VALUE_TYPES: ReadonlySet<string> = new Set([
+  "devicemanagementconfigurationintegersettingvalue",
+  "devicemanagementconfigurationstringsettingvalue",
+  "devicemanagementconfigurationreferencesettingvalue",
+]);
+
+/**
+ * Whether a Settings Catalog simple value record is unreadable: no record,
+ * or a type that is not a documented simple value type, or a value that
+ * does not have the type its record documents. A secret value is not
+ * stored and a redacted value is compared by fingerprint, so neither is
+ * unreadable here; readers that cannot use them, such as the compliance
+ * engine and the benchmark comparison, treat them as unknown themselves.
+ */
+export const unreadableSimpleValue = (entry: unknown): boolean => {
+  if (!isObject(entry)) return true;
+  const type = normalizeTargetType(entry["@odata.type"]);
+  if (type === SECRET_VALUE) return false;
+  if (!SIMPLE_VALUE_TYPES.has(type)) return true;
+  return !redacted(entry.value) && !documentedValue(type, entry.value);
+};
+const unreadableSimple = unreadableSimpleValue;
 
 // A Settings Catalog choice value: an option id.
 const unreadableChoice = (entry: unknown) =>
@@ -189,7 +209,8 @@ const unreadableEntries = (
 
 /**
  * How deep Settings Catalog child settings are kept and read, the root
- * instance at depth 0. The snapshot projection, the checks here, flattening
+ * instance at depth 0. The snapshot projection, the checks here, the
+ * compliance engine, the benchmark comparison, the documentation, flattening
  * (settings-flatten.ts), Compare and History share it: a child below it is
  * kept as an instance without its id, so it reads as an unknown setting,
  * never as no setting.
@@ -242,9 +263,11 @@ const INSTANCE_VALUES: Readonly<Record<string, InstanceValueKey | null>> = {
  * in, null for a type that holds none, or undefined when the instance is
  * no record, its type is not documented, or it holds a value in a property
  * another type documents: its @odata.type selects how it is read, so such
- * an instance cannot be read.
+ * an instance cannot be read. Every reader of instances (the compliance
+ * engine, the benchmark comparison, the projection, flattening and the
+ * documentation) reads a value only from this property.
  */
-function instanceValueKey(
+export function instanceValueKey(
   instance: unknown,
 ): InstanceValueKey | null | undefined {
   if (!isObject(instance)) return undefined;
@@ -465,13 +488,15 @@ export function settingsLayout(
 const malformedList = (value: unknown) =>
   value !== undefined && value !== null && !Array.isArray(value);
 
-// The child lists of a Settings Catalog instance, read from the value its
-// type documents (instanceValueKey), or null when they are unknown: an
-// instance of a type that cannot be read, or a value or child list that
-// can hold child settings and is not of its documented shape. A choice
-// value's children may be omitted; a group value's children are always
-// returned.
-function childLists(instance: unknown): unknown[][] | null {
+/**
+ * The child lists of a Settings Catalog instance, read from the value its
+ * type documents (instanceValueKey), or null when they are unknown: an
+ * instance of a type that cannot be read, or a value or child list that
+ * can hold child settings and is not of its documented shape. A choice
+ * value's children may be omitted; a group value's children are always
+ * returned. Every reader walks children only through these lists.
+ */
+export function childLists(instance: unknown): unknown[][] | null {
   const key = instanceValueKey(instance);
   if (key === undefined) return null;
   const value =

@@ -121,8 +121,16 @@ describe("secret redaction for shareable documentation", () => {
               "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance",
             settingDefinitionId: "com.apple.extensiblesso_registrationtoken",
             simpleSettingCollectionValue: [
-              { value: "DUMMY-collection-1" },
-              { value: "DUMMY-collection-2" },
+              {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                value: "DUMMY-collection-1",
+              },
+              {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                value: "DUMMY-collection-2",
+              },
             ],
           },
         },
@@ -149,7 +157,11 @@ describe("secret redaction for shareable documentation", () => {
                     "@odata.type":
                       "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "com.apple.wifi.managed_password",
-                    simpleSettingValue: { value: "DUMMY-child" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "DUMMY-child",
+                    },
                   },
                 ],
               },

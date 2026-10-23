@@ -726,10 +726,14 @@ function projectInstance(
   const entries = (value: unknown, entry: (item: unknown) => Json) =>
     Array.isArray(value) ? value.map(entry) : [entry(undefined)];
   const out: Json = pick(instance, ["@odata.type", "settingDefinitionId"]);
-  const simple = projectSimpleValue(instance.simpleSettingValue, drop);
-  if (simple) out.simpleSettingValue = simple;
-  // A simple value that is no record is kept as an empty one, which has no
-  // readable value.
+  // Every value property Graph returned is kept, also on a type that does
+  // not document it, so a stray one keeps the instance unreadable
+  // (graph-rows.ts instanceValueKey) instead of reading as a valid instance
+  // of its type. A simple value that is no record is kept as an empty one,
+  // which has no readable value.
+  if (instance.simpleSettingValue != null)
+    out.simpleSettingValue =
+      projectSimpleValue(instance.simpleSettingValue, drop) ?? {};
   if (instance.simpleSettingCollectionValue != null)
     out.simpleSettingCollectionValue = entries(
       instance.simpleSettingCollectionValue,
@@ -992,12 +996,6 @@ function walkRedacted(
   );
 }
 
-// The id getStableItemId falls back to when an item has none: its
-// position, which names no item outside a singleton section
-// (isItemIdentity).
-const positionalId = (section: ConfigurationSectionData, index: number) =>
-  getStableItemId(section, {}, index);
-
 function projectItem(
   section: ConfigurationSectionData,
   raw: Json,
@@ -1005,15 +1003,9 @@ function projectItem(
   itemErrors: ReadonlySet<string>,
   fingerprint?: SnapshotFingerprint,
 ): SnapshotItem {
-  // Graph ids are text. An id of another type, such as a number or a
-  // record, names no item, so the item keeps only its position.
-  const candidate = raw.id ?? raw.policyId ?? raw.templateId;
-  const id =
-    candidate === undefined ||
-    candidate === null ||
-    typeof candidate === "string"
-      ? getStableItemId(section, raw, index)
-      : positionalId(section, index);
+  // The item's own Graph id (getStableItemId); without one it keeps only
+  // its position.
+  const id = getStableItemId(section, raw, index);
   const data: Json = {};
   for (const key of ITEM_KEYS) {
     // Metadata is never compared; the other item keys are plain properties.

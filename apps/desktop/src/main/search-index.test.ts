@@ -178,6 +178,7 @@ describe("settings search index", () => {
 
 // 850 Settings Catalog policies with nested choices and repeated groups, as
 // a large tenant can hold.
+const SIMPLE_INSTANCE = "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance";
 function syntheticCollection() {
   const items = Array.from({ length: 850 }, (_, policyIndex) => ({
     id: `policy-${policyIndex}`,
@@ -195,14 +196,17 @@ function syntheticCollection() {
             value: `${id}_1`,
             children: [
               {
+                "@odata.type": SIMPLE_INSTANCE,
                 settingDefinitionId: `${id}_child_a`,
                 simpleSettingValue: { "@odata.type": STRING_VALUE, value: `value ${settingIndex}` },
               },
               {
+                "@odata.type": "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance",
                 settingDefinitionId: `${id}_child_group`,
                 groupSettingCollectionValue: [1, 2].map((entry) => ({
                   children: [
                     {
+                      "@odata.type": SIMPLE_INSTANCE,
                       settingDefinitionId: `${id}_child_group_name`,
                       simpleSettingValue: { "@odata.type": STRING_VALUE, value: `rule ${entry}` },
                     },

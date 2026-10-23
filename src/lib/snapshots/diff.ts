@@ -592,6 +592,20 @@ function omitsValue(
 const named = (section: SnapshotSection, item: SnapshotItem) =>
   snapshotItemLabel({ ...section, label: "" }, item) !== "";
 
+// The label fields in the order the item label reads them
+// (configuration-sections.ts getItemLabel).
+const NAME_FIELDS = ["displayName", "name", "title", "fileName", "publisher"];
+
+// Whether the name the item label shows is one Graph returned as another
+// type than text, such as a number: it is unreadable, so a rename to or
+// from it is unknown, never a rename.
+const unreadableName = (item: SnapshotItem) => {
+  const name = NAME_FIELDS.map((field) => item.data[field]).find(
+    (value) => value !== undefined && value !== null,
+  );
+  return name !== undefined && typeof name !== "string";
+};
+
 function byId(section: SnapshotSection): Map<string, SnapshotItem> {
   return new Map(section.items.map((item) => [item.id, item]));
 }
@@ -713,8 +727,11 @@ export function diffSnapshots(
         old.incomplete ||
         item.incomplete ||
         omitsValue(old.data, item.data) ||
-        // A name Graph returned on one side only is no rename.
+        // A name Graph returned on one side only, or as no text, is no
+        // rename.
         named(a, old) !== named(b, item) ||
+        unreadableName(old) ||
+        unreadableName(item) ||
         !comparableItem(a, old) ||
         !comparableItem(b, item)
       ) {

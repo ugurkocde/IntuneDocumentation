@@ -10,6 +10,12 @@
  * an undocumented instance or value type is unknown, and unknown is never a
  * difference.
  */
+import {
+  childLists,
+  MAX_SETTING_DEPTH,
+  unreadableCatalogValue,
+  unreadableSimpleValue,
+} from "../compliance/graph-rows";
 import { REDACTED_VALUE } from "../intune-policy-registry";
 
 export type Json =
@@ -164,14 +170,14 @@ function isInstance(value: unknown): value is SettingInstance {
   );
 }
 
-/** True when a setting instance nests child setting instances, as group setting collections do. */
+/**
+ * True when a setting instance nests child setting instances, as group setting
+ * collections do, in the child lists its type documents (graph-rows.ts
+ * childLists).
+ */
 export function hasChildInstances(value: Json): boolean {
-  if (Array.isArray(value)) return value.some(hasChildInstances);
-  if (!record(value)) return false;
-  return Object.entries(value).some(
-    ([key, v]) =>
-      (key === "children" && Array.isArray(v) && v.some(isInstance)) ||
-      hasChildInstances(v),
+  return (childLists(value) ?? []).some((children) =>
+    children.some(isInstance),
   );
 }
 
@@ -226,24 +232,18 @@ function readableChoice(value: unknown): boolean {
   );
 }
 
-// Secret values are never readable: Graph returns an encrypted token or
-// nothing, and the collector never keeps them.
+// A simple value has a documented Settings Catalog simple value type and a
+// value of that type (graph-rows.ts unreadableSimpleValue). Secret values
+// are never readable here: Graph returns an encrypted token or nothing, and
+// the collector never keeps them. Redacted values are not readable either.
 function readableSimple(value: unknown): boolean {
-  if (!record(value) || isRedacted(value.value)) return false;
-  const type = typeName(value["@odata.type"]);
-  if (
-    type === "devicemanagementconfigurationstringsettingvalue" ||
-    type === "devicemanagementconfigurationreferencesettingvalue"
-  )
-    return typeof value.value === "string";
-  if (type === "devicemanagementconfigurationintegersettingvalue")
-    return (
-      typeof value.value === "number" &&
-      Number.isInteger(value.value) &&
-      value.value >= -2147483648 &&
-      value.value <= 2147483647
-    );
-  return false;
+  return (
+    record(value) &&
+    !isRedacted(value.value) &&
+    typeName(value["@odata.type"]) !==
+      "devicemanagementconfigurationsecretsettingvalue" &&
+    !unreadableSimpleValue(value)
+  );
 }
 
 const readableGroup = (value: unknown) =>
@@ -254,9 +254,14 @@ const everyEntry = (value: unknown, check: (entry: unknown) => boolean) =>
 
 /**
  * Whether the own value of one setting instance (without its child instances)
- * has the documented shape for its instance type.
+ * has the documented shape for its instance type. The shared instance rules
+ * come first (graph-rows.ts unreadableCatalogValue): an undocumented type, or
+ * a value in a property another type documents, is unreadable. The checks
+ * below add what a benchmark comparison cannot read, such as secret and
+ * redacted values.
  */
 export function readableOwnValue(instance: RecordJson): boolean {
+  if (unreadableCatalogValue(instance)) return false;
   switch (typeName(instance["@odata.type"])) {
     case "devicemanagementconfigurationchoicesettinginstance":
       return readableChoice(instance.choiceSettingValue);
@@ -300,8 +305,22 @@ function leafValues(
   instance: SettingInstance,
   path: string,
   out: Map<string, string>,
+  depth = 0,
 ): Map<string, string> {
   const own = `${path}/${instance.settingDefinitionId}`;
+  // An instance below the depth limit, or one whose children cannot be
+  // read by the shared rules (graph-rows.ts childLists), such as one of an
+  // undocumented type or with a value in another type's property, is
+  // unreadable with everything below it: its subtree is unknown, never
+  // absent or different.
+  const lists = childLists(instance);
+  if (depth > MAX_SETTING_DEPTH || lists === null) {
+    out.set(own, UNREADABLE);
+    return out;
+  }
+  // Only these child lists hold child instances; a children list anywhere
+  // else is part of the own value.
+  const childArrays = new Set<unknown>(lists);
   const readable = readableOwnValue(instance);
   const strip = (value: Json, at: string): Json => {
     if (
@@ -327,7 +346,7 @@ function leafValues(
     if (!record(value)) return value;
     return Object.fromEntries(
       Object.entries(value).map(([key, v]) => {
-        if (key !== "children" || !Array.isArray(v))
+        if (key !== "children" || !Array.isArray(v) || !childArrays.has(v))
           return [key, strip(v, `${at}:${key}`)];
         const seen = new Map<string, number>();
         for (const child of v.filter(isInstance)) {
@@ -338,6 +357,7 @@ function leafValues(
             child,
             `${own}${at}${occurrence ? `#${occurrence}` : ""}`,
             out,
+            depth + 1,
           );
         }
         return [key, v.filter((child) => !isInstance(child))];

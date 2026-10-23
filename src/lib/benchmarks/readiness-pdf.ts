@@ -54,6 +54,7 @@ import {
   type DocumentControlCell,
   tableHeaderLines,
 } from "../compliance/pdf-chrome";
+import { childLists, MAX_SETTING_DEPTH } from "../compliance/graph-rows";
 import type {
   BenchmarkAssessment,
   LevelSummary,
@@ -204,21 +205,23 @@ export function wrapText(
   return lines;
 }
 
-/** The instance of a definition id inside a root, the root itself included. */
-function findInstance(value: Json | undefined, id: string): RecordJson | null {
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      const found = findInstance(entry, id);
+/**
+ * The instance of a definition id inside a root, the root itself included,
+ * found through the child lists the shared instance rules read
+ * (graph-rows.ts childLists) to MAX_SETTING_DEPTH, as the comparison does.
+ */
+function findInstance(
+  value: Json | undefined,
+  id: string,
+  depth = 0,
+): RecordJson | null {
+  if (!record(value) || depth > MAX_SETTING_DEPTH) return null;
+  if (value.settingDefinitionId === id) return value;
+  for (const children of childLists(value) ?? [])
+    for (const child of children) {
+      const found = findInstance(child as Json, id, depth + 1);
       if (found) return found;
     }
-    return null;
-  }
-  if (!record(value)) return null;
-  if (value.settingDefinitionId === id) return value;
-  for (const child of Object.values(value)) {
-    const found = findInstance(child, id);
-    if (found) return found;
-  }
   return null;
 }
 

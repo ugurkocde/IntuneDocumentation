@@ -1,4 +1,5 @@
 import {
+  childLists,
   MAX_SETTING_DEPTH,
   METADATA_KEYS,
   unreadableCatalogValue,
@@ -202,7 +203,13 @@ function walkCatalogInstance(
     instance.groupSettingValue || instance.groupSettingCollectionValue,
   );
   const definitionId = definitionIdOf(instance.settingDefinitionId);
-  if (!isGroup && extracted.value !== NOT_CONFIGURED) {
+  // The shared instance rules (compliance/graph-rows.ts): an instance whose
+  // own value, or whose child lists, cannot be read is one unreadable row,
+  // also a group, and its children are not read, so nothing below it reads
+  // as configured or as no setting.
+  const unknownChildren = childLists(instance) === null;
+  const unreadable = unknownChildren || unreadableCatalogValue(instance);
+  if (unreadable || (!isGroup && extracted.value !== NOT_CONFIGURED)) {
     const choice = Boolean(
       instance.choiceSettingValue || instance.choiceSettingCollectionValue,
     );
@@ -213,7 +220,7 @@ function walkCatalogInstance(
       : undefined;
     rows.push({
       name: extracted.name,
-      value: String(extracted.value),
+      value: unreadable ? UNREADABLE_VALUE : String(extracted.value),
       ...(definitionId ? { definitionId } : {}),
       path,
       ...(path.length ? { identity } : {}),
@@ -230,9 +237,10 @@ function walkCatalogInstance(
         : collection !== undefined
           ? { token: collection }
           : {}),
-      ...flag(unreadableCatalogValue(instance)),
+      ...flag(unreadable),
     });
   }
+  if (unknownChildren) return;
   // Repeated groups (for example firewall rules) are numbered so rows of
   // different entries stay apart.
   const repeated =

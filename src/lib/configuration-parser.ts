@@ -4,7 +4,9 @@ import type {
   ConfigurationSettingInstance,
 } from "./intune-detailed-client";
 import {
+  childLists,
   isInt32,
+  MAX_SETTING_DEPTH,
   normalizeTargetType,
   unlistedSources,
   unreadableAssignment,
@@ -145,10 +147,29 @@ function extractNestedSettings(
   if (!Array.isArray(children)) {
     return results;
   }
+  // Settings below the depth limit are not read (compliance/graph-rows.ts),
+  // so they show as unknown, never as no setting.
+  if (depth > MAX_SETTING_DEPTH) {
+    return children.length
+      ? [
+          {
+            name: `${indent}Setting below the depth limit`,
+            value: UNREADABLE_VALUE,
+          },
+        ]
+      : results;
+  }
 
   for (const child of children) {
-    // Skip if child is null/undefined
-    if (!child) continue;
+    // A child Graph returned as no record has no identifier, so it shows as
+    // an unknown setting, never as no setting.
+    if (!child || typeof child !== "object" || Array.isArray(child)) {
+      results.push({
+        name: `${indent}Setting without its identifier`,
+        value: UNREADABLE_VALUE,
+      });
+      continue;
+    }
 
     try {
       // Children in collections are raw settingInstance objects
@@ -181,14 +202,25 @@ function extractNestedSettings(
         results.push(...childResult.nestedSettings);
       }
     } catch (error) {
-      // If there's an error processing a child setting, log it and continue
+      // A child that cannot be processed is unknown, never left out.
       console.warn("Error processing nested setting:", error);
-      continue;
+      results.push({
+        name: `${indent}${
+          typeof child.settingDefinitionId === "string"
+            ? child.settingDefinitionId
+            : "Setting without its identifier"
+        }`,
+        value: UNREADABLE_VALUE,
+      });
     }
   }
 
   return results;
 }
+
+// A list Graph returned, or none for a value of another shape.
+const list = <T>(value: T[] | undefined): T[] =>
+  Array.isArray(value) ? value : [];
 
 // Helper to extract setting value from complex structures
 export function extractSettingValue(
@@ -231,10 +263,12 @@ export function extractSettingValue(
     value = instance.simpleSettingValue.value;
     type = "Simple";
   } else if (instance.simpleSettingCollectionValue) {
-    // Handle array of simple values (strings, numbers, booleans)
+    // Handle array of simple values (strings, numbers, booleans). A
+    // collection or an entry Graph returned in another shape is unreadable
+    // (unreadableCatalogValue below), so it is read without throwing.
     type = "Simple Collection";
-    const values = instance.simpleSettingCollectionValue.map(
-      (item) => item.value,
+    const values = list(instance.simpleSettingCollectionValue).map(
+      (item) => item?.value,
     );
     value = values; // formatValue will handle array formatting
   } else if (instance.choiceSettingValue) {
@@ -256,19 +290,20 @@ export function extractSettingValue(
       );
     }
   } else if (instance.choiceSettingCollectionValue) {
-    value = instance.choiceSettingCollectionValue.map((choice) =>
-      resolveChoiceDisplayValue(choice.value, settingDef),
+    value = list(instance.choiceSettingCollectionValue).map((choice) =>
+      resolveChoiceDisplayValue(choice?.value, settingDef),
     );
     type = "Choice Collection";
-    const allNestedSettings = instance.choiceSettingCollectionValue.flatMap(
-      (choice) =>
-        choice.children?.length
-          ? extractNestedSettings(
-              choice.children,
-              depth + 1,
-              setting.settingDefinitions,
-            )
-          : [],
+    const allNestedSettings = list(
+      instance.choiceSettingCollectionValue,
+    ).flatMap((choice) =>
+      choice?.children?.length
+        ? extractNestedSettings(
+            choice.children,
+            depth + 1,
+            setting.settingDefinitions,
+          )
+        : [],
     );
     if (allNestedSettings.length > 0) nestedSettings = allNestedSettings;
   } else if (instance.groupSettingValue) {
@@ -296,8 +331,8 @@ export function extractSettingValue(
       description?: string;
     }> = [];
 
-    for (const group of instance.groupSettingCollectionValue) {
-      if (group.children && group.children.length > 0) {
+    for (const group of list(instance.groupSettingCollectionValue)) {
+      if (group?.children && group.children.length > 0) {
         allNestedSettings.push(
           ...extractNestedSettings(
             group.children,
@@ -312,21 +347,27 @@ export function extractSettingValue(
       nestedSettings = allNestedSettings;
       value = `${allNestedSettings.length} setting(s) configured`;
     } else {
-      value = `Collection (${instance.groupSettingCollectionValue.length} items)`;
+      value = `Collection (${list(instance.groupSettingCollectionValue).length} items)`;
     }
   }
 
+  // Children are read only through the value the instance's type
+  // documents (compliance/graph-rows.ts childLists). When they cannot be
+  // read, such as on an instance of an undocumented type or with a value
+  // in another type's property, the setting and what it holds are unknown.
+  const unknownChildren = childLists(instance) === null;
   return {
     name:
       settingDef?.displayName ||
       instance.settingDefinitionId ||
       "Unknown Setting",
-    value: unreadableCatalogValue(instance)
-      ? UNREADABLE_VALUE
-      : formatValue(value),
+    value:
+      unknownChildren || unreadableCatalogValue(instance)
+        ? UNREADABLE_VALUE
+        : formatValue(value),
     type,
     description: settingDef?.description,
-    nestedSettings,
+    nestedSettings: unknownChildren ? undefined : nestedSettings,
   };
 }
 

@@ -6,6 +6,7 @@ import {
   summarizeAssignments,
 } from "./assignments";
 import { collectionFamilies } from "./coverage";
+import { isIdentifier } from "./graph-rows";
 import {
   CONTROL_STATUS_LABELS,
   CAPABILITY_STATUS_LABELS,
@@ -3787,9 +3788,25 @@ export async function generateComplianceReportPDF(
         ref?: string;
       }
     >();
+    // Only a Graph id names one policy. Policies without one are told apart
+    // by name and assignment, so one is never shown with the assignment of
+    // another.
+    const policyKey = (
+      id: string | undefined,
+      name: string,
+      assignment: unknown,
+    ) =>
+      isIdentifier(id)
+        ? id
+        : `\u0000${name}\u0000${JSON.stringify(assignment ?? null)}`;
     for (const evidence of result.evidence) {
-      if (!policies.has(evidence.policyId || evidence.policyName))
-        policies.set(evidence.policyId || evidence.policyName, {
+      const key = policyKey(
+        evidence.policyId,
+        evidence.policyName,
+        evidence.assignment,
+      );
+      if (!policies.has(key))
+        policies.set(key, {
           name: evidence.policyName,
           assignment: evidence.assignment,
           ref: evidenceRegistryByKey.get(evidenceRegistryKey(evidence))?.ref,
@@ -3797,7 +3814,11 @@ export async function generateComplianceReportPDF(
     }
     for (const check of result.checks) {
       if (!check.policyName) continue;
-      const key = check.policyId || check.policyName;
+      const key = policyKey(
+        check.policyId,
+        check.policyName,
+        check.assignment,
+      );
       if (!policies.has(key))
         policies.set(key, {
           name: check.policyName,
@@ -4356,7 +4377,8 @@ export async function generateComplianceReportPDF(
 
     if (
       control.status === "noEvidence" &&
-      !controlChecks.some((check) => check.policyId)
+      // A policy check names its policy, also one without an id ("").
+      !controlChecks.some((check) => check.policyId !== undefined)
     ) {
       drawGapCallout(control, mappedCapabilities);
     }

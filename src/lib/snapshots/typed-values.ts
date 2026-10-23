@@ -7,7 +7,10 @@
 // custom OMA-URI values by the type of their record (canonicalRecordValue).
 // Settings Catalog, intent and administrative template values are integers,
 // booleans and text, whose JSON form is unique, so they are compared as
-// Graph returned them.
+// Graph returned them. A value of a typed record, custom OMA-URI values
+// included, is compared with its record's type (settings-flatten.ts
+// typedToken), so a type change is a change even where the canonical value
+// reads the same.
 import {
   canonicalEdmValue,
   canonicalRecordValue,
@@ -58,9 +61,10 @@ export function canonicalTypedValues(family: string, data: Json): Json {
 /**
  * The setting rows of an item as Compare and History read it: shown as
  * Graph returned it, with a token holding the canonical value where a typed
- * value is not in its canonical form. The canonical item flattens to the
- * same rows, as a value keeps its JSON type and stays readable; rows that
- * do not line up are returned without tokens.
+ * value is not in its canonical form, with its record's type where the
+ * record has one. The canonical item flattens to the same rows, as a value
+ * keeps its JSON type and stays readable; rows that do not line up keep the
+ * tokens of the item as Graph returned it.
  */
 export function comparedRows(
   sectionKey: string,

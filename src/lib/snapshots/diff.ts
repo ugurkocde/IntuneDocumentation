@@ -144,8 +144,9 @@ interface ComparedRow {
 // name or category Graph did not return in one snapshot never reads as a
 // removed and an added setting, and compared by the value Graph returned
 // (token), so an option name that changed or was not returned is no change,
-// and a typed value by its canonical form (typed-values.ts), so another text
-// of the same value is no change either.
+// and a typed value by its canonical form with its record's type
+// (typed-values.ts), so another text of the same value is no change either
+// while a value whose type changed is one.
 function settingRows(
   section: Pick<SnapshotSection, "key" | "familyKey">,
   item: SnapshotItem,

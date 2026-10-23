@@ -2,6 +2,7 @@ import {
   childLists,
   MAX_SETTING_DEPTH,
   METADATA_KEYS,
+  normalizeTargetType,
   unreadableCatalogValue,
   unreadableIntentValue,
   unreadableOmaValue,
@@ -42,12 +43,18 @@ export interface FlatSettingRow {
    */
   identity?: string[];
   /**
-   * The value as Graph returned it, when value shows it by name: the option
-   * ids of a Settings Catalog choice, or the state and the values by
-   * presentation id of an administrative template value. History and
-   * Compare compare it instead of value, which is display only.
+   * The value as Graph returned it, when value shows it by name or without
+   * its type: the option ids of a Settings Catalog choice, the state and the
+   * typed values by presentation id of an administrative template value, or
+   * a typed value (typed). History and Compare compare it instead of value,
+   * which is display only.
    */
   token?: string;
+  /**
+   * The token holds the value with its documented Graph type (typedToken),
+   * so a value whose type changed is a change even where both read alike.
+   */
+  typed?: true;
   category?: string;
   /**
    * Graph did not return the setting's value readably
@@ -104,26 +111,41 @@ function textOf(value: unknown): string | undefined {
 
 const definitionIdOf = textOf;
 
-// The value as Graph returned it, for a value the formatted text cannot
-// tell apart from another one: a list whose entries are records or text
-// holding the separators formatValue joins entries with (["a, b"] and
-// ["a", "b"] both read "a, b"), or a record with a value, which formatValue
-// shows by its name and value only. Other values read the same as their
-// text, so they need no token.
-function rawToken(value: unknown): string | undefined {
-  const ambiguous = Array.isArray(value)
-    ? value.some(
-        (entry) =>
-          (entry !== null && typeof entry === "object") ||
-          (typeof entry === "string" && /, |\n/.test(entry)),
-      )
-    : value !== null &&
-      typeof value === "object" &&
-      Object.hasOwn(value, "value");
-  return ambiguous ? JSON.stringify(value) : undefined;
-}
+// What a value of a typed Graph record is compared by: the record's
+// normalized @odata.type with the value as Graph returned it. Graph types the
+// value of every custom OMA-URI row, Settings Catalog simple value, intent
+// setting instance and administrative template presentation value
+// (graph-rows.ts VALUE_TYPES), and the type is part of the setting a CSP
+// processes, so an integer 1 that became the text "1", or the boolean true
+// that became the text "Enabled", is a change although both read the same.
+// Values of one type keep their own form, so equal values stay equal.
+const typedValue = (record: Record<string, unknown>, value: unknown) => [
+  normalizeTargetType(record["@odata.type"]),
+  value ?? null,
+];
+
+const typedToken = (token: unknown) => ({
+  token: JSON.stringify(token),
+  typed: true as const,
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 // --- Settings Catalog -------------------------------------------------------
+
+// The typed token of the simple value or value collection of a readable
+// Settings Catalog instance, entry by entry in order; none for other
+// instances.
+function simpleToken(instance: ConfigurationSettingInstance) {
+  const entry = (value: unknown) =>
+    isRecord(value) ? typedValue(value, value.value) : null;
+  if (isRecord(instance.simpleSettingValue))
+    return typedToken(entry(instance.simpleSettingValue));
+  if (Array.isArray(instance.simpleSettingCollectionValue))
+    return typedToken(instance.simpleSettingCollectionValue.map(entry));
+  return {};
+}
 
 // The instance without its children, so extractSettingValue resolves only
 // this level; children are walked separately to keep their ids and path.
@@ -221,11 +243,6 @@ function walkCatalogInstance(
     const choice = Boolean(
       instance.choiceSettingValue || instance.choiceSettingCollectionValue,
     );
-    const collection = Array.isArray(instance.simpleSettingCollectionValue)
-      ? rawToken(
-          instance.simpleSettingCollectionValue.map((entry) => entry?.value),
-        )
-      : undefined;
     rows.push({
       name: extracted.name,
       value: unreadable ? UNREADABLE_VALUE : String(extracted.value),
@@ -242,9 +259,9 @@ function walkCatalogInstance(
               }).value,
             ),
           }
-        : collection !== undefined
-          ? { token: collection }
-          : {}),
+        : unreadable
+          ? {}
+          : simpleToken(instance)),
       ...flag(unreadable),
     });
   }
@@ -370,6 +387,11 @@ function omaRows(omaSettings: unknown): FlatSettingRow[] {
       {
         name: textOf(record.displayName) ?? omaUri ?? "Custom setting",
         value,
+        ...(unreadable
+          ? {}
+          : typedToken(
+              typedValue(record, record.value ?? record.omaSettingStringValue),
+            )),
         ...(omaUri ? { definitionId: omaUri } : {}),
         path: [],
         category: "Custom OMA-URI",
@@ -427,8 +449,8 @@ function administrativeTemplateRows(
     const raw = values[index] as Record<string, any> | undefined;
     const definition = raw?.definition as Record<string, unknown> | undefined;
     const definitionId = definitionIdOf(definition?.id);
-    // What is compared: the state and each presentation's value by the
-    // presentation id, never its label. Presentations are told apart by
+    // What is compared: the state and each presentation's typed value by
+    // the presentation id, never its label. Presentations are told apart by
     // their ids, so their order is no change.
     const presentations = (
       Array.isArray(raw?.presentationValues) ? raw.presentationValues : []
@@ -436,7 +458,7 @@ function administrativeTemplateRows(
       .map((entry: any) =>
         JSON.stringify([
           entry?.presentation?.id ?? null,
-          entry?.value ?? null,
+          ...typedValue(isRecord(entry) ? entry : {}, entry?.value),
           entry?.values ?? null,
         ]),
       )
@@ -447,7 +469,7 @@ function administrativeTemplateRows(
         setting.value === NOT_CONFIGURED
           ? setting.state
           : `${setting.state}: ${setting.value}`,
-      token: JSON.stringify([raw?.enabled ?? null, presentations]),
+      ...typedToken([raw?.enabled ?? null, presentations]),
       ...(definitionId ? { definitionId } : {}),
       path:
         setting.category && setting.category !== "General"
@@ -497,17 +519,19 @@ function securityBaselineRows(item: Record<string, unknown>): FlatSettingRow[] {
       const record = (setting ?? {}) as Record<string, unknown>;
       const definitionId = definitionIdOf(record.definitionId);
       const unreadable = unreadableIntentValue(setting);
-      const token = unreadable
-        ? undefined
-        : rawToken(
-            record.value !== undefined && record.value !== null
-              ? record.value
-              : parsedJson(record.valueJson),
-          );
       rows.push({
         name: row.name,
         value: row.value,
-        ...(token !== undefined ? { token } : {}),
+        ...(unreadable
+          ? {}
+          : typedToken(
+              typedValue(
+                record,
+                record.value !== undefined && record.value !== null
+                  ? record.value
+                  : parsedJson(record.valueJson),
+              ),
+            )),
         ...(definitionId ? { definitionId } : {}),
         path: [],
         category: source.category,

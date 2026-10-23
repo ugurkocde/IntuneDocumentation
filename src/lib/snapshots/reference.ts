@@ -81,6 +81,11 @@ export interface ReferenceSetting {
   // compared instead of value, so a renamed option or label is no
   // difference; value is display only.
   token?: string;
+  // The token holds the value with its documented Graph type
+  // (settings-flatten.ts typed): a custom OMA-URI, Settings Catalog simple,
+  // intent or administrative template value. Absent in files saved before
+  // tokens held the type.
+  typed?: true;
   // SHA-256 of the group instance the setting is part of (its sibling and
   // child settings with their values), for settings inside a Settings
   // Catalog group such as one firewall rule.
@@ -249,8 +254,8 @@ function itemRows(
   const omitted = omittedFields(section.familyKey, data);
   const filled = omitted.length ? structuredClone(data) : data;
   for (const path of omitted) setPath(filled, path, OMITTED);
-  // A typed value is compared by its canonical form (typed-values.ts), shown
-  // as Graph returned it.
+  // A typed value is compared by its canonical form and its record's type
+  // (typed-values.ts), shown as Graph returned it.
   const rows = comparedRows(sectionKey, section.familyKey, filled).map((row) => {
     const id = row.definitionId ?? row.name;
     const setting = catalog ? id : [...row.path, id].join(" / ");
@@ -272,6 +277,7 @@ function itemRows(
     else {
       Object.assign(entry, shortened(row.value));
       if (row.token !== undefined) entry.token = digest(row.token);
+      if (row.token !== undefined && row.typed) entry.typed = true;
     }
     return entry;
   });
@@ -482,6 +488,7 @@ const SETTING_KEYS = new Set([
   "value",
   "sha256",
   "token",
+  "typed",
   "redacted",
   "group",
   "policy",
@@ -547,7 +554,8 @@ function isSetting(value: unknown): value is ReferenceSetting {
       value.redacted === true &&
       value.value === undefined &&
       value.sha256 === undefined &&
-      value.token === undefined
+      value.token === undefined &&
+      value.typed === undefined
     );
   }
   if (
@@ -555,6 +563,8 @@ function isSetting(value: unknown): value is ReferenceSetting {
     !(typeof value.token === "string" && HEX_64.test(value.token))
   )
     return false;
+  // Only a token holds the type.
+  if (value.typed !== undefined && !(value.typed === true && value.token !== undefined)) return false;
   if (!isText(value.value, REFERENCE_MAX_VALUE + 3)) return false;
   // A digest belongs to a shortened value and every longer value is
   // shortened, exactly as createReference writes them.
@@ -842,11 +852,18 @@ function placeOf(setting: ReferenceSetting): string {
 // Group instances, by policy and path, that hold a setting without a value
 // to compare (redacted, unreadable or not kept), directly or in an instance
 // below them. Their content is unknown, so they may be the same as another
-// instance or not: deduplicating or pairing them would guess.
-function uncertainInstances(settings: readonly ReferenceSetting[]): Set<string> {
+// instance or not: deduplicating or pairing them would guess. So is the
+// content of an instance holding a typed value against a family the other
+// side holds no typed value in, such as a reference file saved before
+// tokens held the type: its values cannot be told apart by type there.
+function uncertainInstances(
+  settings: readonly ReferenceSetting[],
+  otherTyped: ReadonlySet<string>,
+): Set<string> {
   const places = new Set<string>();
   for (const setting of settings) {
-    if (token(setting) !== null || !setting.path?.length) continue;
+    const unknown = token(setting) === null || (setting.typed === true && !otherTyped.has(setting.family));
+    if (!unknown || !setting.path?.length) continue;
     for (let depth = 1; depth <= setting.path.length; depth++)
       places.add(placeOf({ ...setting, path: setting.path.slice(0, depth) }));
   }
@@ -903,17 +920,22 @@ function statusOf(
   if (all.some((setting) => token(setting) === null)) return { status: "notComparable" };
   if (!actual?.length) return { status: "missing" };
   if (!expected?.length) return { status: "extra" };
-  // A value compared by its token on one side only, such as a list whose
-  // entries hold separators against a reference file saved before such
-  // lists had one (settings-flatten.ts rawToken), is the same value only if
-  // their shown values tell it: equal shown values may hide two different
-  // lists, so the setting is not comparable. A typed value has a token only
-  // when Graph wrote it in another form than the canonical one
-  // (typed-values.ts), which the other side's value then is: the same
-  // compared text is the same value.
+  // A value compared by its token on one side only, or by a token with its
+  // type on one side only, such as a custom OMA-URI or Settings Catalog
+  // simple value against a reference file saved before tokens held the
+  // type, is the same value only if their shown values tell it: equal shown
+  // values may hide two different lists or two values of different types,
+  // such as an integer 1 and the text "1", so the setting is not
+  // comparable. A plain property's value has a token only when Graph wrote
+  // it in another form than the canonical one (typed-values.ts), which the
+  // other side's value then is: the same compared text is the same value.
   const tokened = (list: readonly ReferenceSetting[]) => list.some((setting) => setting.token !== undefined);
+  const typed = (list: readonly ReferenceSetting[]) => list.some((setting) => setting.typed === true);
   const tokens = (list: readonly ReferenceSetting[]) => [...new Set(list.map(token))].sort().join(SEPARATOR);
-  if (tokened(expected) !== tokened(actual) && tokens(expected) !== tokens(actual)) {
+  if (
+    (tokened(expected) !== tokened(actual) || typed(expected) !== typed(actual)) &&
+    tokens(expected) !== tokens(actual)
+  ) {
     const shown = (list: readonly ReferenceSetting[]) =>
       [...new Set(list.map((setting) => setting.sha256 ?? setting.value))].sort().join(SEPARATOR);
     return { status: shown(expected) === shown(actual) ? "notComparable" : "different" };
@@ -985,12 +1007,17 @@ function compareSides(reference: ComparedSide, current: ComparedSide): Compariso
 
   const expected = byKey(reference.settings, compared);
   const actual = byKey(current.settings, compared);
+  const left = [...expected.values()].flat();
+  const right = [...actual.values()].flat();
+  // The families each side holds a typed value in.
+  const typed = (list: readonly ReferenceSetting[]) =>
+    new Set(list.filter((setting) => setting.typed === true).map((setting) => setting.family));
   const context: InstanceContext = {
-    expected: instancesOf([...expected.values()].flat()),
-    actual: instancesOf([...actual.values()].flat()),
+    expected: instancesOf(left),
+    actual: instancesOf(right),
     uncertain: {
-      expected: uncertainInstances([...expected.values()].flat()),
-      actual: uncertainInstances([...actual.values()].flat()),
+      expected: uncertainInstances(left, typed(right)),
+      actual: uncertainInstances(right, typed(left)),
     },
     pairs: new Map(),
   };

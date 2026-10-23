@@ -698,11 +698,11 @@ describe("sweep: transformations keep values apart", () => {
     expect(changes(history(CATALOG, from, to))).toEqual([
       ["synthetic_list", "changed"],
     ]);
-    // Compare cannot tell this from a reference file saved before such
-    // lists had a token, so it reads the shown values: equal, not
-    // comparable, never matching.
+    // Both lists carry their typed entries (settings-flatten.ts typed), so
+    // Compare tells them apart; a reference file saved before tokens held
+    // the type reads not comparable (typed-tokens-round-40.test.ts).
     expect(compare(CATALOG, from, to).statuses.synthetic_list).toBe(
-      "notComparable",
+      "different",
     );
     expect(compare(CATALOG, from, from).statuses.synthetic_list).toBe(
       "matching",

@@ -154,7 +154,7 @@ describe("reference file", () => {
     const file = await reference();
     const text = serializeReference(file);
     for (const entry of file.settings) {
-      expect(Object.keys(entry).every((key) => ["platform", "family", "setting", "name", "path", "value", "sha256", "token", "redacted", "group", "policy"].includes(key))).toBe(true);
+      expect(Object.keys(entry).every((key) => ["platform", "family", "setting", "name", "path", "value", "sha256", "token", "typed", "redacted", "group", "policy"].includes(key))).toBe(true);
     }
     expect(text).not.toContain("assignments");
     expect(text).not.toContain("groupId");

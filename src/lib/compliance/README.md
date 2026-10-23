@@ -858,7 +858,15 @@ assessments, so the ruleset version stays the same.
   returned it (`canonicalEdmValue` in `graph-rows.ts`,
   `snapshots/typed-values.ts`). Only properties the type table names and
   custom OMA-URI values by their record type are canonicalized; Settings
-  Catalog, intent and template values are integers, booleans and text.
+  Catalog, intent and template values are integers, booleans and text. A
+  value of a typed record (custom OMA-URI, Settings Catalog simple, intent
+  and template presentation values) is compared with its record's
+  `@odata.type` (`typedToken` in `settings-flatten.ts`, `typed` in reference
+  files), so an integer 1 that became the text "1" is a change. A reference
+  file saved before tokens held the type reads such values as not
+  comparable when they show the same text. History fingerprints of custom
+  OMA-URI values that are not stored hold the type, except String values,
+  which keep the digest of their text.
 - **Identity.** History pairs items by an id of their own: the `id` Graph
   returned on the resource (`getStableItemId`), never a `templateId`,
   `policyId` or name; only singleton sections are named by position. An

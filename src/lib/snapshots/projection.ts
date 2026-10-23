@@ -257,8 +257,13 @@ export const FINGERPRINT_LABELS: Readonly<Record<string, string>> = {
 // value:<setting definition id or OMA-URI>#<occurrence>.
 export const VALUE_FINGERPRINT = "value:";
 
-// Called with each value that is dropped, so it is compared by fingerprint.
-type DroppedValue = (settingId: string, content: string) => void;
+// Called with each value that is dropped, so it is compared by fingerprint,
+// with the type of the custom OMA-URI row that holds it (omaValueDigest).
+type DroppedValue = (
+  settingId: string,
+  content: string,
+  type?: unknown,
+) => void;
 
 // Turns the SHA-256 digest of content that is not stored into the stored
 // fingerprint. The desktop keys it (HMAC-SHA256 with a key derived from the
@@ -270,6 +275,22 @@ export type SnapshotFingerprint = (digest: string) => string;
 // one taken here of content the projection drops.
 export function contentDigest(content: string): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+// The digest a custom OMA-URI value that is not stored is fingerprinted
+// from, with the type of its row (graph-rows.ts), so a value whose type
+// changed, such as the text "1" of a secret URI that became the integer 1,
+// reads as changed in History although both texts are the same. A value of
+// the String type, which most values that are not stored have, keeps the
+// digest of its text, as snapshots saved before took it, so they stay
+// comparable; the digest of a value of another type is named by its type,
+// which a bare digest never is. Other records keep the digest: their values
+// are compared with their type in their rows (settings-flatten.ts).
+function omaValueDigest(type: unknown, digest: string): string {
+  const name = normalizeTargetType(type);
+  return !name.startsWith("omasetting") || name === "omasettingstring"
+    ? digest
+    : `${name}:${digest}`;
 }
 
 // Fields the compound policy checks read, by normalized @odata.type. Each
@@ -930,12 +951,14 @@ function projectOmaSettings(
       setting.isEncrypted !== true &&
       (!Object.hasOwn(setting, "value") || unreadableOmaValue(setting));
     // The fingerprint is of the canonical form of a typed value
-    // (graph-rows.ts canonicalRecordValue), so another text of the same
-    // date and time or XML is the same value in History.
+    // (graph-rows.ts canonicalRecordValue) with its type (omaValueDigest),
+    // so another text of the same date and time or XML is the same value in
+    // History and a value of another type is not.
     if (!keep && !unread && isPrimitive(setting.value))
       dropped?.(
         idText(setting.omaUri) ?? "",
         String(canonicalRecordValue(setting["@odata.type"], setting.value)),
+        setting["@odata.type"],
       );
     return {
       ...pick(setting, ["@odata.type", "omaUri", "displayName", "isEncrypted"]),
@@ -997,7 +1020,13 @@ function walkRedacted(
     return value.every((entry) => walkRedacted(entry, owner, depth + 1, found));
   const name = depth === 0 ? undefined : (settingName(value as Json) ?? owner);
   for (const [field, digest] of redactedDigests(value))
-    found(name, field, digest);
+    found(
+      name,
+      field,
+      field === "value"
+        ? omaValueDigest((value as Json)["@odata.type"], digest)
+        : digest,
+    );
   return Object.values(value).every((nested) =>
     walkRedacted(nested, name, depth + 1, found),
   );
@@ -1054,9 +1083,9 @@ function projectItem(
       fingerprint(digest);
   };
   // A value the collector redacted is fingerprinted from its digest below.
-  const dropped: DroppedValue = (settingId, content) => {
+  const dropped: DroppedValue = (settingId, content, type) => {
     if (content !== REDACTED_VALUE)
-      valueFingerprint(settingId, contentDigest(content));
+      valueFingerprint(settingId, omaValueDigest(type, contentDigest(content)));
   };
   const settings = projectSettings(raw.settings, section.familyKey, dropped);
   if (settings) data.settings = settings;

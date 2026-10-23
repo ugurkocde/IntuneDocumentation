@@ -55,14 +55,16 @@ export const READINESS_DISCLAIMER = "Readiness comparison, not a certification";
 export type ObservationLabel =
   | "Matches"
   | "Differs"
+  | "Parent setting differs"
   | "Not set in this policy"
   | "Not readable";
 
 /**
  * How one tenant policy holds the displayed setting of a finding: the
  * setting itself, not the whole root it sits in, so a nested setting that
- * matches next to a differing sibling reads Matches. The screen and the PDF
- * both use it.
+ * matches next to a differing sibling reads Matches. A parent of the setting
+ * with another option reads Parent setting differs: the setting applies only
+ * below the recommended option. The screen and the PDF both use it.
  */
 export function observationLabel(
   finding: Pick<SettingFinding, "recommended">,
@@ -77,7 +79,8 @@ export function observationLabel(
   if (!state) return "Not readable";
   if (state.holds === "no") return "Not set in this policy";
   if (state.comparison === "match") return "Matches";
-  if (state.comparison === "differ") return "Differs";
+  if (state.comparison === "differ")
+    return state.parentDiffers ? "Parent setting differs" : "Differs";
   return "Not readable";
 }
 

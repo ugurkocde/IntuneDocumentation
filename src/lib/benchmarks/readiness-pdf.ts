@@ -85,6 +85,7 @@ import {
 } from "./manual";
 import {
   readableOwnValue,
+  readableRecommendation,
   record,
   type Json,
   type RecordJson,
@@ -998,9 +999,13 @@ export function renderReadinessPdf(
           color: PALETTE.muted,
           indent: 3,
         });
+      // A recommended value on, below or above an unreadable pack value is
+      // not readable either (policies.ts readableRecommendation).
       const recommended = setting.findings
         .map((finding) =>
-          valueText(findInstance(finding.recommended, setting.id)),
+          readableRecommendation(finding.recommended, setting.id)
+            ? valueText(findInstance(finding.recommended, setting.id))
+            : "Not readable",
         )
         .filter((value, index, all) => all.indexOf(value) === index);
       if (recommended.length)

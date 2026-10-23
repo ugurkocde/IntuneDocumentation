@@ -423,8 +423,10 @@ function assignable(
 /**
  * Compares the recommended leaves with one tenant root. A readable leaf that
  * differs or is absent below readable parents is a difference, and a definite
- * difference wins. A leaf that is unreadable, or absent below an unreadable
- * parent, is unknown. Group and choice collection entries compare as
+ * difference wins. A leaf that is unreadable on either side, or below a
+ * parent that is unreadable on either side, is unknown, held or not: which
+ * option the parent selects is not certain, so whether the leaf applies is
+ * not either. Group and choice collection entries compare as
  * multisets: each recommended entry needs its own tenant entry, in any order,
  * and extra tenant entries are ignored (a root without child instances is
  * still compared whole, so there the entry count must match too). A recommended entry no tenant entry can match
@@ -436,16 +438,18 @@ function compareLeaves(
   have: Map<string, string>,
 ): Comparison {
   let unknown = false;
-  const unreadable = [...have]
+  const wantedLeaves = [...wanted];
+  // Unreadable leaves of both sides: the tenant's and the pack's.
+  const unreadable = [...have, ...wantedLeaves]
     .filter(([, value]) => value === UNREADABLE)
     .map(([at]) => at);
   const shadowed = (path: string) =>
     unreadable.some((at) => inSubtree(path, at));
-  const want = splitEntries(wanted);
+  const want = splitEntries(wantedLeaves);
   for (const [path, value] of want.direct) {
     const observed = have.get(path);
-    // A pack value this app cannot read is never compared, and a tenant leaf
-    // below an unreadable parent is unknown, held or not, like the parent.
+    // A pack value this app cannot read is never compared, and a leaf below
+    // a parent unreadable on either side is unknown, like the parent.
     if (value === UNREADABLE || shadowed(path)) unknown = true;
     else if (observed === undefined || observed !== value) return "differ";
   }
@@ -528,21 +532,55 @@ export function readableRecommendation(
   );
 }
 
-/** Whether a tenant root holds a definition: yes, no, or maybe below an unreadable parent. */
+/**
+ * What of a parent leaf selects the branch below it: the option of a choice
+ * or of a choice collection entry. A group, a group entry or a choice
+ * collection as a whole selects nothing, so only its readability counts;
+ * other properties of a parent never decide for its descendants.
+ */
+function branchSelector(value: string): string {
+  if (value === UNREADABLE) return value;
+  const parsed: unknown = JSON.parse(value);
+  if (record(parsed) && record(parsed.choiceSettingValue))
+    return JSON.stringify(parsed.choiceSettingValue.value ?? null);
+  if (record(parsed) && typeof parsed.value === "string")
+    return JSON.stringify(parsed.value);
+  return "readable";
+}
+
+/**
+ * Whether a tenant root holds a definition: yes (also when it holds a parent
+ * of it with another option, see compareDefinition), no, or maybe below an
+ * unreadable parent.
+ */
 export type Holding = "yes" | "no" | "maybe";
+
+export interface DefinitionComparison {
+  holds: Holding;
+  comparison: Comparison;
+  /** The difference is in a parent's option, not in the definition itself. */
+  parentDiffers?: true;
+}
 
 /**
  * One setting definition inside a recommended root, judged against one
  * observed tenant root of the same root definition. For the root definition
- * itself this is compareRoot. For a nested definition the leaf and everything
- * below it must equal the recommendation. Null when the recommended root does
- * not contain the definition.
+ * itself this is compareRoot. A nested definition applies only below the
+ * options its parents select, so it is judged with them: the instances on
+ * the path from the root to it, and the collection entries holding it,
+ * compared by what selects the branch (branchSelector), never by their
+ * other properties or children. The leaf and everything below it must equal
+ * the recommendation. A tenant root that holds a parent with another option
+ * differs (Different, never Missing), also when it does not hold the
+ * definition below it; a parent it does not hold, such as an entry of an
+ * empty collection, leaves the definition absent. Null when the recommended
+ * root does not contain the definition.
  */
 export function compareDefinition(
   recommended: Json,
   observed: Json,
   definitionId: string,
-): { holds: Holding; comparison: Comparison } | null {
+): DefinitionComparison | null {
   const want = clean(recommended);
   if (!isInstance(want)) return null;
   if (want.settingDefinitionId === definitionId)
@@ -558,21 +596,47 @@ export function compareDefinition(
     have.settingDefinitionId !== want.settingDefinitionId
   )
     return { holds: "maybe", comparison: "unknown" };
-  const haveLeaves = leafValues(have, "", new Map());
+  // Parents on both sides compare by what selects the branch only. Pack
+  // paths are exact; a tenant parent is one in any entry, as entries are
+  // matched, not paired.
+  const above = (path: string, anchor: string) =>
+    !inSubtree(path, anchor) && inSubtree(anchor, path);
+  const subtree = wanted.filter(([path]) =>
+    anchors.some((anchor) => inSubtree(path, anchor)),
+  );
+  const parents = wanted
+    .filter(([path]) => anchors.some((anchor) => above(path, anchor)))
+    .map(([path, value]): [string, string] => [path, branchSelector(value)]);
+  const haveLeaves = new Map(
+    [...leafValues(have, "", new Map())].map(([path, value]) => [
+      path,
+      anchors.some((anchor) => above(entryless(path), entryless(anchor)))
+        ? branchSelector(value)
+        : value,
+    ]),
+  );
   // Held in any entry of a collection: entries are matched, not paired.
   const heldPaths = new Set([...haveLeaves.keys()].map(entryless));
   if (!anchors.some((anchor) => heldPaths.has(entryless(anchor)))) {
-    const below = [...haveLeaves].some(
+    // A parent the tenant holds with another option decides; a parent it
+    // does not hold leaves the definition absent.
+    const heldParents = parents.filter(([path]) =>
+      heldPaths.has(entryless(path)),
+    );
+    if (compareLeaves(heldParents, haveLeaves) === "differ")
+      return { holds: "yes", comparison: "differ", parentDiffers: true };
+    const shadowed = [...haveLeaves].some(
       ([at, value]) =>
         value === UNREADABLE &&
         anchors.some((anchor) => inSubtree(entryless(anchor), entryless(at))),
     );
-    return below
+    return shadowed
       ? { holds: "maybe", comparison: "unknown" }
       : { holds: "no", comparison: "differ" };
   }
-  const subtree = wanted.filter(([path]) =>
-    anchors.some((anchor) => inSubtree(path, anchor)),
-  );
-  return { holds: "yes", comparison: compareLeaves(subtree, haveLeaves) };
+  const comparison = compareLeaves([...parents, ...subtree], haveLeaves);
+  return comparison === "differ" &&
+    compareLeaves(subtree, haveLeaves) !== "differ"
+    ? { holds: "yes", comparison, parentDiffers: true }
+    : { holds: "yes", comparison };
 }

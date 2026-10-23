@@ -204,15 +204,19 @@ function walkCatalogInstance(
     instance.groupSettingValue || instance.groupSettingCollectionValue,
   );
   const definitionId = definitionIdOf(instance.settingDefinitionId);
-  // The shared instance rules (compliance/graph-rows.ts): an instance whose
-  // own value, or whose child lists, cannot be read is one unreadable row,
-  // also a group. Children of unknown lists are not read; children below an
-  // unreadable own value, or below an unreadable ancestor (shadowed), are
-  // kept as unreadable rows, so nothing below it reads as configured, as a
-  // value or as no setting.
+  // The shared instance rules (compliance/graph-rows.ts): an instance
+  // without its definition id, or whose own value or child lists cannot be
+  // read, is one unreadable row, also a group. Children of unknown lists are
+  // not read; children below such an instance, or below an unreadable
+  // ancestor (shadowed), are kept as unreadable rows, so nothing below it
+  // reads as configured, as a value or as no setting (as the compliance
+  // engine's collectCatalogValues reads them).
   const unknownChildren = childLists(instance) === null;
   const unreadable =
-    shadowed || unknownChildren || unreadableCatalogValue(instance);
+    shadowed ||
+    !definitionId ||
+    unknownChildren ||
+    unreadableCatalogValue(instance);
   if (unreadable || (!isGroup && extracted.value !== NOT_CONFIGURED)) {
     const choice = Boolean(
       instance.choiceSettingValue || instance.choiceSettingCollectionValue,

@@ -5,6 +5,7 @@ import type {
 } from "./intune-detailed-client";
 import {
   childLists,
+  isIdentifier,
   isInt32,
   MAX_SETTING_DEPTH,
   normalizeTargetType,
@@ -355,10 +356,16 @@ export function extractSettingValue(
   // documents (compliance/graph-rows.ts childLists). When they cannot be
   // read, such as on an instance of an undocumented type or with a value
   // in another type's property, the setting and what it holds are unknown.
-  // Below an unreadable own value, whether the children apply is unknown
-  // too, so they show as unreadable, never with their values.
+  // An instance without its definition id is unknown too: which setting it
+  // configures is not certain. Below an unreadable or unidentified instance,
+  // whether the children apply is unknown as well, so they show as
+  // unreadable, never with their values (as the compliance engine's
+  // collectCatalogValues reads them).
   const unknownChildren = childLists(instance) === null;
-  const unreadable = unknownChildren || unreadableCatalogValue(instance);
+  const unreadable =
+    unknownChildren ||
+    !isIdentifier(instance.settingDefinitionId) ||
+    unreadableCatalogValue(instance);
   return {
     name:
       settingDef?.displayName ||

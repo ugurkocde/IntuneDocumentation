@@ -15,7 +15,16 @@ import {
   richAssessment,
   unassessedAssessment,
 } from "./export-fixtures";
-import { choice, simpleInteger, simpleSecret } from "./fixtures";
+import { assessBenchmark } from "../assessment";
+import {
+  choice,
+  collection,
+  NOW,
+  pack,
+  simpleInteger,
+  simpleSecret,
+  tenantPolicy,
+} from "./fixtures";
 import type { RecordJson } from "../policies";
 
 const RENDER_DATE = new Date("2026-10-22T12:00:00.000Z");
@@ -205,5 +214,63 @@ describe("readiness PDF helpers", () => {
       valueText(instance(simpleSecret("synthetic_bench_secret", "hidden"))),
     ).toBe("Not readable");
     expect(valueText(null)).toBe("Not set");
+  });
+});
+
+describe("readiness PDF: a nested setting and its parents", () => {
+  const ENABLED = "synthetic_bench_pdf_enabled";
+  const LIMIT = "synthetic_bench_pdf_limit";
+  const recommendations = [
+    {
+      id: "1.1",
+      title: "Synthetic limit",
+      level: 1 as const,
+      settings: [LIMIT],
+    },
+  ];
+  const detail = (
+    packRoot: Record<string, unknown>,
+    tenantRoot: Record<string, unknown>,
+  ) => {
+    const assessment = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({
+            name: "Synthetic tenant lock",
+            settings: [tenantRoot],
+          }),
+        ],
+      }),
+      pack([{ settings: [packRoot] }], recommendations),
+      { now: NOW },
+    );
+    return pageTexts(render(assessment, { exceptions: [] })).join(" ");
+  };
+
+  it("names a parent with another option, without the child's value", () => {
+    const text = detail(
+      choice(ENABLED, "0", [simpleInteger(LIMIT, 5)]),
+      choice(ENABLED, "1", [simpleInteger(LIMIT, 5)]),
+    );
+    expect(text).toContain(
+      "Policy Synthetic tenant lock: Assigned, Parent setting differs.",
+    );
+    expect(text).toContain("Recommended value: 5");
+  });
+
+  it("shows a recommended value below an unreadable pack parent as not readable", () => {
+    const child = simpleInteger(LIMIT, 5);
+    const text = detail(
+      {
+        ...choice(ENABLED, "0", [child]),
+        choiceSettingValue: { children: [child] },
+      },
+      choice(ENABLED, "1", [simpleInteger(LIMIT, 9)]),
+    );
+    expect(text).toContain("Recommended value: Not readable");
+    expect(text).not.toContain("Recommended value: 5");
+    expect(text).toContain(
+      "Policy Synthetic tenant lock: Assigned, Not readable.",
+    );
   });
 });

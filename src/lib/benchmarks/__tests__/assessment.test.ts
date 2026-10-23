@@ -1541,10 +1541,11 @@ describe("review round fixes", () => {
         "Review",
         "packValueUnreadable",
       ]);
-      // A readable difference on the descendant itself still decides.
+      // A readable tenant difference below the unreadable pack parent is no
+      // difference either: which option the pack selects is not certain.
       expect(
         outcome([parent(`${ROOT}_1`, [choice(DESCENDANT, "off")])]),
-      ).toEqual(["Fail", undefined]);
+      ).toEqual(["Review", "packValueUnreadable"]);
     });
   });
 

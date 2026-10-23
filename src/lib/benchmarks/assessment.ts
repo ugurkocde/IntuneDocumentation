@@ -10,6 +10,11 @@
  *   setting's platform; otherwise an absent setting is Review (otherProfiles),
  *   because the comparison reads Settings Catalog policies only.
  * - Different only with a readable observed value that differs.
+ * - A nested setting applies only below the options its parents select, so
+ *   it is judged with them (policies.ts compareDefinition): a readable
+ *   tenant parent with another option is Different, never Pass or Missing,
+ *   and a parent unreadable on either side, without such a difference above
+ *   it, makes it Review.
  * - Present only when every observation holding the setting is readable and
  *   matches, and the collection is complete (an unread policy may hold
  *   another value).
@@ -19,7 +24,10 @@
  *   Review (assignmentUnknown) when none is assigned and an assignment could
  *   not be read.
  * - A pack value this app cannot read is never compared: Review
- *   (packValueUnreadable), never Different or Missing.
+ *   (packValueUnreadable), never Missing, and never Different on its own
+ *   account. A readable difference that decides whatever that value is
+ *   stays Different: a readable tenant parent with another option above it,
+ *   or a readable difference in another branch of the same root.
  * - A recommendation naming a setting outside the pack is Not assessed.
  * - The headline is Pass / (Pass + Fail); Review and Not assessed are counted
  *   but never lower it; null when nothing was assessed.
@@ -210,6 +218,10 @@ function judge(
   }));
   const holding = states.filter(({ state }) => state.holds === "yes");
   const holders = holding.map(({ observation }) => observation);
+  // A difference is definite: compareLeaves reaches one only through a
+  // readable pack leaf below readable pack and tenant parents, so a pack
+  // value that cannot be read never makes it Different, while a readable
+  // difference in another branch of the same root still does.
   if (holding.some(({ state }) => state.comparison === "differ"))
     return { status: "Different", holders };
   const readable = readableRecommendation(recommended, definitionId);
@@ -223,7 +235,8 @@ function judge(
       return { status: "Review", reason: "otherProfiles", holders };
     return { status: "Missing", holders };
   }
-  // A match below an unreadable pack parent is not a reading of the pack.
+  // A match on, below or above an unreadable pack value is not a reading of
+  // the pack.
   if (!readable)
     return { status: "Review", reason: "packValueUnreadable", holders };
   if (maybe || holding.some(({ state }) => state.comparison === "unknown"))

@@ -11,6 +11,7 @@ import type {
   ControlStatus,
   FrameworkAssessment,
 } from "../types";
+import { unknownAssignmentReasons } from "../assignments";
 import { isIdentifier } from "../graph-rows";
 import { portalAreaFor, PORTAL_AREAS } from "./portal-links";
 import type {
@@ -101,12 +102,65 @@ function hasUnreadablePolicyValue(result: CapabilityResult): boolean {
   );
 }
 
+/**
+ * Whether a data gap comes from assignments that were read completely but
+ * whose effective targeting could not be resolved (AssignmentSummary
+ * uncertainty "unresolved"), of the capability or of the alternative it
+ * depends on: "only" when that is its only cause, which a review of the
+ * overlapping assignments settles and collecting again does not; "partly"
+ * when data that could not be read adds to it, which needs both.
+ */
+function unresolvedTargeting(
+  result: CapabilityResult,
+): "only" | "partly" | undefined {
+  if (result.alternative) {
+    if (result.alternative.state !== "unknown") return undefined;
+    return result.alternative.targetingUnresolved
+      ? "only"
+      : result.alternative.targetingPartlyUnresolved
+        ? "partly"
+        : undefined;
+  }
+  if (result.status !== "assignmentUnknown") return undefined;
+  const { incomplete, unresolved } = unknownAssignmentReasons(
+    result.evidence.map((item) => item.assignment),
+  );
+  if (!unresolved) return undefined;
+  return incomplete || hasUnreadablePolicyValue(result) ? "partly" : "only";
+}
+
+const targetingUnresolved = (result: CapabilityResult) =>
+  unresolvedTargeting(result) === "only";
+
 function isDataGap(result: CapabilityResult): boolean {
   return (
     DATA_GAP_STATUSES.includes(result.status) ||
     result.alternative?.state === "unknown" ||
     hasUnreadablePolicyValue(result)
   );
+}
+
+/**
+ * Mapped data gaps (metrics.dataGaps) that targeting that could not be
+ * resolved causes alone (only) or beside data that could not be read
+ * (partly).
+ */
+function unresolvedDataGaps(
+  fa: FrameworkAssessment,
+  capabilities: readonly CapabilityResult[],
+  kind: "only" | "partly",
+): number {
+  const mapped = mappedCapabilityIds(fa);
+  return new Set(
+    capabilities
+      .filter(
+        (result) =>
+          mapped.has(result.capability.id) &&
+          isDataGap(result) &&
+          unresolvedTargeting(result) === kind,
+      )
+      .map((result) => result.capability.id),
+  ).size;
 }
 
 function safeguardCount(
@@ -211,7 +265,9 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
       ? "alternativeInUse"
       : result.alternative.state === "notCombinable"
         ? "notCombinable"
-        : "dataMissing";
+        : targetingUnresolved(result)
+          ? "targetingUnresolved"
+          : "dataMissing";
   // Tenant-wide Entra settings are not policies that switch something off.
   if (
     result.status === "disabledByPolicy" &&
@@ -232,6 +288,9 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
     case "conflictingEvidence":
       return "conflicting";
     case "assignmentUnknown":
+      return targetingUnresolved(result)
+        ? "targetingUnresolved"
+        : "dataMissing";
     case "collectionIncomplete":
       return "dataMissing";
     default:
@@ -389,6 +448,8 @@ export function buildManagementSummary(
     throw new Error(`Framework ${frameworkId} is not in this assessment.`);
   const inPlace = inPlaceCapabilityIds(assessment.capabilities);
   const excluded = alternativeIds(assessment.capabilities);
+  const unresolved = unresolvedDataGaps(fa, assessment.capabilities, "only");
+  const partly = unresolvedDataGaps(fa, assessment.capabilities, "partly");
   return {
     frameworkId,
     frameworkName: fa.framework.name,
@@ -414,5 +475,7 @@ export function buildManagementSummary(
       ]),
     ),
     outsideScope: [...(options.outsideScope ?? [])],
+    ...(unresolved ? { targetingUnresolved: unresolved } : {}),
+    ...(partly ? { targetingPartlyUnresolved: partly } : {}),
   };
 }

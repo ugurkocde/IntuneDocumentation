@@ -7,7 +7,7 @@
 // unknown, never as a pass, a difference, a missing setting or a draft.
 // Normal Graph rows always pass.
 
-import { REDACTED_VALUE } from "../intune-policy-registry";
+import { isRedactedValue } from "../intune-policy-registry";
 import {
   DOCUMENTED_VALUES,
   isDocumented,
@@ -202,10 +202,10 @@ export function documentedValue(type: unknown, value: unknown): boolean {
 }
 
 // A value the collector redacted, like a secret Settings Catalog value, is
-// not stored: it is compared by fingerprint or not at all, never read.
-const redacted = (value: unknown) =>
-  value === REDACTED_VALUE ||
-  (Array.isArray(value) && value.includes(REDACTED_VALUE));
+// not stored: it is compared by fingerprint or not at all, never read. Only
+// the forms the collector writes are one (isRedactedValue), so a list that
+// holds the marker among other entries is read like any other.
+const redacted = isRedactedValue;
 const SECRET_VALUE = "devicemanagementconfigurationsecretsettingvalue";
 
 // The documented subtypes of deviceManagementConfigurationSimpleSettingValue

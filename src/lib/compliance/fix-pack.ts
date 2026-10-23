@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import verified from "./verified-technical-settings.json";
 import additionalVerified from "./additional-verified-settings.json";
+import { unknownAssignmentReasons } from "./assignments";
 import { collectConfigurations } from "./coverage";
 import {
   collectCatalogValues,
@@ -137,8 +138,6 @@ const STATUS_REASONS: Partial<Record<CapabilityStatus, string>> = {
     "A policy explicitly sets a non-enforcing value. Change that policy, because a second policy with the opposite value conflicts on devices.",
   conflictingEvidence:
     "Assigned policies contain both enforcing and non-enforcing values. Resolve the conflict in the existing policies.",
-  assignmentUnknown:
-    "Assignment data could not be read, so the setting may already be in place. Refresh the policies and generate the pack again.",
   collectionIncomplete:
     "Policy collection was incomplete, so the setting may already be in place. Refresh the policies and generate the pack again.",
 };
@@ -435,9 +434,25 @@ function selectSettings(
   return { paths: paths.map(({ path }) => path), omitted };
 }
 
+// Unknown assignments by why they are unknown (AssignmentSummary.uncertainty):
+// a refresh may read assignments that were not read completely, while
+// targeting that could not be resolved needs a review of the overlapping
+// assignments.
+function assignmentReason(result: CapabilityResult): string {
+  const { incomplete, unresolved } = unknownAssignmentReasons(
+    result.evidence.map((item) => item.assignment),
+  );
+  if (incomplete && unresolved)
+    return "Assignment data could not be read for some matching policies, and the effective targeting of others could not be resolved, so the setting may already be in place. Refresh the policies, review the overlapping assignments and generate the pack again.";
+  if (unresolved)
+    return "The effective targeting of the matching policies could not be resolved, so the setting may already be in place. Review their overlapping assignments and generate the pack again.";
+  return "Assignment data could not be read, so the setting may already be in place. Refresh the policies and generate the pack again.";
+}
+
 /** Why a capability gets no draft, or null when a draft may be generated. */
 function blocker(result: CapabilityResult): string | null {
   const { status, checks } = result;
+  if (status === "assignmentUnknown") return assignmentReason(result);
   if (status !== "noEvidence")
     return STATUS_REASONS[status] ?? `Status ${status} is not generated.`;
   if (checks.some((check) => check.result === "different"))

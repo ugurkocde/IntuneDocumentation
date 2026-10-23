@@ -17,7 +17,7 @@ import {
   unreadableCatalogValue,
   unreadableSimpleValue,
 } from "../compliance/graph-rows";
-import { REDACTED_VALUE } from "../intune-policy-registry";
+import { isRedactedValue } from "../intune-policy-registry";
 
 export type Json =
   | null
@@ -213,9 +213,8 @@ function typeName(value: unknown): string {
     : "";
 }
 
-const isRedacted = (value: unknown) =>
-  value === REDACTED_VALUE ||
-  (Array.isArray(value) && value.some((item) => item === REDACTED_VALUE));
+// Only the forms the collector writes are redacted (isRedactedValue).
+const isRedacted = isRedactedValue;
 
 // Every child entry must be a setting instance: a malformed entry has no
 // definition path, so its parent is unreadable instead of the child absent.

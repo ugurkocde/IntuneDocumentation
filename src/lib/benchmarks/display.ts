@@ -45,7 +45,7 @@ export const REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
   notAssignedMixed:
     "Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.",
   assignmentUnknown:
-    "No matching policy is known to be assigned: an assignment could not be read.",
+    "No matching policy is known to be assigned: an assignment could not be read, or its effective targeting could not be resolved.",
   settingOutsidePack:
     "The recommendation names a setting outside the pack, so it is not assessed here.",
   otherProfiles:

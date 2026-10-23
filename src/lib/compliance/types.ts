@@ -180,11 +180,21 @@ export interface ComplianceCapability {
  * those. `notCombinable`: Conditional Access policies exist (in any state),
  * so the capability cannot be turned on; `capabilityIds` is empty.
  * `unknown`: an alternative or the Conditional Access policies could not be
- * read; a data gap.
+ * read, or the effective targeting of an alternative could not be
+ * resolved; a data gap. `targetingUnresolved`: with `unknown`, every
+ * alternative it names is unknown only because its assignments, read
+ * completely, could not be resolved (AssignmentSummary.uncertainty
+ * "unresolved"), so a review of them settles it, not a refresh.
  */
 export interface CapabilityAlternative {
   state: "inUse" | "notCombinable" | "unknown";
   capabilityIds: string[];
+  targetingUnresolved?: true;
+  // With `unknown`: an alternative it names is unknown also because its
+  // assignments could not be resolved, beside assignments or data that
+  // could not be read, so both a refresh and a review of the overlapping
+  // assignments are needed. Never set with targetingUnresolved.
+  targetingPartlyUnresolved?: true;
 }
 
 export interface AssignmentSummary {

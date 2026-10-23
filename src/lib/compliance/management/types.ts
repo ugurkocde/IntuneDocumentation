@@ -96,7 +96,13 @@ export type SafeguardState =
    * exist (security defaults). Claims nothing is set up.
    */
   | "notCombinable"
-  | "dataMissing";
+  | "dataMissing"
+  /**
+   * Assignments were read completely, but their effective targeting could
+   * not be resolved (AssignmentSummary.uncertainty "unresolved"); a data
+   * gap that a review of the overlapping assignments settles.
+   */
+  | "targetingUnresolved";
 
 export interface NextAction {
   capabilityId: string;
@@ -132,6 +138,20 @@ export interface ManagementSummary {
   /** Control id -> safeguards in place and mapped. */
   safeguards: Record<string, SafeguardCount>;
   outsideScope: OutsideScopeMeasure[];
+  /**
+   * Of metrics.dataGaps, the safeguards whose assignments were read
+   * completely but whose effective targeting could not be resolved
+   * (SafeguardState targetingUnresolved). Not part of a baseline; absent
+   * reads as none.
+   */
+  targetingUnresolved?: number;
+  /**
+   * Of metrics.dataGaps, the safeguards that could not be read, whose
+   * effective targeting could not be resolved either, so the advice is both
+   * to collect again and to review the overlapping assignments. Not part of
+   * a baseline; absent reads as none.
+   */
+  targetingPartlyUnresolved?: number;
 }
 
 export const BASELINE_SCHEMA = "intunedoc.baseline/1" as const;

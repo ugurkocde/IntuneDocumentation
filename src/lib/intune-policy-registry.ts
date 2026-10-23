@@ -443,6 +443,17 @@ const TYPE_REDACTED_FIELDS: Record<string, Set<string>> = {
 
 export const REDACTED_VALUE = "[Redacted]";
 
+// Whether a value is one the collector redacted, in the only forms it writes
+// one (sanitizeGraphData): the marker in place of the whole value, or a list
+// holding only the marker in place of a list. Text that holds the marker
+// among other words, or a list holding it among other entries, is a value.
+export function isRedactedValue(value: unknown): boolean {
+  return (
+    value === REDACTED_VALUE ||
+    (Array.isArray(value) && value.length === 1 && value[0] === REDACTED_VALUE)
+  );
+}
+
 // Digests of values taken right before they are redacted, so the desktop
 // history can tell that a script or secret changed without keeping it. Off
 // unless a digest function is set (desktop main sets SHA-256; the web never
@@ -487,9 +498,7 @@ export function redactedDigests(record: unknown): Array<[string, string]> {
 // fingerprint in History.
 function redactableContent(value: unknown): string | undefined {
   if (value === null || value === undefined || value === "") return undefined;
-  if (value === REDACTED_VALUE) return undefined;
-  if (Array.isArray(value) && value.length === 1 && value[0] === REDACTED_VALUE)
-    return undefined;
+  if (isRedactedValue(value)) return undefined;
   if (typeof value === "string") return value;
   return canonicalJson(value);
 }

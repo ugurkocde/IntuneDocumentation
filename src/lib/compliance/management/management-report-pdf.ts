@@ -164,6 +164,7 @@ const STATE_COLORS: Record<SafeguardState, RgbColor> = {
   alternativeInUse: [100, 116, 139],
   notCombinable: [100, 116, 139],
   dataMissing: [196, 113, 31],
+  targetingUnresolved: [196, 113, 31],
 };
 
 /** Safeguard table order: in place, then what needs attention most. */
@@ -176,6 +177,7 @@ const STATE_ORDER: readonly SafeguardState[] = [
   "notAssigned",
   "notConfigured",
   "dataMissing",
+  "targetingUnresolved",
   "alternativeInUse",
   "notCombinable",
 ];
@@ -296,6 +298,12 @@ export async function generateManagementReportPDF(
   const strings = MANAGEMENT_REPORT_STRINGS[input.locale];
   const { summary, delta, changes } = input;
   const metrics = summary.metrics;
+  // Data gaps that a review of overlapping assignments settles, not a new
+  // collection; worded apart from the ones that could not be read.
+  const unresolved = Math.min(
+    summary.targetingUnresolved ?? 0,
+    metrics.dataGaps,
+  );
   const disclaimer = strings.disclaimer ?? input.disclaimer;
   // Unmapped measures that related settings could support, counted apart from
   // those outside Intune scope.
@@ -734,7 +742,14 @@ export async function generateManagementReportPDF(
     }
     if (metrics.dataGaps > 0) {
       const lines = wrap(
-        strings.dataGapsNote(metrics.dataGaps),
+        strings.dataGapsNote(
+          metrics.dataGaps - unresolved,
+          unresolved,
+          Math.min(
+            summary.targetingPartlyUnresolved ?? 0,
+            metrics.dataGaps - unresolved,
+          ),
+        ),
         contentWidth - 2,
         8,
         "italic",
@@ -1103,9 +1118,16 @@ export async function generateManagementReportPDF(
     rows.push(
       figure(
         strings.figures.dataGaps,
-        strings.safeguardsValue(metrics.dataGaps),
+        strings.safeguardsValue(metrics.dataGaps - unresolved),
       ),
     );
+    if (unresolved > 0)
+      rows.push(
+        figure(
+          strings.figures.targetingUnresolved,
+          strings.safeguardsValue(unresolved),
+        ),
+      );
     table(strings.figureHeaders, [contentWidth - 38, 38], rows);
   }
 

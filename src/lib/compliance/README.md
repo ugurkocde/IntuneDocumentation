@@ -48,6 +48,15 @@ HIPAA Security Rule (45 CFR Part 164, Subpart C).
    and a complete list with such a targeting conflict "Effective targeting
    could not be resolved". Filters and
    exclusion targets are preserved, and effective coverage remains unverified.
+   Every explanation of an unknown state follows its reason
+   (`unknownAssignmentReasons`): limitations, the register, fix pack
+   reasons, alternative reasons and the management summary advise a refresh
+   only for assignments not read completely, and a review of the
+   overlapping assignments for targeting that could not be resolved
+   (`safeguardState` `targetingUnresolved`, "Targeting could not be
+   resolved", counted apart in the management report as
+   `ManagementSummary.targetingUnresolved`; the baseline metric `dataGaps`
+   still counts both).
 5. **No verdicts.** Output statuses are evidence statements
    (`evidenceFound` / `partialEvidence` / `noEvidence`), never "compliant".
    `COMPLIANCE_DISCLAIMER` must accompany any rendered report.
@@ -651,7 +660,10 @@ three states is in a "Different value" tally, a red PDF row, a next action
 (`rankNextActions`) or the fix pack. In use and not combinable are left out
 of every management summary safeguard count; unknown stays in the safeguard
 totals and counts as a data gap. `safeguardState` reports `alternativeInUse`
-("Not needed, an alternative is set up"), `notCombinable` or `dataMissing`.
+("Not needed, an alternative is set up"), `notCombinable` or `dataMissing`,
+or `targetingUnresolved` when every unknown alternative is unknown only
+because its assignments could not be resolved
+(`CapabilityAlternative.targetingUnresolved`).
 Counter-evidence and unassigned configurations of the capability itself are
 never hidden. `alternativeTo` must name existing capabilities without self
 references or cycles (integrity test).

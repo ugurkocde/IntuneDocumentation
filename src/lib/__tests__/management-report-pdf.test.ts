@@ -106,6 +106,7 @@ const OTHER_STATES: SafeguardState[] = [
   "tenantSettingDiffers",
   "alternativeInUse",
   "notCombinable",
+  "targetingUnresolved",
 ];
 
 /** inPlace safeguards first in the input order is not assumed by the renderer. */
@@ -400,12 +401,15 @@ describe.each(["en", "de"] as const)("security summary PDF (%s)", (locale) => {
       for (const text of [...section.paragraphs, ...(section.bullets ?? [])])
         expect(itText).toContain(text);
     }
-    // The fixture has no measures marked as not checked yet, so that figure
-    // is omitted; its own test covers it.
-    const { notEvaluated, ...shownFigures } = strings.figures;
+    // The fixture has no measures marked as not checked yet and no
+    // safeguard whose targeting could not be resolved, so those figures are
+    // omitted; their own tests cover them.
+    const { notEvaluated, targetingUnresolved, ...shownFigures } =
+      strings.figures;
     for (const figure of Object.values(shownFigures))
       expect(itText).toContain(figure.label);
     expect(itText).not.toContain(notEvaluated.label);
+    expect(itText).not.toContain(targetingUnresolved.label);
     expect(itText).toContain(
       `${strings.measuresOf(3, 6)} (${strings.percent(50)})`,
     );

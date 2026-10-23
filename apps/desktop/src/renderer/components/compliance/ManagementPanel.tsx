@@ -464,6 +464,15 @@ export function ManagementPanel({
   onRefresh: () => void;
 }) {
   const { metrics, nextActions, outsideScope } = selected.management;
+  // Data gaps whose assignments were read but whose targeting could not be
+  // resolved: a review of the overlapping assignments settles them, not a
+  // new collection.
+  const unresolved = Math.min(selected.management.targetingUnresolved ?? 0, metrics.dataGaps);
+  const unread = metrics.dataGaps - unresolved;
+  // Of those that could not be read, the ones whose targeting could not be
+  // resolved either: both a new collection and a review are needed.
+  const partly = Math.min(selected.management.targetingPartlyUnresolved ?? 0, unread);
+  const capabilities = (count: number) => `${count} mapped ${count === 1 ? "capability" : "capabilities"}`;
   const notEvaluated = outsideScope.filter((measure) => measure.notEvaluated);
   const { delta, baseline, crosswalk } = selected;
   const { frameworkId } = request;
@@ -677,8 +686,21 @@ export function ManagementPanel({
       )}
       {metrics.dataGaps > 0 && (
         <p role="status" className="rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 text-xs leading-5 text-amber-900">
-          Evidence for {metrics.dataGaps} mapped {metrics.dataGaps === 1 ? "capability" : "capabilities"} could not be
-          read. Collect the tenant again to complete the picture.
+          {unread > 0 && (
+            <>
+              Evidence for {capabilities(unread)} could not be read.{" "}
+              {partly > 0
+                ? `For ${partly === unread ? (unread === 1 ? "it" : "them") : `${partly} of them`}, overlapping policy assignments also depend on group membership. Collect the tenant again and review the overlapping assignments.`
+                : "Collect the tenant again to complete the picture."}
+            </>
+          )}
+          {unread > 0 && unresolved > 0 && " "}
+          {unresolved > 0 && (
+            <>
+              The effective targeting of {capabilities(unresolved)} could not be resolved: their policy assignments
+              overlap in a way that depends on group membership. Review the overlapping assignments.
+            </>
+          )}
         </p>
       )}
 

@@ -56,7 +56,13 @@ export interface ManagementReportStrings {
   moreMeasures: (count: number) => string;
   outsideScopeLine: (count: number) => string;
   notEvaluatedLine: (count: number) => string;
-  dataGapsNote: (count: number) => string;
+  /**
+   * The data gap note: safeguards that could not be read, of them those
+   * whose targeting could not be resolved either
+   * (ManagementSummary.targetingPartlyUnresolved), and those whose targeting
+   * alone could not be resolved (ManagementSummary.targetingUnresolved).
+   */
+  dataGapsNote: (unread: number, unresolved?: number, partly?: number) => string;
   nextStepsHeading: string;
   noNextSteps: string;
   actionSentence: Record<NextActionTier, (name: string) => string>;
@@ -85,6 +91,7 @@ export interface ManagementReportStrings {
     outsideScope: FigureText;
     notEvaluated: FigureText;
     dataGaps: FigureText;
+    targetingUnresolved: FigureText;
   };
   measuresValue: (count: number) => string;
   measuresOf: (part: number, total: number) => string;
@@ -222,8 +229,20 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       count === 1
         ? "1 measure relates to Intune or Entra settings that this report does not check yet; review it in the admin center."
         : `${count} measures relate to Intune or Entra settings that this report does not check yet; review them in the admin center.`,
-    dataGapsNote: (count) =>
-      `${plural(count, "safeguard", "safeguards")} could not be read. Ask your IT team to collect the data again before sharing this report.`,
+    dataGapsNote: (unread, unresolved = 0, partly = 0) => {
+      if (!unresolved && !partly)
+        return `${plural(unread, "safeguard", "safeguards")} could not be read. Ask your IT team to collect the data again before sharing this report.`;
+      if (!unresolved)
+        return `${plural(unread, "safeguard", "safeguards")} could not be read, ${partly === unread ? (unread === 1 ? "and its" : "and their") : `${partly} of them also because their`} overlapping assignments depend on group membership. Ask your IT team to collect the data again and review the overlapping assignments before sharing this report.`;
+      return `${[
+        ...(unread > 0
+          ? [
+              `${plural(unread, "safeguard", "safeguards")} could not be read${partly > 0 ? ` (${partly} of them also because of overlapping assignments)` : ""}`,
+            ]
+          : []),
+        `${plural(unresolved, "safeguard", "safeguards")} could not be assessed because overlapping assignments depend on group membership`,
+      ].join(" and ")}. Ask your IT team to ${unread > 0 ? "collect the data again and review the overlapping assignments" : "review the overlapping assignments"} before sharing this report.`;
+    },
     nextStepsHeading: "Recommended next steps",
     noNextSteps: "No next steps were found in this run.",
     actionSentence: {
@@ -315,6 +334,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         label: "Safeguards that could not be read",
         note: "Mapped safeguards whose Intune data was missing or incomplete, for example because of a missing permission. They do not count as in place; collect the data again.",
       },
+      targetingUnresolved: {
+        label: "Safeguards whose targeting could not be resolved",
+        note: "Mapped safeguards whose policy assignments were read completely, but overlap in a way that depends on group membership, such as a removal for all devices beside a group. They do not count as in place; review the overlapping assignments.",
+      },
     },
     measuresValue: (count) => plural(count, "measure", "measures"),
     measuresOf: (part, total) =>
@@ -358,6 +381,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       notCombinable:
         "Not applicable while Conditional Access policies exist; require MFA through Conditional Access",
       dataMissing: "Could not be read",
+      targetingUnresolved: "Targeting could not be resolved",
     },
     notAssignedSuffix: "(not assigned)",
     noPolicy: "No policy found",
@@ -507,8 +531,20 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       count === 1
         ? "1 Maßnahme betrifft Intune- oder Entra-Einstellungen, die dieser Bericht noch nicht prüft; bewerten Sie sie im Admin Center."
         : `${count} Maßnahmen betreffen Intune- oder Entra-Einstellungen, die dieser Bericht noch nicht prüft; bewerten Sie sie im Admin Center.`,
-    dataGapsNote: (count) =>
-      `${plural(count, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden. Bitten Sie Ihr IT-Team, die Daten erneut zu erfassen, bevor Sie diesen Bericht weitergeben.`,
+    dataGapsNote: (unread, unresolved = 0, partly = 0) => {
+      if (!unresolved && !partly)
+        return `${plural(unread, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden. Bitten Sie Ihr IT-Team, die Daten erneut zu erfassen, bevor Sie diesen Bericht weitergeben.`;
+      if (!unresolved)
+        return `${plural(unread, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden, ${partly === unread ? "auch weil" : `${partly} davon auch, weil`} sich überschneidende Zuweisungen von Gruppenmitgliedschaften abhängen. Bitten Sie Ihr IT-Team, die Daten erneut zu erfassen und die sich überschneidenden Zuweisungen zu prüfen, bevor Sie diesen Bericht weitergeben.`;
+      return `${[
+        ...(unread > 0
+          ? [
+              `${plural(unread, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden${partly > 0 ? ` (${partly} davon auch wegen sich überschneidender Zuweisungen)` : ""}`,
+            ]
+          : []),
+        `${plural(unresolved, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht bewertet werden, weil sich überschneidende Zuweisungen von Gruppenmitgliedschaften abhängen`,
+      ].join(" und ")}. Bitten Sie Ihr IT-Team, ${unread > 0 ? "die Daten erneut zu erfassen und die sich überschneidenden Zuweisungen zu prüfen" : "die sich überschneidenden Zuweisungen zu prüfen"}, bevor Sie diesen Bericht weitergeben.`;
+    },
     nextStepsHeading: "Empfohlene nächste Schritte",
     noNextSteps: "In diesem Lauf wurden keine nächsten Schritte ermittelt.",
     actionSentence: {
@@ -601,6 +637,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         label: "Nicht lesbare Schutzfunktionen",
         note: "Zugeordnete Schutzfunktionen, deren Intune-Daten fehlten oder unvollständig waren, etwa wegen einer fehlenden Berechtigung. Sie zählen nicht als aktiv; erfassen Sie die Daten erneut.",
       },
+      targetingUnresolved: {
+        label: "Schutzfunktionen mit nicht ermittelbarer Zuweisung",
+        note: "Zugeordnete Schutzfunktionen, deren Richtlinienzuweisungen vollständig gelesen wurden, sich aber so überschneiden, dass ihre Wirkung von Gruppenmitgliedschaften abhängt, etwa ein Entfernen für alle Geräte neben einer Gruppe. Sie zählen nicht als aktiv; prüfen Sie die sich überschneidenden Zuweisungen.",
+      },
     },
     measuresValue: (count) => plural(count, "Maßnahme", "Maßnahmen"),
     measuresOf: (part, total) =>
@@ -645,6 +685,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       notCombinable:
         "Nicht anwendbar, solange Richtlinien für bedingten Zugriff bestehen; MFA über bedingten Zugriff verlangen",
       dataMissing: "Nicht lesbar",
+      targetingUnresolved: "Zuweisung nicht ermittelbar",
     },
     notAssignedSuffix: "(nicht zugewiesen)",
     noPolicy: "Keine Richtlinie gefunden",

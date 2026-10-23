@@ -476,6 +476,56 @@ export const assignmentUncertaintyText = (assignment: AssignmentSummary) =>
     ? TARGETING_UNRESOLVED_TEXT
     : ASSIGNMENT_INCOMPLETE_TEXT;
 
+/**
+ * Why the unknown assignment states among these read unknown, by their
+ * uncertainty (assignmentUncertaintyText): assignments not read completely,
+ * which a refresh may read, or a complete list whose effective targeting
+ * could not be resolved, which only a review of the overlapping assignments
+ * can settle. Known states give neither.
+ */
+export function unknownAssignmentReasons(
+  assignments: Iterable<AssignmentSummary | undefined>,
+): { incomplete: boolean; unresolved: boolean } {
+  let incomplete = false;
+  let unresolved = false;
+  for (const assignment of assignments) {
+    if (assignment?.state !== "unknown") continue;
+    if (assignment.uncertainty === "unresolved") unresolved = true;
+    else incomplete = true;
+  }
+  return { incomplete, unresolved };
+}
+
+/**
+ * Whether these hold an unknown assignment state and every one is unknown
+ * only because its effective targeting could not be resolved.
+ */
+export function onlyTargetingUnresolved(
+  assignments: Iterable<AssignmentSummary | undefined>,
+): boolean {
+  const { incomplete, unresolved } = unknownAssignmentReasons(assignments);
+  return unresolved && !incomplete;
+}
+
+/** The limitation of a capability whose matching policies hold unknown assignment states. */
+export function unknownAssignmentLimitations(reasons: {
+  incomplete: boolean;
+  unresolved: boolean;
+}): string[] {
+  return [
+    ...(reasons.incomplete
+      ? [
+          "Assignment data is unavailable for some matching policies; effective targeting remains unknown.",
+        ]
+      : []),
+    ...(reasons.unresolved
+      ? [
+          "The assignments of some matching policies were read completely, but their effective targeting could not be resolved: overlapping assignments, such as a remove or uninstall intent for all users or all devices beside a group, depend on group memberships, which are not read. Review the overlapping assignments of these policies.",
+        ]
+      : []),
+  ];
+}
+
 export function assignmentDetails(assignment: AssignmentSummary): string[] {
   return [
     ...assignment.targets,

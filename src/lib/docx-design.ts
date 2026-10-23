@@ -1091,7 +1091,7 @@ export function glancePage(
             ? `  assigned, ${glance.assigned} of ${plural(glance.assignmentApplicable, "configuration that takes", "configurations that take")} assignments`
             : glance.assignmentApplicable === 0
               ? "  assigned share: no configuration in this export takes assignments"
-              : `  assigned share: the assignments of ${plural(glance.assignmentApplicable, "configuration", "configurations")} could not be read`,
+              : `  assigned share: the assignments of ${plural(glance.assignmentApplicable, "configuration", "configurations")} could not be read or resolved`,
           { sizeHp: theme.bodySizeHp, color: theme.text },
         ),
       ],

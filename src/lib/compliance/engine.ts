@@ -4,7 +4,13 @@ import {
 } from "./frameworks/essential-eight";
 import type { DetailedExportData } from "../configuration-analyzer";
 import type { ConfigurationSettingInstance } from "../intune-detailed-client";
-import { assignmentsIncomplete, summarizeAssignments } from "./assignments";
+import {
+  assignmentsIncomplete,
+  onlyTargetingUnresolved,
+  summarizeAssignments,
+  unknownAssignmentLimitations,
+  unknownAssignmentReasons,
+} from "./assignments";
 import { evaluatePolicyCheck } from "./policy-checks";
 import { comparableValue, expectedValue } from "./check-results";
 import { policyCheckObservation } from "./policy-check-observation";
@@ -881,11 +887,9 @@ export function assessCapabilities(
             }))
           : checks,
       limitations: [
-        ...(evidence.some((item) => item.assignment.state === "unknown")
-          ? [
-              "Assignment data is unavailable for some matching policies; effective targeting remains unknown.",
-            ]
-          : []),
+        ...unknownAssignmentLimitations(
+          unknownAssignmentReasons(evidence.map((item) => item.assignment)),
+        ),
         ...(incomplete
           ? [
               "Relevant policy collection is incomplete; additional or contradictory evidence may be missing.",
@@ -1008,27 +1012,65 @@ function alternativeOf(
       relevant.every((check) => check.assessmentStatus === "unableToCheck")
     );
   });
-  return unknown.length ||
-    (exclusiveWithConditionalAccess && conditionalAccess === "unknown")
+  const caUnknown =
+    exclusiveWithConditionalAccess && conditionalAccess === "unknown";
+  return unknown.length || caUnknown
     ? {
         state: "unknown",
         capabilityIds: unknown.map((item) => item.capability.id),
+        ...(unknown.length && !caUnknown && unknown.every(targetingUnresolved)
+          ? { targetingUnresolved: true as const }
+          : unknown.some(unresolvedTargetingIn)
+            ? { targetingPartlyUnresolved: true as const }
+            : {}),
       }
     : undefined;
 }
+
+// An alternative unknown only because the assignments of its policies,
+// read completely, could not be resolved (AssignmentSummary.uncertainty).
+const targetingUnresolved = (result: CapabilityResult) =>
+  result.status === "assignmentUnknown" &&
+  onlyTargetingUnresolved(result.evidence.map((item) => item.assignment));
+
+// An alternative unknown at least in part because the assignments of some
+// of its policies, read completely, could not be resolved.
+const unresolvedTargetingIn = (result: CapabilityResult) =>
+  result.status === "assignmentUnknown" &&
+  unknownAssignmentReasons(result.evidence.map((item) => item.assignment))
+    .unresolved;
 
 function alternativeReason(
   alternative: NonNullable<CapabilityResult["alternative"]>,
   byId: ReadonlyMap<string, CapabilityResult>,
 ): string {
-  const names = alternative.capabilityIds
-    .map((id) => byId.get(id)!.capability.name)
-    .join(", ");
+  const named = (ids: readonly string[]) =>
+    ids.map((id) => byId.get(id)!.capability.name).join(", ");
+  const names = named(alternative.capabilityIds);
   if (alternative.state === "inUse")
     return `Not a gap: an alternative is configured and assigned in this tenant (${names}).`;
   if (alternative.state === "notCombinable")
     return "Not applicable while Conditional Access policies exist: this setting cannot be turned on while any Conditional Access policy exists, including disabled ones. Require MFA through Conditional Access instead.";
-  return `Not compared: whether this is needed depends on ${names || "the Conditional Access policies"}, which could not be read completely. Refresh the policies before acting on this value.`;
+  // A refresh may read what could not be read; targeting that could not be
+  // resolved needs a review of the overlapping assignments instead. An
+  // alternative with both causes is named for both.
+  const unresolved = named(
+    alternative.capabilityIds.filter((id) =>
+      unresolvedTargetingIn(byId.get(id)!),
+    ),
+  );
+  const unread =
+    named(
+      alternative.capabilityIds.filter(
+        (id) => !targetingUnresolved(byId.get(id)!),
+      ),
+    ) ||
+    (alternative.targetingUnresolved ? "" : "the Conditional Access policies");
+  if (!unresolved)
+    return `Not compared: whether this is needed depends on ${unread}, which could not be read completely. Refresh the policies before acting on this value.`;
+  if (!unread)
+    return `Not compared: whether this is needed depends on ${unresolved}, whose effective targeting could not be resolved. Review the overlapping assignments of their policies before acting on this value.`;
+  return `Not compared: whether this is needed depends on ${unread}, which could not be read completely, and on ${unresolved}, whose effective targeting could not be resolved. Refresh the policies and review the overlapping assignments before acting on this value.`;
 }
 
 // A capability with an alternative state is no ordinary gap: its different

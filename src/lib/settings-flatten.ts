@@ -1,6 +1,7 @@
 import { canonicalJson } from "./canonical-json";
 import {
   childLists,
+  MAX_ITEM_JSON_DEPTH,
   MAX_SETTING_DEPTH,
   METADATA_KEYS,
   normalizeTargetType,
@@ -27,6 +28,7 @@ import type {
   ConfigurationSettingDefinition,
   ConfigurationSettingInstance,
 } from "./intune-detailed-client";
+import { isRedactedValue, REDACTED_VALUE } from "./intune-policy-registry";
 
 /** One documented setting of a collected item, flattened for search. */
 export interface FlatSettingRow {
@@ -65,10 +67,21 @@ export interface FlatSettingRow {
    * unknown, never as a value.
    */
   unreadable?: true;
+  /**
+   * The value was redacted where it came from: the collector replaced it
+   * with its marker (isRedactedValue), the snapshot projection kept it as
+   * one, or it is a secret Settings Catalog value. value shows the marker.
+   * Never told from the text: a value that holds the marker among other
+   * words is a value. Comparisons treat it as not stored.
+   */
+  redacted?: true;
 }
 
 const flag = (unreadable: boolean) =>
   unreadable ? { unreadable: true as const } : {};
+
+const redactedFlag = (redacted: boolean) =>
+  redacted ? { redacted: true as const } : {};
 
 const NOT_CONFIGURED = "Not configured";
 
@@ -101,11 +114,61 @@ function markUnreadable(
   return copy;
 }
 
-// A row built from a marked value reads as unreadable.
+// Stands in for a value the collector redacted while the rows of a
+// property layout are built, so a row tells where its value came from
+// rather than what its text reads. Unicode noncharacters are reserved for
+// internal use and JSON never escapes them, so a record shown as JSON text
+// keeps the mark as written.
+const REDACTED_MARK = "\uFDD0redacted\uFDD0";
+
+// The item with every value the collector redacted (isRedactedValue)
+// replaced by the mark, as deep as a stored item holds values. The marker
+// in a list among other entries, or in a list of lists, is no value the
+// collector wrote and stays text.
+function markRedacted<T>(item: T, skip: ReadonlySet<string> = new Set()): T {
+  let found = false;
+  const visit = (value: unknown, depth: number): unknown => {
+    if (isRedactedValue(value)) {
+      found = true;
+      return Array.isArray(value) ? [REDACTED_MARK] : REDACTED_MARK;
+    }
+    if (depth > MAX_ITEM_JSON_DEPTH) return value;
+    if (Array.isArray(value))
+      return value.map((entry) =>
+        isRecord(entry) ? visit(entry, depth + 1) : entry,
+      );
+    if (!isRecord(value)) return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        depth === 0 && skip.has(key) ? entry : visit(entry, depth + 1),
+      ]),
+    );
+  };
+  if (!isRecord(item)) return item;
+  const marked = visit(item, 0);
+  return found ? (marked as T) : item;
+}
+
+const unmarkText = (text: string) =>
+  text.replaceAll(REDACTED_MARK, REDACTED_VALUE);
+
+// A row built from a marked value reads as unreadable or as redacted; a
+// redacted one shows the collector's marker.
 function unmark(row: FlatSettingRow): FlatSettingRow {
-  return row.value === UNREADABLE_MARK
-    ? { ...row, value: UNREADABLE_VALUE, unreadable: true }
-    : row;
+  if (row.value === UNREADABLE_MARK)
+    return { ...row, value: UNREADABLE_VALUE, unreadable: true };
+  const marked = [row.value, row.name, ...row.path].some((text) =>
+    text.includes(REDACTED_MARK),
+  );
+  if (!marked) return row;
+  return {
+    ...row,
+    name: unmarkText(row.name),
+    path: row.path.map(unmarkText),
+    value: unmarkText(row.value),
+    ...redactedFlag(row.value.includes(REDACTED_MARK)),
+  };
 }
 
 function textOf(value: unknown): string | undefined {
@@ -151,6 +214,28 @@ function simpleToken(instance: ConfigurationSettingInstance) {
   if (Array.isArray(instance.simpleSettingCollectionValue))
     return typedToken(instance.simpleSettingCollectionValue.map(entry));
   return {};
+}
+
+const SECRET_VALUE = "devicemanagementconfigurationsecretsettingvalue";
+
+// Whether the own value of an instance was redacted: a simple or choice
+// value, or an entry of a value collection, the collector replaced with its
+// marker, or a secret value, which is never stored.
+function redactedCatalogValue(instance: ConfigurationSettingInstance): boolean {
+  const entries: unknown[] = [
+    instance.simpleSettingValue,
+    instance.choiceSettingValue,
+    ...[
+      instance.simpleSettingCollectionValue as unknown,
+      instance.choiceSettingCollectionValue as unknown,
+    ].flatMap((list) => (Array.isArray(list) ? list : [])),
+  ];
+  return entries.some(
+    (entry) =>
+      isRecord(entry) &&
+      (isRedactedValue(entry.value) ||
+        normalizeTargetType(entry["@odata.type"]) === SECRET_VALUE),
+  );
 }
 
 // The instance without its children, so extractSettingValue resolves only
@@ -272,6 +357,7 @@ function walkCatalogInstance(
           ? {}
           : simpleToken(instance)),
       ...flag(unreadable),
+      ...redactedFlag(!unreadable && redactedCatalogValue(instance)),
     });
   }
   if (unknownChildren) return;
@@ -408,6 +494,7 @@ function omaRows(omaSettings: unknown): FlatSettingRow[] {
         path: [],
         category: "Custom OMA-URI",
         ...flag(unreadable),
+        ...redactedFlag(!unreadable && isRedactedValue(raw)),
       },
     ];
   });
@@ -489,7 +576,18 @@ function administrativeTemplateRows(
           : [],
       ...(definitionId ? { identity: [] } : {}),
       category: setting.category,
-      ...flag(unreadableTemplateValue(values[index])),
+      ...(unreadableTemplateValue(values[index])
+        ? flag(true)
+        : redactedFlag(
+            (Array.isArray(raw?.presentationValues)
+              ? raw.presentationValues
+              : []
+            ).some(
+              (entry: unknown) =>
+                isRecord(entry) &&
+                (isRedactedValue(entry.value) || isRedactedValue(entry.values)),
+            ),
+          )),
     };
   });
 }
@@ -548,6 +646,7 @@ function securityBaselineRows(item: Record<string, unknown>): FlatSettingRow[] {
         path: [],
         category: source.category,
         ...flag(unreadable),
+        ...redactedFlag(!unreadable && isRedactedValue(record.value)),
       });
     }
   }
@@ -595,7 +694,7 @@ export function flattenItemSettings(
     return [
       ...rows,
       ...genericRows(
-        markUnreadable(record, sectionKey, false),
+        markRedacted(markUnreadable(record, sectionKey, false)),
         new Set([
           "settingInstance",
           "settingDefinitions",
@@ -605,9 +704,13 @@ export function flattenItemSettings(
     ];
   }
   // Plain properties whose value Graph did not return readably read as
-  // unreadable rows, never as their value.
+  // unreadable rows, never as their value; values the collector redacted
+  // read as redacted rows. Custom OMA-URI rows tell both from their records.
   const marked = (topLevel: boolean) =>
-    markUnreadable(record, sectionKey, topLevel);
+    markRedacted(
+      markUnreadable(record, sectionKey, topLevel),
+      new Set(["omaSettings"]),
+    );
   switch (sectionKey) {
     case "deviceConfigurations":
     case "windowsUpdatePolicies":

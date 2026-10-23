@@ -562,7 +562,7 @@ export async function generateDetailedDOCX(
                   ? `${Math.round(glance.assignedShare * 100)}% (${glance.assigned} of ${plural(glance.assignmentApplicable, "configuration that takes", "configurations that take")} assignments)`
                   : glance.assignmentApplicable === 0
                     ? "n/a (no configuration takes assignments)"
-                    : `n/a (the assignments of ${plural(glance.assignmentApplicable, "configuration", "configurations")} could not be read)`,
+                    : `n/a (the assignments of ${plural(glance.assignmentApplicable, "configuration", "configurations")} could not be read or resolved)`,
               font: fontName,
               size: bodySizeHp,
             }),

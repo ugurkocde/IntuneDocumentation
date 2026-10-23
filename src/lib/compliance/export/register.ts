@@ -371,7 +371,7 @@ const CONTROL_STATUS_DEFINITIONS: Record<ControlStatus, string> = {
   notApplicable:
     "The control or all its mapped capabilities are outside the selected platform or risk scope.",
   notAssessed:
-    "The requirement needs evidence outside the collected settings, or collection or assignment data was incomplete.",
+    "The requirement needs evidence outside the collected settings, collection or assignment data was incomplete, or the effective targeting of assignments could not be resolved.",
   conflictingEvidence:
     "Assigned policies hold both enforcing and non-enforcing values. This is mixed policy evidence, not proof of an effective conflict on a device.",
 };
@@ -386,7 +386,7 @@ const CAPABILITY_STATUS_DEFINITIONS: Record<CapabilityStatus, string> = {
     "A policy sets the non-enforcing value of the setting, and no enforcing value was found.",
   noEvidence: "No recognized setting for the capability was found.",
   assignmentUnknown:
-    "Policy evidence was found, but its assignments could not be read completely.",
+    "Policy evidence was found, but its assignments could not be read completely, or were read completely but their effective targeting could not be resolved.",
   conflictingEvidence:
     "Assigned policies hold both enforcing and non-enforcing values.",
   partialConfiguration:

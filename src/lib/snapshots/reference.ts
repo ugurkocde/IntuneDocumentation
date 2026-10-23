@@ -268,7 +268,10 @@ function itemRows(
     const redacted =
       row.unreadable ||
       (ID_FAMILIES.has(sectionKey) && OBJECT_ID.test(row.value)) ||
-      row.value.includes(REDACTED) ||
+      // Redaction is told by where the value came from (settings-flatten.ts
+      // redacted), never by its text, so a value that holds the marker
+      // among other words is compared.
+      row.redacted ||
       row.value.includes(OMITTED) ||
       row.value.includes(OMITTED_IN_JSON) ||
       SECRET_SETTING.test(id);

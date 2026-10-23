@@ -857,7 +857,7 @@ export async function generateDetailedPDF(
       {
         label: "Assignment unknown",
         value: String(glance.assignmentUnknown),
-        caption: "Assignments could not be read",
+        caption: "Unreadable or unresolved",
         marker: "half" as const,
         markerColor: PALETTE.muted,
       },

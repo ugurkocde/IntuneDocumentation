@@ -1,5 +1,9 @@
 import { INTUNE_POLICY_REGISTRY } from "../intune-policy-registry";
-import { normalizeTargetType, unreadableAssignment } from "./graph-rows";
+import {
+  normalizeTargetType,
+  targetGroupId,
+  unreadableAssignment,
+} from "./graph-rows";
 import type { AssignmentSummary } from "./types";
 
 type FetchError = {
@@ -120,6 +124,13 @@ export function summarizeAssignments(
   };
   if (!Array.isArray(assignments)) return summary;
   let unknownTarget = false;
+  // Included targets other than groups, and the ids of included and
+  // excluded groups: an exclusion takes precedence over an inclusion of the
+  // same group (Microsoft Learn, Include and exclude app assignments and
+  // Assign policies), so a group that is both targets nobody.
+  let otherTargets = 0;
+  const includedGroups = new Set<string>();
+  const excludedGroups = new Set<string>();
   for (const assignment of assignments) {
     // An assignment of a type Graph does not document, or without what its
     // type targets, its filter type or filter id, may target anyone
@@ -162,9 +173,15 @@ export function summarizeAssignments(
       unknownTarget = true;
       continue;
     }
-    if (type === "exclusiongroupassignmenttarget")
+    const groupId = targetGroupId(target)?.toLowerCase();
+    if (type === "exclusiongroupassignmenttarget") {
       summary.exclusions.push(label);
-    else summary.targets.push(label);
+      if (groupId) excludedGroups.add(groupId);
+    } else {
+      summary.targets.push(label);
+      if (groupId) includedGroups.add(groupId);
+      else otherTargets += 1;
+    }
     const id = target.deviceAndAppManagementAssignmentFilterId;
     const mode = target.deviceAndAppManagementAssignmentFilterType;
     if (typeof id === "string" && id && mode !== "none") {
@@ -186,7 +203,8 @@ export function summarizeAssignments(
   summary.state =
     incomplete || unknownTarget
       ? "unknown"
-      : summary.targets.length
+      : otherTargets ||
+          [...includedGroups].some((id) => !excludedGroups.has(id))
         ? "assigned"
         : "notAssigned";
   return summary;

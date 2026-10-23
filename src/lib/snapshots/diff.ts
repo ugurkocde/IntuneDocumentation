@@ -395,15 +395,25 @@ function assignmentsOf(
   const result = new Map<string, string>();
   for (const entry of list as Array<Record<string, unknown>>) {
     const target = (entry.target ?? {}) as Record<string, unknown>;
-    const filterId = target.deviceAndAppManagementAssignmentFilterId;
-    const filterType = target.deviceAndAppManagementAssignmentFilterType;
+    // A filter type none, null or omitted applies no filter, so the three
+    // are one value in the key and the label. A filter id beside a null or
+    // omitted type makes the assignment unreadable (graph-rows.ts
+    // unreadableAssignment), and one beside none applies nothing.
+    const rawType = target.deviceAndAppManagementAssignmentFilterType;
+    const filterType =
+      rawType === undefined || rawType === null || rawType === "none"
+        ? ""
+        : rawType;
+    const filterId = filterType
+      ? target.deviceAndAppManagementAssignmentFilterId
+      : "";
     const filter =
-      typeof filterId === "string" && filterId && filterType !== "none"
+      typeof filterId === "string" && filterId
         ? `, filter ${typeof filterType === "string" ? filterType : "unknown"} ${filterId}`
         : "";
     const intent = typeof entry.intent === "string" ? `${entry.intent}: ` : "";
     const key = [
-      target["@odata.type"],
+      normalizeTargetType(target["@odata.type"]),
       ...TARGET_FIELDS.map((field) => target[field]),
       filterId,
       filterType,

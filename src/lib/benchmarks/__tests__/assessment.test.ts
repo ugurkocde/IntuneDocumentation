@@ -802,11 +802,13 @@ describe("assignment of matching policies", () => {
     ]);
   });
 
-  it("keeps a readable difference on an unassigned policy a Fail", () => {
+  // An unassigned policy applies to nobody: its difference counts no more
+  // than its match does (owner decision D1, round 38).
+  it("makes a readable difference on an unassigned policy only Review notAssigned", () => {
     const run = assess([
       tenantPolicy({ settings: [choice(BETA, "false")], assignments: [] }),
     ]);
-    expect(statusOf(run, BETA)).toEqual(["Different", "Fail", undefined]);
+    expect(statusOf(run, BETA)).toEqual(["Review", "Review", "notAssigned"]);
   });
 });
 

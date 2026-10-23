@@ -56,9 +56,19 @@ function methods(...configs: Method[]) {
       },
     ].map((config) => [config.id, config as Method]),
   );
+  // Graph returns excludeTargets on every method (lab tenant, 23 October 2026).
   for (const config of configs)
-    byId.set(config.id, { ...byId.get(config.id), ...config });
-  return { authenticationMethodConfigurations: [...byId.values()] };
+    byId.set(config.id, {
+      excludeTargets: [],
+      ...byId.get(config.id),
+      ...config,
+    });
+  return {
+    authenticationMethodConfigurations: [...byId.values()].map((config) => ({
+      excludeTargets: [],
+      ...config,
+    })),
+  };
 }
 
 function policies(

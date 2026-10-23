@@ -1,7 +1,12 @@
 import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
 import { isDocumented } from "./documented-values";
-import { canonicalFlags, isInt32, isTimeOfDay } from "./graph-rows";
+import {
+  canonicalFlags,
+  isInt32,
+  isTimeOfDay,
+  normalizeTargetType,
+} from "./graph-rows";
 
 export { isTimeOfDay };
 
@@ -127,6 +132,71 @@ export function grantRequires(
   return controls.operator === "AND" ? any(branches) : all(branches);
 }
 
+// The guests or external users a Conditional Access policy includes or
+// excludes (conditionalAccessGuestsOrExternalUsers, "Optionally populated":
+// Graph returns null when none are selected, lab, 23 October 2026): their
+// user types without none, and the external tenants they belong to, "all"
+// or the tenant ids. Null when none are selected, undefined when the value
+// is not of the documented shape: guestOrExternalUserTypes a flags value of
+// documented members (canonicalFlags), and externalTenants omitted or null
+// (every tenant), all tenants, or a list of tenant ids.
+type GuestScope = { types: string[]; tenants: "all" | Set<string> };
+function guestScope(value: unknown): GuestScope | null | undefined {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const flags = canonicalFlags(
+    "conditionalAccessGuestOrExternalUserTypes",
+    record.guestOrExternalUserTypes,
+  );
+  if (flags === null) return undefined;
+  const types = flags.split(",").filter((type) => type !== "none");
+  const tenants = record.externalTenants;
+  if (tenants === null || tenants === undefined)
+    return { types, tenants: "all" };
+  if (typeof tenants !== "object" || Array.isArray(tenants)) return undefined;
+  const kind = (tenants as Record<string, unknown>).membershipKind;
+  const type = normalizeTargetType(
+    (tenants as Record<string, unknown>)["@odata.type"],
+  );
+  const members = (tenants as Record<string, unknown>).members;
+  if (
+    kind === "all" &&
+    (!type || type === "conditionalaccessallexternaltenants")
+  )
+    return { types, tenants: "all" };
+  if (
+    kind === "enumerated" &&
+    (!type || type === "conditionalaccessenumeratedexternaltenants") &&
+    isStringList(members) &&
+    members.length &&
+    !members.includes("")
+  )
+    return {
+      types,
+      tenants: new Set(members.map((member) => member.toLowerCase())),
+    };
+  return undefined;
+}
+
+// Whether an exclusion covers one included guest type: every tenant of
+// the include is excluded for that type. Internal guests belong to this
+// tenant, so an exclusion by external tenant leaves them unknown.
+function guestTypeExcluded(
+  type: string,
+  include: GuestScope,
+  exclude: GuestScope,
+): boolean | undefined {
+  if (!exclude.types.includes(type)) return false;
+  if (exclude.tenants === "all") return true;
+  if (type === "internalGuest") return undefined;
+  const excluded = exclude.tenants;
+  return (
+    include.tenants !== "all" &&
+    [...include.tenants].every((tenant) => excluded.has(tenant))
+  );
+}
+
 /**
  * Whether a Conditional Access policy meets the check: undefined when the
  * answer depends on a field Graph omitted or a value it did not document.
@@ -145,13 +215,52 @@ export function conditionalAccessOutcome(
   // it leaves the answer open unless another entry decides it.
   const open = (list: string[], decided: boolean) =>
     decided ? true : list.includes("") ? undefined : false;
-  const targets = (value: unknown) =>
-    isStringList(value)
-      ? open(
-          value,
-          value.some((item) => item !== "None" && item !== ""),
-        )
-      : undefined;
+  // An include list targets someone when it names an entry its exclusion
+  // list does not: exclusions take precedence (Microsoft Learn, Conditional
+  // Access users and groups), so a group both included and excluded is
+  // nobody. Graph returns every exclusion list (lab, 21 October 2026); one
+  // it omitted, or an empty entry in it, may exclude any named include. The
+  // All sentinel is no object id, so no exclusion list names it.
+  const targets = (value: unknown, exclusions: unknown) => {
+    if (!isStringList(value)) return undefined;
+    const named = value.filter((item) => item !== "None" && item !== "");
+    const all = named.includes("All");
+    if (!all && named.length) {
+      if (!isStringList(exclusions) || exclusions.includes(""))
+        return undefined;
+      const excluded = new Set(exclusions.map((item) => item.toLowerCase()));
+      return open(
+        value,
+        named.some((item) => !excluded.has(item.toLowerCase())),
+      );
+    }
+    return open(value, all);
+  };
+  // Guests or external users are a fourth include axis, excluded by
+  // excludeGuestsOrExternalUsers per user type and tenant, or as a whole by
+  // the GuestsOrExternalUsers entry of excludeUsers.
+  const excludesAllGuests = (): boolean | undefined =>
+    !isStringList(users?.excludeUsers) || users.excludeUsers.includes("")
+      ? undefined
+      : users.excludeUsers.some(
+          (item: string) => item.toLowerCase() === "guestsorexternalusers",
+        );
+  const guests = (): boolean | undefined => {
+    const included = guestScope(users?.includeGuestsOrExternalUsers);
+    if (included === null) return false;
+    if (included === undefined) return undefined;
+    if (!included.types.length) return false;
+    const whole = excludesAllGuests();
+    if (whole !== false) return whole === undefined ? undefined : false;
+    const excluded = guestScope(users?.excludeGuestsOrExternalUsers);
+    if (excluded === null) return true;
+    if (excluded === undefined) return undefined;
+    return any(
+      included.types.map((type) =>
+        not(guestTypeExcluded(type, included, excluded)),
+      ),
+    );
+  };
   const include = apps?.includeApplications;
   const exclude = apps?.excludeApplications;
   const builtIn = controls?.builtInControls;
@@ -187,12 +296,13 @@ export function conditionalAccessOutcome(
             : undefined,
         ]
       : []),
-    any(
-      [users?.includeUsers, users?.includeGroups, users?.includeRoles].map(
-        targets,
-      ),
-    ),
-    targets(apps?.includeApplications),
+    any([
+      targets(users?.includeUsers, users?.excludeUsers),
+      targets(users?.includeGroups, users?.excludeGroups),
+      targets(users?.includeRoles, users?.excludeRoles),
+      guests(),
+    ]),
+    targets(apps?.includeApplications, apps?.excludeApplications),
   ]);
 }
 

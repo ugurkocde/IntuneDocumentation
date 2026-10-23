@@ -220,15 +220,32 @@ const X509_MODES: Record<string, string> = {
   x509CertificateMultiFactor: "multifactor default mode",
 };
 
+/**
+ * Whom an enabled method targets: the include targets no exclude target
+ * names (Entra: exclusions take precedence), "includes" or "excludes" when
+ * that list cannot be read, or "excluded" when every include target is
+ * excluded.
+ */
+type Targeting = number | "includes" | "excludes" | "excluded";
+
 /** Readable state of one method, never raw JSON (README "Tenant policies"). */
-function methodActual(state: string, targets: number | null, mode: unknown) {
+function methodActual(
+  state: string,
+  targets: Targeting | null,
+  mode: unknown,
+  excluded = 0,
+) {
   const base =
     state === "enabled"
-      ? targets === null
+      ? targets === null || targets === "includes"
         ? "Enabled, include targets not readable"
-        : targets > 0
-          ? `Enabled for ${targets} ${targets === 1 ? "target" : "targets"}`
-          : "Enabled, no users targeted"
+        : targets === "excludes"
+          ? "Enabled, exclude targets not readable"
+          : targets === "excluded"
+            ? "Enabled, every include target excluded"
+            : targets > 0
+              ? `Enabled for ${targets} ${targets === 1 ? "target" : "targets"}${excluded ? `, ${excluded} excluded` : ""}`
+              : "Enabled, no users targeted"
       : state === "disabled"
         ? "Disabled"
         : `State ${state}`;
@@ -236,10 +253,10 @@ function methodActual(state: string, targets: number | null, mode: unknown) {
   return `${base}; ${typeof mode === "string" ? (Object.hasOwn(X509_MODES, mode) ? X509_MODES[mode] : `default mode ${mode}`) : "default mode not readable"}`;
 }
 
-// Include targets as a count of the users and groups they name, or null
-// when Graph omitted the list or returned only targets it did not document
-// or without an id.
-function targetCount(list: unknown): number | null {
+// The ids of the users and groups a target list names, lowercased (object
+// ids are GUIDs, the all users target is "all_users"), and whether an entry
+// is no documented target with an id; null when Graph omitted the list.
+function targetIds(list: unknown): { ids: string[]; unknown: boolean } | null {
   if (!Array.isArray(list)) return null;
   const valid = list.filter(
     (target) =>
@@ -248,8 +265,39 @@ function targetCount(list: unknown): number | null {
       typeof target.id === "string" &&
       target.id !== "" &&
       isDocumented("authenticationMethodTargetType", target.targetType),
-  ).length;
-  return valid || !list.length ? valid : null;
+  );
+  return {
+    ids: valid.map((target) => target.id.toLowerCase()),
+    unknown: valid.length < list.length,
+  };
+}
+
+/**
+ * Whom an enabled method targets (Targeting). An include target counts
+ * unless an exclude target names it or excludes all users; Graph returns
+ * both lists on every method (lab tenant, 23 October 2026). Without include
+ * targets the method targets nobody, whatever its exclusions. Otherwise
+ * exclusions that cannot be read may name any include target, and an
+ * include target that cannot be read may be one that is not excluded.
+ */
+function methodTargeting(config: Record<string, any>): {
+  targets: Targeting;
+  excluded: number;
+} {
+  const include = targetIds(config.includeTargets);
+  if (!include) return { targets: "includes", excluded: 0 };
+  if (!include.ids.length && !include.unknown)
+    return { targets: 0, excluded: 0 };
+  const exclude = targetIds(config.excludeTargets);
+  // Excluding all users excludes every include target, readable or not.
+  if (exclude?.ids.includes("all_users"))
+    return { targets: "excluded", excluded: 0 };
+  if (!exclude || exclude.unknown) return { targets: "excludes", excluded: 0 };
+  const excluded = new Set(exclude.ids);
+  const remaining = include.ids.filter((id) => !excluded.has(id));
+  if (remaining.length)
+    return { targets: remaining.length, excluded: exclude.ids.length };
+  return { targets: include.unknown ? "includes" : "excluded", excluded: 0 };
 }
 
 function methodState(configs: unknown[], id: string): MethodState {
@@ -260,8 +308,8 @@ function methodState(configs: unknown[], id: string): MethodState {
       String((item as any).id).toLowerCase() === id.toLowerCase(),
   );
   // Only a documented state is read: disabled applies to nobody whatever
-  // its targets, enabled needs readable include targets, and any other
-  // state is unknown.
+  // its targets, enabled needs readable include and exclude targets
+  // (methodTargeting), and any other state is unknown.
   if (!config || !isDocumented("authenticationMethodState", config.state))
     return {
       id,
@@ -272,7 +320,7 @@ function methodState(configs: unknown[], id: string): MethodState {
           ? methodActual(config.state, null, undefined)
           : null,
     };
-  const targets = targetCount(config.includeTargets);
+  const { targets, excluded } = methodTargeting(config);
   const x509Mode =
     id === "X509Certificate"
       ? (config.authenticationModeConfiguration
@@ -280,12 +328,16 @@ function methodState(configs: unknown[], id: string): MethodState {
       : undefined;
   return {
     id,
-    readable: config.state === "disabled" || targets !== null,
+    readable:
+      config.state === "disabled" ||
+      (targets !== "includes" && targets !== "excludes"),
     // A method enabled without include targets applies to no user group, as
-    // in Microsoft's default email OTP configuration for guests.
-    enabledForUsers: config.state === "enabled" && (targets ?? 0) > 0,
+    // in Microsoft's default email OTP configuration for guests, and one
+    // whose include targets are all excluded applies to nobody either.
+    enabledForUsers:
+      config.state === "enabled" && typeof targets === "number" && targets > 0,
     mode: x509Mode,
-    actual: methodActual(config.state, targets, x509Mode),
+    actual: methodActual(config.state, targets, x509Mode, excluded),
   };
 }
 
@@ -415,7 +467,7 @@ export function evaluateTenantPolicySignals(
           reason: state.modeUnreadable
             ? "Graph did not return a readable default mode for certificate-based authentication, so whether it is multifactor is unknown."
             : !state.readable
-              ? "Graph did not return a documented state, or include targets for the enabled method."
+              ? "Graph did not return a documented state, or readable include and exclude targets for the enabled method."
               : !state.enabledForUsers && enabled.length
                 ? `Not required: ${enabled.map((item) => item.id).join(" and ")} is enabled, and one phishing-resistant method is enough.`
                 : open
@@ -449,7 +501,7 @@ export function evaluateTenantPolicySignals(
         actualValue: state.actual,
         reason: state.readable
           ? undefined
-          : "Graph did not return a documented state, or include targets for the enabled method.",
+          : "Graph did not return a documented state, or readable include and exclude targets for the enabled method.",
       });
     const enabled = states.filter((state) => state.enabledForUsers);
     if (enabled.length)

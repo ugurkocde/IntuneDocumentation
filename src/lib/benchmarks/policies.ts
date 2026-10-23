@@ -349,9 +349,9 @@ function leafValues(
       return value.map((entry, index) => strip(entry, `${at}[${index}]`));
     if (!record(value)) return value;
     return Object.fromEntries(
-      Object.entries(value).map(([key, v]) => {
+      Object.entries(value).flatMap(([key, v]): Array<[string, Json]> => {
         if (key !== "children" || !Array.isArray(v) || !childArrays.has(v))
-          return [key, strip(v, `${at}:${key}`)];
+          return [[key, strip(v, `${at}:${key}`)]];
         const seen = new Map<string, number>();
         for (const child of v.filter(isInstance)) {
           const id = child.settingDefinitionId;
@@ -364,7 +364,11 @@ function leafValues(
             depth + 1,
           );
         }
-        return [key, v.filter((child) => !isInstance(child))];
+        // A child list is never part of the own value: its instances are
+        // keyed above, and a list Graph returned empty, null or not at all
+        // holds the same nothing (graph-rows.ts childLists). A list with an
+        // entry that is no instance makes the own value unreadable instead.
+        return [];
       }),
     );
   };

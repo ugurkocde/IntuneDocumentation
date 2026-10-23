@@ -222,7 +222,8 @@ A compliance scheduled action named `block` marks a device noncompliant after
 its grace period. It does not prove resource access is blocked. Enabled
 Conditional Access policies are assessed independently, including grant
 operators and preserved conditions. Report-only, disabled and optional OR
-grants are not counted as mandatory requirements. Effective sign-in access is
+grants are not counted as mandatory requirements. Exclusions take precedence
+over inclusions (ruleset 2026.10.22, Exclusions). Effective sign-in access is
 always unverified by this configuration-only engine.
 
 Pass `assessmentScope` on an export, or the second argument to
@@ -531,8 +532,9 @@ and a caveat that the setting shows what the tenant allows, not what users
 registered or used. A failed, denied, skipped or absent read is a collection
 gap: dependent checks are `unableToCheck` with the reason (and the permission
 hint for 403), never `missing`. A method counts as enabled only when its state
-is `enabled` and it has at least one include target; Microsoft's default email
-OTP configuration for guests (enabled, no include targets) is not enabled for
+is `enabled` and it has at least one include target that no exclude target
+names (ruleset 2026.10.22, Exclusions); Microsoft's default email OTP
+configuration for guests (enabled, no include targets) is not enabled for
 users.
 
 | Capability | Evidence | Counter-evidence | Not counter-evidence |
@@ -769,6 +771,45 @@ framework metadata that the ruleset fingerprint covers; detectors, mappings
 of the remaining frameworks and statuses are unchanged. The framework
 evidence report is English only; the management summary keeps English and
 German.
+
+### Exclusions
+
+Entra and Intune give exclusions precedence over inclusions (Microsoft
+Learn: authentication methods "Excluded groups take precedence over include
+groups", Conditional Access "The exclude action overrides the include
+action", Intune "Exclusion takes precedence over inclusion"). The engine
+reads every include list with the exclusions that can cancel it:
+
+- **Authentication methods.** An enabled method targets users only when an
+  include target remains after the ids of its `excludeTargets` are taken
+  out (ids compare without case); an exclude target `all_users` excludes
+  everyone. Graph returns both lists, `{ id, targetType }` entries, on every
+  method (lab, GET only, 23 October 2026). With include targets, an
+  `excludeTargets` list Graph omitted, or one holding an entry without an id
+  or a documented `targetType`, is `unableToCheck`: it may exclude any
+  include target. A method whose only include group is excluded is not
+  enabled for users ("Enabled, every include target excluded"): no passkey
+  evidence and no weak method counter-evidence.
+- **Conditional Access.** Users, groups, roles and applications each target
+  someone only when the include list names an entry its exclusion list does
+  not. The `All` sentinel is no object id, so no exclusion list names it.
+  An exclusion list Graph omitted, or an empty entry in it, leaves a policy
+  whose decision depends on it unknown. Guests or external users are a
+  fourth include axis: a non-null `includeGuestsOrExternalUsers` with
+  documented `guestOrExternalUserTypes` members (a flags value, read with
+  `canonicalFlags`) and readable `externalTenants` targets the types that
+  `excludeGuestsOrExternalUsers` does not exclude for every included tenant,
+  unless `excludeUsers` holds `GuestsOrExternalUsers`; another shape is
+  unknown. Graph returns null for both when no guests are selected.
+- **Intune assignments.** A group both included and excluded in one
+  policy's assignments targets nobody, so it alone does not make the policy
+  assigned (`summarizeAssignments`); all users, all devices or another
+  included group still do. The benchmark comparison treats such a policy as
+  not assigned, and a difference on a policy that is not assigned counts no
+  more than its match: Review (notAssigned), never Fail, unless an assigned
+  policy, or one of unknown assignment, differs.
+- **History.** An assignment filter type `none`, null or omitted is one value
+  in the change keys and labels.
 
 ## Removed frameworks and stored data
 

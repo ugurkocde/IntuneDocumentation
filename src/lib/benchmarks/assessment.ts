@@ -9,7 +9,11 @@
  *   template, security baseline or endpoint security intent) exists for the
  *   setting's platform; otherwise an absent setting is Review (otherProfiles),
  *   because the comparison reads Settings Catalog policies only.
- * - Different only with a readable observed value that differs.
+ * - Different only with a readable observed value that differs on a policy
+ *   that is assigned or of unknown assignment. A policy that is not
+ *   assigned (an Intune group both included and excluded included) applies
+ *   to nobody, so its difference counts no more than its match: without
+ *   another such holder the setting is Review (notAssigned).
  * - A nested setting applies only below the options its parents select, so
  *   it is judged with them (policies.ts compareDefinition): a readable
  *   tenant parent with another option is Different, never Pass or Missing,
@@ -216,14 +220,31 @@ function judge(
       comparison: "differ" as const,
     },
   }));
-  const holding = states.filter(({ state }) => state.holds === "yes");
-  const holders = holding.map(({ observation }) => observation);
+  const held = states.filter(({ state }) => state.holds === "yes");
+  const holders = held.map(({ observation }) => observation);
   // A difference is definite: compareLeaves reaches one only through a
   // readable pack leaf below readable pack and tenant parents, so a pack
   // value that cannot be read never makes it Different, while a readable
-  // difference in another branch of the same root still does.
-  if (holding.some(({ state }) => state.comparison === "differ"))
+  // difference in another branch of the same root still does. A policy that
+  // is not assigned applies to nobody, so its difference counts no more
+  // than its match does (owner decision D1): without another holder that
+  // is assigned or of unknown assignment the result is Review (notAssigned).
+  const differs = ({ state }: (typeof held)[number]) =>
+    state.comparison === "differ";
+  const notAssigned = ({ observation }: (typeof held)[number]) =>
+    observation.assignment === "notAssigned";
+  if (held.some((item) => differs(item) && !notAssigned(item)))
     return { status: "Different", holders };
+  const holding = held.filter((item) => !differs(item));
+  const maybeApplies = states.some(
+    (item) => item.state.holds === "maybe" && !notAssigned(item),
+  );
+  if (
+    holding.length < held.length &&
+    holding.every(notAssigned) &&
+    !maybeApplies
+  )
+    return { status: "Review", reason: "notAssigned", holders };
   const readable = readableRecommendation(recommended, definitionId);
   const maybe = states.some(({ state }) => state.holds === "maybe");
   if (!holding.length && !maybe) {
@@ -335,13 +356,26 @@ export function compareSettings(
     const platforms = canonicalPlatforms(policy.platforms);
     return platforms ? `${platforms}:${id}` : null;
   };
-  const recommended = new Map<string, Set<string>>();
+  // The distinct recommended values per definition and platforms. Two values
+  // are the same when their content is, or when each matches the other as a
+  // tenant value would (compareRoot), so equivalent forms such as an empty,
+  // null or omitted child list, or reordered collection entries, are one.
+  const recommended = new Map<string, RecordJson[]>();
   for (const policy of policies)
     for (const { settingInstance } of policy.settings) {
       const key = packKey(policy, settingInstance.settingDefinitionId);
       if (!key) continue;
-      const values = recommended.get(key) ?? new Set<string>();
-      values.add(JSON.stringify(comparable(settingInstance)));
+      const values = recommended.get(key) ?? [];
+      const text = JSON.stringify(comparable(settingInstance));
+      if (
+        !values.some(
+          (value) =>
+            JSON.stringify(comparable(value)) === text ||
+            (compareRoot(value, settingInstance) === "match" &&
+              compareRoot(settingInstance, value) === "match"),
+        )
+      )
+        values.push(settingInstance);
       recommended.set(key, values);
     }
   return policies.flatMap((policy, policyIndex) =>
@@ -368,7 +402,7 @@ export function compareSettings(
         observations: observed,
       };
       // Several recommended values for one definition need a profile choice first.
-      if (key && (recommended.get(key)?.size ?? 0) > 1)
+      if (key && (recommended.get(key)?.length ?? 0) > 1)
         return {
           ...base,
           status: "Review" as const,

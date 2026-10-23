@@ -8,6 +8,7 @@ import {
   TARGET_FIELDS,
   unidentifiedSources,
   unreadableAssignment,
+  unreadableProperties,
   unreadableSources,
 } from "../compliance/graph-rows";
 import { isItemIdentity } from "../configuration-sections";
@@ -129,28 +130,39 @@ export interface SnapshotDiff {
 
 const OCCURRENCE = "\u0000";
 
+interface ComparedRow {
+  shown: { name: string; path: string[]; definitionId: string | null };
+  value: string;
+  // What is compared (FlatSettingRow token), the value as Graph returned it.
+  token: string;
+}
+
+// Rows are told apart by their ids where they have them (identity), so a
+// name or category Graph did not return in one snapshot never reads as a
+// removed and an added setting, and compared by the value Graph returned
+// (token), so an option name that changed or was not returned is no change.
 function settingRows(
   sectionKey: string,
   item: SnapshotItem,
-): Map<
-  string,
-  { name: string; path: string[]; definitionId: string | null; value: string }
-> {
-  const rows = new Map<
-    string,
-    { name: string; path: string[]; definitionId: string | null; value: string }
-  >();
+): Map<string, ComparedRow> {
+  const rows = new Map<string, ComparedRow>();
   const seen = new Map<string, number>();
   for (const row of flattenItemSettings(sectionKey, item.data)) {
-    const base = [row.definitionId ?? row.name, ...row.path].join(OCCURRENCE);
+    const base = [
+      row.definitionId ?? row.name,
+      ...(row.identity ?? row.path),
+    ].join(OCCURRENCE);
     // Repeated rows with the same id and parents are told apart by position.
     const occurrence = seen.get(base) ?? 0;
     seen.set(base, occurrence + 1);
     rows.set(`${base}${OCCURRENCE}${occurrence}`, {
-      name: row.name,
-      path: row.path,
-      definitionId: row.definitionId ?? null,
+      shown: {
+        name: row.name,
+        path: row.path,
+        definitionId: row.definitionId ?? null,
+      },
       value: row.value,
+      token: row.token ?? row.value,
     });
   }
   return rows;
@@ -169,15 +181,15 @@ function settingChanges(
     if (!old)
       changes.push({
         key,
-        ...row,
+        ...row.shown,
         change: "added",
         before: null,
         after: row.value,
       });
-    else if (old.value !== row.value)
+    else if (old.token !== row.token)
       changes.push({
         key,
-        ...row,
+        ...row.shown,
         change: "changed",
         before: old.value,
         after: row.value,
@@ -187,7 +199,7 @@ function settingChanges(
     if (!b.has(key))
       changes.push({
         key,
-        ...row,
+        ...row.shown,
         change: "removed",
         before: row.value,
         after: null,
@@ -300,7 +312,8 @@ function targetLabel(
 /**
  * Whether an item can be paired and compared: it has an id of its own (not
  * its position, see isItemIdentity), every setting row has its identifier
- * and a readable value, and every assignment can be read (graph-rows.ts).
+ * and a readable value, every plain property has a value of its documented
+ * type, and every assignment can be read (graph-rows.ts).
  * Otherwise a row may be taken for another one, or a value Graph did not
  * return may read as removed or changed, so the item is not compared rather
  * than reported with changes it may not have.
@@ -313,6 +326,7 @@ export function comparableItem(
     isItemIdentity(section, item.id) &&
     unidentifiedSources(item.data, section.familyKey).size === 0 &&
     unreadableSources(item.data, section.familyKey).size === 0 &&
+    unreadableProperties(item.data, section.familyKey).length === 0 &&
     !(
       Array.isArray(item.data.assignments) &&
       item.data.assignments.some(unreadableAssignment)
@@ -515,6 +529,10 @@ function omitsValue(
   return false;
 }
 
+// Whether the item has a name of its own rather than its section's label.
+const named = (section: SnapshotSection, item: SnapshotItem) =>
+  snapshotItemLabel({ ...section, label: "" }, item) !== "";
+
 function byId(section: SnapshotSection): Map<string, SnapshotItem> {
   return new Map(section.items.map((item) => [item.id, item]));
 }
@@ -610,6 +628,8 @@ export function diffSnapshots(
         old.incomplete ||
         item.incomplete ||
         omitsValue(old.data, item.data) ||
+        // A name Graph returned on one side only is no rename.
+        named(a, old) !== named(b, item) ||
         !comparableItem(a, old) ||
         !comparableItem(b, item)
       ) {

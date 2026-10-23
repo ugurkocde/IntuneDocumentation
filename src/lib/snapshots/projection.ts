@@ -11,6 +11,8 @@ import {
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
 import {
+  METADATA_KEYS,
+  normalizeTargetType,
   settingsLayout,
   TARGET_FIELDS,
   unreadableOmaValue,
@@ -311,13 +313,19 @@ function signals() {
 }
 
 // Conditional Access fields Graph beta returns on every policy (lab tenant,
-// 21 October 2026): the state, the grant lists and the target lists, and
+// 21 and 23 October 2026): the state, the required conditions, the grant
+// lists and the target lists, and
 // the allowlisted fields of an authentication strength that is not null
 // (the authenticationStrengthPolicy resource returns each of them, lab
 // tenant, 21 October 2026). Each child follows its parent, so an omitted
 // strength is marked field by field under the keys real values have.
 const CA_EXPECTED_PATHS = [
   "state",
+  // Required in conditionalAccessConditionSet (Graph beta reference); the
+  // lab tenant returns them as lists.
+  "conditions.clientAppTypes",
+  "conditions.signInRiskLevels",
+  "conditions.userRiskLevels",
   ...[
     "operator",
     "builtInControls",
@@ -394,21 +402,36 @@ function plainValue(
   return undefined;
 }
 
-// A nested allowlist: true keeps a primitive, a list of primitives or null;
-// an object keeps the named fields of a nested object, or null.
+// A plain property value the projection keeps: a primitive, a list of
+// primitives or null. A value of another shape, such as a record or a list
+// holding one, is kept as a list holding an empty record, which no
+// documented type reads (graph-rows.ts unreadableProperties), so it reads
+// as unreadable instead of as a property Graph did not return.
+function keptValue(
+  value: unknown,
+): Primitive | Primitive[] | Json[] | null | undefined {
+  const kept = plainValue(value);
+  return kept === undefined && value !== undefined ? [{}] : kept;
+}
+
+// A nested allowlist: true keeps a plain property value (keptValue); an
+// object keeps the named fields of a nested object, or null.
 interface Shape {
   readonly [key: string]: true | Shape;
 }
 
 // Keys in source order, so a restored policy reads like the collected one.
-function projectShape(value: unknown, shape: Shape): Json | null | undefined {
-  if (value === null) return null;
-  if (!isRecord(value)) return undefined;
+function projectShape(
+  value: unknown,
+  shape: Shape,
+): Json | Json[] | null | undefined {
+  if (value === null || value === undefined) return value;
+  if (!isRecord(value)) return [{}];
   const out: Json = {};
   for (const [key, entry] of Object.entries(value)) {
     if (!Object.hasOwn(shape, key)) continue;
     const rule = shape[key]!;
-    const kept = rule === true ? plainValue(entry) : projectShape(entry, rule);
+    const kept = rule === true ? keptValue(entry) : projectShape(entry, rule);
     if (kept !== undefined) out[key] = kept;
   }
   return out;
@@ -487,6 +510,31 @@ const CA_GRANT_CONTROLS: Shape = {
   },
 };
 
+/**
+ * Every plain property path the projection keeps, by normalized resource
+ * type, with "" for the item keys of every item: what
+ * compliance/graph-property-types.ts must type (graph-property-types.test.ts).
+ */
+export function keptPlainProperties(): Record<string, string[]> {
+  const leaves = (shape: Shape, prefix: string): string[] =>
+    Object.entries(shape).flatMap(([key, rule]) =>
+      rule === true ? [`${prefix}${key}`] : leaves(rule, `${prefix}${key}.`),
+    );
+  const out: Record<string, string[]> = {
+    "": ITEM_KEYS.filter((key) => !METADATA_KEYS.has(key)),
+    conditionalaccesspolicy: [
+      "state",
+      ...leaves(CA_CONDITIONS, "conditions."),
+      ...leaves(CA_GRANT_CONTROLS, "grantControls."),
+    ],
+  };
+  for (const [type, fields] of Object.entries(POLICY_CHECK_FIELDS))
+    out[type] = [...fields];
+  for (const [type, paths] of signals().paths)
+    out[type] = [...new Set([...(out[type] ?? []), ...paths])];
+  return out;
+}
+
 function pick(source: Json, keys: readonly string[]): Json {
   const out: Json = {};
   for (const key of keys) {
@@ -547,7 +595,13 @@ function projectAssignments(value: unknown): Json[] | undefined {
       "deviceAndAppManagementAssignmentFilterType",
     ];
     return {
-      ...pick(assignment, ["intent"]),
+      // An intent Graph returned as no text is kept empty, so it reads as
+      // unreadable (graph-rows.ts) instead of as an assignment without one.
+      ...(assignment.intent !== undefined &&
+      assignment.intent !== null &&
+      typeof assignment.intent !== "string"
+        ? { intent: "" }
+        : pick(assignment, ["intent"])),
       // Every field that says what a documented target type targets
       // (graph-rows.ts), so history compares each of them. A field Graph
       // returned as a value that is not kept is kept empty, so it reads as
@@ -715,20 +769,29 @@ function projectSettings(
 const asRecords = (value: unknown[]): Json[] =>
   value.map((entry) => (isRecord(entry) ? entry : {}));
 
-// Presentation values that hold name and value pairs (a list presentation)
-// are not kept: they are stored as one redacted value and compared by
-// fingerprint, under the definition and presentation ids. Values of another
-// shape are kept as null, so they read as unreadable (graph-rows.ts).
+// The name and value pairs of a list presentation are not kept: they are
+// stored as one redacted value and compared by fingerprint, under the
+// definition and presentation ids. Only a presentation typed as a list holds
+// pairs (graph-rows.ts); values of any other shape, or pairs on another
+// presentation type, are kept as null, so they read as unreadable instead
+// of as a list that is not stored.
 function projectPresentationValues(
+  type: unknown,
   values: unknown,
   settingId: string,
   dropped?: DroppedValue,
 ): unknown {
-  if (values === undefined || plainValue(values) !== undefined)
-    return plainValue(values);
-  if (!Array.isArray(values) || !values.every(isRecord)) return null;
-  dropped?.(settingId, JSON.stringify(values));
-  return [REDACTED_VALUE];
+  if (values === undefined) return undefined;
+  if (
+    normalizeTargetType(type) === "grouppolicypresentationvaluelist" &&
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.every(isRecord)
+  ) {
+    dropped?.(settingId, JSON.stringify(values));
+    return [REDACTED_VALUE];
+  }
+  return plainValue(values) ?? null;
 }
 
 function projectDefinitionValues(
@@ -739,11 +802,11 @@ function projectDefinitionValues(
   return asRecords(value).map((row) => {
     const definition = isRecord(row.definition) ? row.definition : {};
     // Presentation values Graph returned as another shape than a list of
-    // records were not read, as when their fetch failed.
+    // records, or not at all (the collector reads them for every value),
+    // were not read, as when their fetch failed.
     const unread =
-      row.presentationValues != null &&
-      (!Array.isArray(row.presentationValues) ||
-        !row.presentationValues.every(isRecord));
+      !Array.isArray(row.presentationValues) ||
+      !row.presentationValues.every(isRecord);
     return {
       ...pick(row, ["enabled", "presentationFetchError"]),
       ...(unread ? { presentationFetchError: true } : {}),
@@ -763,6 +826,7 @@ function projectDefinitionValues(
             ? presentationValue.presentation
             : {};
           const values = projectPresentationValues(
+            presentationValue["@odata.type"],
             presentationValue.values,
             `${text(definition.id) ?? ""}/${text(presentation.id) ?? ""}`,
             dropped,
@@ -871,7 +935,14 @@ function projectItem(
   fingerprint?: SnapshotFingerprint,
 ): SnapshotItem {
   const id = getStableItemId(section, raw, index);
-  const data: Json = pick(raw, ITEM_KEYS);
+  const data: Json = {};
+  for (const key of ITEM_KEYS) {
+    // Metadata is never compared; the other item keys are plain properties.
+    const value = METADATA_KEYS.has(key)
+      ? plainValue(raw[key])
+      : keptValue(raw[key]);
+    if (value !== undefined) data[key] = value;
+  }
   const odataType = normalizeOdataType(raw["@odata.type"]);
   const message = text(raw.fetchErrorMessage);
   if (message) data.fetchErrorMessage = message;
@@ -888,7 +959,7 @@ function projectItem(
   if (assignments) data.assignments = assignments;
 
   if (section.familyKey === "conditionalAccessPolicies") {
-    const state = plainValue(raw.state);
+    const state = keptValue(raw.state);
     if (state !== undefined) data.state = state;
     const conditions = projectShape(raw.conditions, CA_CONDITIONS);
     if (conditions !== undefined) data.conditions = conditions;
@@ -941,14 +1012,14 @@ function projectItem(
   const scheduled = projectScheduledActions(raw.scheduledActionsForRule);
   if (scheduled) data.scheduledActionsForRule = scheduled;
   for (const key of POLICY_CHECK_FIELDS[odataType] ?? []) {
-    const value = plainValue(raw[key]);
+    const value = keptValue(raw[key]);
     if (value !== undefined) data[key] = value;
   }
   for (const path of signals().paths.get(odataType) ?? []) {
     // A parent Graph returned as null (not configured) is kept as null, so
     // the restored policy does not read as one that omitted the property.
     const found = nullablePath(raw, path);
-    const value = plainValue(found.value);
+    const value = keptValue(found.value);
     if (value !== undefined) setPath(data, found.path, value);
   }
 

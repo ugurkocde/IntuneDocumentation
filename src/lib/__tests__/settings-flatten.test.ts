@@ -25,6 +25,8 @@ describe("flattenItemSettings", () => {
       value: "Enabled",
       definitionId: "device_vendor_msft_bitlocker_requiredeviceencryption",
       path: [],
+      // History compares the option id, not its name.
+      token: "device_vendor_msft_bitlocker_requiredeviceencryption_1",
     });
   });
 
@@ -218,6 +220,8 @@ describe("flattenItemSettings", () => {
         value: "Enabled: Policy value: Configured value",
         definitionId: "9c628cf0-6e74-4db6-9dcb-5b6e0e243d61",
         path: ["Windows Components", "BitLocker"],
+        // Named by its definition id; the category is display only.
+        identity: [],
         category: "\\Windows Components\\BitLocker",
       },
     ]);

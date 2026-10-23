@@ -137,6 +137,9 @@ describe("diffSnapshots", () => {
       id: "catalog-new",
       name: "New policy",
     });
+    // A rename needs a name on both sides: one Graph returned on one side
+    // only is no rename (round 32).
+    items(before, "roleScopeTags")[4]!.displayName = "Synthetic tag";
     items(after, "roleScopeTags")[4]!.displayName = "Renamed tag";
     const diff = diffSnapshots(snap(before), snap(after));
     expect(diff.totals).toMatchObject({

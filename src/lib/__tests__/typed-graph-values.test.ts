@@ -291,7 +291,7 @@ describe("typed Graph values", () => {
                   id: "0",
                   settingInstance: {
                     "@odata.type":
-                      "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
+                      "#microsoft.graph.deviceManagementConfigurationChoiceSettingCollectionInstance",
                     settingDefinitionId: INACTIVITY,
                     choiceSettingCollectionValue: [{ value, children: [] }],
                   },

@@ -5,7 +5,10 @@
 // checksum detects damage, not authorship: anyone can recompute it.
 // Desktop only (Node).
 import { createHash } from "node:crypto";
-import { unidentifiedSources } from "../compliance/graph-rows";
+import {
+  unidentifiedSources,
+  unreadableProperties,
+} from "../compliance/graph-rows";
 import { sha256 } from "../compliance/manifest";
 import { flattenItemSettings } from "../settings-flatten";
 import {
@@ -52,7 +55,8 @@ const SECRET_SETTING =
   /(apikey|password|passphrase|passcode|secret|token|privatekey|presharedkey|credentials?)$/i;
 
 // Conditional Access conditions that name users, groups, roles or apps by
-// object id are tenant specific, so a reference leaves them out.
+// object id are tenant specific, so a reference keeps them without their
+// value: not comparable, never missing against a side that names none.
 const OBJECT_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const ID_FAMILIES: ReadonlySet<string> = new Set(["conditionalAccessPolicies"]);
 
@@ -223,13 +227,12 @@ function itemRows(
   const omitted = omittedFields(section.familyKey, data);
   const filled = omitted.length ? structuredClone(data) : data;
   for (const path of omitted) setPath(filled, path, OMITTED);
-  const rows = flattenItemSettings(sectionKey, filled)
-    .filter((row) => !(ID_FAMILIES.has(sectionKey) && OBJECT_ID.test(row.value)))
-    .map((row) => {
+  const rows = flattenItemSettings(sectionKey, filled).map((row) => {
     const id = row.definitionId ?? row.name;
     const setting = catalog ? id : [...row.path, id].join(" / ");
     const redacted =
       row.unreadable ||
+      (ID_FAMILIES.has(sectionKey) && OBJECT_ID.test(row.value)) ||
       row.value.includes(REDACTED) ||
       row.value.includes(OMITTED) ||
       SECRET_SETTING.test(id);
@@ -300,9 +303,10 @@ function groupInstances(rows: ReferenceSetting[]): void {
 }
 
 // Settings of every family collected completely. A family with a failed or
-// skipped collection, or with an item whose details are incomplete or with a
-// setting row Graph returned without its identifier, is not compared, so a
-// gap never reads as a missing setting.
+// skipped collection, or with an item whose details are incomplete, with a
+// setting row Graph returned without its identifier or with a record Graph
+// did not return as one (graph-rows.ts unreadableProperties), is not
+// compared, so a gap never reads as a missing setting.
 export function projectionSettings(projection: SnapshotProjection): SettingSet {
   const families: ReferenceFamily[] = [];
   const notCompared: ReferenceFamily[] = [];
@@ -314,7 +318,10 @@ export function projectionSettings(projection: SnapshotProjection): SettingSet {
       section.items.some(
         (item) =>
           item.incomplete ||
-          unidentifiedSources(item.data, section.familyKey).size > 0,
+          unidentifiedSources(item.data, section.familyKey).size > 0 ||
+          unreadableProperties(item.data, section.familyKey).some(
+            (property) => property.container,
+          ),
       )
     ) {
       notCompared.push(family);
@@ -633,11 +640,23 @@ function token(setting: ReferenceSetting): string | null {
   return setting.sha256 ?? digest(setting.value);
 }
 
+// The id a setting is compared under. An administrative template value is
+// named by its definition id; its category path is display only (Graph
+// returns null for some definitions, lab tenant, 23 October 2026), so a
+// category Graph returned on one side only never reads as a missing and an
+// extra setting. Files saved earlier hold the same setting ids.
+function settingKey(setting: ReferenceSetting): string {
+  const prefix = setting.path?.length ? `${setting.path.join(" / ")} / ` : "";
+  return setting.family === "administrativeTemplates" && prefix && setting.setting.startsWith(prefix)
+    ? setting.setting.slice(prefix.length)
+    : setting.setting;
+}
+
 function byKey(settings: readonly ReferenceSetting[], compared: ReadonlySet<string>) {
   const map = new Map<string, ReferenceSetting[]>();
   for (const setting of settings) {
     if (!compared.has(setting.family)) continue;
-    const key = [setting.platform, setting.family, setting.setting].join(SEPARATOR);
+    const key = [setting.platform, setting.family, settingKey(setting)].join(SEPARATOR);
     const list = map.get(key);
     if (list) list.push(setting);
     else map.set(key, [setting]);
@@ -774,9 +793,30 @@ function pairInstances(
   return pairs;
 }
 
+// The policy and path of a setting in a group instance.
+function placeOf(setting: ReferenceSetting): string {
+  return [setting.platform, setting.family, setting.policy, ...(setting.path ?? [])].join(SEPARATOR);
+}
+
+// Group instances, by policy and path, that hold a setting without a value
+// to compare (redacted, unreadable or not kept), directly or in an instance
+// below them. Their content is unknown, so they may be the same as another
+// instance or not: deduplicating or pairing them would guess.
+function uncertainInstances(settings: readonly ReferenceSetting[]): Set<string> {
+  const places = new Set<string>();
+  for (const setting of settings) {
+    if (token(setting) !== null || !setting.path?.length) continue;
+    for (let depth = 1; depth <= setting.path.length; depth++)
+      places.add(placeOf({ ...setting, path: setting.path.slice(0, depth) }));
+  }
+  return places;
+}
+
 interface InstanceContext {
   expected: Map<string, Instance>;
   actual: Map<string, Instance>;
+  // uncertainInstances of each side.
+  uncertain: { expected: Set<string>; actual: Set<string> };
   // Pairings by candidate instances, shared by the settings of one group.
   pairs: Map<string, Array<[string, string]>>;
 }
@@ -807,7 +847,10 @@ function ownValues(list: readonly ReferenceSetting[]): Map<string, string> {
 // others are paired, so a swapped value is a difference, while the other
 // settings of a changed instance stay matching and are marked as part of a
 // changed instance. An instance left without a counterpart, such as an
-// added rule whose values each exist in other rules, is a difference.
+// added rule whose values each exist in other rules, is a difference. When
+// an instance holding the setting holds a value that cannot be compared,
+// which instances are the same is unknown, so the setting is not comparable
+// unless its own values already differ.
 function statusOf(
   expected: readonly ReferenceSetting[] | undefined,
   actual: readonly ReferenceSetting[] | undefined,
@@ -819,10 +862,21 @@ function statusOf(
   if (all.some((setting) => token(setting) === null)) return { status: "notComparable" };
   if (!actual?.length) return { status: "missing" };
   if (!expected?.length) return { status: "extra" };
+  // A Settings Catalog choice shows as the name of its option, or as the
+  // option id, which starts with the setting id, when Graph did not return
+  // the setting definition (settings-flatten.ts). Names on one side and ids
+  // on the other may be the same choice, so they are not compared.
+  const byId = all.filter((setting) => setting.value?.startsWith(`${setting.setting}_`)).length;
+  if (byId && byId < all.length) return { status: "notComparable" };
   const a = new Set(expected.map(token));
   const b = new Set(actual.map(token));
   if (a.size !== b.size || ![...a].every((value) => b.has(value))) return { status: "different" };
   if (!all.every(instanceOf)) return { status: "matching" };
+  if (
+    expected.some((setting) => context.uncertain.expected.has(placeOf(setting))) ||
+    actual.some((setting) => context.uncertain.actual.has(placeOf(setting)))
+  )
+    return { status: "notComparable" };
   const leftAll = distinctInstances(expected);
   const rightAll = distinctInstances(actual);
   const left = [...leftAll].filter(([group]) => !rightAll.has(group)).map(([, key]) => key);
@@ -881,6 +935,10 @@ function compareSides(reference: ComparedSide, current: ComparedSide): Compariso
   const context: InstanceContext = {
     expected: instancesOf([...expected.values()].flat()),
     actual: instancesOf([...actual.values()].flat()),
+    uncertain: {
+      expected: uncertainInstances([...expected.values()].flat()),
+      actual: uncertainInstances([...actual.values()].flat()),
+    },
     pairs: new Map(),
   };
   const groups = new Map<string, CompareGroup>();

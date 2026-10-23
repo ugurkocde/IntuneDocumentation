@@ -1,7 +1,9 @@
 import {
+  METADATA_KEYS,
   unreadableCatalogValue,
   unreadableIntentValue,
   unreadableOmaValue,
+  unreadableProperties,
   unreadableTemplateValue,
 } from "./compliance/graph-rows";
 import {
@@ -30,6 +32,18 @@ export interface FlatSettingRow {
   definitionId?: string;
   /** Parent settings or properties, outermost first. */
   path: string[];
+  /**
+   * What tells the row apart from the others of its item instead of path,
+   * when path holds display names: the definition ids of the parent
+   * Settings Catalog settings, with the entry of a repeated group, or none
+   * for an administrative template value, which its definition id names.
+   */
+  identity?: string[];
+  /**
+   * The value as Graph returned it, when value shows it by name: the option
+   * ids of a Settings Catalog choice. History compares it instead of value.
+   */
+  token?: string;
   category?: string;
   /**
    * Graph did not return the setting's value readably
@@ -45,31 +59,40 @@ const flag = (unreadable: boolean) =>
 const NOT_CONFIGURED = "Not configured";
 
 // Item level metadata the documentation never lists as a setting.
-export const METADATA_KEYS: ReadonlySet<string> = new Set([
-  "@odata.type",
-  "@odata.context",
-  "id",
-  "name",
-  "displayName",
-  "description",
-  "createdDateTime",
-  "lastModifiedDateTime",
-  "modifiedDateTime",
-  "assignments",
-  "roleScopeTagIds",
-  "supportsScopeTags",
-  "version",
-  "configType",
-  "collectionStatus",
-  "settingCount",
-  "platforms",
-  "technologies",
-  "templateReference",
-  "hasFetchError",
-  "fetchErrorMessage",
-  "creationSource",
-  "isAssigned",
-]);
+export { METADATA_KEYS };
+
+// Stands in for a plain property value Graph did not return readably while
+// the rows of an item are built; never shown.
+const UNREADABLE_MARK = "\u0000unreadable\u0000";
+
+// The item with every plain property whose value contradicts its documented
+// type (compliance/graph-rows.ts) replaced by the mark: the property itself
+// for the layouts that list one row per property, otherwise the value at its
+// path, so the other values of a record stay readable.
+function markUnreadable(
+  item: Record<string, unknown>,
+  family: string,
+  topLevel: boolean,
+): Record<string, unknown> {
+  const unreadable = unreadableProperties(item, family);
+  if (!unreadable.length) return item;
+  const copy = structuredClone(item);
+  for (const { path } of unreadable) {
+    const segments = topLevel ? path.slice(0, 1) : path;
+    let current = copy;
+    for (const segment of segments.slice(0, -1))
+      current = current[segment] as Record<string, unknown>;
+    current[segments[segments.length - 1]!] = UNREADABLE_MARK;
+  }
+  return copy;
+}
+
+// A row built from a marked value reads as unreadable.
+function unmark(row: FlatSettingRow): FlatSettingRow {
+  return row.value === UNREADABLE_MARK
+    ? { ...row, value: UNREADABLE_VALUE, unreadable: true }
+    : row;
+}
 
 function textOf(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -98,22 +121,31 @@ function withoutChildren(
   return copy;
 }
 
+// The child lists of an instance, with the entry of a group collection each
+// list belongs to.
 function childGroups(
   instance: ConfigurationSettingInstance,
-): ConfigurationSettingInstance[][] {
-  const groups: Array<ConfigurationSettingInstance[] | undefined> = [
-    instance.choiceSettingValue?.children,
+): Array<{ children: ConfigurationSettingInstance[]; entry?: number }> {
+  const groups: Array<{ children: unknown; entry?: number }> = [
+    { children: instance.choiceSettingValue?.children },
     ...(Array.isArray(instance.choiceSettingCollectionValue)
-      ? instance.choiceSettingCollectionValue.map((choice) => choice?.children)
+      ? instance.choiceSettingCollectionValue.map((choice) => ({
+          children: choice?.children,
+        }))
       : []),
-    instance.groupSettingValue?.children,
+    { children: instance.groupSettingValue?.children },
     ...(Array.isArray(instance.groupSettingCollectionValue)
-      ? instance.groupSettingCollectionValue.map((group) => group?.children)
+      ? instance.groupSettingCollectionValue.map((group, entry) => ({
+          children: group?.children,
+          entry,
+        }))
       : []),
   ];
   return groups.filter(
-    (children): children is ConfigurationSettingInstance[] =>
-      Array.isArray(children) && children.length > 0,
+    (
+      group,
+    ): group is { children: ConfigurationSettingInstance[]; entry?: number } =>
+      Array.isArray(group.children) && group.children.length > 0,
   );
 }
 
@@ -123,11 +155,13 @@ function walkCatalogInstance(
   path: string[],
   rows: FlatSettingRow[],
   depth: number,
+  identity: string[] = [],
 ): void {
   if (!instance || typeof instance !== "object" || depth > 12) return;
+  const own = withoutChildren(instance);
   const extracted = extractSettingValue({
     id: instance.settingDefinitionId ?? "",
-    settingInstance: withoutChildren(instance),
+    settingInstance: own,
     settingDefinitions: definitions,
   });
   const isGroup = Boolean(
@@ -135,11 +169,26 @@ function walkCatalogInstance(
   );
   const definitionId = definitionIdOf(instance.settingDefinitionId);
   if (!isGroup && extracted.value !== NOT_CONFIGURED) {
+    const choice = Boolean(
+      instance.choiceSettingValue || instance.choiceSettingCollectionValue,
+    );
     rows.push({
       name: extracted.name,
       value: String(extracted.value),
       ...(definitionId ? { definitionId } : {}),
       path,
+      ...(path.length ? { identity } : {}),
+      ...(choice
+        ? {
+            token: String(
+              extractSettingValue({
+                id: instance.settingDefinitionId ?? "",
+                settingInstance: own,
+                settingDefinitions: [],
+              }).value,
+            ),
+          }
+        : {}),
       ...flag(unreadableCatalogValue(instance)),
     });
   }
@@ -148,13 +197,27 @@ function walkCatalogInstance(
   const repeated =
     Array.isArray(instance.groupSettingCollectionValue) &&
     instance.groupSettingCollectionValue.length > 1;
-  childGroups(instance).forEach((children, index) => {
+  childGroups(instance).forEach(({ children, entry }, index) => {
     const childPath = [
       ...path,
       repeated ? `${extracted.name} ${index + 1}` : extracted.name,
     ];
+    // Every entry of a group collection is numbered by its position, also
+    // a single one, so adding an entry never renames the others.
+    const id = instance.settingDefinitionId ?? extracted.name;
+    const childIdentity = [
+      ...identity,
+      entry === undefined ? id : `${id} ${entry + 1}`,
+    ];
     for (const child of children) {
-      walkCatalogInstance(child, definitions, childPath, rows, depth + 1);
+      walkCatalogInstance(
+        child,
+        definitions,
+        childPath,
+        rows,
+        depth + 1,
+        childIdentity,
+      );
     }
   });
 }
@@ -318,6 +381,7 @@ function administrativeTemplateRows(
         setting.category && setting.category !== "General"
           ? setting.category.split("\\").filter(Boolean)
           : [],
+      ...(definitionId ? { identity: [] } : {}),
       category: setting.category,
       ...flag(unreadableTemplateValue(values[index])),
     };
@@ -406,28 +470,32 @@ export function flattenItemSettings(
     return [
       ...rows,
       ...genericRows(
-        record,
+        markUnreadable(record, sectionKey, false),
         new Set([
           "settingInstance",
           "settingDefinitions",
           "settingDefinitionId",
         ]),
-      ),
+      ).map(unmark),
     ];
   }
+  // Plain properties whose value Graph did not return readably read as
+  // unreadable rows, never as their value.
+  const marked = (topLevel: boolean) =>
+    markUnreadable(record, sectionKey, topLevel);
   switch (sectionKey) {
     case "deviceConfigurations":
     case "windowsUpdatePolicies":
-      return deviceConfigurationRows(record);
+      return deviceConfigurationRows(marked(true)).map(unmark);
     case "administrativeTemplates":
       return administrativeTemplateRows(record);
     case "compliancePolicies":
-      return complianceRows(record);
+      return complianceRows(marked(true)).map(unmark);
     case "securityBaselines":
       return securityBaselineRows(record);
     case "appConfigurations":
-      return appConfigurationRows(record);
+      return appConfigurationRows(marked(false)).map(unmark);
     default:
-      return genericRows(record);
+      return genericRows(marked(false)).map(unmark);
   }
 }

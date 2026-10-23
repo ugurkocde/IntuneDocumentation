@@ -1021,10 +1021,12 @@ describe("Conditional Access authentication strength in a reference comparison",
           missing: 0,
           extra: 0,
         });
-        // Each unreadable field under the key its value has.
+        // Each unreadable field under the key its value has. Targets named
+        // by object id are not comparable too; they are not counted here.
         expect(
           comparison.groups
             .flatMap((group) => group.rows)
+            .filter((row) => row.path.includes("Authentication Strength"))
             .filter((row) => row.status === "notComparable")
             .map((row) => row.setting.split(" / ").pop())
             .sort(),
@@ -1036,7 +1038,12 @@ describe("Conditional Access authentication strength in a reference comparison",
   it("keeps an explicit null strength definite", () => {
     const comparison = compare(strength(), mfaPolicy());
     expect(comparison.totals.missing).toBe(3);
-    expect(comparison.totals.notComparable).toBe(0);
+    expect(
+      comparison.groups
+        .flatMap((group) => group.rows)
+        .filter((row) => row.path.includes("Authentication Strength"))
+        .filter((row) => row.status === "notComparable"),
+    ).toEqual([]);
   });
 });
 

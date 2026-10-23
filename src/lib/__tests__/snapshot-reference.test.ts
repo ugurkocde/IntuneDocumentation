@@ -521,8 +521,15 @@ describe("compareSettings", () => {
   it("finds nothing between a tenant and its own reference", async () => {
     const file = await reference();
     const result = compareSettings(referenceSettings(file), projectionSettings(snap(contoso())));
-    expect(result.totals).toMatchObject({ different: 0, missing: 0, extra: 0, notComparable: 0 });
-    expect(result.totals.matching).toBe(new Set(file.settings.map((entry) => `${entry.platform}|${entry.family}|${entry.setting}`)).size);
+    // Only settings kept without their value, such as Conditional Access
+    // targets named by object id, are not comparable.
+    const withoutValue = new Set(
+      file.settings.filter((entry) => entry.redacted).map((entry) => `${entry.platform}|${entry.family}|${entry.setting}`),
+    );
+    expect(result.totals).toMatchObject({ different: 0, missing: 0, extra: 0, notComparable: withoutValue.size });
+    expect(result.totals.matching + withoutValue.size).toBe(
+      new Set(file.settings.map((entry) => `${entry.platform}|${entry.family}|${entry.setting}`)).size,
+    );
     expect(result.notCompared).toEqual([]);
     expect(result.rulesetChanged).toBe(false);
   });
@@ -670,7 +677,9 @@ describe("compareSettings", () => {
     expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     const ca = file.settings.filter((entry) => entry.family === "conditionalAccessPolicies");
     expect(ca.length).toBeGreaterThan(0);
-    expect(ca.some((entry) => entry.name === "Include Groups")).toBe(false);
+    // Kept without its value, so it is not comparable rather than missing.
+    expect(ca.find((entry) => entry.name === "Include Groups")).toMatchObject({ redacted: true });
+    expect(ca.find((entry) => entry.name === "Include Groups")?.value).toBeUndefined();
     // Another tenant with other group ids compares equal on the rest.
     const other = contoso((tenant) => {
       const policy = (tenant.conditionalAccessPolicies as Item[])[0]!;
@@ -678,5 +687,20 @@ describe("compareSettings", () => {
     });
     const result = compareSettings(referenceSettings(file), projectionSettings(snap(other)));
     expect(result.totals).toMatchObject({ different: 0, missing: 0, extra: 0 });
+  });
+
+  it("never reads a Conditional Access target named by object id as missing", async () => {
+    const targets = (includeUsers: string[]) =>
+      contoso((tenant) => {
+        (tenant.conditionalAccessPolicies as Item[])[0]!.conditions.users.includeUsers = includeUsers;
+      });
+    const file = await reference(targets(["All"]));
+    const result = compareSettings(
+      referenceSettings(file),
+      projectionSettings(snap(targets(["0b6f1f5e-1111-2222-3333-444455556666"]))),
+    );
+    const row = result.groups.flatMap((group) => group.rows).find((entry) => entry.name === "Include Users");
+    expect(row?.status).toBe("notComparable");
+    expect(result.totals).toMatchObject({ missing: 0, extra: 0 });
   });
 });

@@ -8,6 +8,12 @@
 // Normal Graph rows always pass.
 
 import { REDACTED_VALUE } from "../intune-policy-registry";
+import { isDocumented, type DocumentedField } from "./documented-values";
+import {
+  FAMILY_RESOURCE_TYPES,
+  GRAPH_PROPERTY_TYPES,
+  ITEM_PROPERTY_TYPES,
+} from "./graph-property-types";
 
 /** An identifier Graph returned: a nonempty string. An empty one names nothing. */
 export const isIdentifier = (value: unknown): value is string =>
@@ -154,6 +160,8 @@ const JSON_INTENT_TYPES: ReadonlySet<string> = new Set([
   "devicemanagementabstractcomplexsettinginstance",
 ]);
 
+const COLLECTION_INTENT = "devicemanagementcollectionsettinginstance";
+
 const parsedJson = (text: unknown): { value: unknown } | null => {
   if (typeof text !== "string") return null;
   try {
@@ -175,7 +183,16 @@ export function unreadableIntentValue(row: unknown): boolean {
   if (!isObject(row)) return true;
   if (redacted(row.value)) return false;
   const type = normalizeTargetType(row["@odata.type"]);
-  if (JSON_INTENT_TYPES.has(type)) return !parsedJson(row.valueJson);
+  if (JSON_INTENT_TYPES.has(type)) {
+    const parsed = parsedJson(row.valueJson);
+    // A collection holds a JSON list, or null when it is not configured.
+    return (
+      !parsed ||
+      (type === COLLECTION_INTENT &&
+        parsed.value !== null &&
+        !Array.isArray(parsed.value))
+    );
+  }
   const value =
     row.value !== undefined ? row.value : parsedJson(row.valueJson)?.value;
   if (value === null) return row.valueJson !== "null";
@@ -189,9 +206,11 @@ const LIST = "grouppolicypresentationvaluelist";
 /**
  * Whether an administrative template presentation value has no value of
  * its documented type: a boolean, a decimal, a long decimal or text, a list
- * of text lines, or name and value pairs (the snapshot projection keeps
- * pairs as one redacted value, compared by fingerprint, and snapshots saved
- * before it did have none). A redacted value is not stored.
+ * of text lines, or a list of name and value pairs, which may be empty (the
+ * snapshot projection keeps pairs as one redacted value, compared by
+ * fingerprint). A list presentation without its list, as in snapshots
+ * saved before the pairs were fingerprinted, is unreadable: its pairs are
+ * unknown. A redacted value is not stored.
  */
 export function unreadablePresentationValue(entry: unknown): boolean {
   if (!isObject(entry)) return true;
@@ -200,24 +219,37 @@ export function unreadablePresentationValue(entry: unknown): boolean {
   if (type === MULTI_TEXT)
     return unreadableEntries(entry.values, (line) => typeof line !== "string");
   if (type === LIST)
-    return (
-      entry.values !== undefined &&
-      unreadableEntries(entry.values, (pair) => !isObject(pair))
-    );
+    return unreadableEntries(entry.values, (pair) => !isObject(pair));
   return !documentedValue(type, entry.value);
 }
 
+// A presentation value Compare and History can name: Graph returns the
+// presentation, with its id and its label (null when it has none), on every
+// presentation value it expands. The documentation shows a value without
+// it as a plain value; a comparison cannot tell it apart or show it as the
+// other side does.
+const unnamedPresentation = (entry: unknown) =>
+  !isObject(entry) ||
+  !isObject(entry.presentation) ||
+  !isIdentifier(entry.presentation.id) ||
+  (entry.presentation.label !== null &&
+    typeof entry.presentation.label !== "string");
+
 /**
- * Whether an administrative template definition value is unreadable: its
- * state is no boolean, or a presentation value has no value of its
- * documented type. Presentation values Graph returned as no list, or did
- * not return, make the policy incomplete instead (snapshot projection).
+ * Whether an administrative template definition value is unreadable for a
+ * comparison: its state is no boolean, or a presentation value has no value
+ * of its documented type or no presentation that names it. Presentation
+ * values Graph returned as no list, or did not return, make the policy
+ * incomplete instead (snapshot projection).
  */
 export const unreadableTemplateValue = (row: unknown): boolean =>
   !isObject(row) ||
   typeof row.enabled !== "boolean" ||
   (Array.isArray(row.presentationValues) &&
-    row.presentationValues.some(unreadablePresentationValue));
+    row.presentationValues.some(
+      (entry) =>
+        unreadablePresentationValue(entry) || unnamedPresentation(entry),
+    ));
 
 export type IdentifiedSource =
   | "settingsCatalog"
@@ -266,11 +298,43 @@ export function settingsLayout(
 const malformedList = (value: unknown) =>
   value !== undefined && value !== null && !Array.isArray(value);
 
+// The value each choice and group instance type holds its child settings in
+// (Graph beta reference): a record, or a list of records for a collection.
+const CHILD_VALUES: Readonly<Record<string, [string, "record" | "list"]>> = {
+  devicemanagementconfigurationchoicesettinginstance: [
+    "choiceSettingValue",
+    "record",
+  ],
+  devicemanagementconfigurationchoicesettingcollectioninstance: [
+    "choiceSettingCollectionValue",
+    "list",
+  ],
+  devicemanagementconfigurationgroupsettinginstance: [
+    "groupSettingValue",
+    "record",
+  ],
+  devicemanagementconfigurationgroupsettingcollectioninstance: [
+    "groupSettingCollectionValue",
+    "list",
+  ],
+};
+
 // The child lists of a Settings Catalog instance, or null when one that can
 // hold child settings is not a list: a choice value's children (which Graph
 // may omit), the choice and group collections, and a group value's
-// children, which Graph always returns.
+// children, which Graph always returns. A choice or group instance without
+// the value its type holds its children in may hold any child setting too.
 function childLists(instance: Record<string, any>): unknown[][] | null {
+  const type = normalizeTargetType(instance["@odata.type"]);
+  if (Object.hasOwn(CHILD_VALUES, type)) {
+    const [key, shape] = CHILD_VALUES[type]!;
+    if (
+      shape === "list"
+        ? !Array.isArray(instance[key])
+        : !isObject(instance[key])
+    )
+      return null;
+  }
   const choices = instance.choiceSettingCollectionValue;
   const groups = instance.groupSettingCollectionValue;
   if (malformedList(choices) || malformedList(groups)) return null;
@@ -492,6 +556,193 @@ export function unreadableSources(
   return found;
 }
 
+/** Item level metadata the documentation never lists as a setting. */
+export const METADATA_KEYS: ReadonlySet<string> = new Set([
+  "@odata.type",
+  "@odata.context",
+  "id",
+  "name",
+  "displayName",
+  "description",
+  "createdDateTime",
+  "lastModifiedDateTime",
+  "modifiedDateTime",
+  "assignments",
+  "roleScopeTagIds",
+  "supportsScopeTags",
+  "version",
+  "configType",
+  "collectionStatus",
+  "settingCount",
+  "platforms",
+  "technologies",
+  "templateReference",
+  "hasFetchError",
+  "fetchErrorMessage",
+  "creationSource",
+  "isAssigned",
+]);
+
+// Item keys that hold setting rows read by the checks above, or that no
+// comparison reads (compliance actions), rather than a plain property.
+const ROW_KEYS: ReadonlySet<string> = new Set([
+  "settings",
+  "categories",
+  "omaSettings",
+  "definitionValues",
+  "settingInstance",
+  "settingDefinitions",
+  "settingDefinitionId",
+  "scheduledActionsForRule",
+]);
+
+const EDM_TYPES: Readonly<Record<string, (value: unknown) => boolean>> = {
+  Boolean: isBoolean,
+  Int32: isInt32,
+  Int64: (value) => Number.isSafeInteger(value),
+  Double: (value) => typeof value === "number" && Number.isFinite(value),
+  String: isString,
+  Duration: isString,
+  TimeOfDay: isString,
+  DateTimeOffset: isString,
+};
+
+// Enum types whose members documented-values.ts lists, by Graph enum type.
+const ENUM_MEMBERS: Readonly<Record<string, DocumentedField>> = {
+  automaticUpdateMode: "automaticUpdateMode",
+  defenderScanType: "defenderScanType",
+  weeklySchedule: "weeklySchedule",
+  managedAppDataTransferLevel: "allowedOutboundDataTransferDestinations",
+  macOSGatekeeperAppSources: "gatekeeperAllowedAppSource",
+  appLockerApplicationControlType: "appLockerApplicationControl",
+  defenderProtectionType: "defenderAdobeReaderLaunchChildProcess",
+  defenderAttackSurfaceType: "defenderOfficeAppsLaunchChildProcessType",
+  deviceGuardLocalSystemAuthorityCredentialGuardType:
+    "deviceGuardLocalSystemAuthorityCredentialGuardSettings",
+  stateManagementSetting: "firewallProfileDomain.firewallEnabled",
+  diagnosticDataSubmissionMode: "diagnosticsDataSubmissionMode",
+  conditionalAccessGrantControl: "conditionalAccessGrantControl",
+  authenticationStrengthRequirements: "authenticationStrengthRequirements",
+  authenticationMethodModes: "authenticationMethodModes",
+};
+
+// Flags enums hold several members, comma separated ("password,sms").
+const FLAGS_ENUMS: ReadonlySet<string> = new Set([
+  "authenticationMethodModes",
+  "authenticationStrengthRequirements",
+]);
+
+// A primitive, or a list of primitives of one type: the values the
+// projection keeps of a property whose type Graph does not document.
+const plainValue = (value: unknown) => {
+  const kind = (entry: unknown) =>
+    ["string", "number", "boolean"].includes(typeof entry) ? typeof entry : "";
+  if (!Array.isArray(value)) return kind(value) !== "";
+  return value.every(
+    (entry) => kind(entry) !== "" && kind(entry) === kind(value[0]),
+  );
+};
+
+/**
+ * Whether a value has its documented Graph type, by type name
+ * (graph-property-types.ts): a Boolean is a boolean, an Int32 an integer in
+ * range, a collection a list of values of its element type, and an enum a
+ * member Graph documents (any member when documented-values.ts lists none),
+ * never the evolvable enum sentinel unknownFutureValue. An Untyped value is
+ * a primitive or a list of primitives of one type.
+ */
+export function documentedPropertyValue(type: string, value: unknown): boolean {
+  const collection = /^Collection\((.+)\)$/.exec(type);
+  if (collection)
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (entry) =>
+          entry !== null && documentedPropertyValue(collection[1]!, entry),
+      )
+    );
+  if (type === "Untyped") return plainValue(value);
+  if (Object.hasOwn(EDM_TYPES, type)) return EDM_TYPES[type]!(value);
+  if (typeof value !== "string") return false;
+  const members = Object.hasOwn(ENUM_MEMBERS, type)
+    ? ENUM_MEMBERS[type]
+    : undefined;
+  return (FLAGS_ENUMS.has(type) ? value.split(",") : [value]).every(
+    (member) =>
+      member !== "" &&
+      member !== "unknownFutureValue" &&
+      (!members || isDocumented(members, member)),
+  );
+}
+
+/** A plain property whose value Graph did not return readably. */
+export interface UnreadableProperty {
+  // Property path from the item, such as conditions, users, includeUsers.
+  path: string[];
+  // The value stands for a record or for values of an unknown type, so it
+  // may hold any setting below it, not one unreadable value.
+  container: boolean;
+}
+
+/**
+ * The plain properties of an item whose value contradicts its documented
+ * Graph type (graph-property-types.ts): a typed property of another type,
+ * out of range or an undocumented enum member, a record Graph documents
+ * holding no record, or an untyped property holding no plain value. A
+ * property of a type the table does not know is unreadable only as a list
+ * of primitives of different types, which no Graph type is. Null is a
+ * value: Graph returns it for a property that is not configured. Setting
+ * rows and metadata are read by the checks above, not here.
+ */
+export function unreadableProperties(
+  config: Record<string, unknown>,
+  family: unknown = config.__evidenceFamily,
+): UnreadableProperty[] {
+  const resource =
+    normalizeTargetType(config["@odata.type"]) ||
+    (typeof family === "string" && Object.hasOwn(FAMILY_RESOURCE_TYPES, family)
+      ? FAMILY_RESOURCE_TYPES[family]!
+      : "");
+  const types: Record<string, string> = {
+    ...ITEM_PROPERTY_TYPES,
+    ...(Object.hasOwn(GRAPH_PROPERTY_TYPES, resource)
+      ? GRAPH_PROPERTY_TYPES[resource]
+      : {}),
+  };
+  // Paths Graph documents as records: the parents of typed paths.
+  const records = new Set(
+    Object.keys(types).flatMap((path) =>
+      path
+        .split(".")
+        .slice(0, -1)
+        .map((_, index, parts) => parts.slice(0, index + 1).join(".")),
+    ),
+  );
+  const found: UnreadableProperty[] = [];
+  const visit = (value: unknown, path: string[]) => {
+    if (value === null || value === undefined || path.length > 16) return;
+    const name = path.join(".");
+    if (Object.hasOwn(types, name)) {
+      if (!documentedPropertyValue(types[name]!, value))
+        found.push({ path, container: types[name] === "Untyped" });
+    } else if (isObject(value)) {
+      for (const [key, nested] of Object.entries(value))
+        visit(nested, [...path, key]);
+    } else if (records.has(name)) found.push({ path, container: true });
+    else if (
+      Array.isArray(value) &&
+      value.every((entry) => !isObject(entry) && !Array.isArray(entry)) &&
+      !plainValue(value) &&
+      value.length > 0
+    )
+      found.push({ path, container: false });
+  };
+  for (const [key, value] of Object.entries(config))
+    if (!METADATA_KEYS.has(key) && !ROW_KEYS.has(key) && !key.startsWith("__"))
+      visit(value, [key]);
+  return found;
+}
+
 /** A Graph type name, such as an assignment target type, without the namespace, in lower case. */
 export const normalizeTargetType = (value: unknown) =>
   typeof value === "string"
@@ -582,8 +833,9 @@ const FILTER_MODES = ["include", "exclude"];
  * documented type (ASSIGNMENT_TARGET_FIELDS) with every field that says
  * what it targets, a filter type Graph documents (none, include or exclude,
  * or no filter at all) with the filter id of a filter that applies, and an
- * intent that is not empty. Such an assignment may target anyone, so its
- * policy's targeting is unknown and two snapshots of it are not compared.
+ * intent, where it has one, that is nonempty text. Such an assignment may
+ * target anyone, so its policy's targeting is unknown and two snapshots of
+ * it are not compared.
  */
 export function unreadableAssignment(entry: unknown): boolean {
   if (!isObject(entry) || !isObject(entry.target)) return true;
@@ -614,5 +866,10 @@ export function unreadableAssignment(entry: unknown): boolean {
       : filterType !== "none" && isIdentifier(filterId)
   )
     return true;
-  return entry.intent === "";
+  // An intent, where the assignment has one, is a documented name.
+  return (
+    entry.intent !== undefined &&
+    entry.intent !== null &&
+    !isIdentifier(entry.intent)
+  );
 }

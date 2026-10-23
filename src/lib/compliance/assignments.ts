@@ -153,6 +153,41 @@ const UNINSTALL_OVERRIDES: ReadonlySet<unknown> = new Set([
   "availableWithoutEnrollment",
 ]);
 
+// The app intents an exclusion is scoped to. An app is assigned per intent
+// (Required, Available, Available without enrollment, Uninstall), each with
+// its own included and excluded groups (Microsoft Learn, Assign apps to
+// groups), and Graph returns each exclusion as a mobileAppAssignment with
+// an exclusionGroupAssignmentTarget and the intent it was made under (lab
+// tenant, 23 October 2026: every app exclusion carried its intent), so it
+// takes the app away only from inclusions of that intent. A configuration
+// profile has one list of included and excluded groups (Microsoft Learn,
+// Assign device profiles); Graph documents deviceConfigAssignmentIntent
+// apply and remove without exclusions of their own, and returns no intent
+// on other families, so any other exclusion applies to every assignment of
+// the policy.
+const INTENT_SCOPED_EXCLUSIONS: ReadonlySet<unknown> = new Set([
+  "required",
+  "available",
+  "availableWithoutEnrollment",
+  "uninstall",
+]);
+
+// What an exclusion and the assignments it cancels share: the scope of its
+// intent (INTENT_SCOPED_EXCLUSIONS, otherwise the whole policy) and the
+// group (targetKey).
+const exclusionKey = (intent: unknown, key: string) =>
+  `${INTENT_SCOPED_EXCLUSIONS.has(intent) ? String(intent) : "*"}|${key}`;
+
+/**
+ * The label suffix of an exclusion scoped to an app intent, " (uninstall)",
+ * so no reader shows it as an exclusion from the whole app; empty for one
+ * that applies to every assignment. The documentation exports, the group
+ * resolver and the engine label exclusions this way; History labels every
+ * assignment with its intent already.
+ */
+export const exclusionScopeSuffix = (intent: unknown): string =>
+  INTENT_SCOPED_EXCLUSIONS.has(intent) ? ` (${String(intent)})` : "";
+
 /** A target a policy applies to after its exclusions and removals. */
 export interface EffectiveTarget {
   // The normalized target type (graph-rows.ts normalizeTargetType).
@@ -187,7 +222,7 @@ function targetKey(type: string, target: Record<string, unknown>): string {
 // What a removal must share with an applying assignment to take it away:
 // the target key, and for a scope tag target also whom in the group it
 // names, so removing the users of a group leaves its devices. Exclusions
-// match by the group alone (targetKey).
+// match by the group alone (targetKey) within their scope (exclusionKey).
 const removalKey = (
   type: string,
   target: Record<string, unknown>,
@@ -208,7 +243,10 @@ const BROAD_TARGETS: ReadonlySet<string> = new Set([
  * targets (labels), excludes, removes and filters, and the targets the
  * policy applies to. An exclusion takes precedence over an inclusion of the
  * same group (Microsoft Learn, Include and exclude app assignments and
- * Assign policies), so a group that is both targets nobody. A removal
+ * Assign policies), so a group that is both targets nobody; an app
+ * exclusion does so only within its intent (exclusionKey), before intent
+ * conflicts are resolved, so excluding a group from an Uninstall or
+ * Available assignment leaves its Required one. A removal
  * assignment (assignmentRole) targets nobody either: a remove intent takes
  * the profile away from what it names, so it is read like an exclusion of
  * the same target (Graph documents no precedence between apply and remove,
@@ -216,10 +254,13 @@ const BROAD_TARGETS: ReadonlySet<string> = new Set([
  * precedence over available intents of the same target, never over a
  * required one (Microsoft Learn conflict table). A remove of all users or
  * all devices may take the profile from every member of any other target,
- * and an uninstall of them from every available one, so those targets are
- * unresolved and the state unknown; required targets stay. Other targets
+ * and an uninstall of them from every available one not excluded from the
+ * uninstall, so those targets are unresolved and the state unknown;
+ * required targets stay. Other targets
  * that differ, such as two groups with common members, are not resolved:
- * memberships are not read, so effective coverage stays unverified.
+ * memberships are not read, so effective coverage stays unverified. An
+ * unknown state says why (uncertainty): assignments not fully collected or
+ * not readable, or a complete list whose targeting cannot be resolved.
  */
 export function resolveAssignments(
   assignments: unknown,
@@ -234,7 +275,8 @@ export function resolveAssignments(
     coverage: "unverified",
     effective: [],
   };
-  if (!Array.isArray(assignments)) return summary;
+  if (!Array.isArray(assignments))
+    return { ...summary, uncertainty: "incomplete" };
   let unknownTarget = false;
   const removals: string[] = [];
   const included: Array<{
@@ -244,11 +286,13 @@ export function resolveAssignments(
     id?: string;
     intent: unknown;
   }> = [];
-  const excludedGroups = new Set<string>();
-  const removed = new Set<string>();
-  const uninstalled = new Set<string>();
-  let broadRemove = false;
-  let broadUninstall = false;
+  const removalEntries: Array<{
+    key: string;
+    removal: string;
+    type: string;
+    intent: unknown;
+  }> = [];
+  const excluded = new Set<string>();
   for (const assignment of assignments) {
     // An assignment of a type Graph does not document, or without what its
     // type targets, its filter type, filter id or intent, may target anyone
@@ -300,19 +344,16 @@ export function resolveAssignments(
     const removal = removalKey(type, target, key);
     const role = assignmentRole(assignment.intent);
     if (type === "exclusiongroupassignmenttarget") {
+      label = `${label}${exclusionScopeSuffix(assignment.intent)}`;
       summary.exclusions.push(label);
-      excludedGroups.add(key);
+      excluded.add(exclusionKey(assignment.intent, key));
     } else if (role === "apply") {
       summary.targets.push(label);
       included.push({ key, removal, type, id, intent: assignment.intent });
     } else {
       label = `${removalPrefix(assignment.intent)}${label}`;
       removals.push(label);
-      (role === "remove" ? removed : uninstalled).add(removal);
-      if (BROAD_TARGETS.has(type)) {
-        if (role === "remove") broadRemove = true;
-        else broadUninstall = true;
-      }
+      removalEntries.push({ key, removal, type, intent: assignment.intent });
     }
     const filterId = target.deviceAndAppManagementAssignmentFilterId;
     const mode = target.deviceAndAppManagementAssignmentFilterType;
@@ -333,17 +374,43 @@ export function resolveAssignments(
     }
   }
   if (removals.length) summary.removals = removals;
+  // Exclusions first, each within its scope; then the removals that remain
+  // resolve intent conflicts with the inclusions that remain.
+  const isExcluded = (entry: { key: string; intent: unknown }) =>
+    excluded.has(exclusionKey(undefined, entry.key)) ||
+    excluded.has(exclusionKey(entry.intent, entry.key));
+  const removed = new Set<string>();
+  const uninstalled = new Set<string>();
+  let broadRemove = false;
+  let broadUninstall = false;
+  for (const entry of removalEntries) {
+    if (isExcluded(entry)) continue;
+    const remove = assignmentRole(entry.intent) === "remove";
+    (remove ? removed : uninstalled).add(entry.removal);
+    if (BROAD_TARGETS.has(entry.type)) {
+      if (remove) broadRemove = true;
+      else broadUninstall = true;
+    }
+  }
   const seen = new Set<string>();
   let unresolved = false;
   for (const entry of included) {
     const overridden = UNINSTALL_OVERRIDES.has(entry.intent);
     if (
-      excludedGroups.has(entry.key) ||
+      isExcluded(entry) ||
       removed.has(entry.removal) ||
       (overridden && uninstalled.has(entry.removal))
     )
       continue;
-    if (broadRemove || (broadUninstall && overridden)) {
+    // An uninstall of all users or all devices leaves an available target
+    // unresolved, unless the target is excluded from the uninstall: its
+    // members then get only the available intent.
+    if (
+      broadRemove ||
+      (broadUninstall &&
+        overridden &&
+        !excluded.has(exclusionKey("uninstall", entry.key)))
+    ) {
       unresolved = true;
       continue;
     }
@@ -361,6 +428,9 @@ export function resolveAssignments(
       : summary.effective.length
         ? "assigned"
         : "notAssigned";
+  if (summary.state === "unknown")
+    summary.uncertainty =
+      incomplete || unknownTarget ? "incomplete" : "unresolved";
   return summary;
 }
 
@@ -370,8 +440,15 @@ export function summarizeAssignments(
   groupNames: ReadonlyMap<string, string> = new Map(),
   incomplete = false,
 ): AssignmentSummary {
-  const { state, targets, exclusions, removals, filters, coverage } =
-    resolveAssignments(assignments, groupNames, incomplete);
+  const {
+    state,
+    targets,
+    exclusions,
+    removals,
+    filters,
+    coverage,
+    uncertainty,
+  } = resolveAssignments(assignments, groupNames, incomplete);
   return {
     state,
     targets,
@@ -379,8 +456,25 @@ export function summarizeAssignments(
     ...(removals ? { removals } : {}),
     filters,
     coverage,
+    ...(uncertainty ? { uncertainty } : {}),
   };
 }
+
+/** Why assignments read unknown, as every reader words it. */
+export const ASSIGNMENT_INCOMPLETE_TEXT =
+  "Assignment collection incomplete or unavailable";
+export const TARGETING_UNRESOLVED_TEXT =
+  "Effective targeting could not be resolved";
+
+/**
+ * The text of an unknown assignment state by its uncertainty: a summary
+ * without one (stored before it was recorded) reads as incomplete, as it
+ * did then.
+ */
+export const assignmentUncertaintyText = (assignment: AssignmentSummary) =>
+  assignment.uncertainty === "unresolved"
+    ? TARGETING_UNRESOLVED_TEXT
+    : ASSIGNMENT_INCOMPLETE_TEXT;
 
 export function assignmentDetails(assignment: AssignmentSummary): string[] {
   return [
@@ -391,7 +485,7 @@ export function assignmentDetails(assignment: AssignmentSummary): string[] {
       (filter) => `Filter ${filter.mode}: ${filter.id} (${filter.target})`,
     ),
     ...(assignment.state === "unknown"
-      ? ["Assignment collection incomplete or unavailable"]
+      ? [assignmentUncertaintyText(assignment)]
       : []),
   ];
 }

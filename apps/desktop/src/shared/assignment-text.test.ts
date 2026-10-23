@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ASSIGNMENT_UNREADABLE, NOT_ASSIGNED, assignmentNeedsReview, assignmentText } from "./assignment-text";
+import {
+  ASSIGNMENT_UNREADABLE,
+  ASSIGNMENT_UNRESOLVED,
+  NOT_ASSIGNED,
+  assignmentNeedsReview,
+  assignmentText,
+} from "./assignment-text";
 import type { AssignmentTargets } from "./ipc-types";
 
 const targets = (overrides: Partial<AssignmentTargets> = {}): AssignmentTargets => ({
@@ -17,6 +23,13 @@ describe("assignment line", () => {
     const text = assignmentText(targets({ assignmentUnknown: true, assignmentCount: 1 }));
     expect(text).toBe(ASSIGNMENT_UNREADABLE);
     expect(assignmentNeedsReview(text)).toBe(true);
+  });
+
+  it("says the targeting could not be resolved for a readable conflict", () => {
+    const text = assignmentText(targets({ assignmentUnknown: true, assignmentUnresolved: true }));
+    expect(text).toBe(ASSIGNMENT_UNRESOLVED);
+    expect(assignmentNeedsReview(text)).toBe(true);
+    expect(assignmentText(targets({ assignmentUnknown: false, assignmentUnresolved: true }))).toBe(NOT_ASSIGNED);
   });
 
   it("names Configuration Manager collections and organizational units", () => {

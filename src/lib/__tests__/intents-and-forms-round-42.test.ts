@@ -349,7 +349,7 @@ describe("round 42 finding 2: one rule for included and excluded groups", () => 
       summarizeAssignments([group(GROUP_A), exclusion(GROUP_A.toUpperCase())])
         .state,
     ).toBe("notAssigned");
-    // An exclusion applies whatever intent it carries.
+    // An exclusion applies within the intent it carries (round 43).
     expect(
       summarizeAssignments([
         group(GROUP_A, "required"),

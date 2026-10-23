@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assignmentTargets } from "./collect";
-import { ASSIGNMENT_UNREADABLE, NOT_ASSIGNED, assignmentText } from "../shared/assignment-text";
+import { ASSIGNMENT_UNRESOLVED, NOT_ASSIGNED, assignmentText } from "../shared/assignment-text";
 
 // Round 42: the desktop list and search count the targets a policy applies
 // to as the engine does (compliance/assignments.ts resolveAssignments).
@@ -46,13 +46,14 @@ describe("round 42: desktop assignment counts", () => {
   });
 
   it("leaves the targeting unknown beside a remove of all devices or an uninstall of all users", () => {
-    expect(text([group(GROUP_A, "apply"), allDevices("remove")])).toBe(ASSIGNMENT_UNREADABLE);
+    // A complete list with a conflict reads unresolved (round 43).
+    expect(text([group(GROUP_A, "apply"), allDevices("remove")])).toBe(ASSIGNMENT_UNRESOLVED);
     const allUsersUninstall = {
       id: "all-users-uninstall",
       intent: "uninstall",
       target: { "@odata.type": "#microsoft.graph.allLicensedUsersAssignmentTarget" },
     };
-    expect(text([group(GROUP_A, "available"), allUsersUninstall])).toBe(ASSIGNMENT_UNREADABLE);
+    expect(text([group(GROUP_A, "available"), allUsersUninstall])).toBe(ASSIGNMENT_UNRESOLVED);
     expect(text([group(GROUP_A, "required"), allUsersUninstall])).toBe("Assigned to 1 group");
     expect(text([allDevices("apply"), group(GROUP_A, "remove")])).toBe("Assigned to All devices");
   });

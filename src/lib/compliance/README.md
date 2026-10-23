@@ -27,13 +27,26 @@ HIPAA Security Rule (45 CFR Part 164, Subpart C).
    assigned policy. Different policies are not combined into a complete profile.
 4. **Assignment-aware.** Enforcing policies that are unassigned (or assigned
    via exclusions or removal intents only) yield `configuredNotAssigned`, not
-   `enforced`. A deviceConfigAssignmentIntent `remove` or an app `uninstall`
+   `enforced`. An app exclusion applies only within the intent Graph returns
+   it with (Required, Available, Available without enrollment or
+   Uninstall), before intent conflicts are resolved, so excluding a group
+   from an Uninstall assignment leaves its Required one. Any other exclusion,
+   including those of configuration profiles (one exclusion list per
+   profile; Graph documents no exclusions per apply or remove intent),
+   applies to every assignment of the policy.
+   A deviceConfigAssignmentIntent `remove` or an app `uninstall`
    targets nobody: a remove of a target is read like an exclusion of it, and
    an uninstall overrides an available intent of the same target, never a
    required one. A remove of all users or all devices leaves every other
-   target unresolved, and an uninstall of them every available target, so
-   the assignment state is unknown (`assignments.ts` resolveAssignments).
-   Failed or missing assignment reads yield `assignmentUnknown`. Filters and
+   target unresolved, and an uninstall of them every available target not
+   excluded from that uninstall, so the assignment state is unknown
+   (`assignments.ts` resolveAssignments). Exports label an app exclusion
+   with its intent, for example "Excluded: Group: Pilot (uninstall)".
+   Failed or missing assignment reads yield `assignmentUnknown`. An unknown
+   state keeps its reason (`uncertainty`): assignments not fully collected
+   or not readable read "Assignment collection incomplete or unavailable",
+   and a complete list with such a targeting conflict "Effective targeting
+   could not be resolved". Filters and
    exclusion targets are preserved, and effective coverage remains unverified.
 5. **No verdicts.** Output statuses are evidence statements
    (`evidenceFound` / `partialEvidence` / `noEvidence`), never "compliant".

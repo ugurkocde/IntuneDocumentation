@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { labCollectionSections } from "./__fixtures__/lab-collection";
-import { ASSIGNMENT_UNREADABLE, NOT_ASSIGNED, assignmentText } from "../shared/assignment-text";
+import { ASSIGNMENT_UNREADABLE, ASSIGNMENT_UNRESOLVED, NOT_ASSIGNED, assignmentText } from "../shared/assignment-text";
 
 const sections = labCollectionSections();
 
@@ -235,6 +235,51 @@ describe("assignment summary of listed policies", () => {
       expect(assignmentText(item!)).toBeNull();
     } finally {
       sections.pop();
+    }
+  });
+});
+
+// Round 43: app exclusions apply within their intent, and a readable
+// targeting conflict reads unresolved, in the policy list. Synthetic ids.
+describe("app assignments in the policy list", () => {
+  const GROUP = "0f0e0d0c-0000-4000-8000-00000000000a";
+  const row = (intent: string, target: Record<string, unknown>) => ({ id: `${intent}-${target["@odata.type"]}`, intent, target });
+  const group = (intent: string) => row(intent, { "@odata.type": "#microsoft.graph.groupAssignmentTarget", groupId: GROUP });
+  const excluded = (intent: string) =>
+    row(intent, { "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget", groupId: GROUP });
+  const allUsers = (intent: string) => row(intent, { "@odata.type": "#microsoft.graph.allLicensedUsersAssignmentTarget" });
+  const app = (id: string, assignments: unknown[]) => ({
+    id,
+    displayName: `Synthetic ${id}`,
+    registryKey: "mobileApps",
+    collectionStatus: { assignments: "complete" },
+    assignments,
+  });
+
+  it("reads exclusions by intent and says when targeting cannot be resolved", async () => {
+    const index = sections.findIndex((section: { key: string }) => section.key === "mobileApps");
+    const original = sections[index];
+    sections[index] = {
+      key: "mobileApps",
+      familyKey: "applications",
+      label: "Synthetic apps",
+      items: [
+        app("conflict", [group("available"), allUsers("uninstall")]),
+        app("required-kept", [group("required"), allUsers("uninstall"), excluded("uninstall")]),
+        app("available-kept", [excluded("uninstall"), group("available"), allUsers("uninstall")]),
+        app("required-excluded", [excluded("required"), group("required")]),
+      ],
+    } as never;
+    try {
+      await collectAll(async () => "token", () => undefined, { owner: "owner" });
+      const byId = new Map(getSectionItems("mobileApps", "owner").items.map((item) => [item.id, item]));
+      expect(byId.get("conflict")).toMatchObject({ assignmentUnknown: true, assignmentUnresolved: true });
+      expect(assignmentText(byId.get("conflict")!)).toBe(ASSIGNMENT_UNRESOLVED);
+      expect(assignmentText(byId.get("required-kept")!)).toBe("Assigned to 1 group");
+      expect(assignmentText(byId.get("available-kept")!)).toBe("Assigned to 1 group");
+      expect(assignmentText(byId.get("required-excluded")!)).toBe(NOT_ASSIGNED);
+    } finally {
+      sections[index] = original!;
     }
   });
 });

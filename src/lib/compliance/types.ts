@@ -197,6 +197,11 @@ export interface AssignmentSummary {
   removals?: string[];
   filters: Array<{ target: string; id: string; mode: string }>;
   coverage: "unverified";
+  // Why the state is unknown (assignments.ts resolveAssignments):
+  // assignments not fully collected or not readable ("incomplete"), or a
+  // complete, readable list whose targeting conflicts cannot be resolved
+  // without group memberships ("unresolved"). Absent otherwise.
+  uncertainty?: "incomplete" | "unresolved";
 }
 
 export interface CapabilityEvidence {

@@ -13,7 +13,7 @@ import {
   unreadableAssignment,
 } from "./compliance/graph-rows";
 import { UNREADABLE_ASSIGNMENT } from "./configuration-parser";
-import { removalPrefix } from "./compliance/assignments";
+import { exclusionScopeSuffix, removalPrefix } from "./compliance/assignments";
 
 export class GroupResolver {
   private client: Client;
@@ -151,7 +151,7 @@ export class GroupResolver {
       const type = normalizeTargetType(target["@odata.type"]);
       const group = () => groupNames.get(target.groupId) || target.groupId;
       if (type === "exclusiongroupassignmenttarget")
-        return `Excluded: ${group()}`;
+        return `Excluded: ${group()}${exclusionScopeSuffix((assignment as { intent?: unknown }).intent)}`;
       // A removal intent targets nobody, so it is labelled with it
       // (compliance/assignments.ts removalPrefix).
       const prefix = removalPrefix((assignment as { intent?: unknown }).intent);

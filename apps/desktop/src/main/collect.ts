@@ -189,7 +189,8 @@ function summarizeItem(
  * same targets. An assignment of an undocumented type, intent or without
  * what its type targets, or assignments that were not fully collected
  * (assignmentsIncomplete, as the engine reads it), leave the targeting
- * unknown rather than read as not assigned.
+ * unknown rather than read as not assigned; so does a complete list whose
+ * targeting conflicts cannot be resolved (assignmentUnresolved).
  */
 export function assignmentTargets(
   assignments: unknown[] | null,
@@ -206,6 +207,7 @@ export function assignmentTargets(
   if (!assignments) return targets;
   const resolved = resolveAssignments(assignments, undefined, incomplete);
   targets.assignmentUnknown = resolved.state === "unknown";
+  targets.assignmentUnresolved = resolved.uncertainty === "unresolved";
   targets.assignmentCount = 0;
   for (const { type } of resolved.effective) {
     if (type === "alllicensedusersassignmenttarget")

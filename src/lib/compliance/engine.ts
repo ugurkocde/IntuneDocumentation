@@ -382,6 +382,9 @@ function evaluateConfiguration(
         : ["disabled", "enabledForReportingButNotEnforced"].includes(ca.state)
           ? "notAssigned"
           : "unknown";
+    // A reason belongs to an unknown state only (summarizeAssignments).
+    if (assignment.state === "unknown") assignment.uncertainty = "incomplete";
+    else delete assignment.uncertainty;
     assignment.targets = [
       `Users: ${JSON.stringify(ca.conditions?.users ?? {})}`,
       `Applications: ${JSON.stringify(ca.conditions?.applications ?? {})}`,

@@ -112,6 +112,7 @@ export function buildSettingsIndex(
         platforms: platformLabels(summary.platforms, summary.odataType),
         assignmentCount: summary.assignmentCount,
         assignmentUnknown: summary.assignmentUnknown,
+        assignmentUnresolved: summary.assignmentUnresolved,
         assignedToAllUsers: summary.assignedToAllUsers,
         assignedToAllDevices: summary.assignedToAllDevices,
         assignedToCollections: summary.assignedToCollections,

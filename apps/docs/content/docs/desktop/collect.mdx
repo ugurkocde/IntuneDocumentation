@@ -149,7 +149,7 @@ Each item shows:
 - its name and description
 - platform and technology badges, such as Windows and MDM
 - when it was last modified
-- how it is assigned, for example "Assigned to 1 group", "All users", "All devices" or "Not assigned"
+- how it is assigned, for example "Assigned to 1 group", "All users", "All devices" or "Not assigned". When the assignments could not be read completely, it says <Ui>Assignment could not be read</Ui>. When they were read but conflict in a way that depends on group membership, for example an app available to a group and uninstalled for all users, it says <Ui>Effective targeting could not be resolved</Ui>. Neither is shown as not assigned.
 - a <Ui>Microsoft default</Ui> label for items Microsoft created
 
 Where Intune reports device status for a section, each policy row also shows a <Ui>Device status</Ui> line with Intune's counts for that policy: succeeded, error, conflict, not applicable and pending. A line above the section names the Intune report the counts come from and when they were read. A policy Intune reports nothing for shows <Ui>Device status: No status reported</Ui>, never zero devices. When the counts could not be collected, the line says so and why.

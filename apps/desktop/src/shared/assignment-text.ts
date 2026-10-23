@@ -2,6 +2,9 @@ import type { AssignmentTargets } from "./ipc-types";
 
 export const NOT_ASSIGNED = "Not assigned";
 export const ASSIGNMENT_UNREADABLE = "Assignment could not be read";
+// A complete, readable list whose targeting conflicts cannot be resolved
+// (compliance/assignments.ts TARGETING_UNRESOLVED_TEXT).
+export const ASSIGNMENT_UNRESOLVED = "Effective targeting could not be resolved";
 
 const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
 
@@ -11,7 +14,7 @@ const count = (value: number, one: string, many: string) => `${value} ${value ==
  */
 export function assignmentText(targets: AssignmentTargets): string | null {
   if (targets.assignmentCount === null) return null;
-  if (targets.assignmentUnknown) return ASSIGNMENT_UNREADABLE;
+  if (targets.assignmentUnknown) return targets.assignmentUnresolved ? ASSIGNMENT_UNRESOLVED : ASSIGNMENT_UNREADABLE;
   const parts: string[] = [];
   if (targets.assignedToAllUsers) parts.push("All users");
   if (targets.assignedToAllDevices) parts.push("All devices");
@@ -26,4 +29,5 @@ export function assignmentText(targets: AssignmentTargets): string | null {
 }
 
 /** Whether the assignment line needs the admin's attention. */
-export const assignmentNeedsReview = (text: string | null) => text === NOT_ASSIGNED || text === ASSIGNMENT_UNREADABLE;
+export const assignmentNeedsReview = (text: string | null) =>
+  text === NOT_ASSIGNED || text === ASSIGNMENT_UNREADABLE || text === ASSIGNMENT_UNRESOLVED;

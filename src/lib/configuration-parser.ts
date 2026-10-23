@@ -17,7 +17,7 @@ import {
   unreadablePresentationValue,
   shownOmaValue,
 } from "./compliance/graph-rows";
-import { removalPrefix } from "./compliance/assignments";
+import { exclusionScopeSuffix, removalPrefix } from "./compliance/assignments";
 
 /**
  * The value shown for an identified setting whose value Graph did not
@@ -880,7 +880,10 @@ function assignmentLabel(assignment: unknown): string {
   let label: string;
   if (type === "groupassignmenttarget") label = `Group: ${target.groupId}`;
   else if (type === "exclusiongroupassignmenttarget")
-    label = `Excluded: ${target.groupId}`;
+    // An app exclusion names its intent (compliance/assignments.ts
+    // exclusionScopeSuffix); the group id stays right after "Excluded: "
+    // so the exports put the group name in its place.
+    label = `Excluded: ${target.groupId}${exclusionScopeSuffix((assignment as { intent?: unknown }).intent)}`;
   else if (type === "alldevicesassignmenttarget") label = "All Devices";
   else if (type === "alllicensedusersassignmenttarget") label = "All Users";
   else if (type === "configurationmanagercollectionassignmenttarget")

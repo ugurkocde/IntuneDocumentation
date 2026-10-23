@@ -174,6 +174,11 @@ export interface AssignmentTargets {
   // its type targets, or assignments not fully collected: the targeting is
   // unknown, never "not assigned".
   assignmentUnknown: boolean;
+  // With assignmentUnknown: the assignments were read completely, but their
+  // targeting conflicts cannot be resolved without group memberships
+  // (compliance/assignments.ts uncertainty "unresolved"). Absent or false
+  // when the assignments could not be read.
+  assignmentUnresolved?: boolean;
   assignedToAllUsers: boolean;
   assignedToAllDevices: boolean;
   assignedToCollections: number;

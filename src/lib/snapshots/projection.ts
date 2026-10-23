@@ -11,6 +11,8 @@ import {
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
 import {
+  isIdentifier,
+  isKeyValuePair,
   METADATA_KEYS,
   normalizeTargetType,
   settingsLayout,
@@ -279,6 +281,26 @@ const POLICY_CHECK_FIELDS: Readonly<Record<string, readonly string[]>> = {
     "automaticUpdateMode",
   ],
 };
+
+// The registry section of reusable policy settings (intune-policy-registry.ts).
+const REUSABLE_SETTINGS = "reusablePolicySettings";
+
+// Families listed from a polymorphic Graph collection, which returns the
+// @odata.type of every item (deviceConfigurations, deviceCompliancePolicies
+// and deviceEnrollmentConfigurations, lab tenant, 23 October 2026). The
+// fields kept and the types they are read by follow that type, so an item
+// without a readable one is incomplete: its kept fields would read as
+// missing instead of unknown. Conditional Access is typed by its family
+// (graph-property-types.ts); Settings Catalog, intent and administrative
+// template rows carry their own identifiers; the app protection lists
+// return no type at all (lab tenant, 23 October 2026), so a missing one
+// there is how Graph returns them, not a gap.
+const TYPED_FAMILIES: ReadonlySet<string> = new Set([
+  "deviceConfigurations",
+  "compliancePolicies",
+  "windowsUpdatePolicies",
+  "enrollmentConfigurations",
+]);
 
 const APPLOCKER_NODE =
   /^\.\/Vendor\/MSFT\/AppLocker\/ApplicationLaunchRestrictions\/[^/]+\/(EXE|DLL|MSI|Script)\/(Policy|EnforcementMode)$/;
@@ -746,18 +768,23 @@ function projectSettings(
   }
   // Security baseline and endpoint security intents. Other layouts, such as
   // app configuration keys and values, are not kept.
-  // A value that is not kept is kept as null, which is unreadable too, so
-  // the restored row does not fall back to its JSON text.
+  // A value of another shape is kept as a list holding an empty record
+  // (keptValue), which no intent type reads, so it stays unreadable. Null
+  // with the JSON text "null" is a setting that is not configured, so an
+  // unreadable value is never kept as null.
   return layout === "intent"
-    ? asRecords(value).map((setting) => ({
-        ...pick(setting, ["@odata.type", "definitionId", "value", "valueJson"]),
-        ...(setting.value !== undefined &&
-        plainValue(setting.value) === undefined
-          ? { value: null }
-          : {}),
-        definitionId:
-          typeof setting.definitionId === "string" ? setting.definitionId : "",
-      }))
+    ? asRecords(value).map((setting) => {
+        const kept = keptValue(setting.value);
+        return {
+          ...pick(setting, ["@odata.type", "definitionId"]),
+          ...(kept !== undefined ? { value: kept } : {}),
+          ...pick(setting, ["valueJson"]),
+          definitionId:
+            typeof setting.definitionId === "string"
+              ? setting.definitionId
+              : "",
+        };
+      })
     : undefined;
 }
 
@@ -772,9 +799,15 @@ const asRecords = (value: unknown[]): Json[] =>
 // The name and value pairs of a list presentation are not kept: they are
 // stored as one redacted value and compared by fingerprint, under the
 // definition and presentation ids. Only a presentation typed as a list holds
-// pairs (graph-rows.ts); values of any other shape, or pairs on another
-// presentation type, are kept as null, so they read as unreadable instead
-// of as a list that is not stored.
+// pairs, each a name of text with a value of text or null
+// (graph-rows.ts isKeyValuePair). Values of any other shape, or a pair
+// without them, are kept as null, which a list reads as unreadable. Values
+// on a presentation type that holds one value are unreadable in any form
+// they are kept in (graph-rows.ts unreadablePresentationValue), so they
+// never read as a list that is not stored or as no values at all. The pairs
+// are a set of named values (the ADMX list element,
+// which Graph documents in no order), so the digest is taken of them sorted
+// and a reordered list is no change.
 function projectPresentationValues(
   type: unknown,
   values: unknown,
@@ -786,9 +819,12 @@ function projectPresentationValues(
     normalizeTargetType(type) === "grouppolicypresentationvaluelist" &&
     Array.isArray(values) &&
     values.length > 0 &&
-    values.every(isRecord)
+    values.every(isKeyValuePair)
   ) {
-    dropped?.(settingId, JSON.stringify(values));
+    const pairs = values
+      .map((pair) => JSON.stringify([pair.name, pair.value]))
+      .sort();
+    dropped?.(settingId, JSON.stringify(pairs));
     return [REDACTED_VALUE];
   }
   return plainValue(values) ?? null;
@@ -891,7 +927,9 @@ function projectScheduledActions(value: unknown): Json[] | undefined {
   }));
 }
 
-// The name of the setting a nested record belongs to.
+// The setting a nested record belongs to, by its stable id where it has
+// one, so a renamed label never moves its fingerprint: a presentation is
+// named by its id, its label only when Graph returned no id.
 function settingName(record: Json): string | undefined {
   const presentation = isRecord(record.presentation)
     ? record.presentation
@@ -900,8 +938,8 @@ function settingName(record: Json): string | undefined {
     text(record.settingDefinitionId) ??
     text(record.omaUri) ??
     text(record.appConfigKey) ??
-    text(presentation?.label) ??
     text(presentation?.id) ??
+    text(presentation?.label) ??
     text(record.name)
   );
 }
@@ -982,6 +1020,13 @@ function projectItem(
   };
   const settings = projectSettings(raw.settings, section.familyKey, dropped);
   if (settings) data.settings = settings;
+  // A reusable policy setting holds one Settings Catalog instance, kept with
+  // the same checks as a policy's settings. An instance of another shape is
+  // kept as an empty one, which has no definition id (graph-rows.ts).
+  const reusable = section.key === REUSABLE_SETTINGS;
+  if (reusable && raw.settingInstance != null)
+    data.settingInstance =
+      projectInstance(raw.settingInstance, 0, dropped) ?? {};
   // Categories or category settings Graph returned as another shape than a
   // list are kept as a list holding a row without its identifier, so they
   // read as unknown (graph-rows.ts) instead of as holding no setting.
@@ -1045,7 +1090,12 @@ function projectItem(
     (definitionValues ?? []).some(
       (row) => row.presentationFetchError === true,
     ) ||
-    itemErrors.has(id);
+    itemErrors.has(id) ||
+    // The content of a reusable setting Graph did not return is unknown,
+    // never no setting.
+    (reusable && !isRecord(raw.settingInstance)) ||
+    (TYPED_FAMILIES.has(section.familyKey) &&
+      !isIdentifier(raw["@odata.type"]));
   return {
     id,
     data,

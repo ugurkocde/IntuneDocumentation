@@ -224,6 +224,18 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     family: "assignmentAndRbac",
     path: "/deviceManagement/reusablePolicySettings",
     permissionHint: "DeviceManagementConfiguration.Read.All",
+    // Graph returns settingInstance and version only when they are selected,
+    // on the list and on GET by id alike (lab tenant, 23 October 2026), so
+    // the list selects them and no request per item is needed.
+    select: [
+      "id",
+      "displayName",
+      "description",
+      "settingDefinitionId",
+      "settingInstance",
+      "version",
+      "lastModifiedDateTime",
+    ],
   },
   {
     key: "roleScopeTags",

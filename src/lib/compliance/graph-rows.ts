@@ -13,6 +13,7 @@ import {
   FAMILY_RESOURCE_TYPES,
   GRAPH_PROPERTY_TYPES,
   ITEM_PROPERTY_TYPES,
+  type GraphTypeName,
 } from "./graph-property-types";
 
 /** An identifier Graph returned: a nonempty string. An empty one names nothing. */
@@ -31,6 +32,62 @@ const isBoolean = (value: unknown) => typeof value === "boolean";
 // A JSON number holds a Graph Int64 exactly only as a safe integer.
 const isUnsigned = (value: unknown) =>
   Number.isSafeInteger(value) && (value as number) >= 0;
+
+/** A TimeOfDay value as Graph returns it, for example "02:00:00.0000000". */
+export const isTimeOfDay = (value: unknown): boolean =>
+  typeof value === "string" &&
+  /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?$/.test(value);
+
+// An Edm.Date ("2026-10-23") that names a day of the calendar.
+const isDate = (value: unknown) =>
+  typeof value === "string" &&
+  /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value) &&
+  new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
+
+// An Edm.DateTimeOffset in the ISO 8601 form Graph returns
+// ("2026-10-23T09:00:00Z", fractional seconds and an offset allowed).
+const isDateTimeOffset = (value: unknown) =>
+  typeof value === "string" &&
+  isDate(value.slice(0, 10)) &&
+  /^.{10}T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/.test(
+    value,
+  );
+
+// An Edm.Duration in the ISO 8601 form Graph returns ("PT1H", "P1D",
+// "PT0.5S"), with at least one component.
+const isDuration = (value: unknown) =>
+  typeof value === "string" &&
+  /^-?P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/.test(
+    value,
+  );
+
+const isGuid = (value: unknown) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+// An Edm.Binary as JSON carries it: base64url text (OData JSON format),
+// padded or not, or the base64 text Graph returns for some properties.
+const isBinary = (value: unknown) => {
+  if (typeof value !== "string") return false;
+  const body = value.replace(/={1,2}$/, "");
+  const padded = body.length !== value.length;
+  return (
+    (/^[A-Za-z0-9+/]*$/.test(body) || /^[A-Za-z0-9_-]*$/.test(body)) &&
+    (padded ? value.length % 4 === 0 : body.length % 4 !== 1)
+  );
+};
+
+/**
+ * A name and value pair of an administrative template list presentation.
+ * keyValuePair types both as String (msgraph skill schema and Graph beta
+ * reference, 23 October 2026). Neither marks value as required, and an
+ * OData property is nullable unless $metadata says Nullable="false", so a
+ * null value is a documented value. The name names the pair.
+ */
+export const isKeyValuePair = (pair: unknown): boolean =>
+  isObject(pair) &&
+  isString(pair.name) &&
+  (isString(pair.value) || pair.value === null);
 
 // The documented type of the value of every typed Graph record a setting
 // value is read from, by normalized @odata.type (Graph beta reference on
@@ -176,14 +233,19 @@ const parsedJson = (text: unknown): { value: unknown } | null => {
  * integer or string instance holds a value of its documented type, or null
  * with the JSON text "null" for a setting that is not configured (lab
  * tenant, 23 October 2026); without a value its JSON text is read, as the
- * engine does. A collection or complex instance holds JSON text. A row of
- * another or no type is unreadable; a redacted value is not stored.
+ * engine does. A collection or complex instance holds JSON text and no
+ * value, so a value beside it is unreadable. A row of another or no type is
+ * unreadable; a redacted value is not stored.
  */
 export function unreadableIntentValue(row: unknown): boolean {
   if (!isObject(row)) return true;
   if (redacted(row.value)) return false;
   const type = normalizeTargetType(row["@odata.type"]);
   if (JSON_INTENT_TYPES.has(type)) {
+    // These types document no value property, only valueJson. A value
+    // beside it would be read instead of the JSON text (configuration
+    // parser), so a stray one is unreadable.
+    if (row.value !== undefined && row.value !== null) return true;
     const parsed = parsedJson(row.valueJson);
     // A collection holds a JSON list, or null when it is not configured.
     return (
@@ -206,20 +268,27 @@ const LIST = "grouppolicypresentationvaluelist";
 /**
  * Whether an administrative template presentation value has no value of
  * its documented type: a boolean, a decimal, a long decimal or text, a list
- * of text lines, or a list of name and value pairs, which may be empty (the
- * snapshot projection keeps pairs as one redacted value, compared by
- * fingerprint). A list presentation without its list, as in snapshots
- * saved before the pairs were fingerprinted, is unreadable: its pairs are
- * unknown. A redacted value is not stored.
+ * of text lines, or a list of name and value pairs (isKeyValuePair), which
+ * may be empty (the snapshot projection keeps pairs as one redacted value,
+ * compared by fingerprint, only when every pair is one). A list
+ * presentation without its list, as in snapshots saved before the pairs
+ * were fingerprinted, is unreadable: its pairs are unknown. The other types
+ * hold one value and no values property (msgraph skill schemas of the
+ * groupPolicyPresentationValue types, 23 October 2026), so values on them
+ * in any form, null
+ * included (the projection keeps a list of another shape as null), are
+ * unreadable. A redacted value is not stored.
  */
 export function unreadablePresentationValue(entry: unknown): boolean {
   if (!isObject(entry)) return true;
-  if (redacted(entry.value) || redacted(entry.values)) return false;
   const type = normalizeTargetType(entry["@odata.type"]);
+  const listed = type === MULTI_TEXT || type === LIST;
+  if (!listed && entry.values !== undefined) return true;
+  if (redacted(entry.value) || redacted(entry.values)) return false;
   if (type === MULTI_TEXT)
     return unreadableEntries(entry.values, (line) => typeof line !== "string");
   if (type === LIST)
-    return unreadableEntries(entry.values, (pair) => !isObject(pair));
+    return unreadableEntries(entry.values, (pair) => !isKeyValuePair(pair));
   return !documentedValue(type, entry.value);
 }
 
@@ -479,6 +548,14 @@ export function unidentifiedSources(
     else if (layout === "intent" && rows.some(unidentifiedIntentRow))
       found.add("securityBaseline");
   }
+  // Reusable policy settings hold one instance; one Graph returned as
+  // another value than a record holds an unknown setting too.
+  if (
+    config.settingInstance !== undefined &&
+    config.settingInstance !== null &&
+    unidentifiedInstance(config.settingInstance)
+  )
+    found.add("settingsCatalog");
   if (list(config.omaSettings).some(unidentifiedOmaRow)) found.add("omaUri");
   if (list(config.definitionValues).some(unidentifiedDefinitionValue))
     found.add("administrativeTemplate");
@@ -596,19 +673,27 @@ const ROW_KEYS: ReadonlySet<string> = new Set([
   "scheduledActionsForRule",
 ]);
 
-const EDM_TYPES: Readonly<Record<string, (value: unknown) => boolean>> = {
-  Boolean: isBoolean,
-  Int32: isInt32,
-  Int64: (value) => Number.isSafeInteger(value),
-  Double: (value) => typeof value === "number" && Number.isFinite(value),
-  String: isString,
-  Duration: isString,
-  TimeOfDay: isString,
-  DateTimeOffset: isString,
-};
+// Every Edm primitive by its syntax, so text that is no value of its type
+// is unreadable (Graph beta $metadata, OData JSON format).
+export const EDM_TYPES: Readonly<Record<string, (value: unknown) => boolean>> =
+  {
+    Boolean: isBoolean,
+    Int32: isInt32,
+    Int64: (value) => Number.isSafeInteger(value),
+    Double: (value) => typeof value === "number" && Number.isFinite(value),
+    String: isString,
+    Duration: isDuration,
+    TimeOfDay: isTimeOfDay,
+    Date: isDate,
+    DateTimeOffset: isDateTimeOffset,
+    Guid: isGuid,
+    Binary: isBinary,
+  };
 
 // Enum types whose members documented-values.ts lists, by Graph enum type.
-const ENUM_MEMBERS: Readonly<Record<string, DocumentedField>> = {
+// Every enum type graph-property-types.ts uses is listed: a type without
+// members reads no value (graph-property-types.test.ts).
+export const ENUM_MEMBERS: Readonly<Record<string, DocumentedField>> = {
   automaticUpdateMode: "automaticUpdateMode",
   defenderScanType: "defenderScanType",
   weeklySchedule: "weeklySchedule",
@@ -624,16 +709,35 @@ const ENUM_MEMBERS: Readonly<Record<string, DocumentedField>> = {
   conditionalAccessGrantControl: "conditionalAccessGrantControl",
   authenticationStrengthRequirements: "authenticationStrengthRequirements",
   authenticationMethodModes: "authenticationMethodModes",
+  conditionalAccessPolicyState: "conditionalAccessPolicyState",
+  riskLevel: "riskLevel",
+  conditionalAccessInsiderRiskLevels: "conditionalAccessInsiderRiskLevels",
+  conditionalAccessAgentIdRiskLevels: "conditionalAccessAgentIdRiskLevels",
+  conditionalAccessClientApp: "conditionalAccessClientApp",
+  conditionalAccessDevicePlatform: "conditionalAccessDevicePlatform",
+  conditionalAccessGuestOrExternalUserTypes:
+    "conditionalAccessGuestOrExternalUserTypes",
+  conditionalAccessExternalTenantsMembershipKind:
+    "conditionalAccessExternalTenantsMembershipKind",
+  filterMode: "filterMode",
+  conditionalAccessTransferMethods: "conditionalAccessTransferMethods",
+  authenticationStrengthPolicyType: "authenticationStrengthPolicyType",
+  runAsAccountType: "runAsAccountType",
 };
 
-// Flags enums hold several members, comma separated ("password,sms").
-const FLAGS_ENUMS: ReadonlySet<string> = new Set([
+// Flags enums hold several members, comma separated ("password,sms"), in no
+// order (IsFlags in the Graph beta $metadata).
+export const FLAGS_ENUMS: ReadonlySet<string> = new Set([
   "authenticationMethodModes",
   "authenticationStrengthRequirements",
+  "conditionalAccessInsiderRiskLevels",
+  "conditionalAccessAgentIdRiskLevels",
+  "conditionalAccessGuestOrExternalUserTypes",
+  "conditionalAccessTransferMethods",
 ]);
 
 // A primitive, or a list of primitives of one type: the values the
-// projection keeps of a property whose type Graph does not document.
+// projection keeps of a property no table types.
 const plainValue = (value: unknown) => {
   const kind = (entry: unknown) =>
     ["string", "number", "boolean"].includes(typeof entry) ? typeof entry : "";
@@ -645,11 +749,13 @@ const plainValue = (value: unknown) => {
 
 /**
  * Whether a value has its documented Graph type, by type name
- * (graph-property-types.ts): a Boolean is a boolean, an Int32 an integer in
- * range, a collection a list of values of its element type, and an enum a
- * member Graph documents (any member when documented-values.ts lists none),
- * never the evolvable enum sentinel unknownFutureValue. An Untyped value is
- * a primitive or a list of primitives of one type.
+ * (graph-property-types.ts): every Edm primitive by its syntax (EDM_TYPES),
+ * a collection as a list of values of its element type, and an enum as
+ * members Graph documents (ENUM_MEMBERS), never the evolvable enum sentinel
+ * unknownFutureValue. A type with no validator reads no value, so nothing
+ * falls back to accepting any text. An Untyped property, one Graph does not
+ * document, reads only as an empty list: its other values are of a type no
+ * one documents.
  */
 export function documentedPropertyValue(type: string, value: unknown): boolean {
   const collection = /^Collection\((.+)\)$/.exec(type);
@@ -661,17 +767,27 @@ export function documentedPropertyValue(type: string, value: unknown): boolean {
           entry !== null && documentedPropertyValue(collection[1]!, entry),
       )
     );
-  if (type === "Untyped") return plainValue(value);
+  if (type === "Untyped") return Array.isArray(value) && value.length === 0;
   if (Object.hasOwn(EDM_TYPES, type)) return EDM_TYPES[type]!(value);
-  if (typeof value !== "string") return false;
-  const members = Object.hasOwn(ENUM_MEMBERS, type)
-    ? ENUM_MEMBERS[type]
-    : undefined;
+  if (!Object.hasOwn(ENUM_MEMBERS, type) || typeof value !== "string")
+    return false;
+  const members = ENUM_MEMBERS[type]!;
   return (FLAGS_ENUMS.has(type) ? value.split(",") : [value]).every(
     (member) =>
       member !== "" &&
       member !== "unknownFutureValue" &&
-      (!members || isDocumented(members, member)),
+      isDocumented(members, member),
+  );
+}
+
+/** Whether every type name the table uses has a strict validator. */
+export function hasValidator(type: string): boolean {
+  const collection = /^Collection\((.+)\)$/.exec(type);
+  if (collection) return hasValidator(collection[1]!);
+  return (
+    type === "Untyped" ||
+    Object.hasOwn(EDM_TYPES, type) ||
+    Object.hasOwn(ENUM_MEMBERS, type)
   );
 }
 
@@ -685,10 +801,34 @@ export interface UnreadableProperty {
 }
 
 /**
+ * The documented property types of an item by path
+ * (graph-property-types.ts): the item keys and those of its resource type,
+ * named by its @odata.type or, for families Graph returns without one, by
+ * its family.
+ */
+export function propertyTypes(
+  config: Record<string, unknown>,
+  family: unknown = config.__evidenceFamily,
+): Record<string, GraphTypeName> {
+  const resource =
+    normalizeTargetType(config["@odata.type"]) ||
+    (typeof family === "string" && Object.hasOwn(FAMILY_RESOURCE_TYPES, family)
+      ? FAMILY_RESOURCE_TYPES[family]!
+      : "");
+  return {
+    ...ITEM_PROPERTY_TYPES,
+    ...(Object.hasOwn(GRAPH_PROPERTY_TYPES, resource)
+      ? GRAPH_PROPERTY_TYPES[resource]
+      : {}),
+  };
+}
+
+/**
  * The plain properties of an item whose value contradicts its documented
  * Graph type (graph-property-types.ts): a typed property of another type,
  * out of range or an undocumented enum member, a record Graph documents
- * holding no record, or an untyped property holding no plain value. A
+ * holding no record, or an untyped property holding anything but an empty
+ * list (documentedPropertyValue). A
  * property of a type the table does not know is unreadable only as a list
  * of primitives of different types, which no Graph type is. Null is a
  * value: Graph returns it for a property that is not configured. Setting
@@ -698,17 +838,7 @@ export function unreadableProperties(
   config: Record<string, unknown>,
   family: unknown = config.__evidenceFamily,
 ): UnreadableProperty[] {
-  const resource =
-    normalizeTargetType(config["@odata.type"]) ||
-    (typeof family === "string" && Object.hasOwn(FAMILY_RESOURCE_TYPES, family)
-      ? FAMILY_RESOURCE_TYPES[family]!
-      : "");
-  const types: Record<string, string> = {
-    ...ITEM_PROPERTY_TYPES,
-    ...(Object.hasOwn(GRAPH_PROPERTY_TYPES, resource)
-      ? GRAPH_PROPERTY_TYPES[resource]
-      : {}),
-  };
+  const types = propertyTypes(config, family);
   // Paths Graph documents as records: the parents of typed paths.
   const records = new Set(
     Object.keys(types).flatMap((path) =>

@@ -17,6 +17,7 @@ import {
   IDENTITY_POLICY_LABELS,
   type IdentityPolicyName,
 } from "./identity";
+import { inComparisonOrder } from "./order";
 import {
   omittedFields,
   snapshotItemLabel,
@@ -72,6 +73,12 @@ export interface ReferenceSetting {
   value?: string;
   // SHA-256 of the full value when value was shortened.
   sha256?: string;
+  // SHA-256 of the value as Graph returned it when value shows it by name
+  // (settings-flatten.ts token): the option ids of a Settings Catalog
+  // choice, or an administrative template value by presentation id. It is
+  // compared instead of value, so a renamed option or label is no
+  // difference; value is display only.
+  token?: string;
   // SHA-256 of the group instance the setting is part of (its sibling and
   // child settings with their values), for settings inside a Settings
   // Catalog group such as one firewall rule.
@@ -216,7 +223,9 @@ function itemRows(
   item: SnapshotItem,
 ): ReferenceSetting[] {
   const { key: sectionKey, label: sectionLabel } = section;
-  const data = markSecrets(item.data) as Json;
+  // Collections whose order Graph gives no meaning are compared as
+  // multisets (order.ts).
+  const data = inComparisonOrder(section.familyKey, markSecrets(item.data) as Json);
   const platform = platformOf(data);
   const catalog = isCatalog(data);
   const policy = snapshotItemLabel({ label: sectionLabel }, item);
@@ -245,10 +254,13 @@ function itemRows(
       policy,
     };
     if (redacted) entry.redacted = true;
-    else if (row.value.length > REFERENCE_MAX_VALUE) {
-      entry.value = `${row.value.slice(0, REFERENCE_MAX_VALUE)}...`;
-      entry.sha256 = digest(row.value);
-    } else entry.value = row.value;
+    else {
+      if (row.value.length > REFERENCE_MAX_VALUE) {
+        entry.value = `${row.value.slice(0, REFERENCE_MAX_VALUE)}...`;
+        entry.sha256 = digest(row.value);
+      } else entry.value = row.value;
+      if (row.token !== undefined) entry.token = digest(row.token);
+    }
     return entry;
   });
   if (catalog) groupInstances(rows);
@@ -281,7 +293,7 @@ function groupInstances(rows: ReferenceSetting[]): void {
     if (!row.path?.length) continue;
     const key = row.path.join(SEPARATOR);
     const list = members.get(key) ?? [];
-    list.push([row.setting, row.redacted ? REDACTED : (row.sha256 ?? row.value ?? "")].join(SEPARATOR));
+    list.push([row.setting, row.redacted ? REDACTED : (row.token ?? row.sha256 ?? row.value ?? "")].join(SEPARATOR));
     members.set(key, list);
   }
   // Sorted, the paths below a path follow it directly, so each instance
@@ -451,6 +463,7 @@ const SETTING_KEYS = new Set([
   "path",
   "value",
   "sha256",
+  "token",
   "redacted",
   "group",
   "policy",
@@ -515,9 +528,15 @@ function isSetting(value: unknown): value is ReferenceSetting {
     return (
       value.redacted === true &&
       value.value === undefined &&
-      value.sha256 === undefined
+      value.sha256 === undefined &&
+      value.token === undefined
     );
   }
+  if (
+    value.token !== undefined &&
+    !(typeof value.token === "string" && HEX_64.test(value.token))
+  )
+    return false;
   if (!isText(value.value, REFERENCE_MAX_VALUE + 3)) return false;
   // A digest belongs to a shortened value and every longer value is
   // shortened, exactly as createReference writes them.
@@ -633,11 +652,15 @@ export function referenceSettings(file: ReferenceFile): SettingSet {
 
 // --- Value tokens -------------------------------------------------------------
 
-// Equality token of one value. Long values are shortened with a digest of
-// the full value, so the digest is what is compared.
+// Equality token of one value: the digest of the value as Graph returned it
+// where value shows it by name, otherwise of the value. Long values are
+// shortened with a digest of the full value, so the digest is what is
+// compared. Where a setting has a token, the token decides: value is only
+// shown, so a value edited in a reference file (and its checksum
+// recomputed) changes what Compare displays, never whether it matches.
 function token(setting: ReferenceSetting): string | null {
   if (setting.redacted || setting.value === undefined) return null;
-  return setting.sha256 ?? digest(setting.value);
+  return setting.token ?? setting.sha256 ?? digest(setting.value);
 }
 
 // The id a setting is compared under. An administrative template value is
@@ -862,12 +885,9 @@ function statusOf(
   if (all.some((setting) => token(setting) === null)) return { status: "notComparable" };
   if (!actual?.length) return { status: "missing" };
   if (!expected?.length) return { status: "extra" };
-  // A Settings Catalog choice shows as the name of its option, or as the
-  // option id, which starts with the setting id, when Graph did not return
-  // the setting definition (settings-flatten.ts). Names on one side and ids
-  // on the other may be the same choice, so they are not compared.
-  const byId = all.filter((setting) => setting.value?.startsWith(`${setting.setting}_`)).length;
-  if (byId && byId < all.length) return { status: "notComparable" };
+  // A Settings Catalog choice is compared by its option id (token), so it
+  // is the same choice whether Graph returned the option names with it or
+  // not.
   const a = new Set(expected.map(token));
   const b = new Set(actual.map(token));
   if (a.size !== b.size || ![...a].every((value) => b.has(value))) return { status: "different" };

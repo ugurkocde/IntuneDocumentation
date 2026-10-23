@@ -41,7 +41,9 @@ export interface FlatSettingRow {
   identity?: string[];
   /**
    * The value as Graph returned it, when value shows it by name: the option
-   * ids of a Settings Catalog choice. History compares it instead of value.
+   * ids of a Settings Catalog choice, or the state and the values by
+   * presentation id of an administrative template value. History and
+   * Compare compare it instead of value, which is display only.
    */
   token?: string;
   category?: string;
@@ -366,16 +368,30 @@ function administrativeTemplateRows(
     : [];
   const parsed = parseAdministrativeTemplate(values);
   return parsed.map((setting, index) => {
-    const definition = (
-      values[index] as { definition?: Record<string, unknown> }
-    )?.definition;
+    const raw = values[index] as Record<string, any> | undefined;
+    const definition = raw?.definition as Record<string, unknown> | undefined;
     const definitionId = definitionIdOf(definition?.id);
+    // What is compared: the state and each presentation's value by the
+    // presentation id, never its label. Presentations are told apart by
+    // their ids, so their order is no change.
+    const presentations = (
+      Array.isArray(raw?.presentationValues) ? raw.presentationValues : []
+    )
+      .map((entry: any) =>
+        JSON.stringify([
+          entry?.presentation?.id ?? null,
+          entry?.value ?? null,
+          entry?.values ?? null,
+        ]),
+      )
+      .sort();
     return {
       name: setting.name,
       value:
         setting.value === NOT_CONFIGURED
           ? setting.state
           : `${setting.state}: ${setting.value}`,
+      token: JSON.stringify([raw?.enabled ?? null, presentations]),
       ...(definitionId ? { definitionId } : {}),
       path:
         setting.category && setting.category !== "General"

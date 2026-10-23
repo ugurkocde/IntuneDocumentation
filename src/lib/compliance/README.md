@@ -779,3 +779,35 @@ the desktop snapshot index drop it on read, so History, Compare and Portfolio
 never show or count it. A stored framework selection naming it falls back to
 the picker, a request naming it is refused as an unknown framework, and a
 management baseline file for it is rejected as another framework.
+
+## How Compare and History read values
+
+These rules change what Compare and History read. They do not change
+assessments, so the ruleset version stays the same.
+
+- **Strict types.** Every type in `graph-property-types.ts` has a strict
+  check in `graph-rows.ts`. Edm primitives are read by their syntax
+  (TimeOfDay, Duration, Date, DateTimeOffset, Guid, Binary, Int32, Int64,
+  Double). Each enum is read against the members listed in
+  `documented-values.ts`. No type accepts every value: a property Graph
+  does not document reads only as an empty list. A template list pair is a
+  text name with a text or null value. A list on a presentation that holds
+  one value, or a value on a JSON intent type, is unreadable.
+- **Raw values first.** The projection checks a value as Graph returned it
+  before it changes it. An unreadable value is kept in a form that stays
+  unreadable, never as null, `[Redacted]`, a fingerprint or a missing
+  property. Device configuration, compliance, Windows Update and enrollment
+  configuration items come from lists that type every item, so an item
+  without a readable `@odata.type` is incomplete.
+- **Reusable policy settings.** The list selects `settingInstance`, which
+  Graph returns only when it is selected. That instance is stored and
+  compared like Settings Catalog settings. An item without it is incomplete
+  and is not compared.
+- **Ids decide.** Choices compare by option id and template values by
+  presentation id (`token` in `settings-flatten.ts` and in reference files).
+  Names and labels are for display only.
+- **Order.** Conditional Access collections, flags members and template
+  list pairs are compared as multisets. Settings Catalog value collections
+  and multi-text lines keep their order (`snapshots/order.ts`). History
+  compares fingerprints of values that are not stored as a multiset for
+  each setting, so inserting an entry does not renumber the others.

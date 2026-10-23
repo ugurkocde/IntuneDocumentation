@@ -218,6 +218,11 @@ describe("flattenItemSettings", () => {
       {
         name: "Configure a policy",
         value: "Enabled: Policy value: Configured value",
+        // Compared by the presentation id, never its label.
+        token: JSON.stringify([
+          true,
+          [JSON.stringify(["presentation-1", "Configured value", null])],
+        ]),
         definitionId: "9c628cf0-6e74-4db6-9dcb-5b6e0e243d61",
         path: ["Windows Components", "BitLocker"],
         // Named by its definition id; the category is display only.

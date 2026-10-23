@@ -147,7 +147,8 @@ export const GRAPH_PROPERTY_TYPES: Readonly<
     // Kept while Graph returns them, which it does not document: times is
     // deprecated, agents and includeAgentActions are not in the reference
     // (the lab tenant returns null and an empty list). Their type is
-    // unknown, so they are read only as a plausible plain value.
+    // unknown, so only null and an empty list are read; any other value is
+    // unreadable (graph-rows.ts documentedPropertyValue).
     "conditions.times": "Untyped",
     "conditions.agents": "Untyped",
     "conditions.applications.includeAgentActions": "Untyped",

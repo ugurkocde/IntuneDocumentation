@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { documentedPropertyValue } from "../compliance/graph-rows";
+import { DOCUMENTED_VALUES } from "../compliance/documented-values";
+import {
+  documentedPropertyValue,
+  EDM_TYPES,
+  ENUM_MEMBERS,
+  hasValidator,
+} from "../compliance/graph-rows";
 import {
   GRAPH_PROPERTY_TYPES,
   ITEM_PROPERTY_TYPES,
@@ -38,5 +44,83 @@ describe("graph property types", () => {
         ).toBe(false);
         expect(type, path).toMatch(/^(Collection\()?[A-Za-z0-9]+\)?$/);
       }
+  });
+
+  // Round 33: no type falls back to accepting any value. Every type name
+  // the table uses has a strict validator (an Edm syntax or the members
+  // Graph documents), and only String reads arbitrary text.
+  it("has a strict validator for every type name the table uses", () => {
+    const names = new Set(
+      [ITEM_PROPERTY_TYPES, ...Object.values(GRAPH_PROPERTY_TYPES)].flatMap(
+        (table) => Object.values(table),
+      ),
+    );
+    const missing = [...names].filter((type) => !hasValidator(type));
+    expect(missing).toEqual([]);
+    for (const type of names) {
+      if (type === "String") continue;
+      for (const value of ["garbage", "", "unknownFutureValue", 1.5])
+        expect(documentedPropertyValue(type, value), `${type}: ${value}`).toBe(
+          false,
+        );
+    }
+    // Each enum's members come from documented-values.ts.
+    for (const [type, field] of Object.entries(ENUM_MEMBERS))
+      expect(Object.hasOwn(DOCUMENTED_VALUES, field), type).toBe(true);
+  });
+
+  it("reads every Edm primitive by its syntax", () => {
+    const cases: Record<string, [unknown[], unknown[]]> = {
+      TimeOfDay: [
+        ["02:00:00", "02:00:00.0000000", "23:59:59.5"],
+        ["garbage", "24:00:00", "2:00:00", "02:00", 7200],
+      ],
+      Duration: [
+        ["PT1H", "P1D", "PT0.5S", "P1Y2M3DT4H5M6S", "PT0S", "-PT1M"],
+        ["garbage", "P", "PT", "P1DT", "1H", 3600],
+      ],
+      Date: [
+        ["2026-10-23", "2024-02-29"],
+        ["2026-02-30", "2026-13-01", "20261023", "2026-10-23T00:00:00Z"],
+      ],
+      DateTimeOffset: [
+        [
+          "2026-10-23T09:00:00Z",
+          "2026-10-23T09:00:00.1234567+02:00",
+          "2026-10-23T09:00Z",
+        ],
+        [
+          "garbage",
+          "2026-10-23",
+          "2026-10-23T25:00:00Z",
+          "2026-02-30T09:00:00Z",
+        ],
+      ],
+      Guid: [
+        ["00000000-0000-0000-0000-000000000001"],
+        ["garbage", "00000000-0000-0000-0000-00000000000g"],
+      ],
+      Binary: [
+        // base64 and base64url, padded or not.
+        ["", "c3ludGhldGlj", "c3ludA==", "c3ludA", "-_8", "a+/="],
+        ["garbage!", "a", "abcde", "ab=", "a+b_", "c3ludA==="],
+      ],
+      Int64: [
+        [0, -5, 2 ** 40],
+        [1.5, "1", 2 ** 60],
+      ],
+      Double: [
+        [0, 1.5, -2],
+        [Number.NaN, "1.5"],
+      ],
+    };
+    for (const [type, [valid, invalid]] of Object.entries(cases)) {
+      for (const value of valid)
+        expect(EDM_TYPES[type]!(value), `${type}: ${String(value)}`).toBe(true);
+      for (const value of invalid)
+        expect(EDM_TYPES[type]!(value), `${type}: ${String(value)}`).toBe(
+          false,
+        );
+    }
   });
 });

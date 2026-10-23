@@ -49,7 +49,8 @@ export function labCollectionSections(): ClassifiableSection[] {
       key: "deviceConfigurations",
       familyKey: "deviceConfigurations",
       label: "Device configurations (templates)",
-      items: many(86, (index) => ({ id: `device-${index}` })),
+      // Graph returns the @odata.type of every item of this polymorphic list.
+      items: many(86, (index) => ({ id: `device-${index}`, "@odata.type": "#microsoft.graph.macOSCustomConfiguration" })),
     },
     {
       key: "securityBaselines",
@@ -63,18 +64,20 @@ export function labCollectionSections(): ClassifiableSection[] {
       label: "Enrollment configurations",
       items: [
         ...[
-          "DefaultLimit",
-          "DefaultPlatformRestrictions",
-          "DefaultWindowsHelloForBusiness",
-          "DefaultWindows10EnrollmentCompletionPageConfiguration",
-          "WindowsRestore",
-        ].map((suffix) => ({
+          ["DefaultLimit", "deviceEnrollmentLimitConfiguration"],
+          ["DefaultPlatformRestrictions", "deviceEnrollmentPlatformRestrictionsConfiguration"],
+          ["DefaultWindowsHelloForBusiness", "deviceEnrollmentWindowsHelloForBusinessConfiguration"],
+          ["DefaultWindows10EnrollmentCompletionPageConfiguration", "windows10EnrollmentCompletionPageConfiguration"],
+          ["WindowsRestore", "windowsRestoreDeviceEnrollmentConfiguration"],
+        ].map(([suffix, type]) => ({
+          "@odata.type": `#microsoft.graph.${type}`,
           id: `${TENANT}_${suffix}`,
           displayName: "All users and all devices",
           priority: 0,
         })),
         // An administrator's enrollment status page, priority 1.
         {
+          "@odata.type": "#microsoft.graph.windows10EnrollmentCompletionPageConfiguration",
           id: "11111111-1111-1111-1111-111111111111_Windows10EnrollmentCompletionPageConfiguration",
           priority: 1,
         },
@@ -106,7 +109,19 @@ export function labCollectionSections(): ClassifiableSection[] {
       key: "reusablePolicySettings",
       familyKey: "assignmentAndRbac",
       label: "Reusable policy settings",
-      items: many(8, (index) => ({ id: `reusable-${index}` })),
+      // The list selects settingInstance (intune-policy-registry.ts).
+      items: many(8, (index) => ({
+        id: `reusable-${index}`,
+        settingDefinitionId: "synthetic_reusablesetting",
+        settingInstance: {
+          "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+          settingDefinitionId: "synthetic_reusablesetting",
+          simpleSettingValue: {
+            "@odata.type": "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+            value: `Synthetic value ${index}`,
+          },
+        },
+      })),
     },
     {
       key: "roleAssignments",

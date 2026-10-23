@@ -371,7 +371,7 @@ describe("Conditional Access fields are read by their documented type", () => {
     ).not.toContain(CA);
   });
 
-  it("reads an undocumented field only as a plausible plain value", () => {
+  it("reads an undocumented field only while Graph returns it empty", () => {
     const actions = (value: unknown) =>
       policy(
         {},
@@ -387,10 +387,15 @@ describe("Conditional Access fields are read by their documented type", () => {
       compare(CA, actions([1, "synthetic"]), actions([])).notCompared,
     ).toContain(CA);
     expect(compare(CA, actions([]), actions([])).notCompared).not.toContain(CA);
+    // A value of a type no one documents is unknown, never the same value.
+    expect(
+      compare(CA, actions(["synthetic"]), actions(["synthetic"])).notCompared,
+    ).toContain(CA);
     expect(
       history(CA, actions(["synthetic"]), actions(["synthetic"]))
         .notComparedItems,
-    ).toEqual([]);
+    ).toHaveLength(1);
+    expect(history(CA, actions([]), actions([])).notComparedItems).toEqual([]);
   });
 });
 
@@ -704,15 +709,16 @@ describe("names Graph returns with the settings are display only", () => {
   });
   const S = "settingsCatalog";
 
-  it("never compares an option name with an option id", () => {
+  it("compares choices by option id, whether Graph returned names or not", () => {
     // One side read the definitions, the other did not (the collector reads
-    // the settings without them when the expand fails).
+    // the settings without them when the expand fails). The option id
+    // decides; the name is display only.
     expect(
       compare(S, catalog("1", true), catalog("1", false)).statuses[CHOICE],
-    ).toBe("notComparable");
+    ).toBe("matching");
     expect(
       compare(S, catalog("1", false), catalog("0", true)).statuses[CHOICE],
-    ).toBe("notComparable");
+    ).toBe("different");
     // Names on both sides, or ids on both sides, stay definite.
     expect(
       compare(S, catalog("1", true), catalog("1", true)).statuses[CHOICE],

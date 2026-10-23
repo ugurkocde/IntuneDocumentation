@@ -20,6 +20,7 @@ import {
   type IdentityPolicyName,
   type IdentityRow,
 } from "./identity";
+import { inComparisonOrder } from "./order";
 import {
   FINGERPRINT_LABELS,
   snapshotItemLabel,
@@ -142,12 +143,15 @@ interface ComparedRow {
 // removed and an added setting, and compared by the value Graph returned
 // (token), so an option name that changed or was not returned is no change.
 function settingRows(
-  sectionKey: string,
+  section: Pick<SnapshotSection, "key" | "familyKey">,
   item: SnapshotItem,
 ): Map<string, ComparedRow> {
   const rows = new Map<string, ComparedRow>();
   const seen = new Map<string, number>();
-  for (const row of flattenItemSettings(sectionKey, item.data)) {
+  for (const row of flattenItemSettings(
+    section.key,
+    inComparisonOrder(section.familyKey, item.data),
+  )) {
     const base = [
       row.definitionId ?? row.name,
       ...(row.identity ?? row.path),
@@ -169,12 +173,12 @@ function settingRows(
 }
 
 function settingChanges(
-  sectionKey: string,
+  section: Pick<SnapshotSection, "key" | "familyKey">,
   before: SnapshotItem,
   after: SnapshotItem,
 ): SettingChange[] {
-  const a = settingRows(sectionKey, before);
-  const b = settingRows(sectionKey, after);
+  const a = settingRows(section, before);
+  const b = settingRows(section, after);
   const changes: SettingChange[] = [];
   for (const [key, row] of b) {
     const old = a.get(key);
@@ -205,39 +209,78 @@ function settingChanges(
         after: null,
       });
   }
-  const values = [
-    ...new Set([
-      ...Object.keys(before.fingerprints ?? {}),
-      ...Object.keys(after.fingerprints ?? {}),
-    ]),
-  ]
-    .filter((property) => property.startsWith(VALUE_FINGERPRINT))
-    .sort();
-  for (const property of [...Object.keys(FINGERPRINT_LABELS), ...values]) {
+  for (const property of Object.keys(FINGERPRINT_LABELS)) {
     const old = before.fingerprints?.[property];
     const next = after.fingerprints?.[property];
     if (old === next) continue;
-    const value = property.startsWith(VALUE_FINGERPRINT);
-    const settingId = value
-      ? property.slice(VALUE_FINGERPRINT.length, property.lastIndexOf("#"))
-      : property;
     changes.push({
       key: `fingerprint${OCCURRENCE}${property}`,
-      name: value
-        ? (droppedValueName(after, settingId) ??
-          droppedValueName(before, settingId) ??
-          settingId)
-        : FINGERPRINT_LABELS[property]!,
+      name: FINGERPRINT_LABELS[property]!,
       path: [],
-      definitionId: settingId,
+      definitionId: property,
       change: !old ? "added" : !next ? "removed" : "changed",
       before: null,
       after: null,
       notStored: true,
-      ...(value ? { valueNotStored: true as const } : {}),
     });
   }
+  // Values that are not stored are numbered by occurrence per setting
+  // (projection.ts), which shifts when an entry is inserted or the entries
+  // are reordered. They are compared per setting as a multiset instead:
+  // fingerprints on both sides match whatever their numbers, and only the
+  // rest pair up in order as changed, or read as added or removed.
+  const fromValues = valueFingerprints(before);
+  const toValues = valueFingerprints(after);
+  for (const settingId of [
+    ...new Set([...fromValues.keys(), ...toValues.keys()]),
+  ].sort()) {
+    const olds = fromValues.get(settingId) ?? [];
+    const nexts = toValues.get(settingId) ?? [];
+    const gone = unmatched(olds, nexts, (digest) => digest);
+    const came = unmatched(nexts, olds, (digest) => digest);
+    const name =
+      droppedValueName(after, settingId) ??
+      droppedValueName(before, settingId) ??
+      settingId;
+    for (let index = 0; index < Math.max(gone.length, came.length); index++)
+      changes.push({
+        key: `fingerprint${OCCURRENCE}${VALUE_FINGERPRINT}${settingId}${OCCURRENCE}${index}`,
+        name,
+        path: [],
+        definitionId: settingId,
+        change:
+          index >= gone.length
+            ? "added"
+            : index >= came.length
+              ? "removed"
+              : "changed",
+        before: null,
+        after: null,
+        notStored: true,
+        valueNotStored: true,
+      });
+  }
   return changes;
+}
+
+// The fingerprints of values that are not stored, by setting id, in
+// occurrence order.
+function valueFingerprints(item: SnapshotItem): Map<string, string[]> {
+  const out = new Map<string, Array<[number, string]>>();
+  for (const [property, digest] of Object.entries(item.fingerprints ?? {})) {
+    const mark = property.lastIndexOf("#");
+    if (!property.startsWith(VALUE_FINGERPRINT) || mark < 0) continue;
+    const settingId = property.slice(VALUE_FINGERPRINT.length, mark);
+    const list = out.get(settingId) ?? [];
+    list.push([Number(property.slice(mark + 1)), digest]);
+    out.set(settingId, list);
+  }
+  return new Map(
+    [...out].map(([settingId, list]) => [
+      settingId,
+      list.sort((x, y) => x[0] - y[0]).map(([, digest]) => digest),
+    ]),
+  );
 }
 
 // The display name of a setting whose value is not stored: the custom
@@ -262,8 +305,14 @@ function droppedValueName(
       const presentation =
         isObject(entry) && isObject(entry.presentation) ? entry.presentation : {};
       const id = (value: unknown) => (typeof value === "string" ? value : "");
-      // The id the snapshot projection fingerprints a list under.
-      if (`${id(definition.id)}/${id(presentation.id)}` !== settingId) continue;
+      // The ids the snapshot projection fingerprints a value under: the
+      // definition and presentation ids of a list, or the presentation id
+      // of a value the collector redacted.
+      if (
+        `${id(definition.id)}/${id(presentation.id)}` !== settingId &&
+        id(presentation.id) !== settingId
+      )
+        continue;
       const names = [definition.displayName, presentation.label].filter(
         (name): name is string => typeof name === "string" && name !== "",
       );
@@ -638,7 +687,7 @@ export function diffSnapshots(
       }
       const previousName = snapshotItemLabel(a, old);
       const renamed = previousName !== snapshotItemLabel(b, item);
-      const settings = settingChanges(key, old, item);
+      const settings = settingChanges(b, old, item);
       const assignments = assignmentChanges(
         assignmentsOf(old, groupNames),
         assignmentsOf(item, groupNames),

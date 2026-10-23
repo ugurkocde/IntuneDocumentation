@@ -1,7 +1,9 @@
 import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
 import { isDocumented } from "./documented-values";
-import { isInt32 } from "./graph-rows";
+import { isInt32, isTimeOfDay } from "./graph-rows";
+
+export { isTimeOfDay };
 
 export interface PolicyCheckResult {
   verdict: "enforced" | "disabled";
@@ -19,11 +21,6 @@ export const AUTOMATIC_UPDATE_MODES: readonly string[] = [
 /** A list Graph returned, each entry a string such as an object id. */
 export const isStringList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");
-
-/** A TimeOfDay value as Graph returns it, for example "02:00:00.0000000". */
-export const isTimeOfDay = (value: unknown): boolean =>
-  typeof value === "string" &&
-  /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?$/.test(value);
 
 // Microsoft built-in strength IDs, verified through Graph beta on 2026-09-07.
 const MFA_STRENGTH_IDS = [

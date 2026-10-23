@@ -132,6 +132,53 @@ export const DOCUMENTED_VALUES = {
     "migrationComplete",
   ],
   targetedAuthenticationMethod: ["Fido2", "microsoftAuthenticator"],
+  // Conditional Access and script enum types the snapshot projection keeps,
+  // by Graph enum type (Graph beta reference and beta $metadata, checked
+  // 23 October 2026). linux is listed after the sentinel, so Graph returns
+  // it only to clients that ask for it.
+  conditionalAccessPolicyState: [
+    "enabled",
+    "disabled",
+    "enabledForReportingButNotEnforced",
+  ],
+  riskLevel: ["low", "medium", "high", "hidden", "none"],
+  conditionalAccessInsiderRiskLevels: ["minor", "moderate", "elevated"],
+  conditionalAccessAgentIdRiskLevels: ["low", "medium", "high"],
+  conditionalAccessClientApp: [
+    "all",
+    "browser",
+    "mobileAppsAndDesktopClients",
+    "exchangeActiveSync",
+    "easSupported",
+    "other",
+  ],
+  conditionalAccessDevicePlatform: [
+    "android",
+    "iOS",
+    "windows",
+    "windowsPhone",
+    "macOS",
+    "all",
+    "linux",
+  ],
+  conditionalAccessGuestOrExternalUserTypes: [
+    "none",
+    "internalGuest",
+    "b2bCollaborationGuest",
+    "b2bCollaborationMember",
+    "b2bDirectConnectUser",
+    "otherExternalUser",
+    "serviceProvider",
+  ],
+  conditionalAccessExternalTenantsMembershipKind: ["all", "enumerated"],
+  filterMode: ["include", "exclude"],
+  conditionalAccessTransferMethods: [
+    "none",
+    "deviceCodeFlow",
+    "authenticationTransfer",
+  ],
+  authenticationStrengthPolicyType: ["builtIn", "custom"],
+  runAsAccountType: ["system", "user"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type DocumentedField = keyof typeof DOCUMENTED_VALUES;

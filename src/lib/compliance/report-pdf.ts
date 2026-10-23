@@ -6,7 +6,7 @@ import {
   summarizeAssignments,
 } from "./assignments";
 import { collectionFamilies } from "./coverage";
-import { isIdentifier } from "./graph-rows";
+import { canonicalPlatforms, isIdentifier } from "./graph-rows";
 import {
   CONTROL_STATUS_LABELS,
   CAPABILITY_STATUS_LABELS,
@@ -3290,8 +3290,18 @@ export async function generateComplianceReportPDF(
       }
     }
     for (const item of allPolicyItems(data)) {
+      // Every platform of a Settings Catalog policy, read as documented
+      // members (graph-rows.ts canonicalPlatforms); platforms of another
+      // shape name none, as in the configuration analysis.
+      if (item.platforms !== undefined && item.platforms !== null) {
+        for (const member of canonicalPlatforms(item.platforms)?.split(",") ??
+          []) {
+          const platform = platformFromValue(member);
+          if (platform) platforms.add(platform);
+        }
+        continue;
+      }
       const platform =
-        platformFromValue(item.platforms) ??
         platformFromValue(item.platformType) ??
         platformFromValue(item["@odata.type"]);
       if (platform) platforms.add(platform);

@@ -17,6 +17,7 @@ import {
   summarizeAssignments,
 } from "../../../../src/lib/compliance/assignments";
 import {
+  canonicalPlatforms,
   normalizeTargetType,
   unreadableAssignment,
 } from "../../../../src/lib/compliance/graph-rows";
@@ -173,7 +174,9 @@ function summarizeItem(
     displayName: getItemLabel(section, item),
     odataType: text(item["@odata.type"]),
     description: text(item.description),
-    platforms: text(item.platforms) ?? text(item.platformType),
+    // Settings Catalog platforms in canonical form (graph-rows.ts); a value
+    // that is no set of documented members names no platform.
+    platforms: item.platforms != null ? canonicalPlatforms(item.platforms) : text(item.platformType),
     technologies: text(item.technologies),
     lastModifiedDateTime: text(item.lastModifiedDateTime),
     ...assignmentTargets(assignments, incomplete),

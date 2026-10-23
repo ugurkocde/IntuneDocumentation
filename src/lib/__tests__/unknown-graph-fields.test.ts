@@ -1336,6 +1336,13 @@ describe("Conditional Access grants with a value Graph does not document", () =>
       grants(custom({ allowedCombinations: ["fido2", "unknownFutureValue"] })),
       "tenant-phishing-resistant-mfa",
     ],
+    [
+      "an allowed combination with a space",
+      grants(
+        custom({ allowedCombinations: ["fido2", " windowsHelloForBusiness"] }),
+      ),
+      "tenant-phishing-resistant-mfa",
+    ],
   ])("is unable to check for %s", (_label, policy, id) => {
     expect(checksOf(policy, id)).toEqual([
       expect.objectContaining({

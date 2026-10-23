@@ -5,7 +5,7 @@ import {
   UNASSIGNABLE_REGISTRY_KEYS,
 } from "./compliance/assignments";
 import { collectionFamilies } from "./compliance/coverage";
-import { targetGroupId } from "./compliance/graph-rows";
+import { canonicalPlatforms, targetGroupId } from "./compliance/graph-rows";
 import type {
   AssessmentScope,
   PolicyDeviceStatus,
@@ -216,8 +216,16 @@ export function analyzeConfigurations(
   allConfigs.forEach((config) => {
     let platform: string | null = null;
 
+    // A Settings Catalog policy counts once for each of its platforms, read
+    // as documented members (compliance/graph-rows.ts canonicalPlatforms);
+    // platforms of another shape name none.
     if (config.platforms) {
-      platform = normalizePlatform(config.platforms);
+      const members = canonicalPlatforms(config.platforms)
+        ?.split(",")
+        .filter((member) => member !== "none")
+        .map(normalizePlatform);
+      for (const member of new Set(members))
+        platformCounts[member] = (platformCounts[member] || 0) + 1;
     } else if (config.platformType) {
       platform = normalizePlatform(config.platformType);
     } else if (config["@odata.type"]) {

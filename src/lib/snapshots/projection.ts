@@ -11,7 +11,7 @@ import {
 import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import { isAssessedFramework, normalizeOdataType } from "../compliance/engine";
 import {
-  documentedPropertyValue,
+  canonicalPlatforms,
   isKeyValuePair,
   MAX_ITEM_JSON_DEPTH,
   MAX_SETTING_DEPTH,
@@ -313,14 +313,14 @@ const undocumentedItemType = (familyKey: string, raw: Json) =>
 
 // The platforms of a Settings Catalog policy select the platform Compare
 // groups its settings under, so a value that is no set of documented
-// deviceManagementConfigurationPlatforms members leaves them unknown.
-const undocumentedPlatforms = (raw: Json) =>
-  raw.platforms !== undefined &&
-  raw.platforms !== null &&
-  !documentedPropertyValue(
-    "deviceManagementConfigurationPlatforms",
-    raw.platforms,
-  );
+// deviceManagementConfigurationPlatforms members leaves them unknown. Graph
+// returns them on every Settings Catalog policy (the collector selects
+// them), so one without them is unknown too.
+const undocumentedPlatforms = (familyKey: string, raw: Json) =>
+  familyKey === "settingsCatalog" ||
+  (raw.platforms !== undefined && raw.platforms !== null)
+    ? canonicalPlatforms(raw.platforms) === null
+    : false;
 
 const APPLOCKER_NODE =
   /^\.\/Vendor\/MSFT\/AppLocker\/ApplicationLaunchRestrictions\/[^/]+\/(EXE|DLL|MSI|Script)\/(Policy|EnforcementMode)$/;
@@ -1128,7 +1128,7 @@ function projectItem(
     // never no setting.
     (reusable && !isRecord(raw.settingInstance)) ||
     undocumentedItemType(section.familyKey, raw) ||
-    undocumentedPlatforms(raw) ||
+    undocumentedPlatforms(section.familyKey, raw) ||
     !walked;
   return {
     id,

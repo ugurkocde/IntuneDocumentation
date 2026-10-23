@@ -123,6 +123,13 @@ describe("diffSnapshots", () => {
     const diff = diffSnapshots(snap(lab()), snap(lab()));
     expect(diff.policies).toEqual([]);
     expect(diff.notCompared).toEqual([]);
+    // The lab Settings Catalog policies carry platforms as Graph returns
+    // them, so none of them is incomplete.
+    expect(
+      snap(lab())
+        .sections.find((entry) => entry.key === "settingsCatalog")!
+        .items.some((item) => item.incomplete),
+    ).toBe(false);
     expect(diff.totals).toMatchObject({ added: 0, removed: 0, changed: 0 });
   });
 
@@ -280,6 +287,7 @@ describe("diffSnapshots", () => {
     const firewall = (names: string[]) => ({
       id: "fw-1",
       name: "Firewall rules",
+      platforms: "windows10",
       settings: [
         {
           settingInstance: {
@@ -396,6 +404,7 @@ describe("diffSnapshots", () => {
           {
             id: "wifi",
             name: "Wi-Fi",
+            platforms: "windows10",
             settings: [
               {
                 id: "0",
@@ -474,6 +483,7 @@ describe("diffSnapshots", () => {
           Array.from({ length: 5 }, (_, index) => ({
             id: `p${index}`,
             name: `Policy ${index}`,
+            platforms: "windows10",
             settings: Array.from({ length: 4 }, (_, row) => ({
               settingInstance: {
                 "@odata.type":

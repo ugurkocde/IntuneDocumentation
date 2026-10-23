@@ -1,7 +1,7 @@
 import type { PolicyCheckSignal } from "./types";
 import { inspectAppLocker } from "./applocker";
 import { isDocumented } from "./documented-values";
-import { isInt32, isTimeOfDay } from "./graph-rows";
+import { canonicalFlags, isInt32, isTimeOfDay } from "./graph-rows";
 
 export { isTimeOfDay };
 
@@ -78,17 +78,16 @@ export function grantRequires(
       const combinations = strength.allowedCombinations;
       if (!Array.isArray(combinations) || !combinations.length)
         return undefined;
+      // A combination is a set of documented modes in canonical form
+      // (graph-rows.ts canonicalFlags); another value is unknown.
       return all(
-        combinations.map((combination: unknown) =>
-          typeof combination === "string" &&
-          combination
-            .split(",")
-            .every((mode) =>
-              isDocumented("authenticationMethodModes", mode.trim()),
-            )
-            ? RESISTANT_METHODS.includes(combination)
-            : undefined,
-        ),
+        combinations.map((combination: unknown) => {
+          const modes = canonicalFlags(
+            "authenticationMethodModes",
+            combination,
+          );
+          return modes === null ? undefined : RESISTANT_METHODS.includes(modes);
+        }),
       );
     }
     if (MFA_STRENGTH_IDS.includes(strength.id)) return true;

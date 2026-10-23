@@ -137,7 +137,10 @@ export function collectCatalogValues(
   const unreadable = new Set<string>();
   const list = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 
-  const visit = (instance: unknown, depth: number) => {
+  // shadowed: an ancestor has no definition id or an unreadable own value,
+  // so whether its children apply is not certain: they stay present but
+  // unknown, never enforced or disabled.
+  const visit = (instance: unknown, depth: number, shadowed: boolean) => {
     if (depth > MAX_SETTING_DEPTH) return;
     if (!instance || typeof instance !== "object") return;
     const setting = instance as ConfigurationSettingInstance;
@@ -149,9 +152,14 @@ export function collectCatalogValues(
     // An instance whose child lists cannot be read is unknown as a whole:
     // which option or group it configures is not certain either.
     const children = childLists(instance);
-    if (definitionId && (children === null || unreadableCatalogValue(instance)))
-      unreadable.add(definitionId);
-    else if (definitionId) {
+    let ownUnreadable =
+      !definitionId ||
+      shadowed ||
+      children === null ||
+      unreadableCatalogValue(instance);
+    if (ownUnreadable) {
+      if (definitionId) unreadable.add(definitionId);
+    } else if (definitionId) {
       const key = instanceValueKey(instance);
       const own = key ? (instance as Record<string, unknown>)[key] : undefined;
       const entries =
@@ -169,16 +177,22 @@ export function collectCatalogValues(
           (simple
             ? documentedValue(entry?.["@odata.type"], entry?.value)
             : isIdentifier(entry?.value));
-        if (!readable) unreadable.add(definitionId);
-        else values.get(definitionId)!.push(entry.value);
+        if (!readable) {
+          unreadable.add(definitionId);
+          ownUnreadable = true;
+        } else values.get(definitionId)!.push(entry.value);
       }
     }
     for (const rows of children ?? [])
-      for (const child of rows) visit(child, depth + 1);
+      for (const child of rows) visit(child, depth + 1, ownUnreadable);
   };
 
   for (const setting of list(settings))
-    visit((setting as { settingInstance?: unknown })?.settingInstance, 0);
+    visit(
+      (setting as { settingInstance?: unknown })?.settingInstance,
+      0,
+      false,
+    );
   for (const definitionId of unreadable) values.set(definitionId, []);
   return values;
 }

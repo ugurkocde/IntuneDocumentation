@@ -33,7 +33,7 @@ import {
   summarizeAssignments,
 } from "../compliance/assignments";
 import { buildCollectionCoverage } from "../compliance/coverage";
-import { catalogRoot } from "../compliance/graph-rows";
+import { canonicalPlatforms, catalogRoot } from "../compliance/graph-rows";
 import { record, type RecordJson } from "./policies";
 
 export type AssignmentState = "assigned" | "notAssigned" | "unknown";
@@ -41,7 +41,10 @@ export type AssignmentState = "assigned" | "notAssigned" | "unknown";
 export interface TenantPolicy {
   id: string;
   name: string;
-  /** Null when Graph did not return a readable platforms value. */
+  /**
+   * The platforms in canonical form (graph-rows.ts canonicalPlatforms), or
+   * null when Graph did not return a set of documented members.
+   */
   platforms: string | null;
   technologies: string | null;
   /** True for policies created from a template (Endpoint security, baselines). */
@@ -322,10 +325,15 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
       settings.length === item.settings.length &&
       (assignmentOnly.has(item) ||
         (!policyErrors.length && item.hasFetchError !== true));
-    const platforms = text(item.platforms);
+    // A policy of unknown platforms may hold any setting of any platform,
+    // so no absence is proven while it is in the collection. The member
+    // none ("no platform type specified") names no platform either.
+    const read = canonicalPlatforms(item.platforms);
+    const platforms = read === "none" ? null : read;
     if (!settingsComplete)
       gaps.push(`${name}: settings were not read completely.`);
-    if (!platforms) gaps.push(`${name}: the platform was not returned.`);
+    if (!platforms)
+      gaps.push(`${name}: the platform was not returned readably.`);
     // The Settings Catalog collector always records a collection status,
     // so a policy without one was not read whole.
     const assignment = summarizeAssignments(

@@ -11,6 +11,9 @@ function catalog(index: number, templateFamily: string) {
   return {
     id: `catalog-${templateFamily}-${index}`,
     name: `Policy ${index}`,
+    // Graph returns platforms on every Settings Catalog policy, one member
+    // or several comma separated (lab tenant: windows10, macOS, iOS, linux).
+    platforms: index % 4 === 3 ? "macOS" : "windows10",
     templateReference: {
       templateId: templateFamily === "none" ? "" : `template-${templateFamily}`,
       templateFamily,

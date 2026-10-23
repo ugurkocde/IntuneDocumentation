@@ -6,6 +6,7 @@
 // Desktop only (Node).
 import { createHash } from "node:crypto";
 import {
+  canonicalPlatforms,
   MAX_ITEM_JSON_DEPTH,
   unidentifiedSources,
   unreadableProperties,
@@ -162,14 +163,16 @@ const TYPE_PLATFORMS: Array<[RegExp, string]> = [
 ];
 
 
-// The platforms value of Settings Catalog policies, or the platform in the
-// type name of template resources.
+// The platforms value of Settings Catalog policies in its canonical form
+// (graph-rows.ts canonicalPlatforms), or the platform in the type name of
+// template resources. A platforms value that is no set of documented
+// members names no platform; the projection marks its item incomplete, so
+// its family is not compared.
 export function platformOf(data: Json): string {
   const labels = new Set<string>();
-  const platforms = typeof data.platforms === "string" ? data.platforms : "";
-  for (const part of platforms.split(/[,\s]+/)) {
-    const token = part.trim().toLowerCase();
-    if (token && token !== "none") labels.add(PLATFORM_LABELS[token] ?? part.trim());
+  for (const part of (canonicalPlatforms(data.platforms) ?? "").split(",")) {
+    const token = part.toLowerCase();
+    if (token && token !== "none") labels.add(PLATFORM_LABELS[token] ?? part);
   }
   if (labels.size === 0 && typeof data["@odata.type"] === "string") {
     const raw = data["@odata.type"].replace(/^#?microsoft\.graph\./, "");

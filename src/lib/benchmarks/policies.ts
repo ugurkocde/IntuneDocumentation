@@ -11,6 +11,7 @@
  * difference.
  */
 import {
+  canonicalPlatforms,
   childLists,
   MAX_SETTING_DEPTH,
   unreadableCatalogValue,
@@ -131,7 +132,10 @@ export function parsePolicies(input: unknown): BaselinePolicy[] {
           }
         : {}),
       name: value.name.trim(),
-      platforms: value.platforms,
+      // Packs carry platforms as Graph returns them; the canonical form is
+      // the one tenant policies are keyed by. A value that is no set of
+      // documented members is kept as delivered and never compared.
+      platforms: canonicalPlatforms(value.platforms) ?? value.platforms,
       technologies: value.technologies,
       description:
         typeof value.description === "string"
@@ -440,15 +444,18 @@ function compareLeaves(
   const want = splitEntries(wanted);
   for (const [path, value] of want.direct) {
     const observed = have.get(path);
-    // A pack value this app cannot read is never compared.
-    if (value === UNREADABLE || observed === UNREADABLE) unknown = true;
-    else if (observed === undefined) {
-      if (shadowed(path)) unknown = true;
-      else return "differ";
-    } else if (observed !== value) return "differ";
+    // A pack value this app cannot read is never compared, and a tenant leaf
+    // below an unreadable parent is unknown, held or not, like the parent.
+    if (value === UNREADABLE || shadowed(path)) unknown = true;
+    else if (observed === undefined || observed !== value) return "differ";
   }
   const held = splitEntries(have).collections;
   for (const [at, entries] of want.collections) {
+    // A collection below an unreadable parent is unknown with its entries.
+    if (shadowed(at)) {
+      unknown = true;
+      continue;
+    }
     const candidates = [...(held.get(at)?.values() ?? [])].map(
       (entry) => new Map(entry),
     );

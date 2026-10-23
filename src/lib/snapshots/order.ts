@@ -25,6 +25,7 @@
 // - Assignments and Entra identity targets are already compared as sets
 //   (diff.ts, identity.ts).
 import {
+  canonicalFlags,
   FLAGS_ENUMS,
   normalizeTargetType,
   propertyTypes,
@@ -41,8 +42,11 @@ const UNORDERED_RESOURCES: ReadonlySet<string> = new Set([
 const isRecord = (value: unknown): value is Json =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const flags = (value: unknown) =>
-  typeof value === "string" ? value.split(",").sort().join(",") : value;
+// A flags value in its canonical form (graph-rows.ts canonicalFlags), so the
+// same set of members compares equal however Graph lists them. A value that
+// is no set of documented members is kept: it reads as unreadable.
+const flags = (type: string, value: unknown) =>
+  canonicalFlags(type, value) ?? value;
 
 // Primitives sort by type and text, so a list of mixed entries, which reads
 // as unreadable anyway, still sorts the same way on both sides.
@@ -82,9 +86,13 @@ export function inComparisonOrder(family: string, data: Json): Json {
     const value = parent[key];
     const next = collection
       ? Array.isArray(value)
-        ? sorted(FLAGS_ENUMS.has(element!) ? value.map(flags) : value)
+        ? sorted(
+            FLAGS_ENUMS.has(element!)
+              ? value.map((entry) => flags(element!, entry))
+              : value,
+          )
         : value
-      : flags(value);
+      : flags(type, value);
     if (JSON.stringify(next) === JSON.stringify(value)) continue;
     copy ??= structuredClone(data);
     let target: Json = copy;

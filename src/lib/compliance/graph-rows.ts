@@ -8,7 +8,11 @@
 // Normal Graph rows always pass.
 
 import { REDACTED_VALUE } from "../intune-policy-registry";
-import { isDocumented, type DocumentedField } from "./documented-values";
+import {
+  DOCUMENTED_VALUES,
+  isDocumented,
+  type DocumentedField,
+} from "./documented-values";
 import {
   FAMILY_RESOURCE_TYPES,
   GRAPH_PROPERTY_TYPES,
@@ -918,16 +922,52 @@ export function documentedPropertyValue(type: string, value: unknown): boolean {
       typeof value === "string" &&
       DERIVED_TYPES[type]!.has(normalizeTargetType(value))
     );
-  if (!Object.hasOwn(ENUM_MEMBERS, type) || typeof value !== "string")
-    return false;
-  const members = ENUM_MEMBERS[type]!;
-  return (FLAGS_ENUMS.has(type) ? value.split(",") : [value]).every(
-    (member) =>
-      member !== "" &&
-      member !== "unknownFutureValue" &&
-      isDocumented(members, member),
+  if (FLAGS_ENUMS.has(type)) return canonicalFlags(type, value) !== null;
+  return (
+    Object.hasOwn(ENUM_MEMBERS, type) &&
+    value !== "unknownFutureValue" &&
+    isDocumented(ENUM_MEMBERS[type]!, value)
   );
 }
+
+/**
+ * The one form of a value of a flags enum (FLAGS_ENUMS) every reader
+ * compares, groups and keys it by, or null when it is unreadable. Graph
+ * returns the members comma separated without spaces, in the order of
+ * their bits ("android,iOS", lab tenant, 23 October 2026), and the value is
+ * the set of them, so the canonical form holds each documented member once,
+ * in the documented order, without the zero member none beside others.
+ * An empty member, the sentinel unknownFutureValue or a member Graph does
+ * not document makes the whole value unreadable.
+ */
+export function canonicalFlags(type: string, value: unknown): string | null {
+  if (!FLAGS_ENUMS.has(type) || typeof value !== "string") return null;
+  const field = ENUM_MEMBERS[type]!;
+  const parts = value.split(",");
+  if (
+    parts.some(
+      (member) =>
+        member === "" ||
+        member === "unknownFutureValue" ||
+        !isDocumented(field, member),
+    )
+  )
+    return null;
+  const members: readonly string[] = DOCUMENTED_VALUES[field];
+  const set = new Set(parts);
+  if (set.size > 1) set.delete("none");
+  return [...set]
+    .sort((a, b) => members.indexOf(a) - members.indexOf(b))
+    .join(",");
+}
+
+/**
+ * The platforms of a Settings Catalog policy or template
+ * (deviceManagementConfigurationPlatforms) in canonical form
+ * (canonicalFlags), or null when Graph did not return them readably.
+ */
+export const canonicalPlatforms = (value: unknown): string | null =>
+  canonicalFlags("deviceManagementConfigurationPlatforms", value);
 
 /** Whether every type name the table uses has a strict validator. */
 export function hasValidator(type: string): boolean {

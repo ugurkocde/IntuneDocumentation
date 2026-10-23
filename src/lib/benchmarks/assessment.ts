@@ -49,6 +49,7 @@ import {
   manualItemsForLevel,
   type ManualItemView,
 } from "./manual";
+import { canonicalPlatforms } from "../compliance/graph-rows";
 import {
   mayBeSetElsewhere,
   tenantSettings,
@@ -232,6 +233,29 @@ function judge(
   return { status: "Present", holders };
 }
 
+/**
+ * One definition of a pack root, as judge does, for the platforms of its
+ * pack policy. Platforms that are no set of documented members, or the
+ * member none that names no platform, select no tenant policy, so the
+ * definition is never compared: Review (packValueUnreadable), never Missing
+ * or Different.
+ */
+function judgeOnPlatforms(
+  recommended: RecordJson,
+  observations: readonly Observation[],
+  definitionId: string,
+  platforms: string,
+  tenant: Pick<TenantSettings, "complete" | "otherProfilePlatforms">,
+): Judgement {
+  const read = canonicalPlatforms(platforms);
+  if (read === null || read === "none")
+    return { status: "Review", reason: "packValueUnreadable", holders: [] };
+  return judge(recommended, observations, definitionId, {
+    complete: tenant.complete,
+    elsewhere: mayBeSetElsewhere(tenant, platforms),
+  });
+}
+
 /** One assigned matching policy is enough; otherwise why the match needs review. */
 function assignmentReason(
   holders: readonly Observation[],
@@ -263,29 +287,46 @@ export function compareSettings(
   policies: readonly BaselinePolicy[],
   tenant: TenantSettings,
 ): SettingFinding[] {
-  const observations = new Map<string, Observation[]>();
+  // Platforms are read in canonical form (canonicalPlatforms), so the same
+  // set compares equal in any order. A tenant policy holds a pack setting
+  // when its platforms include every platform of the pack policy: it applies
+  // there. Platforms that are no set of documented members select nothing:
+  // such a tenant policy is a gap of the collection, and such a pack policy
+  // is never compared (judgeOnPlatforms).
+  const held = new Map<
+    string,
+    Array<{ platforms: string[]; observation: Observation }>
+  >();
   for (const policy of tenant.policies) {
-    if (!policy.platforms) continue;
+    const platforms = canonicalPlatforms(policy.platforms)?.split(",");
+    if (!platforms) continue;
     for (const instance of policy.settings) {
       const id = instance.settingDefinitionId;
       if (typeof id !== "string") continue;
-      const key = `${policy.platforms}:${id}`;
-      const list = observations.get(key) ?? [];
+      const list = held.get(id) ?? [];
       list.push({
-        policyId: policy.id,
-        policyName: policy.name,
-        templated: policy.templated,
-        assignment: policy.assignment,
-        value: instance,
-        comparison: "unknown",
+        platforms,
+        observation: {
+          policyId: policy.id,
+          policyName: policy.name,
+          templated: policy.templated,
+          assignment: policy.assignment,
+          value: instance,
+          comparison: "unknown",
+        },
       });
-      observations.set(key, list);
+      held.set(id, list);
     }
   }
+  const packKey = (policy: BaselinePolicy, id: string) => {
+    const platforms = canonicalPlatforms(policy.platforms);
+    return platforms ? `${platforms}:${id}` : null;
+  };
   const recommended = new Map<string, Set<string>>();
   for (const policy of policies)
     for (const { settingInstance } of policy.settings) {
-      const key = `${policy.platforms}:${settingInstance.settingDefinitionId}`;
+      const key = packKey(policy, settingInstance.settingDefinitionId);
+      if (!key) continue;
       const values = recommended.get(key) ?? new Set<string>();
       values.add(JSON.stringify(comparable(settingInstance)));
       recommended.set(key, values);
@@ -293,11 +334,16 @@ export function compareSettings(
   return policies.flatMap((policy, policyIndex) =>
     policy.settings.map(({ settingInstance }, settingIndex) => {
       const settingId = settingInstance.settingDefinitionId;
-      const key = `${policy.platforms}:${settingId}`;
-      const observed = (observations.get(key) ?? []).map((observation) => ({
-        ...observation,
-        comparison: compareRoot(settingInstance, observation.value),
-      }));
+      const key = packKey(policy, settingId);
+      const wanted = canonicalPlatforms(policy.platforms)?.split(",");
+      const observed = (wanted ? (held.get(settingId) ?? []) : [])
+        .filter(({ platforms }) =>
+          wanted!.every((platform) => platforms.includes(platform)),
+        )
+        .map(({ observation }) => ({
+          ...observation,
+          comparison: compareRoot(settingInstance, observation.value),
+        }));
       const base = {
         key: `${policyIndex}:${settingIndex}`,
         policyIndex,
@@ -309,17 +355,20 @@ export function compareSettings(
         observations: observed,
       };
       // Several recommended values for one definition need a profile choice first.
-      if ((recommended.get(key)?.size ?? 0) > 1)
+      if (key && (recommended.get(key)?.size ?? 0) > 1)
         return {
           ...base,
           status: "Review" as const,
           result: "Review" as const,
           reason: "profileChoice" as const,
         };
-      const judgement = judge(settingInstance, observed, settingId, {
-        complete: tenant.complete,
-        elsewhere: mayBeSetElsewhere(tenant, policy.platforms),
-      });
+      const judgement = judgeOnPlatforms(
+        settingInstance,
+        observed,
+        settingId,
+        policy.platforms,
+        tenant,
+      );
       const { result, reason } = resultOf(judgement);
       return withReason(
         { ...base, status: judgement.status, result },
@@ -393,14 +442,12 @@ export function recommendationResults(
           // Each pack root holding the definition is judged on its own: an
           // assigned match on one root does not stand in for another root.
           const judged = mapped.map((finding) => {
-            const judgement = judge(
+            const judgement = judgeOnPlatforms(
               finding.recommended,
               finding.observations,
               id,
-              {
-                complete: tenant.complete,
-                elsewhere: mayBeSetElsewhere(tenant, finding.platforms),
-              },
+              finding.platforms,
+              tenant,
             );
             return { judgement, ...resultOf(judgement) };
           });

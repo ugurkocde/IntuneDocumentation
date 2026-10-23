@@ -355,19 +355,26 @@ export function extractSettingValue(
   // documents (compliance/graph-rows.ts childLists). When they cannot be
   // read, such as on an instance of an undocumented type or with a value
   // in another type's property, the setting and what it holds are unknown.
+  // Below an unreadable own value, whether the children apply is unknown
+  // too, so they show as unreadable, never with their values.
   const unknownChildren = childLists(instance) === null;
+  const unreadable = unknownChildren || unreadableCatalogValue(instance);
   return {
     name:
       settingDef?.displayName ||
       instance.settingDefinitionId ||
       "Unknown Setting",
-    value:
-      unknownChildren || unreadableCatalogValue(instance)
-        ? UNREADABLE_VALUE
-        : formatValue(value),
+    value: unreadable ? UNREADABLE_VALUE : formatValue(value),
     type,
     description: settingDef?.description,
-    nestedSettings: unknownChildren ? undefined : nestedSettings,
+    nestedSettings: unknownChildren
+      ? undefined
+      : unreadable
+        ? nestedSettings?.map((nested) => ({
+            ...nested,
+            value: UNREADABLE_VALUE,
+          }))
+        : nestedSettings,
   };
 }
 

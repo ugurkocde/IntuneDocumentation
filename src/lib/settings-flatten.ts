@@ -179,6 +179,7 @@ function walkCatalogInstance(
   rows: FlatSettingRow[],
   depth: number,
   identity: string[] = [],
+  shadowed = false,
 ): void {
   if (!instance || typeof instance !== "object") return;
   // A child below the depth limit is not kept (compliance/graph-rows.ts),
@@ -205,10 +206,13 @@ function walkCatalogInstance(
   const definitionId = definitionIdOf(instance.settingDefinitionId);
   // The shared instance rules (compliance/graph-rows.ts): an instance whose
   // own value, or whose child lists, cannot be read is one unreadable row,
-  // also a group, and its children are not read, so nothing below it reads
-  // as configured or as no setting.
+  // also a group. Children of unknown lists are not read; children below an
+  // unreadable own value, or below an unreadable ancestor (shadowed), are
+  // kept as unreadable rows, so nothing below it reads as configured, as a
+  // value or as no setting.
   const unknownChildren = childLists(instance) === null;
-  const unreadable = unknownChildren || unreadableCatalogValue(instance);
+  const unreadable =
+    shadowed || unknownChildren || unreadableCatalogValue(instance);
   if (unreadable || (!isGroup && extracted.value !== NOT_CONFIGURED)) {
     const choice = Boolean(
       instance.choiceSettingValue || instance.choiceSettingCollectionValue,
@@ -266,6 +270,7 @@ function walkCatalogInstance(
         rows,
         depth + 1,
         childIdentity,
+        unreadable,
       );
     }
   });

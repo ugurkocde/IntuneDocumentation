@@ -6,6 +6,7 @@ import { collectConfigurations } from "./coverage";
 import {
   collectCatalogValues,
   COMPLIANCE_DISCLAIMER,
+  hasUnreadData,
   type ComplianceExportData,
 } from "./engine";
 import type {
@@ -437,13 +438,16 @@ function selectSettings(
 // Unknown assignments by why they are unknown (AssignmentSummary.uncertainty):
 // a refresh may read assignments that were not read completely, while
 // targeting that could not be resolved needs a review of the overlapping
-// assignments.
+// assignments. Other data that could not be read beside such targeting,
+// such as a failed collection page, needs the refresh as well.
 function assignmentReason(result: CapabilityResult): string {
   const { incomplete, unresolved } = unknownAssignmentReasons(
     result.evidence.map((item) => item.assignment),
   );
   if (incomplete && unresolved)
     return "Assignment data could not be read for some matching policies, and the effective targeting of others could not be resolved, so the setting may already be in place. Refresh the policies, review the overlapping assignments and generate the pack again.";
+  if (unresolved && hasUnreadData(result))
+    return "Some policy data could not be read, and the effective targeting of the matching policies could not be resolved, so the setting may already be in place. Refresh the policies, review the overlapping assignments and generate the pack again.";
   if (unresolved)
     return "The effective targeting of the matching policies could not be resolved, so the setting may already be in place. Review their overlapping assignments and generate the pack again.";
   return "Assignment data could not be read, so the setting may already be in place. Refresh the policies and generate the pack again.";

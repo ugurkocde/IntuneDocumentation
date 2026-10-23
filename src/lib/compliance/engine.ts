@@ -735,6 +735,28 @@ export function hasAssignedEvidence(status: CapabilityStatus): boolean {
 }
 
 /**
+ * Whether data the evidence of a capability depends on could not be read or
+ * judged: a check the collection could not make (a collection gap, or a
+ * required setting a snapshot of unknown completeness cannot show missing)
+ * or a value that could not be read on a policy that can take effect.
+ * Unassigned (disabled or report-only) policies cannot put a safeguard in
+ * place, so their unreadable values do not count. Independent of the
+ * status: a capability whose targeting could not be resolved
+ * (assignmentUnknown) may have unread data beside it. Judge results without
+ * an alternative: applyAlternatives marks the compared checks of a
+ * capability with an unknown alternative unable to check.
+ */
+export function hasUnreadData(
+  result: Pick<CapabilityResult, "checks">,
+): boolean {
+  return result.checks.some(
+    (check) =>
+      check.assessmentStatus === "unableToCheck" &&
+      check.assignment?.state !== "notAssigned",
+  );
+}
+
+/**
  * Whether an alternative is in use or the capability cannot be combined with
  * existing Conditional Access policies. Such a capability is no safeguard to
  * count and no gap; an unreadable alternative (`unknown`) stays counted.
@@ -868,6 +890,9 @@ export function assessCapabilities(
     }
     let status = capabilityStatus(evidence, capability, policyKey);
     if (status === "noEvidence" && incomplete) status = "collectionIncomplete";
+    const reasons = unknownAssignmentReasons(
+      evidence.map((item) => item.assignment),
+    );
     if (
       scope.platforms &&
       capability.platform !== "tenant" &&
@@ -887,9 +912,18 @@ export function assessCapabilities(
             }))
           : checks,
       limitations: [
-        ...unknownAssignmentLimitations(
-          unknownAssignmentReasons(evidence.map((item) => item.assignment)),
-        ),
+        ...unknownAssignmentLimitations(reasons),
+        // The review alone does not settle targeting that could not be
+        // resolved beside values that could not be read; a collection gap
+        // names its refresh below.
+        ...(reasons.unresolved &&
+        !incomplete &&
+        status !== "notApplicable" &&
+        hasUnreadData({ checks })
+          ? [
+              "Some values of matching policies could not be read or judged; see the technical checks. Refresh the policies before relying on the review of their assignments.",
+            ]
+          : []),
         ...(incomplete
           ? [
               "Relevant policy collection is incomplete; additional or contradictory evidence may be missing.",
@@ -1028,10 +1062,12 @@ function alternativeOf(
 }
 
 // An alternative unknown only because the assignments of its policies,
-// read completely, could not be resolved (AssignmentSummary.uncertainty).
+// read completely, could not be resolved (AssignmentSummary.uncertainty),
+// with no data it depends on left unread.
 const targetingUnresolved = (result: CapabilityResult) =>
   result.status === "assignmentUnknown" &&
-  onlyTargetingUnresolved(result.evidence.map((item) => item.assignment));
+  onlyTargetingUnresolved(result.evidence.map((item) => item.assignment)) &&
+  !hasUnreadData(result);
 
 // An alternative unknown at least in part because the assignments of some
 // of its policies, read completely, could not be resolved.

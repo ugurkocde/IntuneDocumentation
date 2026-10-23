@@ -184,7 +184,8 @@ export interface ComplianceCapability {
  * resolved; a data gap. `targetingUnresolved`: with `unknown`, every
  * alternative it names is unknown only because its assignments, read
  * completely, could not be resolved (AssignmentSummary.uncertainty
- * "unresolved"), so a review of them settles it, not a refresh.
+ * "unresolved") and no other data it depends on is unread, so a review of
+ * them settles it, not a refresh.
  */
 export interface CapabilityAlternative {
   state: "inUse" | "notCombinable" | "unknown";

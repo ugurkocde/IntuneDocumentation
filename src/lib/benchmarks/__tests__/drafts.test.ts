@@ -26,7 +26,15 @@ import {
   unassignedAssessment,
   unassignedPack,
 } from "./export-fixtures";
-import { deviceConfiguration } from "./fixtures";
+import { assessBenchmark } from "../assessment";
+import {
+  choice,
+  collection,
+  deviceConfiguration,
+  NOW,
+  pack,
+  tenantPolicy,
+} from "./fixtures";
 
 const settingIds = (drafts: ReturnType<typeof generateBenchmarkDrafts>) =>
   drafts.drafts.flatMap((draft) => draft.settingIds);
@@ -184,6 +192,77 @@ describe("benchmark draft policies", () => {
     expect(result.drafts).toEqual([]);
     expect(result.notGenerated.map((gap) => gap.settingId)).toEqual(
       expect.arrayContaining([LENGTH, MAC]),
+    );
+  });
+
+  // Round 45: an empty Drafts list claims nothing is missing only when no
+  // Missing finding exists.
+  it("says no draft was generated when the only Missing setting is in a template policy", () => {
+    const templatedPack = pack([
+      {
+        name: "Synthetic templated pack policy",
+        settings: [choice(TEMPLATED, "1")],
+      },
+    ]);
+    (
+      templatedPack.policies as Array<Record<string, unknown>>
+    )[0]!.templateReference = {
+      templateId: "00000000-0000-0000-0000-00000000c001_1",
+    };
+    const assessment = assessBenchmark(
+      collection({ policies: [tenantPolicy({ settings: [] })] }),
+      templatedPack,
+      { now: NOW },
+    );
+    expect(assessment.settings.map((finding) => finding.status)).toEqual([
+      "Missing",
+    ]);
+    const result = generateBenchmarkDrafts(assessment, templatedPack);
+    expect(result.drafts).toEqual([]);
+    const readme = benchmarkDraftsReadme(result, assessment);
+    expect(readme).toContain(
+      "No draft policies were generated; see Not generated.",
+    );
+    expect(readme).not.toContain("No setting is missing");
+    expect(readme).toContain(`- ${TEMPLATED}: `);
+  });
+
+  it("still says nothing is missing when no setting is Missing", () => {
+    const presentPack = pack([{ settings: [choice(ALPHA, "1")] }]);
+    const assessment = assessBenchmark(
+      collection({
+        policies: [tenantPolicy({ settings: [choice(ALPHA, "1")] })],
+      }),
+      presentPack,
+      { now: NOW },
+    );
+    expect(assessment.settings.map((finding) => finding.status)).toEqual([
+      "Present",
+    ]);
+    const readme = benchmarkDraftsReadme(
+      generateBenchmarkDrafts(assessment, presentPack),
+      assessment,
+    );
+    expect(readme).toContain(
+      "None. No setting is missing from the collection.",
+    );
+    expect(readme).not.toContain("No draft policies were generated");
+  });
+
+  // Defensive: the assessment marks no setting Missing on an incomplete
+  // collection, but the drafts still gate on completeness.
+  it("points a Missing setting the completeness gate holds back to Not generated", () => {
+    const assessment = richAssessment();
+    const incomplete = {
+      ...assessment,
+      collection: { ...assessment.collection, complete: false },
+    };
+    const readme = benchmarkDraftsReadme(
+      generateBenchmarkDrafts(incomplete, richPack()),
+      incomplete,
+    );
+    expect(readme).toContain(
+      "No draft policies were generated; see Not generated.",
     );
   });
 

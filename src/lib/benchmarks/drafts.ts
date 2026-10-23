@@ -287,10 +287,19 @@ const idsText = (ids: readonly string[]) =>
 
 export function benchmarkDraftsReadme(
   result: BenchmarkDrafts,
-  assessment: Pick<BenchmarkAssessment, "assessedAt" | "collection">,
+  assessment: Pick<
+    BenchmarkAssessment,
+    "assessedAt" | "collection" | "settings"
+  >,
 ): string {
   const list = (rows: string[], empty: string) =>
     rows.length ? rows.map((row) => `- ${row}`) : [empty];
+  // Missing findings without a draft (such as those in template policies)
+  // are listed under Not generated, so an empty Drafts list says nothing is
+  // missing only when no Missing finding exists.
+  const missing = assessment.settings.some(
+    (finding) => finding.result !== "Pass" && finding.status === "Missing",
+  );
   return [
     `Intune Documentation benchmark drafts: ${result.benchmark} ${result.version}, Level ${result.level}`,
     "",
@@ -317,9 +326,11 @@ export function benchmarkDraftsReadme(
         (draft) =>
           `${draft.fileName}: ${draft.json.name}, ${draft.settingIds.length} ${draft.settingIds.length === 1 ? "setting" : "settings"}. ${idsText(draft.recommendationIds)}`,
       ),
-      assessment.collection.complete
-        ? "None. No setting is missing from the collection."
-        : `None. ${INCOMPLETE}`,
+      missing
+        ? "No draft policies were generated; see Not generated."
+        : assessment.collection.complete
+          ? "None. No setting is missing from the collection."
+          : `None. ${INCOMPLETE}`,
     ),
     "",
     "Change existing policies",
@@ -351,7 +362,10 @@ export function benchmarkDraftsReadme(
 /** Deterministic ZIP with README.txt and one JSON file per draft. */
 export async function buildBenchmarkDraftsZip(
   result: BenchmarkDrafts,
-  assessment: Pick<BenchmarkAssessment, "assessedAt" | "collection">,
+  assessment: Pick<
+    BenchmarkAssessment,
+    "assessedAt" | "collection" | "settings"
+  >,
 ): Promise<Uint8Array> {
   return buildDraftZip(
     benchmarkDraftsReadme(result, assessment),

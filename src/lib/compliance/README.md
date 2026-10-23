@@ -51,12 +51,16 @@ HIPAA Security Rule (45 CFR Part 164, Subpart C).
    Every explanation of an unknown state follows its reason
    (`unknownAssignmentReasons`): limitations, the register, fix pack
    reasons, alternative reasons and the management summary advise a refresh
-   only for assignments not read completely, and a review of the
+   for assignments not read completely, and only a review of the
    overlapping assignments for targeting that could not be resolved
    (`safeguardState` `targetingUnresolved`, "Targeting could not be
    resolved", counted apart in the management report as
    `ManagementSummary.targetingUnresolved`; the baseline metric `dataGaps`
-   still counts both).
+   still counts both). Data that could not be read beside such targeting,
+   such as a failed collection page or an unreadable value on a policy that
+   can take effect (`hasUnreadData`), is judged apart from the status and
+   gets both the refresh and the review, in the limitations too
+   (`ManagementSummary.targetingPartlyUnresolved`).
 5. **No verdicts.** Output statuses are evidence statements
    (`evidenceFound` / `partialEvidence` / `noEvidence`), never "compliant".
    `COMPLIANCE_DISCLAIMER` must accompany any rendered report.
@@ -662,7 +666,7 @@ of every management summary safeguard count; unknown stays in the safeguard
 totals and counts as a data gap. `safeguardState` reports `alternativeInUse`
 ("Not needed, an alternative is set up"), `notCombinable` or `dataMissing`,
 or `targetingUnresolved` when every unknown alternative is unknown only
-because its assignments could not be resolved
+because its assignments could not be resolved and none has unread data
 (`CapabilityAlternative.targetingUnresolved`).
 Counter-evidence and unassigned configurations of the capability itself are
 never hidden. `alternativeTo` must name existing capabilities without self

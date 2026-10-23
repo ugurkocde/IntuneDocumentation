@@ -2,6 +2,7 @@ import {
   compareControlIds,
   excludedByAlternative,
   hasAssignedEvidence,
+  hasUnreadData,
 } from "../engine";
 import type {
   AssessmentScope,
@@ -108,7 +109,9 @@ function hasUnreadablePolicyValue(result: CapabilityResult): boolean {
  * uncertainty "unresolved"), of the capability or of the alternative it
  * depends on: "only" when that is its only cause, which a review of the
  * overlapping assignments settles and collecting again does not; "partly"
- * when data that could not be read adds to it, which needs both.
+ * when assignments or other data that could not be read add to it, such as
+ * a failed collection page or an unreadable value (hasUnreadData), which
+ * needs both.
  */
 function unresolvedTargeting(
   result: CapabilityResult,
@@ -126,7 +129,7 @@ function unresolvedTargeting(
     result.evidence.map((item) => item.assignment),
   );
   if (!unresolved) return undefined;
-  return incomplete || hasUnreadablePolicyValue(result) ? "partly" : "only";
+  return incomplete || hasUnreadData(result) ? "partly" : "only";
 }
 
 const targetingUnresolved = (result: CapabilityResult) =>

@@ -4,18 +4,41 @@ import {
 } from "./frameworks/essential-eight";
 import type { DetailedExportData } from "../configuration-analyzer";
 import type { ConfigurationSettingInstance } from "../intune-detailed-client";
-import { summarizeAssignments } from "./assignments";
+import {
+  assignmentsIncomplete,
+  onlyTargetingUnresolved,
+  summarizeAssignments,
+  unknownAssignmentLimitations,
+  unknownAssignmentReasons,
+} from "./assignments";
 import { evaluatePolicyCheck } from "./policy-checks";
 import { comparableValue, expectedValue } from "./check-results";
 import { policyCheckObservation } from "./policy-check-observation";
+import { graphPropertyValues } from "./documented-values";
 import { canonicalOmaUri } from "./oma-uri";
+import {
+  childLists,
+  documentedValue,
+  instanceValueKey,
+  isIdentifier,
+  isInt32,
+  MAX_SETTING_DEPTH,
+  unidentifiedSources,
+  unlistedSources,
+  unreadableCatalogValue,
+} from "./graph-rows";
+import { REDACTED_VALUE } from "../intune-policy-registry";
 import {
   buildCollectionCoverage,
   collectConfigurations,
   capabilityCollectionGaps,
 } from "./coverage";
 import { COMPLIANCE_CAPABILITIES } from "./capabilities";
-import { BSI_IT_GRUNDSCHUTZ } from "./frameworks/bsi-it-grundschutz";
+import {
+  evaluateTenantPolicySignals,
+  TENANT_POLICY_FAMILIES,
+  tenantPolicySettingId,
+} from "./tenant-policies";
 import { CYBER_ESSENTIALS } from "./frameworks/cyber-essentials";
 import { DEF_STAN_05_138 } from "./frameworks/def-stan-05-138";
 import { ISO_27001 } from "./frameworks/iso-27001";
@@ -25,6 +48,7 @@ import { NIST_800_171_R3 } from "./frameworks/nist-800-171-r3";
 import { HIPAA_SECURITY_RULE } from "./frameworks/hipaa-security-rule";
 import { NIST_CSF } from "./frameworks/nist-csf";
 import { NIS2 } from "./frameworks/nis2";
+import { DORA } from "./frameworks/dora";
 import { SOC_2 } from "./frameworks/soc2";
 import type {
   AssessmentScope,
@@ -50,7 +74,11 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.3";
+export const COMPLIANCE_RULESET_VERSION = "2026.10.22";
+
+const TENANT_POLICY_FAMILY_KEYS = new Set(
+  Object.values(TENANT_POLICY_FAMILIES),
+);
 
 const controlIdCollator = new Intl.Collator("en", {
   numeric: true,
@@ -84,9 +112,13 @@ export function normalizeOdataType(value: unknown): string {
     .toLowerCase();
 }
 
+// Null when Graph returned the property or a parent of it as null (not
+// configured), undefined when it omitted one or returned an unsupported
+// shape.
 function resolvePropertyPath(config: unknown, path: string): unknown {
   let current: unknown = config;
   for (const segment of path.split(".")) {
+    if (current === null) return null;
     if (!current || typeof current !== "object") return undefined;
     current = (current as Record<string, unknown>)[segment];
   }
@@ -95,61 +127,88 @@ function resolvePropertyPath(config: unknown, path: string): unknown {
 
 // Flattens a settings catalog policy into definitionId -> configured primitive
 // values, walking choice/group children so nested settings are evaluated too.
+// Instances are read with the shared rules (graph-rows.ts): a value only from
+// the property its @odata.type documents, a simple value only with the
+// documented type of its record, a choice value only as an option id, and
+// children only through the documented value, to MAX_SETTING_DEPTH. A
+// setting whose instance fails those rules keeps no value, so it reads as
+// present but unreadable, never as a match or a difference. Children of an
+// instance that cannot be read, and settings below the depth limit, are not
+// read, and the instance itself keeps no value: the source is unidentified
+// (unidentifiedSources), so a setting there is unknown.
 export function collectCatalogValues(
   settings: unknown,
 ): Map<string, Array<string | number | boolean>> {
   const values = new Map<string, Array<string | number | boolean>>();
+  const unreadable = new Set<string>();
+  const list = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 
-  const record = (definitionId: string | undefined, value: unknown) => {
-    if (!definitionId) return;
-    if (
-      typeof value !== "string" &&
-      typeof value !== "number" &&
-      typeof value !== "boolean"
-    ) {
-      return;
-    }
-    const existing = values.get(definitionId);
-    if (existing) existing.push(value);
-    else values.set(definitionId, [value]);
-  };
-
-  const visit = (instance: ConfigurationSettingInstance | undefined) => {
+  // shadowed: an ancestor has no definition id or an unreadable own value,
+  // so whether its children apply is not certain: they stay present but
+  // unknown, never enforced or disabled.
+  const visit = (instance: unknown, depth: number, shadowed: boolean) => {
+    if (depth > MAX_SETTING_DEPTH) return;
     if (!instance || typeof instance !== "object") return;
-    const definitionId = instance.settingDefinitionId;
+    const setting = instance as ConfigurationSettingInstance;
+    const definitionId = isIdentifier(setting.settingDefinitionId)
+      ? setting.settingDefinitionId
+      : undefined;
     // Presence without a readable primitive is unknown, never a missing setting.
     if (definitionId && !values.has(definitionId)) values.set(definitionId, []);
-
-    if (instance.simpleSettingValue) {
-      record(definitionId, instance.simpleSettingValue.value);
+    // An instance whose child lists cannot be read is unknown as a whole:
+    // which option or group it configures is not certain either.
+    const children = childLists(instance);
+    let ownUnreadable =
+      !definitionId ||
+      shadowed ||
+      children === null ||
+      unreadableCatalogValue(instance);
+    if (ownUnreadable) {
+      if (definitionId) unreadable.add(definitionId);
+    } else if (definitionId) {
+      const key = instanceValueKey(instance);
+      const own = key ? (instance as Record<string, unknown>)[key] : undefined;
+      const entries =
+        key === "simpleSettingValue" || key === "choiceSettingValue"
+          ? [own]
+          : key === "simpleSettingCollectionValue" ||
+              key === "choiceSettingCollectionValue"
+            ? list(own)
+            : [];
+      const simple = key?.startsWith("simple");
+      for (const entry of entries) {
+        // A secret or redacted value is not stored, so it is unknown here.
+        const readable =
+          entry?.value !== REDACTED_VALUE &&
+          (simple
+            ? documentedValue(entry?.["@odata.type"], entry?.value)
+            : isIdentifier(entry?.value));
+        if (!readable) {
+          unreadable.add(definitionId);
+          ownUnreadable = true;
+        } else values.get(definitionId)!.push(entry.value);
+      }
     }
-    for (const item of instance.simpleSettingCollectionValue ?? []) {
-      record(definitionId, item.value);
-    }
-    if (instance.choiceSettingValue) {
-      record(definitionId, instance.choiceSettingValue.value);
-      instance.choiceSettingValue.children?.forEach(visit);
-    }
-    for (const choice of instance.choiceSettingCollectionValue ?? []) {
-      record(definitionId, choice.value);
-      choice.children?.forEach(visit);
-    }
-    instance.groupSettingValue?.children?.forEach(visit);
-    for (const group of instance.groupSettingCollectionValue ?? []) {
-      group.children?.forEach(visit);
-    }
+    for (const rows of children ?? [])
+      for (const child of rows) visit(child, depth + 1, ownUnreadable);
   };
 
-  if (Array.isArray(settings)) {
-    for (const setting of settings) {
-      visit(
-        (setting as { settingInstance?: ConfigurationSettingInstance })
-          ?.settingInstance,
-      );
-    }
-  }
+  for (const setting of list(settings))
+    visit(
+      (setting as { settingInstance?: unknown })?.settingInstance,
+      0,
+      false,
+    );
+  for (const definitionId of unreadable) values.set(definitionId, []);
   return values;
 }
+
+// The row shape checks live in graph-rows.ts, where every engine reads them.
+export {
+  isIdentifier,
+  unidentifiedSources,
+  type IdentifiedSource,
+} from "./graph-rows";
 
 function normalizeGroupNames(value: unknown): Map<string, string> {
   if (value instanceof Map) {
@@ -183,7 +242,7 @@ function compliancePolicyNote(
     .flatMap((rule: any) => rule?.scheduledActionConfigurations ?? [])
     .filter((action: any) => action?.actionType === "block");
   const grace = blockActions.map((action: any) =>
-    typeof action.gracePeriodHours === "number"
+    isInt32(action.gracePeriodHours) && action.gracePeriodHours >= 0
       ? `${action.gracePeriodHours} hours`
       : "unknown grace period",
   );
@@ -192,7 +251,7 @@ function compliancePolicyNote(
 
 function verdictsFor(
   values: readonly unknown[],
-  signal: Exclude<DetectionSignal, { source: "policyCheck" }>,
+  signal: Exclude<DetectionSignal, { source: "policyCheck" | "tenantPolicy" }>,
 ) {
   return [...new Set(values)].flatMap<{
     verdict: "enforced" | "disabled";
@@ -206,54 +265,95 @@ function verdictsFor(
   });
 }
 
+const rowList = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+
+// The values of a legacy setting: a value is read only with the documented
+// type of its record (graph-rows.ts). unreadable says a row of the setting
+// holds a value of another shape, so the setting is present but unknown.
 function legacyValues(
   config: Record<string, any>,
   signal: Extract<DetectionSignal, { settingId: string }>,
-): unknown[] {
+): { values: unknown[]; unreadable: boolean } {
+  let unreadable = false;
+  const read = (readable: boolean, value: unknown) => {
+    if (!readable) unreadable = true;
+    return readable ? [value] : [];
+  };
+  let values: unknown[];
   if (signal.source === "administrativeTemplate") {
-    const definitions = Array.isArray(config.definitionValues)
-      ? config.definitionValues
-      : [];
-    return definitions
+    values = rowList(config.definitionValues)
       .filter((row: any) => row?.definition?.id === signal.settingId)
       .flatMap((row: any) => {
         if (!signal.presentationId)
-          return typeof row.enabled === "boolean" ? [row.enabled] : [];
+          return read(typeof row.enabled === "boolean", row.enabled);
         if (row.enabled !== true || row.presentationFetchError) return [];
-        return (row.presentationValues ?? [])
+        // Presentation values Graph returned as no list, or with an entry
+        // that is no record, are unknown.
+        if (
+          row.presentationValues != null &&
+          (!Array.isArray(row.presentationValues) ||
+            !row.presentationValues.every(
+              (value: unknown) =>
+                Boolean(value) &&
+                typeof value === "object" &&
+                !Array.isArray(value),
+            ))
+        )
+          return read(false, undefined);
+        return rowList(row.presentationValues)
           .filter(
             (value: any) => value?.presentation?.id === signal.presentationId,
           )
-          .map((value: any) => value.value);
+          .flatMap((value: any) =>
+            read(
+              documentedValue(value["@odata.type"], value.value),
+              value.value,
+            ),
+          );
+      });
+  } else if (signal.source === "omaUri") {
+    const uri = canonicalOmaUri(signal.settingId);
+    values = rowList(config.omaSettings)
+      .filter((value: any) => canonicalOmaUri(value?.omaUri) === uri)
+      .flatMap((value: any) =>
+        read(documentedValue(value["@odata.type"], value.value), value.value),
+      );
+  } else {
+    const settings = [
+      ...rowList(config.settings),
+      ...rowList(config.categories).flatMap((category: any) =>
+        rowList(category?.settings),
+      ),
+    ];
+    values = settings
+      .filter((setting: any) => setting?.definitionId === signal.settingId)
+      .flatMap((setting: any) => {
+        // Graph returns the value and its JSON text; the text is read only
+        // when the value is not there.
+        let value = setting.value;
+        if (value === undefined && typeof setting.valueJson === "string")
+          try {
+            value = JSON.parse(setting.valueJson);
+          } catch {
+            return read(false, undefined);
+          }
+        return read(documentedValue(setting["@odata.type"], value), value);
       });
   }
-  if (signal.source === "omaUri") {
-    const uri = canonicalOmaUri(signal.settingId);
-    return (config.omaSettings ?? [])
-      .filter((value: any) => canonicalOmaUri(value?.omaUri) === uri)
-      .map((value: any) => value.value);
-  }
-  const settings = [
-    ...(Array.isArray(config.settings) ? config.settings : []),
-    ...(config.categories ?? []).flatMap(
-      (category: any) => category?.settings ?? [],
-    ),
-  ];
-  return settings
-    .filter((setting: any) => setting?.definitionId === signal.settingId)
-    .flatMap((setting: any) => {
-      if (["boolean", "string", "number"].includes(typeof setting.value))
-        return [setting.value];
-      if (typeof setting.valueJson !== "string") return [];
-      try {
-        const value = JSON.parse(setting.valueJson);
-        return typeof value === "object" && value !== null
-          ? [value.value]
-          : [value];
-      } catch {
-        return [];
-      }
-    });
+  return { values: unreadable ? [] : values, unreadable };
+}
+
+/**
+ * Plain reason for an Intune enum default that sets nothing: Microsoft Learn
+ * documents `userDefined` as the default with no intent (the device or user
+ * decides) and `notConfigured` as leaving the device default.
+ */
+function notConfiguredReason(value: unknown): string | undefined {
+  if (value === "userDefined")
+    return "Not configured in this policy: userDefined is the default with no intent, so the device or the user decides.";
+  if (value === "notConfigured")
+    return "Not configured in this policy: notConfigured leaves the device default.";
+  return undefined;
 }
 
 function evaluateConfiguration(
@@ -264,14 +364,13 @@ function evaluateConfiguration(
 ): CapabilityEvidence[] {
   const evidence: CapabilityEvidence[] = [];
   const catalogValues = collectCatalogValues(config.settings);
+  const unidentified = unidentifiedSources(config);
+  const unlisted = unlistedSources(config);
   const odataType = normalizeOdataType(config["@odata.type"]);
   const assignment = summarizeAssignments(
     config.assignments,
     groupNames,
-    Boolean(
-      config.collectionStatus &&
-        (config.collectionStatus as any).assignments !== "complete",
-    ),
+    assignmentsIncomplete(config),
   );
   const kind: EvidenceKind = odataType.endsWith("compliancepolicy")
     ? "complianceRequirement"
@@ -281,7 +380,17 @@ function evaluateConfiguration(
   const note = compliancePolicyNote(config);
   if (kind === "accessPolicy") {
     const ca = config as any;
-    assignment.state = ca.state === "enabled" ? "assigned" : "notAssigned";
+    // Only a documented state decides whether the policy applies. A state
+    // Graph omitted or did not document is unknown, never not assigned.
+    assignment.state =
+      ca.state === "enabled"
+        ? "assigned"
+        : ["disabled", "enabledForReportingButNotEnforced"].includes(ca.state)
+          ? "notAssigned"
+          : "unknown";
+    // A reason belongs to an unknown state only (summarizeAssignments).
+    if (assignment.state === "unknown") assignment.uncertainty = "incomplete";
+    else delete assignment.uncertainty;
     assignment.targets = [
       `Users: ${JSON.stringify(ca.conditions?.users ?? {})}`,
       `Applications: ${JSON.stringify(ca.conditions?.applications ?? {})}`,
@@ -305,8 +414,11 @@ function evaluateConfiguration(
 
   for (const capability of capabilities) {
     for (const signal of capability.signals) {
+      // Tenant-wide Entra policies are not configurations; see tenant-policies.ts.
+      if (signal.source === "tenantPolicy") continue;
       const checks = checksByCapability.get(capability.id) ?? [];
       checksByCapability.set(capability.id, checks);
+      const checked = checks.length;
       let values: unknown[] = [];
       let settingId: string;
       let prerequisiteReason: string | undefined;
@@ -371,7 +483,25 @@ function evaluateConfiguration(
             continue;
           settingId = signal.propertyPath;
           const value = resolvePropertyPath(config, settingId);
-          if (value === undefined || value === null) continue;
+          // Graph returns every property of a template resource, null when
+          // not configured. One it omitted is unknown, so it is no check
+          // result and never reads as removed evidence.
+          if (value === undefined) {
+            checks.push({
+              assessmentStatus: "unableToCheck",
+              result: null,
+              settingId,
+              expectedValue: expectedValue(signal),
+              actualValue: null,
+              reason:
+                "Graph did not return this property for the policy. Refresh policy details.",
+              policyId,
+              policyName,
+              assignment,
+            });
+            continue;
+          }
+          if (value === null) continue;
           // Template resources such as compliance policies and device
           // restrictions return every boolean; false is the "Not configured"
           // default, not a configured value, so it is neither a check result
@@ -387,11 +517,26 @@ function evaluateConfiguration(
           settingId = signal.presentationId
             ? `${signal.settingId}/${signal.presentationId}`
             : signal.settingId;
-          values = legacyValues(config, signal);
+          const legacy = legacyValues(config, signal);
+          values = legacy.values;
+          if (legacy.unreadable)
+            checks.push({
+              assessmentStatus: "unableToCheck",
+              result: null,
+              settingId,
+              expectedValue: expectedValue(signal),
+              actualValue: null,
+              reason:
+                "The setting is present but Graph did not return a readable configured value.",
+              policyId,
+              policyName,
+              assignment,
+            });
           if (
             signal.source === "administrativeTemplate" &&
             signal.presentationId &&
-            !values.length
+            !values.length &&
+            !legacy.unreadable
           ) {
             const rows = (config as any).definitionValues;
             const row = Array.isArray(rows)
@@ -416,9 +561,54 @@ function evaluateConfiguration(
               });
           }
         }
-        matches = verdictsFor(values, signal);
+        // A row without its identifier, or a setting list Graph did not
+        // return, may hold this setting, so its absence from this
+        // configuration is unknown.
+        if (
+          signal.source !== "graphProperty" &&
+          unidentified.has(signal.source) &&
+          !values.length &&
+          checks.length === checked
+        )
+          checks.push({
+            assessmentStatus: "unableToCheck",
+            result: null,
+            settingId,
+            expectedValue: expectedValue(signal),
+            actualValue: null,
+            reason: unlisted.has(signal.source)
+              ? signal.source === "omaUri"
+                ? "Graph did not return the custom OMA-URI settings of this profile. Refresh policy details."
+                : "Graph did not return the settings of this policy as a list, so this setting may be configured in it. Refresh policy details."
+              : "Graph returned a setting of this policy without its identifier, so this setting may be configured in it. Refresh policy details.",
+            policyId,
+            policyName,
+            assignment,
+          });
+        // A Graph property is read only as a documented value of its type:
+        // an Int32 is an integer in range, and an enum one of its documented
+        // values. Only readable values are evidence.
+        const documented =
+          signal.source === "graphProperty"
+            ? graphPropertyValues(signal.propertyPath)
+            : undefined;
+        const isReadable = (value: unknown) =>
+          comparableValue(value, signal.enforcedWhen) &&
+          (signal.source !== "graphProperty" ||
+            (typeof value === "number"
+              ? isInt32(value)
+              : typeof value !== "string" ||
+                !documented ||
+                documented.includes(value)));
+        matches = verdictsFor(values.filter(isReadable), signal);
         for (const value of [...new Set(values)]) {
-          const readable = comparableValue(value, signal.enforcedWhen);
+          const readable = isReadable(value);
+          const unset =
+            signal.source === "graphProperty" &&
+            readable &&
+            !satisfies(value, signal.enforcedWhen)
+              ? notConfiguredReason(value)
+              : undefined;
           checks.push({
             assessmentStatus:
               readable && !prerequisiteReason ? "checked" : "unableToCheck",
@@ -434,8 +624,10 @@ function evaluateConfiguration(
             reason:
               prerequisiteReason ??
               (readable
-                ? undefined
-                : "Graph returned an unsupported value shape."),
+                ? unset
+                : documented && typeof value === "string"
+                  ? "Graph returned a value it does not document for this property, so it cannot be judged."
+                  : "Graph returned an unsupported value shape."),
             policyId,
             policyName,
             assignment,
@@ -492,6 +684,7 @@ function evaluateConfiguration(
 function capabilityStatus(
   evidence: readonly CapabilityEvidence[],
   capability: ComplianceCapability,
+  policyKey: (item: CapabilityEvidence) => string,
 ): CapabilityStatus {
   const assigned = evidence.filter(
     (item) => item.assignment.state === "assigned",
@@ -502,15 +695,12 @@ function capabilityStatus(
   if (positive.length) {
     if (capability.requiredGroups?.length) {
       // Do not assemble a complete setting from policies with different scopes.
-      const policyKeys = new Set(
-        positive.map((item) => `${item.policyType}:${item.policyId}`),
-      );
+      const policyKeys = new Set(positive.map(policyKey));
       const complete = [...policyKeys].some((key) =>
         capability.requiredGroups!.every((group) =>
           positive.some(
             (item) =>
-              `${item.policyType}:${item.policyId}` === key &&
-              item.requirementGroup === group,
+              policyKey(item) === key && item.requirementGroup === group,
           ),
         ),
       );
@@ -544,6 +734,52 @@ export function hasAssignedEvidence(status: CapabilityStatus): boolean {
   return status === "enforced" || status === "requirementAssigned";
 }
 
+/**
+ * Whether data the evidence of a capability depends on could not be read or
+ * judged: a check the collection could not make (a collection gap, or a
+ * required setting a snapshot of unknown completeness cannot show missing)
+ * or a value that could not be read on a policy that can take effect.
+ * Unassigned (disabled or report-only) policies cannot put a safeguard in
+ * place, so their unreadable values do not count. Independent of the
+ * status: a capability whose targeting could not be resolved
+ * (assignmentUnknown) may have unread data beside it. Judge results without
+ * an alternative: applyAlternatives marks the compared checks of a
+ * capability with an unknown alternative unable to check.
+ */
+export function hasUnreadData(
+  result: Pick<CapabilityResult, "checks">,
+): boolean {
+  return result.checks.some(
+    (check) =>
+      check.assessmentStatus === "unableToCheck" &&
+      check.assignment?.state !== "notAssigned",
+  );
+}
+
+/**
+ * Whether an alternative is in use or the capability cannot be combined with
+ * existing Conditional Access policies. Such a capability is no safeguard to
+ * count and no gap; an unreadable alternative (`unknown`) stays counted.
+ */
+export function excludedByAlternative(result: CapabilityResult): boolean {
+  return Boolean(result.alternative && result.alternative.state !== "unknown");
+}
+
+/**
+ * The capabilities of a control that count as safeguards: every mapped
+ * capability in scope except those excluded by an alternative. Reports,
+ * registers and the management summary use the same denominator.
+ */
+export function countedCapabilityIds(
+  control: Pick<ControlAssessment, "capabilityIds">,
+  capabilities: ReadonlyMap<string, CapabilityResult>,
+): string[] {
+  return control.capabilityIds.filter((id) => {
+    const result = capabilities.get(id);
+    return !result || !excludedByAlternative(result);
+  });
+}
+
 export function assessCapabilities(
   data: ComplianceExportData,
   capabilities: readonly ComplianceCapability[] = COMPLIANCE_CAPABILITIES,
@@ -553,21 +789,43 @@ export function assessCapabilities(
   const groupNames = normalizeGroupNames(data.groupNames);
   const evidenceByCapability = new Map<string, CapabilityEvidence[]>();
   const checksByCapability = new Map<string, TechnicalCheck[]>();
+  // The configuration each piece of evidence came from, so policies without
+  // an id are never taken for one policy.
+  const origin = new Map<CapabilityEvidence, number>();
+  const policyKey = (item: CapabilityEvidence) =>
+    isIdentifier(item.policyId)
+      ? `${item.policyType}:${item.policyId}`
+      : `\u0000${origin.get(item)}`;
 
-  for (const config of configurations) {
+  for (const [index, config] of configurations.entries()) {
     for (const item of evaluateConfiguration(
       config,
       capabilities,
       groupNames,
       checksByCapability,
     )) {
+      origin.set(item, index);
       const existing = evidenceByCapability.get(item.capabilityId);
       if (existing) existing.push(item);
       else evidenceByCapability.set(item.capabilityId, [item]);
     }
   }
 
-  return capabilities.map((capability) => {
+  for (const capability of capabilities) {
+    if (!capability.signals.some((signal) => signal.source === "tenantPolicy"))
+      continue;
+    const tenant = evaluateTenantPolicySignals(data, capability);
+    evidenceByCapability.set(capability.id, [
+      ...(evidenceByCapability.get(capability.id) ?? []),
+      ...tenant.evidence,
+    ]);
+    checksByCapability.set(capability.id, [
+      ...(checksByCapability.get(capability.id) ?? []),
+      ...tenant.checks,
+    ]);
+  }
+
+  const results = capabilities.map((capability) => {
     const evidence = evidenceByCapability.get(capability.id) ?? [];
     const collectionGaps = capabilityCollectionGaps(data, capability);
     const incomplete = collectionGaps.length > 0;
@@ -583,7 +841,9 @@ export function assessCapabilities(
                 ? signal.propertyPath
                 : signal.source === "policyCheck"
                   ? signal.check
-                  : signal.settingId,
+                  : signal.source === "tenantPolicy"
+                    ? tenantPolicySettingId(signal)
+                    : signal.settingId,
           );
         if (!checks.some((check) => groupIds.includes(check.settingId)))
           checks.push({
@@ -628,8 +888,11 @@ export function assessCapabilities(
               : "No supported setting was found after checking the collected policies.",
       });
     }
-    let status = capabilityStatus(evidence, capability);
+    let status = capabilityStatus(evidence, capability, policyKey);
     if (status === "noEvidence" && incomplete) status = "collectionIncomplete";
+    const reasons = unknownAssignmentReasons(
+      evidence.map((item) => item.assignment),
+    );
     if (
       scope.platforms &&
       capability.platform !== "tenant" &&
@@ -649,9 +912,16 @@ export function assessCapabilities(
             }))
           : checks,
       limitations: [
-        ...(evidence.some((item) => item.assignment.state === "unknown")
+        ...unknownAssignmentLimitations(reasons),
+        // The review alone does not settle targeting that could not be
+        // resolved beside values that could not be read; a collection gap
+        // names its refresh below.
+        ...(reasons.unresolved &&
+        !incomplete &&
+        status !== "notApplicable" &&
+        hasUnreadData({ checks })
           ? [
-              "Assignment data is unavailable for some matching policies; effective targeting remains unknown.",
+              "Some values of matching policies could not be read or judged; see the technical checks. Refresh the policies before relying on the review of their assignments.",
             ]
           : []),
         ...(incomplete
@@ -663,7 +933,11 @@ export function assessCapabilities(
           row.family === "conditionalAccessPolicies" &&
           row.status === "notCollected"
             ? "Conditional Access policies were not collected. Enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies to assess MFA and access requirements."
-            : `${row.family}: ${row.status === "notCollected" ? "not collected" : "collection incomplete"}. Refresh the policies to retry collection. See collection coverage for the API error details.`,
+            : TENANT_POLICY_FAMILY_KEYS.has(row.family)
+              ? row.status === "notCollected"
+                ? "Entra tenant policies were not collected. They are read with the Conditional Access permission: enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies."
+                : `${row.family}: collection incomplete. ${row.errors.join(" ")}`
+              : `${row.family}: ${row.status === "notCollected" ? "not collected" : "collection incomplete"}. Refresh the policies to retry collection. See collection coverage for the API error details.`,
         ),
         ...(status === "conflictingEvidence"
           ? [
@@ -677,6 +951,194 @@ export function assessCapabilities(
           : []),
         ...(capability.caveat ? [capability.caveat.en] : []),
       ],
+    };
+  });
+  return applyAlternatives(
+    results,
+    conditionalAccessState(data, configurations),
+  );
+}
+
+/**
+ * Whether the collection shows a Conditional Access policy in any state
+ * (`exists`), shows completely that none exists (`none`), or cannot tell
+ * (`unknown`: not collected, incomplete or no collection timestamp). Any
+ * existing policy, disabled ones included, prevents turning on security
+ * defaults (README "Alternative capabilities").
+ */
+function conditionalAccessState(
+  data: ComplianceExportData,
+  configurations: readonly Record<string, any>[],
+): "exists" | "none" | "unknown" {
+  if (
+    configurations.some(
+      (config) => config.__evidenceFamily === "conditionalAccessPolicies",
+    )
+  )
+    return "exists";
+  if (
+    !data.collectedAt ||
+    buildCollectionCoverage(data, [], true).some(
+      (row) =>
+        row.family === "conditionalAccessPolicies" &&
+        (row.status === "incomplete" || row.status === "notCollected"),
+    )
+  )
+    return "unknown";
+  return "none";
+}
+
+/**
+ * State of the alternatives of a capability without evidence. An alternative
+ * is in use only with assigned enforcing evidence (enforced or
+ * requirementAssigned); report-only, disabled, unassigned or merely compared
+ * policies never count. A capability exclusive with Conditional Access is not
+ * combinable while any Conditional Access policy exists. Unknown when an
+ * alternative or, for an exclusive capability, Conditional Access could not
+ * be read; unreadable values on unassigned (disabled or report-only) policies
+ * do not count. Outside scope and plainly absent alternatives leave the capability
+ * a regular gap.
+ */
+function alternativeOf(
+  result: CapabilityResult,
+  byId: ReadonlyMap<string, CapabilityResult>,
+  conditionalAccess: "exists" | "none" | "unknown",
+): CapabilityResult["alternative"] {
+  const { alternativeTo = [], exclusiveWithConditionalAccess } =
+    result.capability;
+  // Only a value that was read and compared counts; an unreadable capability
+  // stays a data question of its own.
+  if (
+    result.status !== "noEvidence" ||
+    (!alternativeTo.length && !exclusiveWithConditionalAccess) ||
+    !result.checks.some(
+      (check) =>
+        check.assessmentStatus === "checked" &&
+        (check.result === "different" || check.result === "missing"),
+    )
+  )
+    return undefined;
+  const alternatives = alternativeTo
+    .map((id) => byId.get(id))
+    .filter((item): item is CapabilityResult => Boolean(item))
+    .filter((item) => item.status !== "notApplicable");
+  const inUse = alternatives.filter((item) => hasAssignedEvidence(item.status));
+  if (inUse.length)
+    return {
+      state: "inUse",
+      capabilityIds: inUse.map((item) => item.capability.id),
+    };
+  if (exclusiveWithConditionalAccess && conditionalAccess === "exists")
+    return { state: "notCombinable", capabilityIds: [] };
+  const unknown = alternatives.filter((item) => {
+    if (
+      item.status === "collectionIncomplete" ||
+      item.status === "assignmentUnknown"
+    )
+      return true;
+    // A disabled or report-only policy cannot enforce the alternative, so its
+    // unreadable value leaves nothing open.
+    const relevant = item.checks.filter(
+      (check) => check.assignment?.state !== "notAssigned",
+    );
+    return (
+      relevant.length > 0 &&
+      relevant.every((check) => check.assessmentStatus === "unableToCheck")
+    );
+  });
+  const caUnknown =
+    exclusiveWithConditionalAccess && conditionalAccess === "unknown";
+  return unknown.length || caUnknown
+    ? {
+        state: "unknown",
+        capabilityIds: unknown.map((item) => item.capability.id),
+        ...(unknown.length && !caUnknown && unknown.every(targetingUnresolved)
+          ? { targetingUnresolved: true as const }
+          : unknown.some(unresolvedTargetingIn)
+            ? { targetingPartlyUnresolved: true as const }
+            : {}),
+      }
+    : undefined;
+}
+
+// An alternative unknown only because the assignments of its policies,
+// read completely, could not be resolved (AssignmentSummary.uncertainty),
+// with no data it depends on left unread.
+const targetingUnresolved = (result: CapabilityResult) =>
+  result.status === "assignmentUnknown" &&
+  onlyTargetingUnresolved(result.evidence.map((item) => item.assignment)) &&
+  !hasUnreadData(result);
+
+// An alternative unknown at least in part because the assignments of some
+// of its policies, read completely, could not be resolved.
+const unresolvedTargetingIn = (result: CapabilityResult) =>
+  result.status === "assignmentUnknown" &&
+  unknownAssignmentReasons(result.evidence.map((item) => item.assignment))
+    .unresolved;
+
+function alternativeReason(
+  alternative: NonNullable<CapabilityResult["alternative"]>,
+  byId: ReadonlyMap<string, CapabilityResult>,
+): string {
+  const named = (ids: readonly string[]) =>
+    ids.map((id) => byId.get(id)!.capability.name).join(", ");
+  const names = named(alternative.capabilityIds);
+  if (alternative.state === "inUse")
+    return `Not a gap: an alternative is configured and assigned in this tenant (${names}).`;
+  if (alternative.state === "notCombinable")
+    return "Not applicable while Conditional Access policies exist: this setting cannot be turned on while any Conditional Access policy exists, including disabled ones. Require MFA through Conditional Access instead.";
+  // A refresh may read what could not be read; targeting that could not be
+  // resolved needs a review of the overlapping assignments instead. An
+  // alternative with both causes is named for both.
+  const unresolved = named(
+    alternative.capabilityIds.filter((id) =>
+      unresolvedTargetingIn(byId.get(id)!),
+    ),
+  );
+  const unread =
+    named(
+      alternative.capabilityIds.filter(
+        (id) => !targetingUnresolved(byId.get(id)!),
+      ),
+    ) ||
+    (alternative.targetingUnresolved ? "" : "the Conditional Access policies");
+  if (!unresolved)
+    return `Not compared: whether this is needed depends on ${unread}, which could not be read completely. Refresh the policies before acting on this value.`;
+  if (!unread)
+    return `Not compared: whether this is needed depends on ${unresolved}, whose effective targeting could not be resolved. Review the overlapping assignments of their policies before acting on this value.`;
+  return `Not compared: whether this is needed depends on ${unread}, which could not be read completely, and on ${unresolved}, whose effective targeting could not be resolved. Refresh the policies and review the overlapping assignments before acting on this value.`;
+}
+
+// A capability with an alternative state is no ordinary gap: its different
+// and missing comparisons keep their values but carry no result, so no tally,
+// next action or fix pack treats it as missing (README "Alternative
+// capabilities"). Alternatives are judged on the unchanged first pass.
+function applyAlternatives(
+  results: CapabilityResult[],
+  conditionalAccess: "exists" | "none" | "unknown",
+): CapabilityResult[] {
+  const byId = new Map(results.map((result) => [result.capability.id, result]));
+  return results.map((result) => {
+    const alternative = alternativeOf(result, byId, conditionalAccess);
+    if (!alternative) return result;
+    const reason = alternativeReason(alternative, byId);
+    return {
+      ...result,
+      alternative,
+      checks: result.checks.map((check) =>
+        check.result === "different" || check.result === "missing"
+          ? {
+              ...check,
+              assessmentStatus:
+                alternative.state === "unknown"
+                  ? ("unableToCheck" as const)
+                  : check.assessmentStatus,
+              result: null,
+              reason: check.reason ? `${reason} ${check.reason}` : reason,
+            }
+          : check,
+      ),
+      limitations: [...result.limitations, reason],
     };
   });
 }
@@ -828,6 +1290,40 @@ export function assessFramework(
   };
 }
 
+// Every framework the engine assesses, in report order.
+function assessedFrameworks(
+  essentialEightMaturityLevel: AssessmentScope["essentialEightMaturityLevel"],
+): FrameworkDefinition[] {
+  return [
+    NIST_800_53,
+    NIST_CSF,
+    ISO_27001,
+    SOC_2,
+    DEF_STAN_05_138,
+    CYBER_ESSENTIALS,
+    NIST_800_171,
+    NIST_800_171_R3,
+    essentialEightFramework(essentialEightMaturityLevel),
+    NIS2,
+    DORA,
+    HIPAA_SECURITY_RULE,
+  ];
+}
+
+let assessedIds: ReadonlySet<string> | undefined;
+
+/**
+ * Whether the engine still assesses this framework. Assessments stored by an
+ * earlier version can name a framework that was removed since; readers drop
+ * it so it is never shown or counted.
+ */
+export function isAssessedFramework(frameworkId: unknown): boolean {
+  assessedIds ??= new Set(
+    assessedFrameworks(undefined).map((framework) => framework.id),
+  );
+  return typeof frameworkId === "string" && assessedIds.has(frameworkId);
+}
+
 export function assessCompliance(
   data: ComplianceExportData,
   scope: AssessmentScope = data.assessmentScope ?? {},
@@ -850,25 +1346,15 @@ export function assessCompliance(
       collectedAt: data.collectedAt,
       collectionStartedAt: data.collectionStartedAt,
       deviceState: "notCollected",
+      policyStatusSummary: Object.values(
+        data.policyDeviceStatus?.sources ?? {},
+      ).includes("collected")
+        ? "collected"
+        : "notCollected",
       effectiveAccess: "unverified",
     },
-    frameworks: [
-      assessFramework(capabilities, NIST_800_53, scope),
-      assessFramework(capabilities, NIST_CSF, scope),
-      assessFramework(capabilities, BSI_IT_GRUNDSCHUTZ, scope),
-      assessFramework(capabilities, ISO_27001, scope),
-      assessFramework(capabilities, SOC_2, scope),
-      assessFramework(capabilities, DEF_STAN_05_138, scope),
-      assessFramework(capabilities, CYBER_ESSENTIALS, scope),
-      assessFramework(capabilities, NIST_800_171, scope),
-      assessFramework(capabilities, NIST_800_171_R3, scope),
-      assessFramework(
-        capabilities,
-        essentialEightFramework(scope.essentialEightMaturityLevel),
-        scope,
-      ),
-      assessFramework(capabilities, NIS2, scope),
-      assessFramework(capabilities, HIPAA_SECURITY_RULE, scope),
-    ],
+    frameworks: assessedFrameworks(scope.essentialEightMaturityLevel).map(
+      (framework) => assessFramework(capabilities, framework, scope),
+    ),
   };
 }

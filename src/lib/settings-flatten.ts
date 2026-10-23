@@ -1,17 +1,34 @@
+import { canonicalJson } from "./canonical-json";
+import {
+  childLists,
+  MAX_ITEM_JSON_DEPTH,
+  MAX_SETTING_DEPTH,
+  METADATA_KEYS,
+  normalizeTargetType,
+  shownOmaValue,
+  unreadableCatalogValue,
+  unreadableIntentValue,
+  unreadableOmaValue,
+  unreadableProperties,
+  unreadableTemplateValue,
+} from "./compliance/graph-rows";
 import {
   extractAppConfigurationSettings,
   extractSettingValue,
   formatValue,
+  isUnsetValue,
   parseAdministrativeTemplate,
   parseComplianceRules,
   parseDeviceConfiguration,
   parseDocumentableProperties,
   parseSecurityBaseline,
+  UNREADABLE_VALUE,
 } from "./configuration-parser";
 import type {
   ConfigurationSettingDefinition,
   ConfigurationSettingInstance,
 } from "./intune-detailed-client";
+import { isRedactedValue, REDACTED_VALUE } from "./intune-policy-registry";
 
 /** One documented setting of a collected item, flattened for search. */
 export interface FlatSettingRow {
@@ -23,37 +40,136 @@ export interface FlatSettingRow {
   definitionId?: string;
   /** Parent settings or properties, outermost first. */
   path: string[];
+  /**
+   * What tells the row apart from the others of its item instead of path,
+   * when path holds display names: the definition ids of the parent
+   * Settings Catalog settings, with the entry of a repeated group, or none
+   * for an administrative template value, which its definition id names.
+   */
+  identity?: string[];
+  /**
+   * The value as Graph returned it, when value shows it by name or without
+   * its type: the option ids of a Settings Catalog choice, the state and the
+   * typed values by presentation id of an administrative template value, or
+   * a typed value (typed). History and Compare compare it instead of value,
+   * which is display only.
+   */
+  token?: string;
+  /**
+   * The token holds the value with its documented Graph type (typedToken),
+   * so a value whose type changed is a change even where both read alike.
+   */
+  typed?: true;
   category?: string;
+  /**
+   * Graph did not return the setting's value readably
+   * (compliance/graph-rows.ts); value says so. Comparisons treat it as
+   * unknown, never as a value.
+   */
+  unreadable?: true;
+  /**
+   * The value was redacted where it came from: the collector replaced it
+   * with its marker (isRedactedValue), the snapshot projection kept it as
+   * one, or it is a secret Settings Catalog value. value shows the marker.
+   * Never told from the text: a value that holds the marker among other
+   * words is a value. Comparisons treat it as not stored.
+   */
+  redacted?: true;
 }
+
+const flag = (unreadable: boolean) =>
+  unreadable ? { unreadable: true as const } : {};
+
+const redactedFlag = (redacted: boolean) =>
+  redacted ? { redacted: true as const } : {};
 
 const NOT_CONFIGURED = "Not configured";
 
 // Item level metadata the documentation never lists as a setting.
-const METADATA_KEYS = new Set([
-  "@odata.type",
-  "@odata.context",
-  "id",
-  "name",
-  "displayName",
-  "description",
-  "createdDateTime",
-  "lastModifiedDateTime",
-  "modifiedDateTime",
-  "assignments",
-  "roleScopeTagIds",
-  "supportsScopeTags",
-  "version",
-  "configType",
-  "collectionStatus",
-  "settingCount",
-  "platforms",
-  "technologies",
-  "templateReference",
-  "hasFetchError",
-  "fetchErrorMessage",
-  "creationSource",
-  "isAssigned",
-]);
+export { METADATA_KEYS };
+
+// Stands in for a plain property value Graph did not return readably while
+// the rows of an item are built; never shown.
+const UNREADABLE_MARK = "\u0000unreadable\u0000";
+
+// The item with every plain property whose value contradicts its documented
+// type (compliance/graph-rows.ts) replaced by the mark: the property itself
+// for the layouts that list one row per property, otherwise the value at its
+// path, so the other values of a record stay readable.
+function markUnreadable(
+  item: Record<string, unknown>,
+  family: string,
+  topLevel: boolean,
+): Record<string, unknown> {
+  const unreadable = unreadableProperties(item, family);
+  if (!unreadable.length) return item;
+  const copy = structuredClone(item);
+  for (const { path } of unreadable) {
+    const segments = topLevel ? path.slice(0, 1) : path;
+    let current = copy;
+    for (const segment of segments.slice(0, -1))
+      current = current[segment] as Record<string, unknown>;
+    current[segments[segments.length - 1]!] = UNREADABLE_MARK;
+  }
+  return copy;
+}
+
+// Stands in for a value the collector redacted while the rows of a
+// property layout are built, so a row tells where its value came from
+// rather than what its text reads. Unicode noncharacters are reserved for
+// internal use and JSON never escapes them, so a record shown as JSON text
+// keeps the mark as written.
+const REDACTED_MARK = "\uFDD0redacted\uFDD0";
+
+// The item with every value the collector redacted (isRedactedValue)
+// replaced by the mark, as deep as a stored item holds values. The marker
+// in a list among other entries, or in a list of lists, is no value the
+// collector wrote and stays text.
+function markRedacted<T>(item: T, skip: ReadonlySet<string> = new Set()): T {
+  let found = false;
+  const visit = (value: unknown, depth: number): unknown => {
+    if (isRedactedValue(value)) {
+      found = true;
+      return Array.isArray(value) ? [REDACTED_MARK] : REDACTED_MARK;
+    }
+    if (depth > MAX_ITEM_JSON_DEPTH) return value;
+    if (Array.isArray(value))
+      return value.map((entry) =>
+        isRecord(entry) ? visit(entry, depth + 1) : entry,
+      );
+    if (!isRecord(value)) return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        depth === 0 && skip.has(key) ? entry : visit(entry, depth + 1),
+      ]),
+    );
+  };
+  if (!isRecord(item)) return item;
+  const marked = visit(item, 0);
+  return found ? (marked as T) : item;
+}
+
+const unmarkText = (text: string) =>
+  text.replaceAll(REDACTED_MARK, REDACTED_VALUE);
+
+// A row built from a marked value reads as unreadable or as redacted; a
+// redacted one shows the collector's marker.
+function unmark(row: FlatSettingRow): FlatSettingRow {
+  if (row.value === UNREADABLE_MARK)
+    return { ...row, value: UNREADABLE_VALUE, unreadable: true };
+  const marked = [row.value, row.name, ...row.path].some((text) =>
+    text.includes(REDACTED_MARK),
+  );
+  if (!marked) return row;
+  return {
+    ...row,
+    name: unmarkText(row.name),
+    path: row.path.map(unmarkText),
+    value: unmarkText(row.value),
+    ...redactedFlag(row.value.includes(REDACTED_MARK)),
+  };
+}
 
 function textOf(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -61,7 +177,66 @@ function textOf(value: unknown): string | undefined {
 
 const definitionIdOf = textOf;
 
+// What a value of a typed Graph record is compared by: the record's
+// normalized @odata.type with the value as Graph returned it. Graph types the
+// value of every custom OMA-URI row, Settings Catalog simple value, intent
+// setting instance and administrative template presentation value
+// (graph-rows.ts VALUE_TYPES), and the type is part of the setting a CSP
+// processes, so an integer 1 that became the text "1", or the boolean true
+// that became the text "Enabled", is a change although both read the same.
+// Values of one type keep their own form, so equal values stay equal.
+const typedValue = (record: Record<string, unknown>, value: unknown) => [
+  normalizeTargetType(record["@odata.type"]),
+  value ?? null,
+];
+
+// The members of a JSON object are unordered, so a parsed complex value is
+// serialized with its keys sorted (canonical-json.ts): the same object in
+// another key order is the same value.
+const typedToken = (token: unknown) => ({
+  token: canonicalJson(token),
+  typed: true as const,
+});
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
 // --- Settings Catalog -------------------------------------------------------
+
+// The typed token of the simple value or value collection of a readable
+// Settings Catalog instance, entry by entry in order; none for other
+// instances.
+function simpleToken(instance: ConfigurationSettingInstance) {
+  const entry = (value: unknown) =>
+    isRecord(value) ? typedValue(value, value.value) : null;
+  if (isRecord(instance.simpleSettingValue))
+    return typedToken(entry(instance.simpleSettingValue));
+  if (Array.isArray(instance.simpleSettingCollectionValue))
+    return typedToken(instance.simpleSettingCollectionValue.map(entry));
+  return {};
+}
+
+const SECRET_VALUE = "devicemanagementconfigurationsecretsettingvalue";
+
+// Whether the own value of an instance was redacted: a simple or choice
+// value, or an entry of a value collection, the collector replaced with its
+// marker, or a secret value, which is never stored.
+function redactedCatalogValue(instance: ConfigurationSettingInstance): boolean {
+  const entries: unknown[] = [
+    instance.simpleSettingValue,
+    instance.choiceSettingValue,
+    ...[
+      instance.simpleSettingCollectionValue as unknown,
+      instance.choiceSettingCollectionValue as unknown,
+    ].flatMap((list) => (Array.isArray(list) ? list : [])),
+  ];
+  return entries.some(
+    (entry) =>
+      isRecord(entry) &&
+      (isRedactedValue(entry.value) ||
+        normalizeTargetType(entry["@odata.type"]) === SECRET_VALUE),
+  );
+}
 
 // The instance without its children, so extractSettingValue resolves only
 // this level; children are walked separately to keep their ids and path.
@@ -82,22 +257,31 @@ function withoutChildren(
   return copy;
 }
 
+// The child lists of an instance, with the entry of a group collection each
+// list belongs to.
 function childGroups(
   instance: ConfigurationSettingInstance,
-): ConfigurationSettingInstance[][] {
-  const groups: Array<ConfigurationSettingInstance[] | undefined> = [
-    instance.choiceSettingValue?.children,
+): Array<{ children: ConfigurationSettingInstance[]; entry?: number }> {
+  const groups: Array<{ children: unknown; entry?: number }> = [
+    { children: instance.choiceSettingValue?.children },
     ...(Array.isArray(instance.choiceSettingCollectionValue)
-      ? instance.choiceSettingCollectionValue.map((choice) => choice?.children)
+      ? instance.choiceSettingCollectionValue.map((choice) => ({
+          children: choice?.children,
+        }))
       : []),
-    instance.groupSettingValue?.children,
+    { children: instance.groupSettingValue?.children },
     ...(Array.isArray(instance.groupSettingCollectionValue)
-      ? instance.groupSettingCollectionValue.map((group) => group?.children)
+      ? instance.groupSettingCollectionValue.map((group, entry) => ({
+          children: group?.children,
+          entry,
+        }))
       : []),
   ];
   return groups.filter(
-    (children): children is ConfigurationSettingInstance[] =>
-      Array.isArray(children) && children.length > 0,
+    (
+      group,
+    ): group is { children: ConfigurationSettingInstance[]; entry?: number } =>
+      Array.isArray(group.children) && group.children.length > 0,
   );
 }
 
@@ -107,37 +291,103 @@ function walkCatalogInstance(
   path: string[],
   rows: FlatSettingRow[],
   depth: number,
+  identity: string[] = [],
+  shadowed = false,
 ): void {
-  if (!instance || typeof instance !== "object" || depth > 12) return;
+  if (!instance || typeof instance !== "object") return;
+  // A child below the depth limit is not kept (compliance/graph-rows.ts),
+  // so it reads as unknown, never as no setting.
+  if (depth > MAX_SETTING_DEPTH) {
+    rows.push({
+      name: "Setting below the depth limit",
+      value: UNREADABLE_VALUE,
+      path,
+      ...(path.length ? { identity } : {}),
+      unreadable: true,
+    });
+    return;
+  }
+  const own = withoutChildren(instance);
   const extracted = extractSettingValue({
     id: instance.settingDefinitionId ?? "",
-    settingInstance: withoutChildren(instance),
+    settingInstance: own,
     settingDefinitions: definitions,
   });
   const isGroup = Boolean(
     instance.groupSettingValue || instance.groupSettingCollectionValue,
   );
   const definitionId = definitionIdOf(instance.settingDefinitionId);
-  if (!isGroup && extracted.value !== NOT_CONFIGURED) {
+  // The shared instance rules (compliance/graph-rows.ts): an instance
+  // without its definition id, or whose own value or child lists cannot be
+  // read, is one unreadable row, also a group. Children of unknown lists are
+  // not read; children below such an instance, or below an unreadable
+  // ancestor (shadowed), are kept as unreadable rows, so nothing below it
+  // reads as configured, as a value or as no setting (as the compliance
+  // engine's collectCatalogValues reads them).
+  const unknownChildren = childLists(instance) === null;
+  const unreadable =
+    shadowed ||
+    !definitionId ||
+    unknownChildren ||
+    unreadableCatalogValue(instance);
+  // A row is kept by the value Graph returned (extractSettingValue
+  // configured), never by its display text, so a text value that reads
+  // "Not configured" is a setting like any other.
+  if (unreadable || (!isGroup && extracted.configured)) {
+    const choice = Boolean(
+      instance.choiceSettingValue || instance.choiceSettingCollectionValue,
+    );
     rows.push({
       name: extracted.name,
-      value: String(extracted.value),
+      value: unreadable ? UNREADABLE_VALUE : String(extracted.value),
       ...(definitionId ? { definitionId } : {}),
       path,
+      ...(path.length ? { identity } : {}),
+      ...(choice
+        ? {
+            token: String(
+              extractSettingValue({
+                id: instance.settingDefinitionId ?? "",
+                settingInstance: own,
+                settingDefinitions: [],
+              }).value,
+            ),
+          }
+        : unreadable
+          ? {}
+          : simpleToken(instance)),
+      ...flag(unreadable),
+      ...redactedFlag(!unreadable && redactedCatalogValue(instance)),
     });
   }
+  if (unknownChildren) return;
   // Repeated groups (for example firewall rules) are numbered so rows of
   // different entries stay apart.
   const repeated =
     Array.isArray(instance.groupSettingCollectionValue) &&
     instance.groupSettingCollectionValue.length > 1;
-  childGroups(instance).forEach((children, index) => {
+  childGroups(instance).forEach(({ children, entry }, index) => {
     const childPath = [
       ...path,
       repeated ? `${extracted.name} ${index + 1}` : extracted.name,
     ];
+    // Every entry of a group collection is numbered by its position, also
+    // a single one, so adding an entry never renames the others.
+    const id = instance.settingDefinitionId ?? extracted.name;
+    const childIdentity = [
+      ...identity,
+      entry === undefined ? id : `${id} ${entry + 1}`,
+    ];
     for (const child of children) {
-      walkCatalogInstance(child, definitions, childPath, rows, depth + 1);
+      walkCatalogInstance(
+        child,
+        definitions,
+        childPath,
+        rows,
+        depth + 1,
+        childIdentity,
+        unreadable,
+      );
     }
   });
 }
@@ -220,16 +470,31 @@ function omaRows(omaSettings: unknown): FlatSettingRow[] {
   return omaSettings.flatMap((setting) => {
     if (!setting || typeof setting !== "object") return [];
     const record = setting as Record<string, unknown>;
-    const value = formatValue(record.value ?? record.omaSettingStringValue);
-    if (value === NOT_CONFIGURED) return [];
+    // A row without a value holds one that is not stored; it is compared
+    // by fingerprint.
+    const unreadable = unreadableOmaValue(record);
+    const raw = record.value ?? record.omaSettingStringValue;
+    // Told by the value Graph returned, never by its display text.
+    if (!unreadable && isUnsetValue(raw)) return [];
+    // An XML value is shown as its text (graph-rows.ts shownOmaValue).
+    const value = unreadable
+      ? UNREADABLE_VALUE
+      : formatValue(record.value != null ? shownOmaValue(record) : raw);
     const omaUri = definitionIdOf(record.omaUri);
     return [
       {
         name: textOf(record.displayName) ?? omaUri ?? "Custom setting",
         value,
+        ...(unreadable
+          ? {}
+          : typedToken(
+              typedValue(record, record.value ?? record.omaSettingStringValue),
+            )),
         ...(omaUri ? { definitionId: omaUri } : {}),
         path: [],
         category: "Custom OMA-URI",
+        ...flag(unreadable),
+        ...redactedFlag(!unreadable && isRedactedValue(raw)),
       },
     ];
   });
@@ -280,24 +545,60 @@ function administrativeTemplateRows(
     : [];
   const parsed = parseAdministrativeTemplate(values);
   return parsed.map((setting, index) => {
-    const definition = (
-      values[index] as { definition?: Record<string, unknown> }
-    )?.definition;
+    const raw = values[index] as Record<string, any> | undefined;
+    const definition = raw?.definition as Record<string, unknown> | undefined;
     const definitionId = definitionIdOf(definition?.id);
+    // What is compared: the state and each presentation's typed value by
+    // the presentation id, never its label. Presentations are told apart by
+    // their ids, so their order is no change.
+    const presentations = (
+      Array.isArray(raw?.presentationValues) ? raw.presentationValues : []
+    )
+      .map((entry: any) =>
+        canonicalJson([
+          entry?.presentation?.id ?? null,
+          ...typedValue(isRecord(entry) ? entry : {}, entry?.value),
+          entry?.values ?? null,
+        ]),
+      )
+      .sort();
     return {
       name: setting.name,
       value:
         setting.value === NOT_CONFIGURED
           ? setting.state
           : `${setting.state}: ${setting.value}`,
+      ...typedToken([raw?.enabled ?? null, presentations]),
       ...(definitionId ? { definitionId } : {}),
       path:
         setting.category && setting.category !== "General"
           ? setting.category.split("\\").filter(Boolean)
           : [],
+      ...(definitionId ? { identity: [] } : {}),
       category: setting.category,
+      ...(unreadableTemplateValue(values[index])
+        ? flag(true)
+        : redactedFlag(
+            (Array.isArray(raw?.presentationValues)
+              ? raw.presentationValues
+              : []
+            ).some(
+              (entry: unknown) =>
+                isRecord(entry) &&
+                (isRedactedValue(entry.value) || isRedactedValue(entry.values)),
+            ),
+          )),
     };
   });
+}
+
+function parsedJson(text: unknown): unknown {
+  if (typeof text !== "string") return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 // Security baseline intents keep their settings as definitionId and
@@ -325,15 +626,27 @@ function securityBaselineRows(item: Record<string, unknown>): FlatSettingRow[] {
       const [parsed] = parseSecurityBaseline([], [setting]);
       const row = parsed?.settings[0];
       if (!row) continue;
-      const definitionId = definitionIdOf(
-        (setting as Record<string, unknown>)?.definitionId,
-      );
+      const record = (setting ?? {}) as Record<string, unknown>;
+      const definitionId = definitionIdOf(record.definitionId);
+      const unreadable = unreadableIntentValue(setting);
       rows.push({
         name: row.name,
         value: row.value,
+        ...(unreadable
+          ? {}
+          : typedToken(
+              typedValue(
+                record,
+                record.value !== undefined && record.value !== null
+                  ? record.value
+                  : parsedJson(record.valueJson),
+              ),
+            )),
         ...(definitionId ? { definitionId } : {}),
         path: [],
         category: source.category,
+        ...flag(unreadable),
+        ...redactedFlag(!unreadable && isRedactedValue(record.value)),
       });
     }
   }
@@ -381,28 +694,36 @@ export function flattenItemSettings(
     return [
       ...rows,
       ...genericRows(
-        record,
+        markRedacted(markUnreadable(record, sectionKey, false)),
         new Set([
           "settingInstance",
           "settingDefinitions",
           "settingDefinitionId",
         ]),
-      ),
+      ).map(unmark),
     ];
   }
+  // Plain properties whose value Graph did not return readably read as
+  // unreadable rows, never as their value; values the collector redacted
+  // read as redacted rows. Custom OMA-URI rows tell both from their records.
+  const marked = (topLevel: boolean) =>
+    markRedacted(
+      markUnreadable(record, sectionKey, topLevel),
+      new Set(["omaSettings"]),
+    );
   switch (sectionKey) {
     case "deviceConfigurations":
     case "windowsUpdatePolicies":
-      return deviceConfigurationRows(record);
+      return deviceConfigurationRows(marked(true)).map(unmark);
     case "administrativeTemplates":
       return administrativeTemplateRows(record);
     case "compliancePolicies":
-      return complianceRows(record);
+      return complianceRows(marked(true)).map(unmark);
     case "securityBaselines":
       return securityBaselineRows(record);
     case "appConfigurations":
-      return appConfigurationRows(record);
+      return appConfigurationRows(marked(false)).map(unmark);
     default:
-      return genericRows(record);
+      return genericRows(marked(false)).map(unmark);
   }
 }

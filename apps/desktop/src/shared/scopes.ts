@@ -26,5 +26,6 @@ export const SCOPE_REASONS: Record<string, string> = {
   "DeviceManagementScripts.Read.All":
     "PowerShell and shell scripts, remediations",
   "Group.Read.All": "Assignment group names",
-  "Policy.Read.All": "Conditional Access policies",
+  "Policy.Read.All":
+    "Conditional Access policies, authentication methods and security defaults",
 };

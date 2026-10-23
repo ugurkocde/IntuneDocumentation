@@ -1,4 +1,4 @@
-import type { CompliancePlatform } from "../types";
+import type { CompliancePlatform, ControlStatus } from "../types";
 import type { ManagementLocale, NextActionTier, SafeguardState } from "./types";
 
 // Text for the security summary PDF. Page 1 is read by management without IT
@@ -43,12 +43,26 @@ export interface ManagementReportStrings {
   oldBaselineDetail: string;
   noBaseline: string;
   noBaselineHint: string;
+  historyValue: (improved: number, regressed: number) => string;
+  // No measure gained or lost evidence; policies or Entra settings may
+  // still have changed, so the words name measures.
+  historyNoChange: string;
+  // No measure gained or lost evidence, but some could be assessed in one of
+  // the two collections only, so they were not compared.
+  historyGapsOnly: string;
+  historyDetail: (since: string) => string;
   measuresHeading: string;
   measuresCaption: string;
   moreMeasures: (count: number) => string;
   outsideScopeLine: (count: number) => string;
   notEvaluatedLine: (count: number) => string;
-  dataGapsNote: (count: number) => string;
+  /**
+   * The data gap note: safeguards that could not be read, of them those
+   * whose targeting could not be resolved either
+   * (ManagementSummary.targetingPartlyUnresolved), and those whose targeting
+   * alone could not be resolved (ManagementSummary.targetingUnresolved).
+   */
+  dataGapsNote: (unread: number, unresolved?: number, partly?: number) => string;
   nextStepsHeading: string;
   noNextSteps: string;
   actionSentence: Record<NextActionTier, (name: string) => string>;
@@ -77,6 +91,7 @@ export interface ManagementReportStrings {
     outsideScope: FigureText;
     notEvaluated: FigureText;
     dataGaps: FigureText;
+    targetingUnresolved: FigureText;
   };
   measuresValue: (count: number) => string;
   measuresOf: (part: number, total: number) => string;
@@ -121,6 +136,33 @@ export interface ManagementReportStrings {
   rulesetChanged: string;
   noBaselineHeading: string;
   noBaselineSteps: readonly string[];
+  historyHeading: (since: string) => string;
+  historyIntro: (since: string) => string;
+  historyPoliciesHeading: string;
+  historyPolicyHeaders: readonly [string, string];
+  historyPolicyRows: {
+    added: string;
+    removed: string;
+    renamed: string;
+    changed: string;
+    settingChanges: string;
+    assignmentChanges: string;
+  };
+  historyNotCompared: (families: number, items: number) => string;
+  historyPartial: string;
+  historyIdentityHeading: string;
+  historyIdentityIntro: string;
+  historyIdentityRow: string;
+  historyIdentityNotCompared: (policies: number) => string;
+  historyControlsHeading: string;
+  historyMovement: (improved: number, regressed: number) => string;
+  historyCollectionGaps: (opened: number, closed: number) => string;
+  historyControlHeaders: readonly [string, string, string, string];
+  historyNoControlChanges: string;
+  controlStatuses: Record<ControlStatus, string>;
+  notMapped: string;
+  historyRulesetChanged: (fromRuleset: string, toRuleset: string) => string;
+  historyNote: string;
   outsideScopeHeading: string;
   outsideScopeIntro: string;
   outsideScopeHeaders: readonly [string, string];
@@ -147,7 +189,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     date: "Date",
     heroLabel: "Safeguards in place",
     heroSentence: (inPlace, total) =>
-      `${inPlace} of ${total} technical ${total === 1 ? "safeguard is" : "safeguards are"} set up and switched on in Intune.`,
+      `${inPlace} of ${total} technical ${total === 1 ? "safeguard is" : "safeguards are"} set up and switched on in Intune and Entra.`,
     heroNotAvailable: "Not available",
     heroNotAvailableSentence:
       "None of the measures in this framework can be supported by Intune, so no figure can be given.",
@@ -168,6 +210,11 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     oldBaselineDetail: "not in the earlier report",
     noBaseline: "No earlier report loaded",
     noBaselineHint: "compare next month",
+    historyValue: (improved, regressed) =>
+      `+${improved} / -${regressed} measures`,
+    historyNoChange: "No change in measures",
+    historyGapsOnly: "Some measures not compared",
+    historyDetail: (since) => `since ${since} (history)`,
     measuresHeading: "Measures",
     measuresCaption: "Safeguards in place per measure",
     moreMeasures: (count) =>
@@ -182,8 +229,20 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       count === 1
         ? "1 measure relates to Intune or Entra settings that this report does not check yet; review it in the admin center."
         : `${count} measures relate to Intune or Entra settings that this report does not check yet; review them in the admin center.`,
-    dataGapsNote: (count) =>
-      `${plural(count, "safeguard", "safeguards")} could not be read. Ask your IT team to collect the data again before sharing this report.`,
+    dataGapsNote: (unread, unresolved = 0, partly = 0) => {
+      if (!unresolved && !partly)
+        return `${plural(unread, "safeguard", "safeguards")} could not be read. Ask your IT team to collect the data again before sharing this report.`;
+      if (!unresolved)
+        return `${plural(unread, "safeguard", "safeguards")} could not be read, ${partly === unread ? (unread === 1 ? "and its" : "and their") : `${partly} of them also because their`} overlapping assignments depend on group membership. Ask your IT team to collect the data again and review the overlapping assignments before sharing this report.`;
+      return `${[
+        ...(unread > 0
+          ? [
+              `${plural(unread, "safeguard", "safeguards")} could not be read${partly > 0 ? ` (${partly} of them also because of overlapping assignments)` : ""}`,
+            ]
+          : []),
+        `${plural(unresolved, "safeguard", "safeguards")} could not be assessed because overlapping assignments depend on group membership`,
+      ].join(" and ")}. Ask your IT team to ${unread > 0 ? "collect the data again and review the overlapping assignments" : "review the overlapping assignments"} before sharing this report.`;
+    },
     nextStepsHeading: "Recommended next steps",
     noNextSteps: "No next steps were found in this run.",
     actionSentence: {
@@ -212,8 +271,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         paragraphs: [],
         bullets: [
           "Measure: a requirement of the framework, for example one point of NIS2 Article 21(2) or one ISO 27001 Annex A control. Page 1 shows measures by title only.",
-          "Safeguard: a security outcome that Intune or Entra Conditional Access can set, for example BitLocker disk encryption or multifactor authentication for cloud apps. One safeguard can support several measures; the headline counts it once.",
-          "Policy setting: the value in an Intune configuration, compliance or Conditional Access policy that provides a safeguard. The table for each measure names every policy found.",
+          "Safeguard: a security outcome that Intune or Entra can set, through Conditional Access, the authentication methods policy or security defaults, for example BitLocker disk encryption or multifactor authentication for cloud apps. One safeguard can support several measures; the headline counts it once.",
+          "Policy setting: the value in an Intune configuration, compliance or Conditional Access policy, or in a tenant-wide Entra policy, that provides a safeguard. The table for each measure names every policy found.",
         ],
       },
       {
@@ -229,7 +288,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
           "Policies that are not assigned to any group, user or device. Their safeguards show as Set up, not switched on.",
           "Settings with a weaker value than the safeguard needs, or a value that switches it off.",
           "Check results of compliance policies that are not assigned.",
-          "Anything outside Intune and Entra Conditional Access, such as processes, contracts or other security products.",
+          "Anything outside Intune and Entra, such as processes, contracts or other security products.",
         ],
       },
       {
@@ -275,6 +334,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         label: "Safeguards that could not be read",
         note: "Mapped safeguards whose Intune data was missing or incomplete, for example because of a missing permission. They do not count as in place; collect the data again.",
       },
+      targetingUnresolved: {
+        label: "Safeguards whose targeting could not be resolved",
+        note: "Mapped safeguards whose policy assignments were read completely, but overlap in a way that depends on group membership, such as a removal for all devices beside a group. They do not count as in place; review the overlapping assignments.",
+      },
     },
     measuresValue: (count) => plural(count, "measure", "measures"),
     measuresOf: (part, total) =>
@@ -311,9 +374,14 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       partial: "Partly set up",
       notAssigned: "Set up, not switched on",
       switchedOff: "Switched off by a policy in use",
+      tenantSettingDiffers: "Tenant-wide Entra setting differs",
       conflicting: "Conflicting policies",
       notConfigured: "Not set up",
+      alternativeInUse: "Not needed, an alternative is set up",
+      notCombinable:
+        "Not applicable while Conditional Access policies exist; require MFA through Conditional Access",
       dataMissing: "Could not be read",
+      targetingUnresolved: "Targeting could not be resolved",
     },
     notAssignedSuffix: "(not assigned)",
     noPolicy: "No policy found",
@@ -347,6 +415,63 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       "2. Keep the file in a safe place.",
       "3. Next month, load the file before you create this report. Page 1 and this page then show what changed.",
     ],
+    historyHeading: (since) => `Changes since ${since}`,
+    historyIntro: (since) =>
+      `Compares the current collection with the history snapshot this computer kept on ${since}. History snapshots are stored locally on this computer.`,
+    historyPoliciesHeading: "Policy changes",
+    historyPolicyHeaders: ["Change", "Count"],
+    historyPolicyRows: {
+      added: "Policies added",
+      removed: "Policies removed",
+      renamed: "Policies renamed",
+      changed: "Policies changed",
+      settingChanges: "Setting changes",
+      assignmentChanges: "Assignment changes",
+    },
+    historyNotCompared: (families, items) =>
+      `Not compared because their collection was incomplete: ${[
+        families > 0 ? plural(families, "policy type", "policy types") : "",
+        items > 0 ? plural(items, "policy", "policies") : "",
+      ]
+        .filter(Boolean)
+        .join(", ")}.`,
+    historyPartial:
+      "One of the two collections was partial, so some changes may not be shown.",
+    historyIdentityHeading: "Entra identity settings",
+    historyIdentityIntro:
+      "Tenant-wide settings of the authentication methods policy and security defaults, counted apart from the policies above.",
+    historyIdentityRow: "Entra identity setting changes",
+    historyIdentityNotCompared: (policies) =>
+      `Not compared, fully or in part, because one of the two collections did not read them: ${plural(policies, "Entra identity policy", "Entra identity policies")}.`,
+    historyControlsHeading: "Measures whose status changed",
+    historyMovement: (improved, regressed) =>
+      `${plural(improved, "measure", "measures")} gained configuration or partial evidence, ${regressed} lost it.`,
+    historyCollectionGaps: (opened, closed) =>
+      `Not counted as gained or lost evidence: ${[
+        opened > 0
+          ? `${plural(opened, "measure", "measures")} could not be fully assessed this time`
+          : "",
+        closed > 0
+          ? `${plural(closed, "measure", "measures")} could be assessed again`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" and ")}, usually because data was missing from one of the two collections.`,
+    historyControlHeaders: ["Measure", "Title", "Before", "Now"],
+    historyNoControlChanges: "No measure changed its status.",
+    controlStatuses: {
+      evidenceFound: "Configuration evidence",
+      partialEvidence: "Supporting or partial evidence",
+      noEvidence: "No recognized evidence",
+      notApplicable: "Outside selected scope",
+      notAssessed: "Not assessed",
+      conflictingEvidence: "Mixed policy evidence",
+    },
+    notMapped: "Not mapped",
+    historyRulesetChanged: (fromRuleset, toRuleset) =>
+      `The evaluation rules changed between the two collections (${fromRuleset} to ${toRuleset}), so some status changes may come from mapping updates rather than from the tenant.`,
+    historyNote:
+      "These changes are evidence from the Intune configuration and the Entra identity settings, not an audit result.",
     outsideScopeHeading: "Measures outside Intune scope",
     outsideScopeIntro:
       "These measures cannot be checked from the Intune configuration. They need a separate review, for example of processes, contracts or other systems.",
@@ -366,7 +491,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     date: "Datum",
     heroLabel: "Aktive Schutzfunktionen",
     heroSentence: (inPlace, total) =>
-      `${inPlace} von ${total} technischen ${total === 1 ? "Schutzfunktion" : "Schutzfunktionen"} ${inPlace === 1 ? "ist" : "sind"} in Intune eingerichtet und eingeschaltet.`,
+      `${inPlace} von ${total} technischen ${total === 1 ? "Schutzfunktion" : "Schutzfunktionen"} ${inPlace === 1 ? "ist" : "sind"} in Intune und Entra eingerichtet und eingeschaltet.`,
     heroNotAvailable: "Nicht verfügbar",
     heroNotAvailableSentence:
       "Keine Maßnahme dieses Frameworks lässt sich mit Intune unterstützen, daher gibt es keine Kennzahl.",
@@ -387,6 +512,11 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     oldBaselineDetail: "nicht im früheren Bericht",
     noBaseline: "Kein früherer Bericht geladen",
     noBaselineHint: "nächsten Monat vergleichen",
+    historyValue: (improved, regressed) =>
+      `+${improved} / -${regressed} Maßnahmen`,
+    historyNoChange: "Maßnahmen unverändert",
+    historyGapsOnly: "Einige Maßnahmen nicht verglichen",
+    historyDetail: (since) => `seit ${since} (Verlauf)`,
     measuresHeading: "Maßnahmen",
     measuresCaption: "Aktive Schutzfunktionen je Maßnahme",
     moreMeasures: (count) =>
@@ -401,8 +531,20 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       count === 1
         ? "1 Maßnahme betrifft Intune- oder Entra-Einstellungen, die dieser Bericht noch nicht prüft; bewerten Sie sie im Admin Center."
         : `${count} Maßnahmen betreffen Intune- oder Entra-Einstellungen, die dieser Bericht noch nicht prüft; bewerten Sie sie im Admin Center.`,
-    dataGapsNote: (count) =>
-      `${plural(count, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden. Bitten Sie Ihr IT-Team, die Daten erneut zu erfassen, bevor Sie diesen Bericht weitergeben.`,
+    dataGapsNote: (unread, unresolved = 0, partly = 0) => {
+      if (!unresolved && !partly)
+        return `${plural(unread, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden. Bitten Sie Ihr IT-Team, die Daten erneut zu erfassen, bevor Sie diesen Bericht weitergeben.`;
+      if (!unresolved)
+        return `${plural(unread, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden, ${partly === unread ? "auch weil" : `${partly} davon auch, weil`} sich überschneidende Zuweisungen von Gruppenmitgliedschaften abhängen. Bitten Sie Ihr IT-Team, die Daten erneut zu erfassen und die sich überschneidenden Zuweisungen zu prüfen, bevor Sie diesen Bericht weitergeben.`;
+      return `${[
+        ...(unread > 0
+          ? [
+              `${plural(unread, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht gelesen werden${partly > 0 ? ` (${partly} davon auch wegen sich überschneidender Zuweisungen)` : ""}`,
+            ]
+          : []),
+        `${plural(unresolved, "Schutzfunktion konnte", "Schutzfunktionen konnten")} nicht bewertet werden, weil sich überschneidende Zuweisungen von Gruppenmitgliedschaften abhängen`,
+      ].join(" und ")}. Bitten Sie Ihr IT-Team, ${unread > 0 ? "die Daten erneut zu erfassen und die sich überschneidenden Zuweisungen zu prüfen" : "die sich überschneidenden Zuweisungen zu prüfen"}, bevor Sie diesen Bericht weitergeben.`;
+    },
     nextStepsHeading: "Empfohlene nächste Schritte",
     noNextSteps: "In diesem Lauf wurden keine nächsten Schritte ermittelt.",
     actionSentence: {
@@ -432,8 +574,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         paragraphs: [],
         bullets: [
           "Maßnahme: eine Anforderung des Frameworks, zum Beispiel ein Punkt aus NIS2 Artikel 21 Absatz 2 oder ein Control aus ISO 27001 Anhang A. Seite 1 zeigt Maßnahmen nur mit ihrem Titel.",
-          "Schutzfunktion: ein Sicherheitsergebnis, das Intune oder der bedingte Zugriff in Entra herstellen kann, zum Beispiel BitLocker-Datenträgerverschlüsselung oder mehrstufige Authentifizierung für Cloud-Apps. Eine Schutzfunktion kann mehrere Maßnahmen unterstützen; die Hauptkennzahl zählt sie einmal.",
-          "Richtlinieneinstellung: der Wert in einer Intune-Konfigurationsrichtlinie, Compliance-Richtlinie oder Richtlinie für bedingten Zugriff, der eine Schutzfunktion herstellt. Die Tabelle jeder Maßnahme nennt alle gefundenen Richtlinien.",
+          "Schutzfunktion: ein Sicherheitsergebnis, das Intune oder Entra herstellen kann, über den bedingten Zugriff, die Richtlinie für Authentifizierungsmethoden oder die Sicherheitsstandards, zum Beispiel BitLocker-Datenträgerverschlüsselung oder mehrstufige Authentifizierung für Cloud-Apps. Eine Schutzfunktion kann mehrere Maßnahmen unterstützen; die Hauptkennzahl zählt sie einmal.",
+          "Richtlinieneinstellung: der Wert in einer Intune-Konfigurationsrichtlinie, Compliance-Richtlinie oder Richtlinie für bedingten Zugriff oder in einer mandantenweiten Entra-Richtlinie, der eine Schutzfunktion herstellt. Die Tabelle jeder Maßnahme nennt alle gefundenen Richtlinien.",
         ],
       },
       {
@@ -449,7 +591,7 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
           "Richtlinien, die keiner Gruppe, keinem Benutzer und keinem Gerät zugewiesen sind. Ihre Schutzfunktionen erscheinen als Eingerichtet, nicht eingeschaltet.",
           "Einstellungen mit einem schwächeren Wert, als die Schutzfunktion braucht, oder mit einem Wert, der sie abschaltet.",
           "Prüfergebnisse von Compliance-Richtlinien, die nicht zugewiesen sind.",
-          "Alles außerhalb von Intune und dem bedingten Zugriff in Entra, etwa Prozesse, Verträge oder andere Sicherheitsprodukte.",
+          "Alles außerhalb von Intune und Entra, etwa Prozesse, Verträge oder andere Sicherheitsprodukte.",
         ],
       },
       {
@@ -495,6 +637,10 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
         label: "Nicht lesbare Schutzfunktionen",
         note: "Zugeordnete Schutzfunktionen, deren Intune-Daten fehlten oder unvollständig waren, etwa wegen einer fehlenden Berechtigung. Sie zählen nicht als aktiv; erfassen Sie die Daten erneut.",
       },
+      targetingUnresolved: {
+        label: "Schutzfunktionen mit nicht ermittelbarer Zuweisung",
+        note: "Zugeordnete Schutzfunktionen, deren Richtlinienzuweisungen vollständig gelesen wurden, sich aber so überschneiden, dass ihre Wirkung von Gruppenmitgliedschaften abhängt, etwa ein Entfernen für alle Geräte neben einer Gruppe. Sie zählen nicht als aktiv; prüfen Sie die sich überschneidenden Zuweisungen.",
+      },
     },
     measuresValue: (count) => plural(count, "Maßnahme", "Maßnahmen"),
     measuresOf: (part, total) =>
@@ -532,9 +678,14 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       partial: "Teilweise eingerichtet",
       notAssigned: "Eingerichtet, nicht eingeschaltet",
       switchedOff: "Durch zugewiesene Richtlinie abgeschaltet",
+      tenantSettingDiffers: "Mandantenweite Entra-Einstellung weicht ab",
       conflicting: "Widersprüchliche Richtlinien",
       notConfigured: "Nicht eingerichtet",
+      alternativeInUse: "Nicht nötig, eine Alternative ist eingerichtet",
+      notCombinable:
+        "Nicht anwendbar, solange Richtlinien für bedingten Zugriff bestehen; MFA über bedingten Zugriff verlangen",
       dataMissing: "Nicht lesbar",
+      targetingUnresolved: "Zuweisung nicht ermittelbar",
     },
     notAssignedSuffix: "(nicht zugewiesen)",
     noPolicy: "Keine Richtlinie gefunden",
@@ -570,6 +721,65 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
       "2. Bewahren Sie die Datei sicher auf.",
       "3. Laden Sie die Datei nächsten Monat, bevor Sie diesen Bericht erstellen. Seite 1 und diese Seite zeigen dann die Veränderungen.",
     ],
+    historyHeading: (since) => `Änderungen seit ${since}`,
+    historyIntro: (since) =>
+      `Vergleicht die aktuelle Erfassung mit dem Verlaufsstand, den dieser Computer am ${since} gespeichert hat. Verlaufsstände werden nur lokal auf diesem Computer gespeichert.`,
+    historyPoliciesHeading: "Änderungen an Richtlinien",
+    historyPolicyHeaders: ["Änderung", "Anzahl"],
+    historyPolicyRows: {
+      added: "Hinzugefügte Richtlinien",
+      removed: "Entfernte Richtlinien",
+      renamed: "Umbenannte Richtlinien",
+      changed: "Geänderte Richtlinien",
+      settingChanges: "Geänderte Einstellungen",
+      assignmentChanges: "Geänderte Zuweisungen",
+    },
+    historyNotCompared: (families, items) =>
+      `Nicht verglichen, weil die Erfassung unvollständig war: ${[
+        families > 0
+          ? plural(families, "Richtlinienart", "Richtlinienarten")
+          : "",
+        items > 0 ? plural(items, "Richtlinie", "Richtlinien") : "",
+      ]
+        .filter(Boolean)
+        .join(", ")}.`,
+    historyPartial:
+      "Eine der beiden Erfassungen war unvollständig. Einige Änderungen fehlen daher möglicherweise.",
+    historyIdentityHeading: "Entra-Identitätseinstellungen",
+    historyIdentityIntro:
+      "Mandantenweite Einstellungen der Richtlinie für Authentifizierungsmethoden und der Sicherheitsstandards, getrennt von den Richtlinien oben gezählt.",
+    historyIdentityRow: "Geänderte Entra-Identitätseinstellungen",
+    historyIdentityNotCompared: (policies) =>
+      `Ganz oder teilweise nicht verglichen, weil eine der beiden Erfassungen sie nicht gelesen hat: ${plural(policies, "Entra-Identitätsrichtlinie", "Entra-Identitätsrichtlinien")}.`,
+    historyControlsHeading: "Maßnahmen mit geändertem Status",
+    historyMovement: (improved, regressed) =>
+      `${plural(improved, "Maßnahme hat", "Maßnahmen haben")} Konfigurationsnachweise oder teilweise Nachweise hinzugewonnen, ${plural(regressed, "hat", "haben")} sie verloren.`,
+    historyCollectionGaps: (opened, closed) =>
+      `Nicht als hinzugewonnene oder verlorene Nachweise gezählt: ${[
+        opened > 0
+          ? `${plural(opened, "Maßnahme konnte", "Maßnahmen konnten")} diesmal nicht vollständig bewertet werden`
+          : "",
+        closed > 0
+          ? `${plural(closed, "Maßnahme konnte", "Maßnahmen konnten")} wieder bewertet werden`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" und ")}, meist weil in einer der beiden Erfassungen Daten fehlten.`,
+    historyControlHeaders: ["Maßnahme", "Titel", "Vorher", "Jetzt"],
+    historyNoControlChanges: "Keine Maßnahme hat ihren Status geändert.",
+    controlStatuses: {
+      evidenceFound: "Konfigurationsnachweis",
+      partialEvidence: "Unterstützender oder teilweiser Nachweis",
+      noEvidence: "Kein erkannter Nachweis",
+      notApplicable: "Außerhalb des gewählten Umfangs",
+      notAssessed: "Nicht bewertet",
+      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
+    },
+    notMapped: "Nicht zugeordnet",
+    historyRulesetChanged: (fromRuleset, toRuleset) =>
+      `Die Bewertungsregeln haben sich zwischen den beiden Erfassungen geändert (${fromRuleset} auf ${toRuleset}). Ein Teil der Statusänderungen kann daher aus aktualisierten Zuordnungen statt aus dem Mandanten stammen.`,
+    historyNote:
+      "Diese Änderungen sind Nachweise aus der Intune-Konfiguration und den Entra-Identitätseinstellungen, kein Prüfergebnis.",
     outsideScopeHeading: "Maßnahmen außerhalb des Intune-Umfangs",
     outsideScopeIntro:
       "Diese Maßnahmen lassen sich nicht anhand der Intune-Konfiguration prüfen. Sie brauchen eine gesonderte Bewertung, zum Beispiel von Prozessen, Verträgen oder anderen Systemen.",

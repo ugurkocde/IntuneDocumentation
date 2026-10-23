@@ -1,5 +1,8 @@
 import { RefreshCw, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useAsyncAction } from "../../hooks/use-async-action";
+import { useScheduledRun } from "../../hooks/use-scheduled-run";
+import { ipc } from "../../lib/ipc";
 import { useApp } from "../../state/context";
 import { collectBlocker } from "../../state/selectors";
 import { formatAgo } from "../layout/Header";
@@ -16,6 +19,34 @@ export function CollectButton({ showMeta = true }: { showMeta?: boolean }) {
     return () => window.clearInterval(timer);
   }, []);
   const collectedAt = collection.summary?.collectedAt;
+  const scheduled = useScheduledRun();
+  const cancel = useAsyncAction();
+
+  // Main refuses a manual collection while a scheduled one runs.
+  if (scheduled && !collection.running) {
+    return (
+      <div className="flex flex-col items-end gap-1.5">
+        <div className="flex items-center gap-3">
+          {showMeta && (
+            <span className="text-petrol-600 text-xs" aria-live="polite">
+              Scheduled collection running
+            </span>
+          )}
+          <Button
+            variant="secondary"
+            icon={X}
+            loading={cancel.busy === "cancel"}
+            onClick={() => void cancel.run("cancel", () => ipc.collectCancel())}
+          >
+            Cancel scheduled collection
+          </Button>
+        </div>
+        <p className="max-w-xs text-right text-xs text-petrol-600">
+          Collect again when it has finished. The data updates on its own.
+        </p>
+      </div>
+    );
+  }
 
   if (collection.running) {
     return (

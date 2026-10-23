@@ -5,7 +5,7 @@ description: "Map your exported Intune settings to compliance frameworks in the 
 
 When an auditor, a cyber insurer or a customer questionnaire asks you to prove that your devices enforce encryption, screen lock or patching, the answer is already in your Intune configuration. The <Ui>Compliance Evidence</Ui> view in the web app maps that configuration to a framework and shows, requirement by requirement, which policies, settings, values and assignments support it. You can then download the result as a PDF report.
 
-It uses the same data you already collected for your documentation. Nothing extra is read and nothing is stored on our servers.
+It uses the same data you already collected for your documentation and nothing is stored on our servers. When Conditional Access is turned on, the existing Policy.Read.All permission also reads your tenant authentication methods policy and security defaults, so reports can show, for example, whether phishing-resistant methods are enabled or weak methods are switched off. No extra permissions are needed. Screen lock after inactivity is checked as supporting evidence where a framework asks for it. Intune's per-policy device status counts are shown next to the evidence as context. They never change a requirement status.
 
 <Callout type="info" title="Evidence, not a certificate">
   The report states the technical evidence found in your Intune tenant. It never claims you are compliant, because only your auditor can decide that. Requirements that Intune configuration cannot prove, such as organizational or governance requirements, stay marked for manual assessment.
@@ -21,14 +21,13 @@ The web app supports these frameworks:
 - HIPAA Security Rule
 - NIST SP 800-53
 - NIST CSF 2.0
-- BSI IT-Grundschutz (the report is in German)
 - Def Stan 05-138, with the Cyber Risk Profile levels at which each control applies
 - Cyber Essentials
 - NIST SP 800-171 Rev. 2 (select this one for CMMC 2.0 Level 2)
 - NIST SP 800-171 Rev. 3
 
 <Note>
-  The [desktop app](/desktop/compliance-evidence) adds the NIS2 Directive, a one-page [management report](/desktop/management-report) with month-over-month change, and the option to import your own CIS crosswalk for ISO/IEC 27001 and NIS2.
+  The [desktop app](/desktop/compliance-evidence) adds the NIS2 Directive and DORA, an Excel and CSV evidence register, a [Purview evidence pack](/purview-compliance-manager), a draft fix pack with unassigned policies for settings that are missing entirely, an encrypted local history with change view and scheduled collection, reference comparison, a tenant portfolio on the MSP plan, a one-page [management report](/desktop/management-report) with month-over-month change, and the option to import your own CIS crosswalk for ISO/IEC 27001 and NIS2.
 </Note>
 
 ## See a sample first
@@ -90,7 +89,7 @@ Unassigned policies are flagged instead of counted, and a policy that only menti
 
 You have two downloads, both generated in your browser:
 
-- **<Ui>Download report (PDF)</Ui>** creates the full, requirement-level evidence report for the selected framework and scope. It is built as an audit deliverable, with a table of contents, a data-basis section that states which policies were assessed, an evidence register with references, key findings and gap guidance. The BSI IT-Grundschutz report is fully in German and includes fields for your manual assessment.
+- **<Ui>Download report (PDF)</Ui>** creates the full, requirement-level evidence report for the selected framework and scope. It is built as an audit deliverable, with a table of contents, a data-basis section that states which policies were assessed, an evidence register with references, key findings and gap guidance.
 - **<Ui>Download evidence record (JSON)</Ui>** saves the same assessment as structured data, for your GRC tool or audit trail.
 
 You can also add a short compliance evidence section to your configuration document with the <Ui>Include compliance evidence preview</Ui> option. See [Export your configuration](/web/export).
@@ -98,5 +97,5 @@ You can also add a short compliance evidence section to your configuration docum
 ## Next steps
 
 - [Export your configuration](/web/export) as a PDF or Word document.
-- Need NIS2, a management summary or many tenants? See [Compliance evidence in the desktop app](/desktop/compliance-evidence).
+- Need NIS2 or DORA, an evidence register, a Purview evidence pack, a management summary or many tenants? See [Compliance evidence in the desktop app](/desktop/compliance-evidence) and [Intune Documentation and Purview Compliance Manager](/purview-compliance-manager).
 - Questions about what the report proves? See the [FAQ](/help/faq).

@@ -22,8 +22,11 @@ function summarize(section: ConfigurationSectionData) {
       technologies: null,
       lastModifiedDateTime: null,
       assignmentCount: assignments.length,
+      assignmentUnknown: false,
       assignedToAllUsers: false,
       assignedToAllDevices: false,
+      assignedToCollections: 0,
+      assignedToOrganizationalUnits: 0,
       hasFetchError: false,
       // Endpoint security policies move to their own display family.
       ...(item.templateFamily === "endpointSecurityFirewall" ? { familyKey: "endpointSecurityPolicies" } : {}),
@@ -48,13 +51,15 @@ const contosoSections = [
   section("conditionalAccessPolicies", "conditionalAccessPolicies", CONTOSO_TENANT.conditionalAccessPolicies),
 ];
 
+const STRING_VALUE = "#microsoft.graph.deviceManagementConfigurationStringSettingValue";
+
 const firewallSettings = {
   settings: [
     {
       settingInstance: {
         "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
         settingDefinitionId: "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_name",
-        simpleSettingValue: { value: "Allow RDP" },
+        simpleSettingValue: { "@odata.type": STRING_VALUE, value: "Allow RDP" },
       },
     },
   ],
@@ -126,6 +131,40 @@ describe("settings search index", () => {
     expect(mac.hits.every((hit) => hit.platforms.includes("macOS"))).toBe(true);
   });
 
+  it("indexes a text value that reads like a placeholder", () => {
+    // A valid Settings Catalog text that reads "Not configured" or "Value
+    // could not be read" is a setting like any other (round 41).
+    const policy = (value: string, id: string) => ({
+      id: `synthetic-${id}`,
+      name: `Synthetic ${id}`,
+      platforms: "windows10",
+      settings: [
+        {
+          settingInstance: {
+            "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+            settingDefinitionId: `synthetic_${id}`,
+            simpleSettingValue: { "@odata.type": STRING_VALUE, value },
+          },
+        },
+      ],
+    });
+    const placeholders = buildSettingsIndex(
+      [
+        section("settingsCatalog", "settingsCatalog", [
+          policy("Not configured", "banner"),
+          policy("Value could not be read", "footer"),
+        ]),
+      ],
+      summarize,
+    );
+    expect(searchSettingsIndex(placeholders, { query: "synthetic_banner" }).hits).toEqual([
+      expect.objectContaining({ definitionId: "synthetic_banner", value: "Not configured" }),
+    ]);
+    expect(searchSettingsIndex(placeholders, { query: "synthetic_footer" }).hits).toEqual([
+      expect.objectContaining({ definitionId: "synthetic_footer", value: "Value could not be read" }),
+    ]);
+  });
+
   it("returns nothing for an empty query", () => {
     const result = searchSettingsIndex(index, { query: "   " });
     expect(result).toMatchObject({ total: 0, hits: [] });
@@ -173,6 +212,7 @@ describe("settings search index", () => {
 
 // 850 Settings Catalog policies with nested choices and repeated groups, as
 // a large tenant can hold.
+const SIMPLE_INSTANCE = "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance";
 function syntheticCollection() {
   const items = Array.from({ length: 850 }, (_, policyIndex) => ({
     id: `policy-${policyIndex}`,
@@ -189,12 +229,21 @@ function syntheticCollection() {
           choiceSettingValue: {
             value: `${id}_1`,
             children: [
-              { settingDefinitionId: `${id}_child_a`, simpleSettingValue: { value: `value ${settingIndex}` } },
               {
+                "@odata.type": SIMPLE_INSTANCE,
+                settingDefinitionId: `${id}_child_a`,
+                simpleSettingValue: { "@odata.type": STRING_VALUE, value: `value ${settingIndex}` },
+              },
+              {
+                "@odata.type": "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance",
                 settingDefinitionId: `${id}_child_group`,
                 groupSettingCollectionValue: [1, 2].map((entry) => ({
                   children: [
-                    { settingDefinitionId: `${id}_child_group_name`, simpleSettingValue: { value: `rule ${entry}` } },
+                    {
+                      "@odata.type": SIMPLE_INSTANCE,
+                      settingDefinitionId: `${id}_child_group_name`,
+                      simpleSettingValue: { "@odata.type": STRING_VALUE, value: `rule ${entry}` },
+                    },
                   ],
                 })),
               },

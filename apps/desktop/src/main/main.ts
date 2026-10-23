@@ -5,6 +5,8 @@ import {
   dialog,
   ipcMain,
   Menu,
+  net,
+  powerMonitor,
   session,
   shell,
 } from "electron";
@@ -19,8 +21,8 @@ import { pathToFileURL } from "node:url";
 import type {
   AppInfo,
   ComplianceFrameworkId,
+  ComplianceReportProgress,
   ComplianceRequest,
-  HelpKey,
   MenuCommand,
   UpdateStatus,
 } from "../shared/ipc-types";
@@ -28,7 +30,10 @@ import { SEARCH_NEEDS_COLLECTION } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
 import { parseExportScope } from "../shared/export-scope";
 import { isGuid, isTenantIdentifier } from "../shared/validators";
+import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
 import { AuthService } from "./auth";
+import { BenchmarkExceptionStore } from "./benchmark-exceptions";
+import { benchmarkWork, registerBenchmarksIpc } from "./benchmarks";
 import {
   clearCollection,
   collectAll,
@@ -41,19 +46,30 @@ import { searchSettingsIndex, settingsIndexFor } from "./search-index";
 import {
   DEFAULT_SCOPES,
   HELP_URLS,
+  helpUrl,
+  LICENSE_API_BASE,
   LICENSE_BUY_URL,
   LICENSE_PORTAL_URL,
   WEBSITE_URL,
 } from "./config";
 import {
+  complianceDeviceStatus,
+  complianceEvidencePack,
+  complianceFixPack,
+  complianceFixPackPreview,
   complianceRecord,
+  complianceRegister,
   complianceReport,
   complianceView,
   frameworkSourceUrl,
   parseComplianceRequest,
   parseFrameworkId,
+  parseRegisterFormat,
+  snapshotInputs,
+  tenantLabelOf,
 } from "./compliance";
 import { estimateScopedExport, prepareExport } from "./export";
+import { registerHistoryIpc } from "./history-ipc";
 import { LicenseService } from "./license";
 import {
   baselineExport,
@@ -67,9 +83,13 @@ import {
   managementReport,
   parseManagementLocale,
   portalLink,
+  setManagementChangeSource,
 } from "./management";
 import { errorText, log, tailLog } from "./logger";
 import { readSettings, writeSettings, type AppSettings } from "./settings";
+import { CollectionRunner } from "./collection-runner";
+import { CollectionScheduler } from "./scheduler";
+import { RM_RETRY, SnapshotStore } from "./snapshots";
 import {
   checkForUpdates,
   downloadUpdate,
@@ -89,7 +109,6 @@ import {
 let auth: AuthService | null = null;
 let authKey = "";
 let mainWindow: BrowserWindow | null = null;
-let activeCollection: AbortController | null = null;
 let preparingExports = 0;
 let writingReports = 0;
 let assessingCompliance = 0;
@@ -113,6 +132,34 @@ const license = new LicenseService(
       : null,
 );
 const isMac = process.platform === "darwin";
+const history = new SnapshotStore({
+  dir: () => path.join(app.getPath("userData"), "snapshots"),
+});
+// Accepted CIS Benchmark exceptions, encrypted per tenant.
+const benchmarkExceptions = new BenchmarkExceptionStore({
+  dir: () => path.join(app.getPath("userData"), "benchmark-exceptions"),
+});
+// The snapshot of the last collection while it is being saved, so a
+// benchmark run of that collection is added once it is stored.
+let snapshotSaving: Promise<unknown> = Promise.resolve();
+// History, Compare and Portfolio handlers; set by registerIpc.
+let historyIpc: ReturnType<typeof registerHistoryIpc> | null = null;
+// CIS Benchmarks handlers and their memory only content; set by registerIpc.
+let benchmarksIpc: ReturnType<typeof registerBenchmarksIpc> | null = null;
+// Scheduled collection while the app is open, signed in and licensed.
+const scheduler = new CollectionScheduler({
+  settings: () => readSettings(),
+  blocker: () => collections.blocker(),
+  busy: runningWork,
+  lastCollectedAt: async () => {
+    const tenant = signedInTenant();
+    if (!tenant) return null;
+    const [latest] = await history.list(tenant);
+    return latest ? Date.parse(latest.collectedAt) : null;
+  },
+  run: () => collections.scheduled(),
+  onStatus: (status) => broadcast("history:schedule", status),
+});
 
 function rendererUrl(): string {
   return pathToFileURL(path.join(__dirname, "../renderer/index.html")).href;
@@ -173,6 +220,7 @@ async function getAuth(): Promise<AuthService> {
         log("info", "auth changed", { signedIn: status.signedIn });
         broadcast("auth:changed", status);
         pushLicense();
+        void scheduler.refresh();
       },
     );
     auth = service;
@@ -217,24 +265,37 @@ async function openAuthUrl(url: string): Promise<void> {
 
 // A sign-in could switch the account while work for the current one runs.
 function runningWork(): string | null {
-  if (activeCollection) return "a collection";
+  return collections.busy();
+}
+
+function otherWork(): string | null {
   if (preparingExports > 0) return "an export";
   if (writingReports > 0) return "an evidence report";
   if (assessingCompliance > 0) return "a compliance assessment";
   return null;
 }
 
-function cancelCollection(): void {
-  activeCollection?.abort();
-  activeCollection = null;
+function cancelCollection(
+  reason = "Stopped because the account or the settings changed.",
+): void {
+  collections.cancel(reason);
+}
+
+// An account change drops a snapshot that is still being prepared, the
+// comparison and the CIS Benchmark content and exceptions key held in memory.
+function resetHistorySession(): void {
+  history.invalidate();
+  historyIpc?.reset();
+  benchmarksIpc?.reset();
+  benchmarkExceptions.reset();
+  scheduler.reset();
+  void scheduler.refresh();
 }
 
 async function requireOwner(): Promise<string> {
   const service = await getAuth();
   const owner = service.getOwnerKey();
-  if (!owner || !(await service.getAccessToken())) {
-    throw new Error("Sign in before continuing.");
-  }
+  if (!owner || !(await service.getAccessToken())) throw service.noTokenError();
   return owner;
 }
 
@@ -253,13 +314,13 @@ async function requireLicense(): Promise<void> {
 async function tokenProvider(): Promise<string> {
   const service = await getAuth();
   const token = await service.getAccessToken();
-  if (!token) {
-    throw new Error("Sign in before continuing.");
-  }
+  if (!token) throw service.noTokenError();
   return token;
 }
 
+// Also drops CIS Benchmark content once the licence lost the claim.
 function pushLicense(): void {
+  void benchmarksIpc?.revalidate();
   void license
     .status(signedInTenant())
     .then((status) => broadcast("license:changed", status))
@@ -279,6 +340,8 @@ const SAVE_FORMATS = {
   json: "JSON",
   txt: "Text",
   csv: "CSV",
+  xlsx: "Excel workbook",
+  zip: "ZIP archive",
 } as const;
 type SaveFormat = keyof typeof SAVE_FORMATS;
 const KNOWN_DOCUMENT_EXTENSIONS = new Set<string>([
@@ -290,6 +353,7 @@ const KNOWN_DOCUMENT_EXTENSIONS = new Set<string>([
   "html",
   "csv",
   "xml",
+  "xls",
 ]);
 
 function saveFormatOf(fileName: string): SaveFormat | null {
@@ -440,6 +504,8 @@ async function exportDiagnostics(): Promise<string | null> {
     `Update status: ${update.state}${update.version ? ` ${update.version}` : ""}`,
     `Automatic updates: ${settings.autoUpdate ? "on" : "off"}`,
     `Automatic update checks: ${settings.checkForUpdates ? "on" : "off"}`,
+    `Keep history: ${settings.keepHistory ? "on" : "off"}`,
+    `Scheduled collection: ${settings.scheduleHours ? `every ${settings.scheduleHours} hours` : "off"}`,
     "",
     `Last collection: ${collection ? collection.collectedAt : "none"}`,
     ...(collection
@@ -468,13 +534,17 @@ const LOCAL_DATA = [
   "install-id",
   "window-state.json",
   "logs",
+  "snapshots",
+  "benchmark-exceptions",
 ];
 
 async function clearLocalData(): Promise<void> {
   log("info", "clearing local data");
+  scheduler.stop();
   cancelCollection();
   clearCollection();
   clearManagementState();
+  resetHistorySession();
   const released = await license.deactivate().then(
     () => true,
     (error: unknown) => {
@@ -487,16 +557,50 @@ async function clearLocalData(): Promise<void> {
   if (auth) await auth.signOut().catch(() => undefined);
   auth = null;
   authKey = "";
+  // After the slow steps and with nobody signed in, so no snapshot can be
+  // written afterwards. Waits for a running write, then removes snapshots,
+  // key and index.
+  await history.clear().catch((error: unknown) =>
+    log("warn", "history clear failed", { message: errorText(error) }),
+  );
+  await benchmarkExceptions.clear().catch((error: unknown) =>
+    log("warn", "benchmark exceptions clear failed", { message: errorText(error) }),
+  );
   const userData = app.getPath("userData");
   await Promise.all(
     LOCAL_DATA.map((name) =>
-      fs.rm(path.join(userData, name), { recursive: true, force: true }),
+      fs
+        .rm(path.join(userData, name), { recursive: true, force: true, ...RM_RETRY })
+        .catch((error: unknown) =>
+          log("warn", "local data not removed", { name, message: errorText(error) }),
+        ),
     ),
   );
   await session.defaultSession.clearStorageData({ storages: ["localstorage"] });
+  const snapshots = path.join(userData, "snapshots");
+  if (await fs.stat(snapshots).then(() => true, () => false)) {
+    await explainRemainingSnapshots(snapshots);
+  }
   if (!released) await explainUnreleasedActivation();
   app.relaunch();
   app.exit(0);
+}
+
+// Encrypted history that could not be removed, for example because another
+// program held a file open. The user is told before the app restarts.
+async function explainRemainingSnapshots(folder: string): Promise<void> {
+  const notice = {
+    type: "error" as const,
+    buttons: ["Show folder", "Continue"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "History could not be removed completely",
+    detail: `Some history files are still in ${folder}. They stay encrypted. Close any program that may use them, then delete the folder.`,
+  };
+  const answer = mainWindow
+    ? await dialog.showMessageBox(mainWindow, notice)
+    : await dialog.showMessageBox(notice);
+  if (answer.response === 0) shell.showItemInFolder(folder);
 }
 
 // The local data is gone either way; the activation may still count against
@@ -518,6 +622,112 @@ async function explainUnreleasedActivation(): Promise<void> {
     await shell.openExternal(LICENSE_PORTAL_URL).catch(() => undefined);
   }
 }
+
+// Saves a snapshot of the collection just finished when history is on. The
+// collecting account must still be signed in when it is written. Rejects
+// when the snapshot could not be saved.
+async function recordSnapshot(
+  owner: string,
+  tenantId: string,
+  generation: number,
+): Promise<void> {
+  try {
+    const settings = await readSettings();
+    if (!settings.keepHistory || history.unavailableReason()) return;
+    const tenant = tenantId.toLowerCase();
+    const isCurrent = () =>
+      auth?.getOwnerKey() === owner &&
+      signedInTenant()?.toLowerCase() === tenant;
+    if (!isCurrent()) return;
+    const inputs = await snapshotInputs(owner, tokenProvider);
+    const projection = projectSnapshot(
+      inputs.collection,
+      inputs.assessment,
+      inputs.groupNames,
+      (await history.fingerprinter(true, generation)) ?? undefined,
+    );
+    const entry = await history.save(tenant, projection, {
+      generation,
+      isCurrent,
+    });
+    if (!entry) return;
+    log("info", "snapshot saved", {
+      items: entry.items,
+      partial: entry.partial,
+      bytes: entry.bytes,
+    });
+    historyIpc?.invalidate();
+    broadcast("history:changed", null);
+    void scheduler.refresh();
+  } catch (error) {
+    log("warn", "snapshot not saved", { message: errorText(error) });
+    throw error;
+  }
+}
+
+type CollectProgress = Parameters<typeof collectAll>[1];
+
+// One collection at a time, manual or scheduled; after it, a snapshot is
+// saved when history is on. The rules live in collection-runner.ts.
+const collections = new CollectionRunner<
+  Awaited<ReturnType<typeof collectAll>>,
+  CollectProgress
+>({
+  requireOwner,
+  requireLicense,
+  owner: () => auth?.getOwnerKey() ?? null,
+  otherWork,
+  historyBlocker: () => history.unavailableReason(),
+  signedIn: () => Boolean(signedInTenant()),
+  hasAccount: () => Boolean(auth?.getOwnerKey()),
+  collect: async (owner, signal, progress) => {
+    const started = Date.now();
+    log("info", "collection started", { scheduled: progress === null });
+    try {
+      const { keepHistory } = await readSettings();
+      const summary = await collectAll(tokenProvider, progress ?? (() => undefined), {
+        owner,
+        signal,
+        budgetMs: 30 * 60_000,
+        keepDigests: keepHistory,
+      });
+      log("info", "collection finished", {
+        items: summary.totalConfigurations,
+        sections: summary.sectionCounts.length,
+        fetchErrors: summary.fetchErrors.length,
+        permissionErrors: summary.permissionErrors.length,
+        seconds: Math.round((Date.now() - started) / 1000),
+      });
+      return summary;
+    } catch (error) {
+      log("warn", "collection failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      pushLicense();
+    }
+  },
+  // A scheduled run waits for the snapshot; after a manual collection the
+  // summary returns first and a failed save shows a notice.
+  collected: async (owner, scheduled) => {
+    const tenant = signedInTenant();
+    if (!tenant) return;
+    const generation = history.begin();
+    if (scheduled) {
+      const saving = recordSnapshot(owner, tenant, generation);
+      snapshotSaving = saving.catch(() => undefined);
+      return saving;
+    }
+    snapshotSaving = new Promise<void>((resolve) =>
+      setImmediate(() =>
+        resolve(
+          recordSnapshot(owner, tenant, generation).catch((error: unknown) =>
+            broadcast("history:notSaved", errorText(error)),
+          ),
+        ),
+      ),
+    );
+  },
+});
 
 function buildMenu(): void {
   const checkUpdates = () => sendMenuCommand("check-updates");
@@ -682,6 +892,7 @@ function registerIpc(): void {
     cancelCollection();
     clearCollection();
     clearManagementState();
+    resetHistorySession();
     if (auth) {
       await auth.signOut();
     }
@@ -691,11 +902,15 @@ function registerIpc(): void {
     return saved;
   });
 
-  // A session whose refresh failed earlier recovers here when the silent
-  // refresh works again, without a new interactive sign-in.
+  // A session whose refresh failed earlier, or could not reach Microsoft
+  // sign-in, recovers here when the silent refresh works again, without a
+  // new interactive sign-in.
   handle("auth:status", async () => {
     const service = await getAuth();
-    if (!service.getStatus().signedIn && service.getOwnerKey()) {
+    if (
+      (!service.getStatus().signedIn && service.getOwnerKey()) ||
+      service.signInUnreachable()
+    ) {
       await service.getAccessToken();
     }
     return service.getStatus();
@@ -710,6 +925,7 @@ function registerIpc(): void {
       typeof options === "object" &&
       options !== null &&
       (options as { consent?: unknown }).consent === true;
+    const ownerBefore = auth?.getOwnerKey() ?? null;
     try {
       // Work may have started while the browser sign-in was open. It reads
       // tokens from the current account, so the account must not change now.
@@ -723,6 +939,8 @@ function registerIpc(): void {
         },
       });
       log("info", "signed in", { consent });
+      // Another account: history state of the previous one is dropped.
+      if (auth?.getOwnerKey() !== ownerBefore) resetHistorySession();
       await license.activateForTenant(result.tenantId);
       return result;
     } catch (error) {
@@ -738,6 +956,7 @@ function registerIpc(): void {
     cancelCollection();
     clearCollection();
     clearManagementState();
+    resetHistorySession();
     await service.signOut();
     log("info", "signed out");
     pushLicense();
@@ -745,10 +964,9 @@ function registerIpc(): void {
   });
 
   handle("auth:validatePermissions", async () => {
-    const granted = await (await getAuth()).grantedScopes();
-    if (!granted) {
-      throw new Error("Sign in before checking permissions.");
-    }
+    const service = await getAuth();
+    const granted = await service.grantedScopes();
+    if (!granted) throw service.noTokenError("Sign in before checking permissions.");
     const lower = new Set(granted.map((scope) => scope.toLowerCase()));
     return {
       granted: DEFAULT_SCOPES.filter((scope) => lower.has(scope.toLowerCase())),
@@ -756,51 +974,23 @@ function registerIpc(): void {
     };
   });
 
+  // The runner checks the sign-in and the entitlement.
   handle("collect:all", async (event) => {
-    const owner = await requireOwner();
-    await requireLicense();
-    cancelCollection();
-    const controller = new AbortController();
-    activeCollection = controller;
-    const started = Date.now();
-    log("info", "collection started");
-    try {
-      const summary = await collectAll(
-        tokenProvider,
-        (progress, loaded) => {
-          if (event.sender.isDestroyed()) return;
-          event.sender.send("collect:progress", {
-            step: progress.step,
-            type: progress.type,
-            current: progress.current,
-            total: progress.total,
-            message: progress.message,
-            loaded,
-          });
-        },
-        { owner, signal: controller.signal, budgetMs: 30 * 60_000 },
-      );
-      log("info", "collection finished", {
-        items: summary.totalConfigurations,
-        sections: summary.sectionCounts.length,
-        fetchErrors: summary.fetchErrors.length,
-        permissionErrors: summary.permissionErrors.length,
-        seconds: Math.round((Date.now() - started) / 1000),
+    return collections.manual((progress, loaded) => {
+      if (event.sender.isDestroyed()) return;
+      event.sender.send("collect:progress", {
+        step: progress.step,
+        type: progress.type,
+        current: progress.current,
+        total: progress.total,
+        message: progress.message,
+        loaded,
       });
-      return summary;
-    } catch (error) {
-      log("warn", "collection failed", { message: errorText(error) });
-      throw error;
-    } finally {
-      if (activeCollection === controller) {
-        activeCollection = null;
-      }
-      pushLicense();
-    }
+    });
   });
 
   handle("collect:cancel", () => {
-    cancelCollection();
+    cancelCollection("Cancelled in the app.");
     log("info", "collection cancelled");
     return true;
   });
@@ -954,6 +1144,121 @@ function registerIpc(): void {
     } finally {
       writingReports -= 1;
     }
+  });
+
+  // Evidence register, Purview evidence pack and draft fix pack: paid desktop
+  // exports of the selected framework, licensed like the evidence report.
+  const sendProgress =
+    (event: IpcMainInvokeEvent) => (progress: ComplianceReportProgress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("compliance:progress", progress);
+      }
+    };
+
+  handle("compliance:saveRegister", async (event, input, rawFormat) => {
+    const request = parseFrameworkRequest(input);
+    const format = parseRegisterFormat(rawFormat);
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      log("info", "evidence register started", {
+        frameworkId: request.frameworkId,
+        format,
+      });
+      const register = await complianceRegister(
+        owner,
+        tokenProvider,
+        request,
+        format,
+        signedInTenant(),
+        sendProgress(event),
+      );
+      sendProgress(event)({ stage: "saving" });
+      return await saveWithDialog(register.fileName, register.bytes);
+    } catch (error) {
+      log("warn", "evidence register failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      writingReports -= 1;
+      pushLicense();
+    }
+  });
+
+  handle("compliance:saveEvidencePack", async (event, input) => {
+    const request = parseFrameworkRequest(input);
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      log("info", "evidence pack started", { frameworkId: request.frameworkId });
+      const pack = await complianceEvidencePack(
+        owner,
+        tokenProvider,
+        request,
+        signedInTenant(),
+        sendProgress(event),
+      );
+      sendProgress(event)({ stage: "saving" });
+      return await saveWithDialog(pack.fileName, pack.bytes);
+    } catch (error) {
+      log("warn", "evidence pack failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      writingReports -= 1;
+      pushLicense();
+    }
+  });
+
+  handle("compliance:previewFixPack", async (_event, input) => {
+    const request = parseFrameworkRequest(input);
+    assessingCompliance += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      return await complianceFixPackPreview(owner, tokenProvider, request);
+    } finally {
+      assessingCompliance -= 1;
+    }
+  });
+
+  // The renderer saves only after the user accepted the draft warnings.
+  handle("compliance:saveFixPack", async (event, input, confirmed) => {
+    const request = parseFrameworkRequest(input);
+    if (confirmed !== true) {
+      throw new Error("Confirm the fix pack warnings before saving.");
+    }
+    writingReports += 1;
+    try {
+      const owner = await requireOwner();
+      await requireLicense();
+      log("info", "fix pack started", { frameworkId: request.frameworkId });
+      const pack = await complianceFixPack(
+        owner,
+        tokenProvider,
+        request,
+        signedInTenant(),
+        sendProgress(event),
+      );
+      sendProgress(event)({ stage: "saving" });
+      return await saveWithDialog(pack.fileName, pack.bytes);
+    } catch (error) {
+      log("warn", "fix pack failed", { message: errorText(error) });
+      throw error;
+    } finally {
+      writingReports -= 1;
+      pushLicense();
+    }
+  });
+
+  // Intune's per policy device status for the policy list of a section.
+  handle("compliance:policyDeviceStatus", async (_event, sectionKey) => {
+    if (typeof sectionKey !== "string" || sectionKey.length > 200) {
+      throw new Error("Unknown section.");
+    }
+    const owner = await requireOwner();
+    await requireLicense();
+    return complianceDeviceStatus(owner, sectionKey);
   });
 
   handle("compliance:openSource", async (_event, frameworkId) => {
@@ -1117,6 +1422,7 @@ function registerIpc(): void {
   });
 
   handle("license:deactivate", async () => {
+    benchmarksIpc?.reset();
     try {
       return await license.deactivate();
     } finally {
@@ -1187,10 +1493,7 @@ function registerIpc(): void {
   );
 
   handle("help:open", async (_event, key) => {
-    if (typeof key !== "string" || !Object.hasOwn(HELP_URLS, key)) {
-      throw new Error("Refused to open an unexpected link.");
-    }
-    await shell.openExternal(HELP_URLS[key as HelpKey]);
+    await shell.openExternal(helpUrl(key));
     return true;
   });
 
@@ -1220,6 +1523,74 @@ function registerIpc(): void {
   });
 
   handle("diagnostics:export", () => exportDiagnostics());
+
+  // History, Compare and Portfolio: signed in, licensed and, for Portfolio
+  // and other tenants, the MSP plan; checked in history-ipc.ts.
+  historyIpc = registerHistoryIpc({
+    handle,
+    requireOwner,
+    signedInTenant,
+    license,
+    store: history,
+    readSettings,
+    writeSettings,
+    currentInputs: (owner) => snapshotInputs(owner, tokenProvider),
+    track: async (work) => {
+      assessingCompliance += 1;
+      try {
+        return await work();
+      } finally {
+        assessingCompliance -= 1;
+      }
+    },
+    saveFile: saveWithDialog,
+    pickJsonFile: () => chooseOpenPath("json"),
+    scheduler,
+    notifyHistoryChanged: () => broadcast("history:changed", null),
+    log,
+  });
+  const historyHandlers = historyIpc;
+  setManagementChangeSource(async (owner, tenantId, request) => {
+    const result = await historyHandlers.changesFor(owner, tenantId.toLowerCase(), request);
+    return result.state === "ready" ? result.changes : null;
+  });
+
+  // CIS Benchmarks: refused without the signed claim; checked in benchmarks.ts.
+  benchmarksIpc = registerBenchmarksIpc({
+    handle,
+    requireOwner,
+    requireLicense,
+    signedInTenant,
+    license,
+    fetch: (url, init) => net.fetch(url, init),
+    apiBase: LICENSE_API_BASE,
+    track: async (work) => {
+      assessingCompliance += 1;
+      try {
+        return await work();
+      } finally {
+        assessingCompliance -= 1;
+      }
+    },
+    saveFile: saveWithDialog,
+    log,
+    work: benchmarkWork({
+      collectionFor: (owner) =>
+        getCollectionOwner() === owner ? getLastCollection() : null,
+      exceptions: benchmarkExceptions,
+      isCurrent: (owner, tenantId) =>
+        auth?.getOwnerKey() === owner &&
+        signedInTenant()?.toLowerCase() === tenantId,
+      // After the snapshot of the last collection was saved.
+      recordRuns: async (owner, tenantId, collectedAt, runs) => {
+        await snapshotSaving;
+        return historyHandlers.recordBenchmarkRuns(owner, tenantId, collectedAt, runs);
+      },
+      history: historyHandlers,
+      tenantLabel: tenantLabelOf,
+      log,
+    }),
+  });
 
   handle("data:clear", async () => {
     await clearLocalData();
@@ -1268,12 +1639,18 @@ if (!app.requestSingleInstanceLock()) {
     );
     void refreshLicenses();
     setInterval(() => void refreshLicenses(), LICENSE_REFRESH_MS);
+    // A run that became due while the computer slept runs once after resume.
+    void scheduler.refresh();
+    powerMonitor.on("resume", () => void scheduler.refresh());
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
       }
     });
   });
+
+  // Benchmark content never outlives the process.
+  app.on("will-quit", () => benchmarksIpc?.reset());
 
   app.on("window-all-closed", () => {
     if (!isMac) {

@@ -249,6 +249,64 @@
           ]
         }
       ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_devicelock_devicepasswordenabled",
+      "name": "Device Password Enabled",
+      "verifiedAt": "2026-10-18",
+      "source": "Microsoft Graph beta GET /deviceManagement/configurationSettings('<id>') on the Ugur Koc Lab tenant (app-only, DeviceManagementConfiguration.Read.All); public definition metadata, no tenant policy data.",
+      "options": [
+        {
+          "id": "device_vendor_msft_policy_config_devicelock_devicepasswordenabled_0",
+          "label": "Enabled",
+          "value": 0,
+          "children": [
+            "device_vendor_msft_policy_config_devicelock_allowidlereturnwithoutpassword",
+            "device_vendor_msft_policy_config_devicelock_allowsimpledevicepassword",
+            "device_vendor_msft_policy_config_devicelock_alphanumericdevicepasswordrequired",
+            "device_vendor_msft_policy_config_devicelock_devicepasswordexpiration",
+            "device_vendor_msft_policy_config_devicelock_devicepasswordhistory",
+            "device_vendor_msft_policy_config_devicelock_maxdevicepasswordfailedattempts",
+            "device_vendor_msft_policy_config_devicelock_maxinactivitytimedevicelock",
+            "device_vendor_msft_policy_config_devicelock_mindevicepasswordcomplexcharacters",
+            "device_vendor_msft_policy_config_devicelock_mindevicepasswordlength"
+          ]
+        },
+        {
+          "id": "device_vendor_msft_policy_config_devicelock_devicepasswordenabled_1",
+          "label": "Disabled",
+          "value": 1,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "device_vendor_msft_policy_config_devicelock_maxinactivitytimedevicelock",
+      "name": "Max Inactivity Time Device Lock",
+      "verifiedAt": "2026-10-18",
+      "source": "Microsoft Graph beta GET /deviceManagement/configurationSettings('<id>') on the Ugur Koc Lab tenant (app-only, DeviceManagementConfiguration.Read.All); public definition metadata, no tenant policy data.",
+      "valueDefinition": {
+        "type": "integer",
+        "unit": "minutes",
+        "minimumValue": 0,
+        "maximumValue": 999,
+        "note": "0 means no timeout is defined."
+      },
+      "options": []
+    },
+    {
+      "id": "device_vendor_msft_policy_config_localpoliciessecurityoptions_interactivelogon_machineinactivitylimit_v2",
+      "name": "Interactive Logon Machine Inactivity Limit",
+      "verifiedAt": "2026-10-18",
+      "source": "Microsoft Graph beta GET /deviceManagement/configurationSettings('<id>') on the Ugur Koc Lab tenant (app-only, DeviceManagementConfiguration.Read.All); public definition metadata, no tenant policy data.",
+      "valueDefinition": {
+        "type": "integer",
+        "unit": "seconds",
+        "minimumValue": 0,
+        "maximumValue": 599940,
+        "note": "0 means not enforced."
+      },
+      "options": []
     }
   ]
 }

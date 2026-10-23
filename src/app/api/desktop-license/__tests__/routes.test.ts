@@ -1,7 +1,11 @@
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRateLimit } from "~/lib/desktop-license/http";
-import { verifyEntitlement } from "~/lib/desktop-license/token";
+import {
+  loadSigningKey,
+  signEntitlement,
+  verifyEntitlement,
+} from "~/lib/desktop-license/token";
 import { POST as activate } from "../activate/route";
 import { POST as deactivate } from "../deactivate/route";
 import { POST as refresh } from "../refresh/route";
@@ -435,6 +439,69 @@ describe("desktop license activation", () => {
     vi.stubEnv("DESKTOP_LICENSE_SIGNING_KEY", "");
     expect((await post(activate, activation())).status).toBe(503);
   });
+
+  it("issues no CIS claim without an allowlist entry", async () => {
+    const response = await post(activate, activation());
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    const payload = verifyEntitlement(body.token, publicKey);
+    expect(payload).not.toBeNull();
+    expect(payload).not.toHaveProperty("cis");
+  });
+
+  it("issues the internal CIS claim only for an allowlisted key and installation", async () => {
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID.toUpperCase());
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", INSTALL.toUpperCase());
+    const response = await post(activate, activation());
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    expect(verifyEntitlement(body.token, publicKey)?.cis).toBe("internal");
+  });
+
+  it.each([
+    ["the license key only", KEY_ID, ""],
+    ["the installation only", "", INSTALL],
+    ["a different license key", TENANT_B, INSTALL],
+    ["a different installation", KEY_ID, TENANT_B],
+  ])(
+    "issues no CIS claim with %s allowlisted",
+    async (_label, licenseKeyIds, installIds) => {
+      vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", licenseKeyIds);
+      vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", installIds);
+      const response = await post(activate, activation());
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { token: string };
+      expect(verifyEntitlement(body.token, publicKey)?.cis).toBeUndefined();
+    },
+  );
+
+  it("issues the CIS claim for a pilot license key on any installation", async () => {
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", KEY_ID.toUpperCase());
+    const response = await post(activate, activation());
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    expect(verifyEntitlement(body.token, publicKey)?.cis).toBe("internal");
+  });
+
+  it("issues no CIS claim when a different license key is the pilot", async () => {
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", TENANT_B);
+    const response = await post(activate, activation());
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    expect(verifyEntitlement(body.token, publicKey)?.cis).toBeUndefined();
+  });
+
+  it("cannot be granted the internal CIS claim by naming a tenant or injecting a field", async () => {
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID);
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", TENANT_B);
+    const response = await post(activate, {
+      ...activation(TENANT_B),
+      cis: "internal",
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    expect(verifyEntitlement(body.token, publicKey)?.cis).toBeUndefined();
+  });
 });
 
 describe("desktop license refresh and deactivate", () => {
@@ -450,6 +517,30 @@ describe("desktop license refresh and deactivate", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { token: string };
     expect(verifyEntitlement(body.token, publicKey)?.act).toBe(existing.id);
+  });
+
+  it("issues the internal CIS claim on refresh only while allowlisted", async () => {
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID);
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", INSTALL);
+    const existing = act(TENANT_A, INSTALL);
+    key.activations.push(existing);
+    const input = {
+      key: "IDOC-GOOD-KEY-0001",
+      activationId: existing.id,
+      installId: INSTALL,
+      tenantId: TENANT_A,
+    };
+    const response = await post(refresh, input);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { token: string };
+    expect(verifyEntitlement(body.token, publicKey)?.cis).toBe("internal");
+
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", "");
+    resetRateLimit();
+    const revoked = (await (await post(refresh, input)).json()) as {
+      token: string;
+    };
+    expect(verifyEntitlement(revoked.token, publicKey)?.cis).toBeUndefined();
   });
 
   it("refuses an activation that belongs to another tenant or install", async () => {
@@ -570,6 +661,44 @@ describe("entitlement token", () => {
     expect(verifyEntitlement(token, other)).toBeNull();
     expect(verifyEntitlement(`${token}.x`, publicKey)).toBeNull();
     expect(verifyEntitlement(token, publicKey)).not.toBeNull();
+  });
+
+  it("accepts only the internal CIS claim value", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const sign = (cis: unknown) =>
+      signEntitlement(
+        {
+          v: 1,
+          sub: KEY_ID,
+          act: "act-cis-test",
+          plan: "pro",
+          tenantId: TENANT_A,
+          installId: INSTALL,
+          tenants: 1,
+          status: "granted",
+          iat: now,
+          exp: now + 3600,
+          ...(cis === undefined ? {} : { cis: cis as "internal" }),
+        },
+        loadSigningKey(signingPem),
+      );
+    expect(verifyEntitlement(sign("internal"), publicKey)?.cis).toBe(
+      "internal",
+    );
+    expect(verifyEntitlement(sign(undefined), publicKey)).not.toBeNull();
+    for (const cis of ["customer", "Internal", "", null, true, 1])
+      expect(verifyEntitlement(sign(cis), publicKey)).toBeNull();
+  });
+
+  it("cannot gain the CIS claim by editing a signed token", async () => {
+    const response = await post(activate, activation());
+    const { token } = (await response.json()) as { token: string };
+    const [body, signature] = token.split(".");
+    const payload = JSON.parse(Buffer.from(body!, "base64url").toString());
+    const forged = Buffer.from(
+      JSON.stringify({ ...payload, cis: "internal" }),
+    ).toString("base64url");
+    expect(verifyEntitlement(`${forged}.${signature}`, publicKey)).toBeNull();
   });
 });
 

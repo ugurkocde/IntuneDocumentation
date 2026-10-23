@@ -1,4 +1,9 @@
-import { compareControlIds, hasAssignedEvidence } from "../engine";
+import {
+  compareControlIds,
+  excludedByAlternative,
+  hasAssignedEvidence,
+  hasUnreadData,
+} from "../engine";
 import type {
   AssessmentScope,
   CapabilityResult,
@@ -7,6 +12,8 @@ import type {
   ControlStatus,
   FrameworkAssessment,
 } from "../types";
+import { unknownAssignmentReasons } from "../assignments";
+import { isIdentifier } from "../graph-rows";
 import { portalAreaFor, PORTAL_AREAS } from "./portal-links";
 import type {
   ManagementMetrics,
@@ -60,11 +67,111 @@ function inPlaceCapabilityIds(
   );
 }
 
+/**
+ * Capabilities without evidence whose alternative is in use, or which cannot
+ * be combined with the Conditional Access policies that exist. They are not
+ * safeguards to count. An unreadable alternative stays counted, as a data gap.
+ */
+function alternativeIds(
+  capabilities: readonly CapabilityResult[],
+): Set<string> {
+  return new Set(
+    capabilities
+      .filter(excludedByAlternative)
+      .map((result) => result.capability.id),
+  );
+}
+
+/**
+ * A value on a policy that can take effect could not be read, and nothing
+ * else gives the capability evidence. Unassigned (disabled or report-only)
+ * policies cannot put a safeguard in place, so their unreadable values do
+ * not count.
+ */
+function hasUnreadablePolicyValue(result: CapabilityResult): boolean {
+  return (
+    result.status === "noEvidence" &&
+    !result.alternative &&
+    result.checks.some(
+      (check) =>
+        check.assessmentStatus === "unableToCheck" &&
+        // A policy check names its policy, also one Graph returned without
+        // an id (""); collection checks name none.
+        check.policyId !== undefined &&
+        check.assignment?.state !== "notAssigned",
+    )
+  );
+}
+
+/**
+ * Whether a data gap comes from assignments that were read completely but
+ * whose effective targeting could not be resolved (AssignmentSummary
+ * uncertainty "unresolved"), of the capability or of the alternative it
+ * depends on: "only" when that is its only cause, which a review of the
+ * overlapping assignments settles and collecting again does not; "partly"
+ * when assignments or other data that could not be read add to it, such as
+ * a failed collection page or an unreadable value (hasUnreadData), which
+ * needs both.
+ */
+function unresolvedTargeting(
+  result: CapabilityResult,
+): "only" | "partly" | undefined {
+  if (result.alternative) {
+    if (result.alternative.state !== "unknown") return undefined;
+    return result.alternative.targetingUnresolved
+      ? "only"
+      : result.alternative.targetingPartlyUnresolved
+        ? "partly"
+        : undefined;
+  }
+  if (result.status !== "assignmentUnknown") return undefined;
+  const { incomplete, unresolved } = unknownAssignmentReasons(
+    result.evidence.map((item) => item.assignment),
+  );
+  if (!unresolved) return undefined;
+  return incomplete || hasUnreadData(result) ? "partly" : "only";
+}
+
+const targetingUnresolved = (result: CapabilityResult) =>
+  unresolvedTargeting(result) === "only";
+
+function isDataGap(result: CapabilityResult): boolean {
+  return (
+    DATA_GAP_STATUSES.includes(result.status) ||
+    result.alternative?.state === "unknown" ||
+    hasUnreadablePolicyValue(result)
+  );
+}
+
+/**
+ * Mapped data gaps (metrics.dataGaps) that targeting that could not be
+ * resolved causes alone (only) or beside data that could not be read
+ * (partly).
+ */
+function unresolvedDataGaps(
+  fa: FrameworkAssessment,
+  capabilities: readonly CapabilityResult[],
+  kind: "only" | "partly",
+): number {
+  const mapped = mappedCapabilityIds(fa);
+  return new Set(
+    capabilities
+      .filter(
+        (result) =>
+          mapped.has(result.capability.id) &&
+          isDataGap(result) &&
+          unresolvedTargeting(result) === kind,
+      )
+      .map((result) => result.capability.id),
+  ).size;
+}
+
 function safeguardCount(
   capabilityIds: Iterable<string>,
   inPlace: ReadonlySet<string>,
+  excluded: ReadonlySet<string>,
 ): SafeguardCount {
-  const ids = new Set(capabilityIds);
+  const ids = new Set([...capabilityIds].filter((id) => !excluded.has(id)));
   return {
     inPlace: [...ids].filter((id) => inPlace.has(id)).length,
     total: ids.size,
@@ -92,14 +199,15 @@ export function computeMetrics(
   const mappedResults = capabilities.filter((result) =>
     mapped.has(result.capability.id),
   );
-  const distinctWith = (statuses: readonly CapabilityStatus[]) =>
-    new Set(
-      mappedResults
-        .filter((result) => statuses.includes(result.status))
-        .map((result) => result.capability.id),
-    ).size;
+  const distinctWhere = (keep: (result: CapabilityResult) => boolean) =>
+    new Set(mappedResults.filter(keep).map((result) => result.capability.id))
+      .size;
 
-  const safeguards = safeguardCount(mapped, inPlaceCapabilityIds(capabilities));
+  const safeguards = safeguardCount(
+    mapped,
+    inPlaceCapabilityIds(capabilities),
+    alternativeIds(capabilities),
+  );
 
   return {
     assessable,
@@ -109,7 +217,9 @@ export function computeMetrics(
       : null,
     withoutEvidence: noEvidence,
     conflicting,
-    unassignedConfigs: distinctWith(["configuredNotAssigned"]),
+    unassignedConfigs: distinctWhere(
+      (result) => result.status === "configuredNotAssigned",
+    ),
     outsideIntuneScope:
       totalRequirements === undefined
         ? null
@@ -117,7 +227,7 @@ export function computeMetrics(
             0,
             totalRequirements - fa.summary.totalControls - notEvaluated,
           ),
-    dataGaps: distinctWith(DATA_GAP_STATUSES),
+    dataGaps: distinctWhere(isDataGap),
     safeguardsTotal: safeguards.total,
     safeguardsInPlace: safeguards.inPlace,
     safeguardPct: safeguards.total
@@ -153,6 +263,21 @@ function switchesOffAssigned(result: CapabilityResult): boolean {
 
 /** Plain-language state of one safeguard for the management report. */
 export function safeguardState(result: CapabilityResult): SafeguardState {
+  if (result.alternative)
+    return result.alternative.state === "inUse"
+      ? "alternativeInUse"
+      : result.alternative.state === "notCombinable"
+        ? "notCombinable"
+        : targetingUnresolved(result)
+          ? "targetingUnresolved"
+          : "dataMissing";
+  // Tenant-wide Entra settings are not policies that switch something off.
+  if (
+    result.status === "disabledByPolicy" &&
+    result.capability.signals.some((signal) => signal.source === "tenantPolicy")
+  )
+    return "tenantSettingDiffers";
+  if (hasUnreadablePolicyValue(result)) return "dataMissing";
   switch (result.status) {
     case "enforced":
     case "requirementAssigned":
@@ -166,6 +291,9 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
     case "conflictingEvidence":
       return "conflicting";
     case "assignmentUnknown":
+      return targetingUnresolved(result)
+        ? "targetingUnresolved"
+        : "dataMissing";
     case "collectionIncomplete":
       return "dataMissing";
     default:
@@ -173,17 +301,41 @@ export function safeguardState(result: CapabilityResult): SafeguardState {
   }
 }
 
-/** Distinct policies behind a safeguard, assigned ones first, then by name. */
+/**
+ * Distinct policies behind a safeguard, assigned ones first, then by name:
+ * policies with evidence and every policy a check read, such as the
+ * tenant-wide Entra policy, a policy that leaves the setting not configured
+ * and one whose value could not be read, so a read policy never shows as
+ * "No policy found".
+ */
 export function safeguardPolicies(
   result: CapabilityResult,
 ): { name: string; assigned: boolean }[] {
   const byId = new Map<string, { name: string; assigned: boolean }>();
-  for (const item of result.evidence) {
-    const assigned = item.assignment.state === "assigned";
-    const known = byId.get(item.policyId);
+  // Only a Graph id names one policy. Policies without one are told apart
+  // by name and assignment, so one is never shown with the assignment of
+  // another.
+  const add = (policyId: string, name: string, assigned: boolean) => {
+    const id = isIdentifier(policyId)
+      ? policyId
+      : `\u0000${name}\u0000${assigned}`;
+    const known = byId.get(id);
     if (known) known.assigned ||= assigned;
-    else byId.set(item.policyId, { name: item.policyName, assigned });
-  }
+    else byId.set(id, { name, assigned });
+  };
+  for (const item of result.evidence)
+    add(item.policyId, item.policyName, item.assignment.state === "assigned");
+  for (const check of result.checks)
+    if (
+      check.policyId !== undefined &&
+      check.policyName &&
+      check.assessmentStatus !== "outsideScope"
+    )
+      add(
+        check.policyId,
+        check.policyName,
+        check.assignment?.state === "assigned",
+      );
   return [...byId.values()].sort(
     (a, b) =>
       Number(b.assigned) - Number(a.assigned) ||
@@ -212,6 +364,12 @@ export function rankNextActions(
   const candidates: Omit<NextAction, "rank">[] = [];
   for (const id of mappedCapabilityIds(fa)) {
     const result = resultById.get(id);
+    // Never recommend a safeguard whose alternative is in use or unreadable,
+    // or which cannot be combined with existing Conditional Access policies,
+    // such as security defaults in a Conditional Access tenant.
+    if (result?.alternative) continue;
+    // A value that could not be read is a data gap, not a safeguard to set up.
+    if (result && hasUnreadablePolicyValue(result)) continue;
     // A non-enforcing value only switches a protection off where the policy
     // is assigned; in an unassigned policy the protection is simply missing.
     const tier =
@@ -292,6 +450,9 @@ export function buildManagementSummary(
   if (!fa)
     throw new Error(`Framework ${frameworkId} is not in this assessment.`);
   const inPlace = inPlaceCapabilityIds(assessment.capabilities);
+  const excluded = alternativeIds(assessment.capabilities);
+  const unresolved = unresolvedDataGaps(fa, assessment.capabilities, "only");
+  const partly = unresolvedDataGaps(fa, assessment.capabilities, "partly");
   return {
     frameworkId,
     frameworkName: fa.framework.name,
@@ -313,9 +474,11 @@ export function buildManagementSummary(
     safeguards: Object.fromEntries(
       fa.controls.map((control) => [
         control.control.id,
-        safeguardCount(control.capabilityIds, inPlace),
+        safeguardCount(control.capabilityIds, inPlace, excluded),
       ]),
     ),
     outsideScope: [...(options.outsideScope ?? [])],
+    ...(unresolved ? { targetingUnresolved: unresolved } : {}),
+    ...(partly ? { targetingPartlyUnresolved: partly } : {}),
   };
 }

@@ -17,6 +17,15 @@ export const env = createEnv({
     DESKTOP_LICENSE_PRO_BENEFIT_ID: z.string().uuid().optional(),
     DESKTOP_LICENSE_MSP_BENEFIT_ID: z.string().uuid().optional(),
     DESKTOP_LICENSE_SIGNING_KEY: z.string().optional(),
+    // Gated: CIS Benchmarks delivery and the internal or pilot license claim.
+    // Exact strings only; parseDeliveryMode (src/lib/cis-content/service.ts)
+    // reads them the same way and treats anything else as off.
+    DESKTOP_CIS_DELIVERY_MODE: z
+      .enum(["off", "internal", "licensed"])
+      .optional(),
+    DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS: z.string().optional(),
+    DESKTOP_CIS_INTERNAL_INSTALL_IDS: z.string().optional(),
+    DESKTOP_CIS_PILOT_LICENSE_KEY_IDS: z.string().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
     NODE_ENV: z.enum(["development", "test", "production"]),
   },
@@ -55,6 +64,13 @@ export const env = createEnv({
     DESKTOP_LICENSE_PRO_BENEFIT_ID: process.env.DESKTOP_LICENSE_PRO_BENEFIT_ID,
     DESKTOP_LICENSE_MSP_BENEFIT_ID: process.env.DESKTOP_LICENSE_MSP_BENEFIT_ID,
     DESKTOP_LICENSE_SIGNING_KEY: process.env.DESKTOP_LICENSE_SIGNING_KEY,
+    DESKTOP_CIS_DELIVERY_MODE: process.env.DESKTOP_CIS_DELIVERY_MODE,
+    DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS:
+      process.env.DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS,
+    DESKTOP_CIS_INTERNAL_INSTALL_IDS:
+      process.env.DESKTOP_CIS_INTERNAL_INSTALL_IDS,
+    DESKTOP_CIS_PILOT_LICENSE_KEY_IDS:
+      process.env.DESKTOP_CIS_PILOT_LICENSE_KEY_IDS,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     NEXT_PUBLIC_AZURE_AD_CLIENT_ID: process.env.NEXT_PUBLIC_AZURE_AD_CLIENT_ID,
     NEXT_PUBLIC_AZURE_AD_TENANT_ID: process.env.NEXT_PUBLIC_AZURE_AD_TENANT_ID,

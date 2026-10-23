@@ -9,7 +9,10 @@ import {
   displayCheckValue,
 } from "../../../../../../src/lib/compliance/check-results";
 import type { SafeguardCount } from "../../../../../../src/lib/compliance/management/types";
-import { CAPABILITY_STATUS_LABELS } from "../../../../../../src/lib/compliance/presentation";
+import {
+  alternativeLabel,
+  CAPABILITY_STATUS_LABELS,
+} from "../../../../../../src/lib/compliance/presentation";
 import type {
   CapabilityStatus,
   ControlAssessment,
@@ -414,7 +417,10 @@ export function ControlRow({
                       </p>
                     )}
                   </div>
-                  <span className="shrink-0 text-xs text-slate-600">{checkSummary(capability.checks)}</span>
+                  {/* An alternative in use or a setting that cannot be combined is no gap. */}
+                  <span className="shrink-0 text-xs text-slate-600">
+                    {alternativeLabel(capability) ?? checkSummary(capability.checks)}
+                  </span>
                 </div>
                 <SettingChecks capability={capability} />
                 {capability.evidence.length > 0 && (

@@ -11,6 +11,28 @@ export const NIST_800_53: FrameworkDefinition = {
     verifiedAt: "2026-09-04",
   },
   controls: {
+    "AC-11": {
+      id: "AC-11",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
+      title: "Device Lock",
+      summary:
+        "Prevent further access to the system by initiating a device lock after a period of inactivity.",
+      unassessedAspects: [
+        "The organization-defined inactivity period, pattern-hiding displays and re-authentication before unlock are assessed separately. A device lock is not a session termination (AC-12).",
+      ],
+    },
+    "IA-2": {
+      id: "IA-2",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
+      title: "Identification and Authentication (Organizational Users)",
+      summary:
+        "Uniquely identify and authenticate organizational users, supported here by MFA requirements and the authentication methods the tenant allows.",
+      unassessedAspects: [
+        "Coverage of every user and service, exclusions, replay resistance and effective sign-ins are assessed separately.",
+      ],
+    },
     "SC-28": {
       id: "SC-28",
       evidenceStrength: "supporting",
@@ -93,6 +115,15 @@ export const NIST_800_53: FrameworkDefinition = {
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": ["AC-11"],
+    "macos-inactivity-lock": ["AC-11"],
+    "ios-inactivity-lock": ["AC-11"],
+    "android-inactivity-lock": ["AC-11"],
+    "tenant-phishing-resistant-method-enabled": ["IA-2"],
+    "tenant-weak-methods-disabled": ["IA-5"],
+    "tenant-security-defaults-enabled": ["IA-2"],
+
     "windows-lsa-protection": ["IA-5"],
     "windows-remote-credential-guard": ["IA-5"],
     "windows-laps-management": ["IA-5"],
@@ -112,8 +143,8 @@ export const NIST_800_53: FrameworkDefinition = {
     "windows-browser-intrusive-ads-blocked": ["CM-6", "CM-7"],
     "macos-browser-intrusive-ads-blocked": ["CM-6", "CM-7"],
     "windows-browser-security-settings-managed": ["CM-6", "CM-7"],
-    "tenant-mfa-all-apps": [],
-    "tenant-phishing-resistant-mfa": [],
+    "tenant-mfa-all-apps": ["IA-2"],
+    "tenant-phishing-resistant-mfa": ["IA-2"],
     "windows-powershell-scriptblock-logging": [],
     "windows-powershell-transcription": [],
 
@@ -123,7 +154,7 @@ export const NIST_800_53: FrameworkDefinition = {
     "windows-office-injection-block": [],
     "windows-adobe-child-process-block": [],
 
-    "tenant-mfa-required": [],
+    "tenant-mfa-required": ["IA-2"],
     "tenant-compliant-device-required": [],
     "ios-app-data-transfer": [],
     "android-app-data-transfer": [],

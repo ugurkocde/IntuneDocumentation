@@ -45,15 +45,15 @@ describe("Defender policy exports", () => {
     const renderedText = extractPdfStreamText(result.buffer);
 
     expect(renderedText).toContain("Compliance Evidence Preview");
-    expect(renderedText).toContain("BSI IT-Grundschutz");
+    expect(renderedText).toContain("NCSC Cyber Essentials");
     expect(renderedText).toContain("not a compliance certi");
     expect(renderedText).toContain("intunedocumentation.com/dashboard");
     // The exclusions-only Defender fixture must not produce evidence claims.
     expect(renderedText).not.toContain("Evidence found");
     expect(renderedText).toContain("Rev. 2");
     expect(renderedText).toContain("Rev. 3");
-    expect(renderedText).toContain("12 of 110 published requirements");
-    expect(renderedText).toContain("11 of 97 published requirements");
+    expect(renderedText).toContain("13 of 110 published requirements");
+    expect(renderedText).toContain("12 of 97 published requirements");
   });
 
   it.each(["PDF", "Word"])(
@@ -71,7 +71,7 @@ describe("Defender policy exports", () => {
           : extractZipEntry(result.buffer, "word/document.xml");
 
       expect(text).not.toContain("Compliance Evidence Preview");
-      expect(text).not.toContain("BSI IT-Grundschutz");
+      expect(text).not.toContain("NCSC Cyber Essentials");
       expect(result.errors).toEqual([]);
     },
   );
@@ -98,9 +98,9 @@ describe("Defender policy exports", () => {
     expect(documentXml).toContain("Compliance Evidence Preview");
     expect(documentXml).toContain("Rev. 2");
     expect(documentXml).toContain("Rev. 3");
-    expect(documentXml).toContain("12 of 110 published requirements");
-    expect(documentXml).toContain("11 of 97 published requirements");
-    expect(documentXml).toContain("BSI IT-Grundschutz");
+    expect(documentXml).toContain("13 of 110 published requirements");
+    expect(documentXml).toContain("12 of 97 published requirements");
+    expect(documentXml).toContain("NCSC Cyber Essentials");
     expect(documentXml).toContain("not a compliance certification");
     expect(documentXml).toContain("intunedocumentation.com/dashboard");
     // The exclusions-only Defender fixture must not produce evidence claims.
@@ -118,7 +118,12 @@ it.each(["PDF", "Word"])(
         id: "baseline",
         displayName: "Baseline example",
         settings: [
-          { definitionId: "sample", valueJson: '"baseline-value-example"' },
+          {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementStringSettingInstance",
+            definitionId: "sample",
+            valueJson: '"baseline-value-example"',
+          },
         ],
         categories: [{ id: "category", displayName: "Security" }],
         assignments: [],
@@ -135,7 +140,11 @@ it.each(["PDF", "Word"])(
             enabled: true,
             definition: { displayName: "Sites" },
             presentationValues: [
-              { values: [{ name: "Site", value: "list-value-example" }] },
+              {
+                "@odata.type":
+                  "#microsoft.graph.groupPolicyPresentationValueList",
+                values: [{ name: "Site", value: "list-value-example" }],
+              },
             ],
           },
         ],

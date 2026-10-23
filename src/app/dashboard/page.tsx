@@ -38,6 +38,7 @@ import {
   type IntuneConfigurations,
 } from "~/components/dashboard/types";
 import type { ConfigurationSectionData } from "~/lib/configuration-sections";
+import { assignmentGroupIds } from "~/lib/compliance/graph-rows";
 import {
   clearDashboardSession,
   readDashboardSession,
@@ -403,16 +404,17 @@ export default function DashboardPage() {
         const groupIds = new Set<string>();
         for (const section of configurations.sections ?? []) {
           for (const item of section.items) {
-            for (const assignment of item.assignments ?? []) {
-              const groupId = assignment?.target?.groupId;
-              if (typeof groupId === "string" && groupId) {
-                groupIds.add(groupId);
-              }
-            }
+            // A scope tag target names its group by entraObjectId.
+            for (const groupId of assignmentGroupIds(item))
+              groupIds.add(groupId);
             const users = item.conditions?.users;
             for (const id of [
-              ...(users?.includeGroups ?? []),
-              ...(users?.excludeGroups ?? []),
+              ...(Array.isArray(users?.includeGroups)
+                ? users.includeGroups
+                : []),
+              ...(Array.isArray(users?.excludeGroups)
+                ? users.excludeGroups
+                : []),
             ]) {
               if (typeof id === "string" && id) groupIds.add(id);
             }
@@ -725,6 +727,17 @@ export default function DashboardPage() {
                           : data.data.collectionStartedAt,
                         collectionSkippedFamilies:
                           data.data.collectionSkippedFamilies,
+                        // A partial retry refreshes these only with their step.
+                        tenantIdentityPolicies:
+                          data.data.tenantIdentityPolicies ??
+                          (retry
+                            ? previousSnapshot?.tenantIdentityPolicies
+                            : undefined),
+                        policyDeviceStatus:
+                          data.data.policyDeviceStatus ??
+                          (retry
+                            ? previousSnapshot?.policyDeviceStatus
+                            : undefined),
                         permissionErrors: [
                           ...(retry
                             ? (previousSnapshot?.permissionErrors ?? []).filter(

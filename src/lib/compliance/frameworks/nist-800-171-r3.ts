@@ -16,6 +16,17 @@ export const NIST_800_171_R3: FrameworkDefinition = {
     verifiedAt: "2026-09-05",
   },
   controls: {
+    "03.01.10": {
+      id: "03.01.10",
+      title: "Device Lock",
+      summary:
+        "A configured inactivity limit locks managed devices; unlocking requires the user's authentication.",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
+      unassessedAspects: [
+        "The organization-defined time period, user-initiated locking and concealment of information on the display are unassessed.",
+      ],
+    },
     "03.01.18": {
       id: "03.01.18",
       title: "Access Control for Mobile Devices",
@@ -139,6 +150,15 @@ export const NIST_800_171_R3: FrameworkDefinition = {
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": ["03.01.10"],
+    "macos-inactivity-lock": ["03.01.10"],
+    "ios-inactivity-lock": ["03.01.10"],
+    "android-inactivity-lock": ["03.01.10"],
+    "tenant-phishing-resistant-method-enabled": ["03.05.03"],
+    "tenant-weak-methods-disabled": [],
+    "tenant-security-defaults-enabled": ["03.05.03"],
+
     "windows-lsa-protection": ["03.04.02"],
     "windows-remote-credential-guard": ["03.04.02"],
     "windows-laps-management": ["03.05.01"],

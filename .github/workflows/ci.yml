@@ -23,8 +23,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/desktop/package-lock.json
 
       - name: Install dependencies
+        run: npm ci
+
+      # The root test run also covers apps/desktop, whose tests resolve the
+      # desktop app's own pinned packages (MSAL node), as they do locally.
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
         run: npm ci
 
       - name: Run checks

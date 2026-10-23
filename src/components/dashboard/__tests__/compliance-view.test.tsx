@@ -72,6 +72,15 @@ describe("ComplianceView", () => {
     window.localStorage.clear();
   });
 
+  it("shows the framework picker when the stored framework is no longer offered", () => {
+    window.localStorage.setItem("compliance-framework", "retired-framework");
+    render(<ComplianceView configurations={configurations} />);
+
+    expect(
+      screen.getByRole("heading", { name: "Choose a compliance framework" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows only the framework picker when no selection is stored", () => {
     render(<ComplianceView configurations={configurations} />);
 
@@ -91,9 +100,6 @@ describe("ComplianceView", () => {
       screen.getByRole("button", { name: "NIST CSF 2.0" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("button", { name: "Def Stan 05-138" }),
     ).toBeInTheDocument();
     expect(
@@ -108,7 +114,11 @@ describe("ComplianceView", () => {
     expect(
       screen.getByRole("button", { name: "HIPAA Security Rule" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("button")).toHaveLength(11);
+    expect(screen.getAllByRole("button")).toHaveLength(10);
+    // NIS2 and DORA are desktop only.
+    expect(
+      screen.queryByRole("button", { name: /NIS2|DORA/ }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Download report/ }),
     ).not.toBeInTheDocument();
@@ -141,7 +151,7 @@ describe("ComplianceView", () => {
       name: "Selected framework: NIST SP 800-171 Rev. 2",
     });
     expect(
-      screen.getByText(/12 of 110 published requirements/),
+      screen.getByText(/13 of 110 published requirements/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /3\.13\.16/ }),
@@ -156,7 +166,7 @@ describe("ComplianceView", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/11 of 97 published requirements/),
+      await screen.findByText(/12 of 97 published requirements/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /03\.13\.08/ }),
@@ -318,10 +328,8 @@ describe("ComplianceView", () => {
     };
 
     render(<ComplianceView configurations={counterConfigurations} />);
-    await user.click(
-      screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
-    );
-    await user.click(screen.getByRole("button", { name: /NET.3.2/ }));
+    await user.click(screen.getByRole("button", { name: "ISO/IEC 27001" }));
+    await user.click(screen.getByRole("button", { name: /8\.20/ }));
 
     expect(
       screen.getByText("Non-enforcing setting detected"),
@@ -363,10 +371,8 @@ describe("ComplianceView", () => {
     };
 
     render(<ComplianceView configurations={minimumVersionConfigurations} />);
-    await user.click(
-      screen.getByRole("button", { name: "BSI IT-Grundschutz" }),
-    );
-    await user.click(screen.getByRole("button", { name: /OPS.1.1.3/ }));
+    await user.click(screen.getByRole("button", { name: "ISO/IEC 27001" }));
+    await user.click(screen.getByRole("button", { name: /8\.8/ }));
 
     expect(
       screen.getAllByText(
@@ -382,12 +388,13 @@ describe("ComplianceView assessment scope", () => {
     window.localStorage.clear();
   });
   it("lets users exclude platforms and preserves assessment limitations", async () => {
-    window.localStorage.setItem("compliance-framework", "bsi-it-grundschutz");
+    window.localStorage.setItem("compliance-framework", "essential-eight");
     const user = userEvent.setup();
     render(<ComplianceView configurations={configurations} />);
-    await user.click(await screen.findByRole("checkbox", { name: "macOS" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Windows" }));
+    await user.click(screen.getByRole("checkbox", { name: "macOS" }));
     expect(
-      screen.getByRole("button", { name: /SYS.2.4.A6/ }),
+      screen.getByRole("button", { name: /ML1-MAC-01/ }),
     ).toHaveTextContent("Outside selected scope");
     expect(
       screen.getByRole("button", { name: "Download evidence record (JSON)" }),

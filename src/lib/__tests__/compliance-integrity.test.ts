@@ -1,10 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import { assessCapabilities, assessCompliance } from "../compliance/engine";
+import {
+  assessCapabilities,
+  assessCompliance,
+  assessFramework,
+} from "../compliance/engine";
 import { createEvidenceManifest } from "../compliance/manifest";
 import { assignmentDetails } from "../compliance/assignments";
 import { DetailedIntuneService } from "../intune-detailed-client";
 import type { DetailedExportData } from "../configuration-analyzer";
-import type { ComplianceCapability } from "../compliance/types";
+import type {
+  AssessmentScope,
+  ComplianceCapability,
+  FrameworkDefinition,
+} from "../compliance/types";
+import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 
 const assigned = [
   { target: { "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget" } },
@@ -29,6 +38,34 @@ function data(...policies: any[]): DetailedExportData {
     securityBaselines: [],
     scripts: { windows: [], macOS: [] },
   };
+}
+// A framework with one macOS only requirement that minimum OS versions
+// support in part.
+const MAC_ONLY: FrameworkDefinition = {
+  id: "synthetic-mac-only",
+  name: "Synthetic framework",
+  version: "1",
+  controls: {
+    "MAC-1": {
+      id: "MAC-1",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
+      platforms: ["macos"],
+      unassessedAspects: [
+        "Installed OS security-update support is not verified.",
+      ],
+      title: "Synthetic current macOS versions",
+      summary: "Synthetic requirement.",
+    },
+  },
+  mappings: { "macos-minimum-os-version": ["MAC-1"] },
+};
+function macOnly(exportData: DetailedExportData, scope: AssessmentScope = {}) {
+  return assessFramework(
+    assessCapabilities(exportData, COMPLIANCE_CAPABILITIES, scope),
+    MAC_ONLY,
+    scope,
+  ).controls[0]!;
 }
 function capability(exportData: DetailedExportData, id: string) {
   return assessCapabilities(exportData).find(
@@ -211,6 +248,8 @@ describe("evidence integrity regressions", () => {
         policy("deviceManagementConfigurationPolicy", {
           settings: [0, 1].map((value) => ({
             settingInstance: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
               settingDefinitionId: id,
               choiceSettingValue: { value: `${id}_${value}` },
             },
@@ -310,13 +349,9 @@ describe("evidence integrity regressions", () => {
       nist.controls.find((control) => control.control.id === "SC-28")
         ?.capabilityIds,
     ).toEqual(["windows-disk-encryption"]);
-    const bsi = result.frameworks.find(
-      (framework) => framework.framework.id === "bsi-it-grundschutz",
-    )!;
-    expect(
-      bsi.controls.find((control) => control.control.id === "SYS.2.4.A6")
-        ?.status,
-    ).toBe("notApplicable");
+    expect(macOnly(exportData, exportData.assessmentScope).status).toBe(
+      "notApplicable",
+    );
     exportData.assessmentScope = { platforms: ["ios"] };
     const iosNist = assessCompliance(exportData).frameworks.find(
       (framework) => framework.framework.id === "nist-800-53-r5",
@@ -346,14 +381,9 @@ describe("evidence integrity regressions", () => {
     ).toBe(0);
   });
   it("keeps minimum OS evidence partial even when a value is present", () => {
-    const bsi = assessCompliance(
+    const control = macOnly(
       data(policy("macOSCompliancePolicy", { osMinimumVersion: "10.1" })),
-    ).frameworks.find(
-      (framework) => framework.framework.id === "bsi-it-grundschutz",
-    )!;
-    const control = bsi.controls.find(
-      (control) => control.control.id === "SYS.2.4.A6",
-    )!;
+    );
     expect(control.status).toBe("partialEvidence");
     expect(control.unassessedAspects.join(" ")).toContain("support");
   });
@@ -457,9 +487,21 @@ describe("compound detectors and legacy representations", () => {
         {
           id: "ca",
           state,
-          grantControls: { operator, builtInControls },
+          // Every list Graph beta returns (lab tenant, 21 October 2026).
+          grantControls: {
+            operator,
+            builtInControls,
+            customAuthenticationFactors: [],
+            termsOfUse: [],
+            authenticationStrength: null,
+          },
           conditions: {
-            users: { includeUsers: ["All"], excludeGroups: ["emergency"] },
+            users: {
+              includeUsers: ["All"],
+              includeGroups: [],
+              includeRoles: [],
+              excludeGroups: ["emergency"],
+            },
             applications: { includeApplications: ["All"] },
           },
         },
@@ -518,7 +560,13 @@ describe("compound detectors and legacy representations", () => {
       capability(
         data(
           policy("windows10CustomConfiguration", {
-            omaSettings: [{ omaUri: uri, value: 1 }],
+            omaSettings: [
+              {
+                "@odata.type": "#microsoft.graph.omaSettingInteger",
+                omaUri: uri,
+                value: 1,
+              },
+            ],
           }),
         ),
         "windows-disk-encryption",
@@ -528,7 +576,13 @@ describe("compound detectors and legacy representations", () => {
       capability(
         data(
           policy("windows10CustomConfiguration", {
-            omaSettings: [{ omaUri: uri, value: "1" }],
+            omaSettings: [
+              {
+                "@odata.type": "#microsoft.graph.omaSettingString",
+                omaUri: uri,
+                value: "1",
+              },
+            ],
           }),
         ),
         "windows-disk-encryption",
@@ -542,7 +596,15 @@ describe("compound detectors and legacy representations", () => {
           ...uris.map(([omaUri, value], index) =>
             policy(
               "windows10CustomConfiguration",
-              { omaSettings: [{ omaUri, value }] },
+              {
+                omaSettings: [
+                  {
+                    "@odata.type": "#microsoft.graph.omaSettingInteger",
+                    omaUri,
+                    value,
+                  },
+                ],
+              },
               `policy-${index}`,
             ),
           ),
@@ -568,6 +630,7 @@ describe("compound detectors and legacy representations", () => {
       "windows10CustomConfiguration",
       {
         omaSettings: Object.entries(types).map(([path, type]) => ({
+          "@odata.type": "#microsoft.graph.omaSettingString",
           omaUri: `./Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/${path}/Policy`,
           value: `<RuleCollection Type="${type}" EnforcementMode="Enabled"><FilePathRule Id="rule" Name="Approved" UserOrGroupSid="S-1-1-0" Action="Allow"><Conditions><FilePathCondition Path="%PROGRAMFILES%\\*"/></Conditions></FilePathRule></RuleCollection>`,
         })),
@@ -579,6 +642,7 @@ describe("compound detectors and legacy representations", () => {
       {
         omaSettings: [
           {
+            "@odata.type": "#microsoft.graph.omaSettingString",
             omaUri:
               "./Device/Vendor/MSFT/AppLocker/ApplicationLaunchRestrictions/group/EXE/EnforcementMode",
             value: "AuditOnly",
@@ -619,7 +683,12 @@ describe("compound detectors and legacy representations", () => {
           categories: [
             {
               settings: [
-                { definitionId: "verified-definition", valueJson: "true" },
+                {
+                  "@odata.type":
+                    "#microsoft.graph.deviceManagementBooleanSettingInstance",
+                  definitionId: "verified-definition",
+                  valueJson: "true",
+                },
               ],
             },
           ],
@@ -777,6 +846,8 @@ describe("collection and reproducibility", () => {
     const second = await createEvidenceManifest(exportData, {
       platforms: ["windows"],
     });
+    // Schema 3: capability alternatives and their empty check results.
+    expect(first.schemaVersion).toBe(3);
     expect(first.snapshotSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(second.snapshotSha256).toBe(first.snapshotSha256);
     expect(second.rulesetSha256).toBe(first.rulesetSha256);
@@ -876,4 +947,65 @@ it("does not report a 21-day update ring as assigned counter-evidence", () => {
   const result = capability(input, "windows-quality-update-deadline");
   expect(result.status).toBe("noEvidence");
   expect(result.evidence).toHaveLength(0);
+});
+
+/** Unknown targets, self references and cycles in `alternativeTo`. */
+function alternativeGraphErrors(
+  capabilities: readonly Pick<ComplianceCapability, "id" | "alternativeTo">[],
+): string[] {
+  const byId = new Map(capabilities.map((item) => [item.id, item]));
+  const errors: string[] = [];
+  for (const item of capabilities)
+    for (const target of item.alternativeTo ?? []) {
+      if (target === item.id) errors.push(`${item.id}: refers to itself`);
+      else if (!byId.has(target)) errors.push(`${item.id}: unknown ${target}`);
+    }
+  const done = new Set<string>();
+  const visit = (id: string, path: string[]) => {
+    if (path.includes(id)) {
+      if (path[path.length - 1] !== id)
+        errors.push(
+          `cycle: ${[...path.slice(path.indexOf(id)), id].join(" > ")}`,
+        );
+      return;
+    }
+    if (done.has(id)) return;
+    for (const target of byId.get(id)?.alternativeTo ?? [])
+      visit(target, [...path, id]);
+    done.add(id);
+  };
+  for (const item of capabilities) visit(item.id, []);
+  return errors;
+}
+
+describe("alternative capability graph", () => {
+  it("has no unknown targets, self references or cycles", () => {
+    expect(
+      COMPLIANCE_CAPABILITIES.some((item) => item.alternativeTo?.length),
+    ).toBe(true);
+    expect(alternativeGraphErrors(COMPLIANCE_CAPABILITIES)).toEqual([]);
+  });
+
+  it("rejects self references, unknown targets and cycles", () => {
+    expect(alternativeGraphErrors([{ id: "a", alternativeTo: ["a"] }])).toEqual(
+      ["a: refers to itself"],
+    );
+    expect(
+      alternativeGraphErrors([{ id: "a", alternativeTo: ["missing"] }]),
+    ).toEqual(["a: unknown missing"]);
+    expect(
+      alternativeGraphErrors([
+        { id: "a", alternativeTo: ["b"] },
+        { id: "b", alternativeTo: ["c"] },
+        { id: "c", alternativeTo: ["a"] },
+      ]),
+    ).toEqual(["cycle: a > b > c > a"]);
+    expect(
+      alternativeGraphErrors([
+        { id: "a", alternativeTo: ["b", "c"] },
+        { id: "b", alternativeTo: ["c"] },
+        { id: "c" },
+      ]),
+    ).toEqual([]);
+  });
 });

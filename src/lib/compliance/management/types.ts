@@ -26,6 +26,8 @@ export type PortalAreaId =
   | "windowsUpdates"
   | "appProtection"
   | "conditionalAccess"
+  | "entraAuthenticationMethods"
+  | "entraSecurityDefaults"
   | "intuneHome";
 
 export interface ManagementMetrics {
@@ -48,7 +50,11 @@ export interface ManagementMetrics {
   outsideIntuneScope: number | null;
   /** Mapped capabilities whose evidence could not be read (re-collect). */
   dataGaps: number;
-  /** Distinct safeguards (capabilities) mapped to the assessed controls. */
+  /**
+   * Distinct safeguards (capabilities) mapped to the assessed controls,
+   * without capabilities whose alternative is in use or which cannot be
+   * combined with existing Conditional Access policies.
+   */
   safeguardsTotal: number;
   /** Safeguards configured and assigned (enforced or requirementAssigned). */
   safeguardsInPlace: number;
@@ -79,9 +85,24 @@ export type SafeguardState =
   | "partial"
   | "notAssigned"
   | "switchedOff"
+  /** A tenant-wide Entra setting holds the non-enforcing value. */
+  | "tenantSettingDiffers"
   | "conflicting"
   | "notConfigured"
-  | "dataMissing";
+  /** Not needed: an alternative capability is in use (CapabilityResult.alternative). */
+  | "alternativeInUse"
+  /**
+   * Not applicable: cannot be turned on while Conditional Access policies
+   * exist (security defaults). Claims nothing is set up.
+   */
+  | "notCombinable"
+  | "dataMissing"
+  /**
+   * Assignments were read completely, but their effective targeting could
+   * not be resolved (AssignmentSummary.uncertainty "unresolved"); a data
+   * gap that a review of the overlapping assignments settles.
+   */
+  | "targetingUnresolved";
 
 export interface NextAction {
   capabilityId: string;
@@ -117,6 +138,20 @@ export interface ManagementSummary {
   /** Control id -> safeguards in place and mapped. */
   safeguards: Record<string, SafeguardCount>;
   outsideScope: OutsideScopeMeasure[];
+  /**
+   * Of metrics.dataGaps, the safeguards whose assignments were read
+   * completely but whose effective targeting could not be resolved
+   * (SafeguardState targetingUnresolved). Not part of a baseline; absent
+   * reads as none.
+   */
+  targetingUnresolved?: number;
+  /**
+   * Of metrics.dataGaps, the safeguards that could not be read, whose
+   * effective targeting could not be resolved either, so the advice is both
+   * to collect again and to review the overlapping assignments. Not part of
+   * a baseline; absent reads as none.
+   */
+  targetingPartlyUnresolved?: number;
 }
 
 export const BASELINE_SCHEMA = "intunedoc.baseline/1" as const;

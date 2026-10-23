@@ -27,6 +27,20 @@ function policy(type: string, values: Record<string, unknown>) {
 function data(...policies: ReturnType<typeof policy>[]): DetailedExportData {
   return {
     collectedAt: "2026-09-05T00:00:00Z",
+    // Entra policies without MFA evidence: no phishing-resistant method and
+    // security defaults off, so only Conditional Access can supply MFA.
+    tenantIdentityPolicies: {
+      authenticationMethods: {
+        authenticationMethodConfigurations: [
+          { id: "Fido2", state: "disabled", includeTargets: [] },
+        ],
+      },
+      securityDefaults: { isEnabled: false },
+      status: {
+        authenticationMethods: "collected",
+        securityDefaults: "collected",
+      },
+    },
     settingsCatalog: [],
     deviceConfigurations: policies,
     administrativeTemplates: [],
@@ -55,8 +69,8 @@ describe("NIST SP 800-171 Revision 3", () => {
     expect(r2.framework.totalRequirements).toBe(110);
     expect(r3.framework.version).toBe("Rev. 3 (May 2024)");
     expect(r3.framework.totalRequirements).toBe(97);
-    expect(r2.summary.totalControls).toBe(12);
-    expect(r3.summary.totalControls).toBe(11);
+    expect(r2.summary.totalControls).toBe(13);
+    expect(r3.summary.totalControls).toBe(12);
     expect(r3.framework.source?.url).toBe(
       "https://csrc.nist.gov/pubs/sp/800/171/r3/final",
     );
@@ -168,7 +182,7 @@ describe("NIST SP 800-171 Revision 3", () => {
       "NIST-800-171-R3",
     );
     expect(text).toContain("Rev. 3");
-    expect(text).toContain("11 of 97 published requirements");
+    expect(text).toContain("12 of 97 published requirements");
     expect(text).toContain("03.13.08");
     expect(text).toContain("03.14.02");
     expect(text).toContain("(03.13) Tj");

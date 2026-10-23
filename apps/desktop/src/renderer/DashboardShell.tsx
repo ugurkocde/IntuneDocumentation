@@ -1,11 +1,16 @@
 import { useEffect, useRef } from "react";
 import { CollectionStatusToast } from "./components/collection/CollectionStatusToast";
+import { SnapshotNotSavedNotice } from "./components/collection/SnapshotNotSavedNotice";
 import { Sidebar } from "./components/layout/Sidebar";
 import { isMac } from "./lib/ipc";
+import { BenchmarksScreen } from "./screens/BenchmarksScreen";
+import { CompareScreen } from "./screens/CompareScreen";
 import { ComplianceScreen } from "./screens/ComplianceScreen";
 import { ExportScreen } from "./screens/ExportScreen";
+import { HistoryScreen } from "./screens/HistoryScreen";
 import { LicenseScreen } from "./screens/LicenseScreen";
 import { OverviewScreen } from "./screens/OverviewScreen";
+import { PortfolioScreen } from "./screens/PortfolioScreen";
 import { SearchSettingsScreen } from "./screens/SearchSettingsScreen";
 import { SectionDetailScreen } from "./screens/SectionDetailScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -32,8 +37,12 @@ export function DashboardShell() {
           <div key={`${screen}-${activeFamilyKey ?? ""}`} className="animate-fade-in-up">
             {screen === "overview" && <OverviewScreen />}
             {screen === "searchSettings" && <SearchSettingsScreen />}
+            {screen === "history" && <HistoryScreen />}
+            {screen === "compare" && <CompareScreen />}
+            {screen === "portfolio" && <PortfolioScreen />}
             {screen === "section" && <SectionDetailScreen />}
             {screen === "compliance" && <ComplianceScreen />}
+            {screen === "benchmarks" && <BenchmarksScreen />}
             {screen === "export" && <ExportScreen />}
             {screen === "license" && <LicenseScreen />}
             {screen === "settings" && <SettingsScreen />}
@@ -41,6 +50,7 @@ export function DashboardShell() {
         </div>
       </main>
       <CollectionStatusToast />
+      <SnapshotNotSavedNotice />
     </div>
   );
 }

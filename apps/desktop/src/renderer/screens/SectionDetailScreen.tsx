@@ -1,7 +1,8 @@
-import { AlertCircle, Clock, FileText, ListFilter, Search, SearchX, Users, X } from "lucide-react";
+import { Activity, AlertCircle, Clock, FileText, ListFilter, Search, SearchX, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { assignmentNeedsReview, assignmentText } from "../../shared/assignment-text";
 import { scopeKey } from "../../shared/export-scope";
-import type { SectionItemSummary } from "../../shared/ipc-types";
+import type { PolicyDeviceStatusCounts, PolicyDeviceStatusView, SectionItemSummary } from "../../shared/ipc-types";
 import { CollectButton } from "../components/collection/CollectButton";
 import { ExportMenu } from "../components/export/ExportMenu";
 import { SelectionBar } from "../components/export/SelectionBar";
@@ -14,7 +15,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Spinner } from "../components/ui/Spinner";
 import { useStartExport } from "../hooks/use-start-export";
 import { itemTarget, sectionTarget } from "../lib/export-targets";
-import { errorMessage } from "../lib/ipc";
+import { errorMessage, ipc } from "../lib/ipc";
 import {
   type FamilySection,
   familyMeta,
@@ -27,15 +28,63 @@ import { useApp } from "../state/context";
 import { quickExportBlocker } from "../state/selectors";
 import type { ExportFormat } from "../state/types";
 
-function assignmentText(item: SectionItemSummary): string | null {
-  if (item.assignmentCount === null) return null;
-  const parts: string[] = [];
-  if (item.assignedToAllUsers) parts.push("All users");
-  if (item.assignedToAllDevices) parts.push("All devices");
-  if (item.assignmentCount > 0) {
-    parts.push(`${item.assignmentCount} ${item.assignmentCount === 1 ? "group" : "groups"}`);
+const DEVICE_STATUS_STATES: Record<PolicyDeviceStatusView["state"], string> = {
+  collected: "collected",
+  permissionDenied: "access denied",
+  failed: "failed",
+  skipped: "skipped",
+};
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+// Intune's device counts for one policy. A policy without a row has no
+// reported status, which is never shown as zero devices.
+export function DeviceStatusLine({ counts }: { counts: PolicyDeviceStatusCounts | undefined }) {
+  if (!counts) {
+    return (
+      <p className="text-petrol-600 mt-1.5 inline-flex items-center gap-1.5 text-[11px]">
+        <Activity className="h-3 w-3" aria-hidden="true" />
+        Device status: No status reported
+      </p>
+    );
   }
-  return parts.length ? `Assigned to ${parts.join(" and ")}` : "Not assigned";
+  const parts: Array<[string, number | null, string]> = [
+    ["succeeded", counts.succeeded, "text-emerald-800"],
+    ["error", counts.error, counts.error ? "text-red-700 font-semibold" : ""],
+    ["conflict", counts.conflict, counts.conflict ? "text-amber-800 font-semibold" : ""],
+    ["not applicable", counts.notApplicable, ""],
+    ["pending", counts.pending, ""],
+  ];
+  return (
+    <p className="text-petrol-700 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] tabular-nums">
+      <span className="inline-flex items-center gap-1.5 font-medium">
+        <Activity className="h-3 w-3" aria-hidden="true" />
+        Device status
+      </span>
+      {parts
+        .filter(([, value]) => value !== null)
+        .map(([label, value, tone]) => (
+          <span key={label} className={tone}>
+            {value!.toLocaleString()} {label}
+          </span>
+        ))}
+    </p>
+  );
+}
+
+// Where the device counts of a section come from, said once per section.
+export function DeviceStatusNote({ status }: { status: PolicyDeviceStatusView }) {
+  return (
+    <p className="text-petrol-600 text-[11px] leading-5">
+      {status.state === "collected"
+        ? `Device status from the Intune ${status.sourceLabel.toLowerCase()}${status.collectedAt ? `, read ${formatDateTime(status.collectedAt)}` : ""}.`
+        : `Device status from the Intune ${status.sourceLabel.toLowerCase()} was not collected (${DEVICE_STATUS_STATES[status.state]})${status.error ? `: ${status.error}` : "."}`}{" "}
+      Reported by Intune; not used for evidence status.
+    </p>
+  );
 }
 
 function ItemRow({
@@ -44,12 +93,15 @@ function ItemRow({
   onSelect,
   onExport,
   exportBlocker,
+  deviceStatus,
 }: {
   item: SectionItemSummary;
   selected: boolean;
   onSelect: (selected: boolean) => void;
   onExport: (format: ExportFormat) => void;
   exportBlocker: string | null;
+  // Undefined when Intune reports no device status for this section.
+  deviceStatus?: PolicyDeviceStatusView;
 }) {
   const type = friendlyType(item.odataType);
   const platforms = friendlyPlatforms(item.platforms);
@@ -96,13 +148,14 @@ function ItemRow({
           )}
           {assignment && (
             <span
-              className={`inline-flex items-center gap-1.5 ${assignment === "Not assigned" ? "text-amber-800" : ""}`}
+              className={`inline-flex items-center gap-1.5 ${assignmentNeedsReview(assignment) ? "text-amber-800" : ""}`}
             >
               <Users className="h-3 w-3" aria-hidden="true" />
               {assignment}
             </span>
           )}
         </div>
+        {deviceStatus?.state === "collected" && <DeviceStatusLine counts={deviceStatus.rows[item.id]} />}
       </div>
       <ExportMenu targetName={item.displayName} onExport={onExport} disabledReason={exportBlocker} compact />
     </li>
@@ -133,8 +186,28 @@ function SectionCard({
   const blocker = quickExportBlocker(state);
   const loaded = state.sections[section.key];
   const [error, setError] = useState<string | null>(null);
+  const [deviceStatus, setDeviceStatus] = useState<PolicyDeviceStatusView | null>(null);
   const family = familyMeta(section.familyKey);
   const Icon = family?.icon ?? FileText;
+  const entitled = Boolean(state.license?.entitled);
+  const collectedAt = state.collection.summary?.collectedAt;
+
+  // Device status is context next to the policy list; a failed read only
+  // leaves it out.
+  useEffect(() => {
+    setDeviceStatus(null);
+    if (!loaded || !entitled || section.count === 0) return;
+    let cancelled = false;
+    ipc
+      .compliancePolicyDeviceStatus(section.key)
+      .then((result) => {
+        if (!cancelled) setDeviceStatus(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [loaded, entitled, section.key, section.count, collectedAt]);
 
   useEffect(() => {
     if (loaded || section.count === 0) return;
@@ -211,6 +284,11 @@ function SectionCard({
           </p>
         </div>
       )}
+      {deviceStatus && section.count > 0 && (
+        <div className="border-petrol-950/6 border-b px-5 py-2.5">
+          <DeviceStatusNote status={deviceStatus} />
+        </div>
+      )}
       {section.count === 0 ? (
         <p className="text-petrol-600 px-5 py-6 text-center text-[13px]">Nothing is configured in this section.</p>
       ) : error ? (
@@ -245,6 +323,7 @@ function SectionCard({
                 onSelect={(selected) => select([item], selected)}
                 onExport={(format) => startExport(itemTarget(section, item), format)}
                 exportBlocker={blocker}
+                deviceStatus={deviceStatus ?? undefined}
               />
             ))}
           </ul>

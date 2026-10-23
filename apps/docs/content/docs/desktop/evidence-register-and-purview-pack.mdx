@@ -1,0 +1,95 @@
+---
+title: "Evidence register and Purview evidence pack"
+description: "Save the compliance assessment as an Excel or CSV evidence register, and as a ZIP evidence pack you attach to improvement actions in Microsoft Purview Compliance Manager."
+---
+
+The evidence report is for people. Two other exports serve the tools around it: the <Ui>Evidence register</Ui> turns the assessment into tables you can sort, filter and import, and the <Ui>Purview evidence pack</Ui> packages the evidence for Microsoft Purview Compliance Manager, where device controls expect a file uploaded by hand.
+
+You find both on a framework screen in <Ui>Compliance Evidence</Ui>, under <Ui>Exports</Ui> in the card <Ui>Registers and packs for</Ui> your framework. Both use the scope selected above them. See [Set the scope](/desktop/compliance-evidence#scope).
+
+<Screenshot src="/images/desktop/exports-panel.png" alt="The Exports card for ISO/IEC 27001 with Evidence register with Excel and CSV buttons, Purview evidence pack with Evidence pack button, and Draft fix pack showing 1 draft policy, 19 not generatable" caption="The Exports card on a framework screen. Every export uses the scope selected above it." width={1836} height={958} />
+
+## The evidence register [#register]
+
+The register is the same assessment as rows and columns, for review, tracking or import into your own tooling. Select <Ui>Excel (.xlsx)</Ui> or <Ui>CSV (.csv)</Ui>, then choose where to save the file. When it is saved, select <Ui>Open file</Ui> or <Ui>Show in folder</Ui> (<Ui>Show in Finder</Ui> on macOS).
+
+### Excel workbook
+
+| Sheet | What it holds |
+| --- | --- |
+| About | What the file is, when the data was collected, the scope, the ruleset version, the disclaimer and the definition of every status used in the workbook. |
+| Controls | One row per control: framework, control id and title, control status, how many safeguards it has, its evidence split into assigned evidence, counter-evidence and evidence on unassigned policies, and what the evidence does not establish. |
+| Checks | One row per technical check for each control it supports: safeguard, check result, policy, setting id, expected value, actual value and assignment. A control without any check gets one row with the reason, so no control is silently missing. |
+| Policy status | Intune's device status counts per policy: succeeded, error, conflict, not applicable and pending. A policy Intune reports nothing for is marked as no status reported, never as zero. These counts describe rollout only. They never change a control status. |
+
+### CSV
+
+The CSV file holds the Checks table with the same columns as the Checks sheet. Use it when you want one flat file for a script, a ticket system or a GRC import. The Controls table is part of the Excel workbook.
+
+Values that begin like a spreadsheet formula are neutralised, so a policy name or setting value from the tenant cannot run as a formula when the file is opened.
+
+## The Purview evidence pack [#pack]
+
+Compliance Manager does not read Intune configuration. For device controls, someone opens the improvement action and uploads evidence as a document. The evidence pack builds that document package for you. The background is in [Intune Documentation and Purview Compliance Manager](/purview-compliance-manager).
+
+Select <Ui>Evidence pack (.zip)</Ui> and choose where to save the file. The ZIP contains four files:
+
+| File | What it is |
+| --- | --- |
+| The framework evidence PDF | The [evidence report](/desktop/compliance-evidence#download) for every assessed control, with checks, evidence and limitations. |
+| The JSON evidence record | The machine readable assessment, with the snapshot and ruleset fingerprints of the result. |
+| index.csv | One row per assessed control: framework, the matching Purview template name, control id and title, status, the same three evidence counts as the register, where to find the control in the PDF, and a note when the control has no evidence or was not assessed. |
+| README.txt | What the pack is, when the data was collected, the scope and ruleset, the upload steps below, and the disclaimer. |
+
+There is no separate PDF per control. The index points each control at its section of the one framework PDF.
+
+<Callout type="info" title="Evidence, not a verdict">
+  The pack is technical evidence from your Intune configuration. It does not decide whether a control is met. Your team reviews the evidence in Compliance Manager and records the outcome.
+</Callout>
+
+### Before you upload: check the control IDs [#check-ids]
+
+Control IDs in the index are as published by the regulation. A Purview template can number, split or group controls differently, and template versions differ between tenants. Before you attach anything, check each control ID against the controls of the template in your tenant.
+
+### Attach the pack in Compliance Manager [#upload]
+
+<Steps>
+<Step>
+
+### Open the assessment
+
+In the Microsoft Purview portal, open Compliance Manager and open the assessment that uses the matching template. The index and the README name the template.
+
+</Step>
+<Step>
+
+### Open the improvement action
+
+Open the improvement action related to the control. index.csv lists the control IDs, so you can match each action to its row.
+
+</Step>
+<Step>
+
+### Add the evidence
+
+Open the <Ui>Evidence</Ui> tab, select <Ui>Add evidence</Ui>, then <Ui>Document</Ui>. Choose the ZIP file, or the PDF from inside it, and select <Ui>Done</Ui>.
+
+Purview accepts .pdf and .zip files as document evidence. Its list of accepted file types does not include .csv or .json, so attach the ZIP or the PDF and keep the index and the record with your assessment files.
+
+</Step>
+<Step>
+
+### Repeat per improvement action
+
+Repeat for each improvement action you are evidencing, then record the status your team decides on. The index says where each control is covered in the PDF.
+
+</Step>
+</Steps>
+
+When the configuration changes, collect again, save a fresh pack and replace or add the affected evidence. With [local history](/desktop/history) on, you can show what changed between the two packs.
+
+## Next steps
+
+- [Draft fix pack](/desktop/fix-pack): draft policies for settings with no evidence at all.
+- [Compliance evidence](/desktop/compliance-evidence): read the control results before you export.
+- [Intune Documentation and Purview Compliance Manager](/purview-compliance-manager): what each product does and how they fit together.

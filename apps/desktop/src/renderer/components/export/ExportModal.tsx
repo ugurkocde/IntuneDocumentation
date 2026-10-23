@@ -169,6 +169,7 @@ export function ExportPanel() {
       {
         format: exportState.format,
         target: exportsSelection ? selectionTarget(selected) : TENANT_TARGET,
+        tenantId: state.auth?.tenantId ?? null,
       },
       () => void actions.refreshLicense(),
     );

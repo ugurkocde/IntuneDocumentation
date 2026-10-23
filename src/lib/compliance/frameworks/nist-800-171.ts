@@ -19,6 +19,17 @@ export const NIST_800_171: FrameworkDefinition = {
     verifiedAt: "2026-09-04",
   },
   controls: {
+    "3.1.10": {
+      id: "3.1.10",
+      evidenceStrength: "supporting",
+      granularity: "requirement",
+      title: "Session lock after inactivity",
+      summary:
+        "Managed devices lock after a configured period of inactivity to prevent access to and viewing of data.",
+      unassessedAspects: [
+        "The required inactivity period and pattern-hiding displays are assessed separately.",
+      ],
+    },
     "3.1.19": {
       id: "3.1.19",
       evidenceStrength: "supporting",
@@ -122,6 +133,15 @@ export const NIST_800_171: FrameworkDefinition = {
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": ["3.1.10"],
+    "macos-inactivity-lock": ["3.1.10"],
+    "ios-inactivity-lock": ["3.1.10"],
+    "android-inactivity-lock": ["3.1.10"],
+    "tenant-phishing-resistant-method-enabled": ["3.5.3"],
+    "tenant-weak-methods-disabled": [],
+    "tenant-security-defaults-enabled": ["3.5.3"],
+
     "windows-lsa-protection": ["3.4.2"],
     "windows-remote-credential-guard": ["3.4.2"],
     "windows-laps-management": ["3.5.2"],

@@ -44,7 +44,6 @@ export const trackSampleReport = (frameworkId: string) =>
 
 export const sampleReportLabel = (sample: SampleReport) => {
   const notes = ["PDF"];
-  if (sample.locale === "de") notes.push("in German");
   if (sample.desktopOnly) notes.push("desktop app only");
   return `View the ${sample.label} sample report (${notes.join(", ")})`;
 };

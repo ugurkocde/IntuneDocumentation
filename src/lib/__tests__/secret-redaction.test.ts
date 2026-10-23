@@ -121,8 +121,16 @@ describe("secret redaction for shareable documentation", () => {
               "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance",
             settingDefinitionId: "com.apple.extensiblesso_registrationtoken",
             simpleSettingCollectionValue: [
-              { value: "DUMMY-collection-1" },
-              { value: "DUMMY-collection-2" },
+              {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                value: "DUMMY-collection-1",
+              },
+              {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                value: "DUMMY-collection-2",
+              },
             ],
           },
         },
@@ -136,12 +144,24 @@ describe("secret redaction for shareable documentation", () => {
               {
                 children: [
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "com.apple.wifi.managed_ssid_str",
-                    simpleSettingValue: { value: "Corp WiFi" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "Corp WiFi",
+                    },
                   },
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "com.apple.wifi.managed_password",
-                    simpleSettingValue: { value: "DUMMY-child" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "DUMMY-child",
+                    },
                   },
                 ],
               },
@@ -151,6 +171,8 @@ describe("secret redaction for shareable documentation", () => {
         {
           id: "3",
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
             settingDefinitionId: "vendor_msft_example_unrelatedname",
             simpleSettingValue: {
               "@odata.type":
@@ -163,9 +185,15 @@ describe("secret redaction for shareable documentation", () => {
         {
           id: "4",
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
             settingDefinitionId:
               "device_vendor_msft_policy_config_devicelock_minimumpasswordlength",
-            simpleSettingValue: { value: 14 },
+            simpleSettingValue: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationIntegerSettingValue",
+              value: 14,
+            },
           },
         },
       ],

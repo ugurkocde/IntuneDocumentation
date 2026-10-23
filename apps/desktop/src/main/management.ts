@@ -10,7 +10,10 @@ import {
   parseBaseline,
   serializeBaseline,
 } from "../../../../src/lib/compliance/management/baseline";
-import type { ManagementReportInput } from "../../../../src/lib/compliance/management/management-report-pdf";
+import type {
+  ManagementReportChanges,
+  ManagementReportInput,
+} from "../../../../src/lib/compliance/management/management-report-pdf";
 import {
   safeguardPolicies,
   safeguardState,
@@ -336,6 +339,22 @@ export function managementReportInput(
   };
 }
 
+// The report's "Changes since" section comes from local history, which main
+// owns. Resolves to null without an earlier snapshot of the tenant and scope.
+export type ManagementChangeSource = (
+  owner: string,
+  tenantId: string,
+  request: FrameworkRequest,
+) => Promise<ManagementReportChanges | null>;
+
+let changeSource: ManagementChangeSource | null = null;
+
+export function setManagementChangeSource(
+  source: ManagementChangeSource | null,
+): void {
+  changeSource = source;
+}
+
 export async function managementReport(
   owner: string,
   token: TokenProvider,
@@ -351,11 +370,19 @@ export async function managementReport(
     managementContext(owner, tenantId),
     locale,
   );
+  // History is optional: the report is made without the section when it
+  // cannot be read.
+  const changes =
+    tenantId && changeSource
+      ? await changeSource(owner, tenantId, request).catch(() => null)
+      : null;
   const { generateManagementReportPDF, managementReportFileName } =
     await import(
       "../../../../src/lib/compliance/management/management-report-pdf"
     );
-  const bytes = await generateManagementReportPDF(input);
+  const bytes = await generateManagementReportPDF(
+    changes ? { ...input, changes } : input,
+  );
   return {
     fileName: managementReportFileName(
       request.frameworkId,

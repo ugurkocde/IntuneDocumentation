@@ -46,7 +46,7 @@ Type a setting name, a configured value or a technical id. Results appear while 
 The line above the results shows the count, for example <Ui>20 matches in 6 policies</Ui>. Results are grouped by policy. Each policy card shows:
 
 - the policy name, its configuration family and its platform, such as <Ui>Settings Catalog</Ui> and <Ui>Windows</Ui>
-- how it is assigned, for example <Ui>Assigned to 1 group</Ui>, <Ui>Assigned to All users</Ui> or <Ui>Not assigned</Ui>
+- how it is assigned, for example <Ui>Assigned to 1 group</Ui>, <Ui>Assigned to All users</Ui> or <Ui>Not assigned</Ui>, or <Ui>Assignment could not be read</Ui> and <Ui>Effective targeting could not be resolved</Ui> when that is not known
 - how many of its settings match, for example <Ui>9 settings</Ui>
 - each matching setting with its name, its technical id and the configured value
 
@@ -91,7 +91,7 @@ Every value has a copy button on the right. Use it to paste a value into a ticke
 
 ## How search works with your data [#how-it-works]
 
-- **Works on your current collection.** Search reads the collection that the open app holds in memory. It sends nothing to Microsoft or to us, so it also works without an internet connection. The collection is not saved to disk: after you restart the app, sign in and collect again before you search.
+- **Works on your current collection.** Search reads the collection that the open app holds in memory. It sends nothing to Microsoft or to us, so it also works without an internet connection. Search does not read saved history snapshots: after you restart the app, sign in and collect again before you search.
 - **Refreshing keeps your search.** When a new collection finishes while the page is open, the results update in place and keep your query and filters. You do not need to type again after <Ui>Refresh data</Ui>.
 - **Sign out or tenant switch clears it.** Your query and filters are cleared when you sign out or switch to another tenant, together with the collection they belong to. See [Work with multiple tenants](/desktop/multiple-tenants).
 - **Up to 200 results at a time.** When more settings match, the page shows the first 200 and says how many there are. Add a word or a filter to narrow the results.

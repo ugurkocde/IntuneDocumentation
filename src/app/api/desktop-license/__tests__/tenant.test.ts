@@ -227,6 +227,27 @@ afterEach(() => {
 });
 
 describe("organization license sharing", () => {
+  it("never issues the internal CIS claim through an organization license, even when allowlisted", async () => {
+    // The install id is chosen by the caller and the key is supplied by the
+    // server on this path, so neither proves the caller is the internal install.
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_LICENSE_KEY_IDS", KEY_ID);
+    vi.stubEnv("DESKTOP_CIS_INTERNAL_INSTALL_IDS", INSTALL_B);
+    vi.stubEnv("DESKTOP_CIS_PILOT_LICENSE_KEY_IDS", KEY_ID);
+    await holderActivates();
+    const activated = await claim();
+    expect(activated.status).toBe(200);
+    expect(
+      verifyEntitlement(activated.body.token as string, publicKey),
+    ).not.toHaveProperty("cis");
+    const refreshed = await claim("refresh", {
+      activationId: activated.body.activationId,
+    });
+    expect(refreshed.status).toBe(200);
+    expect(
+      verifyEntitlement(refreshed.body.token as string, publicKey),
+    ).not.toHaveProperty("cis");
+  });
+
   it("shares a Pro key with its tenant by default", async () => {
     const response = await holderActivates();
     expect(response.status).toBe(200);

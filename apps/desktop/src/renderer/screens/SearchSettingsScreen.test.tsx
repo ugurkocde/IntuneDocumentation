@@ -70,8 +70,11 @@ function hit(overrides: Partial<SettingSearchHit>): SettingSearchHit {
     policyName: "WIN - Baseline - BitLocker",
     platforms: ["Windows"],
     assignmentCount: 2,
+    assignmentUnknown: false,
     assignedToAllUsers: false,
     assignedToAllDevices: true,
+    assignedToCollections: 0,
+    assignedToOrganizationalUnits: 0,
     name: "Require Device Encryption",
     value: "Enabled",
     definitionId: "device_vendor_msft_bitlocker_requiredeviceencryption",
@@ -230,6 +233,35 @@ describe("SearchSettingsScreen", () => {
       familyKey: "compliancePolicies",
       query: "WIN - Compliance - Baseline",
     });
+  });
+
+  it("says a policy's assignment could not be read, never not assigned", async () => {
+    mocks.state.current = appState(true);
+    mocks.search.mockImplementation(async (request: SettingsSearchRequest) =>
+      result(request, [
+        hit({
+          assignmentCount: 0,
+          assignedToAllDevices: false,
+          assignmentUnknown: true,
+        }),
+        hit({
+          policyId: "policy-2",
+          policyName: "Synthetic co-managed BitLocker",
+          assignmentCount: 0,
+          assignedToAllDevices: false,
+          assignedToCollections: 1,
+        }),
+      ]),
+    );
+    renderScreen();
+    await type("bitlocker");
+    await settle();
+    const unreadable = screen.getByText("Assignment could not be read");
+    expect(unreadable.className).toContain("text-amber-800");
+    expect(
+      screen.getByText("Assigned to 1 Configuration Manager collection"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Not assigned")).toBeNull();
   });
 
   it("shows the cap and sends family filters", async () => {

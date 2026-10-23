@@ -5,6 +5,7 @@ import type {
 } from "./types";
 import verified from "./verified-technical-settings.json";
 import additionalVerified from "./additional-verified-settings.json";
+import { TENANT_POLICY_EXPECTED } from "./tenant-policies";
 
 const displayIdentifiers = [...verified.catalog, ...additionalVerified.catalog]
   .flatMap((definition) => [
@@ -109,6 +110,8 @@ export function expectedValue(signal: DetectionSignal): string {
     };
     return descriptions[signal.check];
   }
+  if (signal.source === "tenantPolicy")
+    return TENANT_POLICY_EXPECTED[signal.check];
   const expectation: ValueExpectation = signal.enforcedWhen;
   let value: string;
   switch (expectation.kind) {

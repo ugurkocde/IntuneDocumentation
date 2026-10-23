@@ -1,10 +1,11 @@
-import { ExternalLink, KeyRound, LayoutGrid, RefreshCw, ShieldCheck } from "lucide-react";
+import { ExternalLink, KeyRound, LayoutGrid, ListChecks, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FrameworkBadge } from "../../../../../src/components/dashboard/framework-badge";
 import { compareControlIds } from "../../../../../src/lib/compliance/engine";
 import type { AssessmentScope } from "../../../../../src/lib/compliance/types";
 import type { ComplianceFrameworkId, ComplianceView } from "../../shared/ipc-types";
 import { ControlRow, CONTROL_STATUS_ORDER } from "../components/compliance/ControlRow";
+import { ExportsPanel } from "../components/compliance/ExportsPanel";
 import { FrameworkMenu } from "../components/compliance/FrameworkMenu";
 import {
   CONTROL_FILTER_LABELS,
@@ -80,12 +81,41 @@ function SummaryCard({
   );
 }
 
+// CIS Benchmarks next to the frameworks, only with the signed licence claim:
+// until the CIS agreement covers this app, customers see no card at all.
+function BenchmarksCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <div role="listitem" className="flex">
+      <button
+        type="button"
+        aria-label="CIS Benchmarks"
+        onClick={onOpen}
+        className="border-petrol-950/8 shadow-card group hover:bg-mint-50/35 flex w-full cursor-pointer flex-col rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+      >
+        <span className="flex h-10 w-10 items-center justify-center rounded-md bg-teal-700 text-white">
+          <ListChecks className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+        </span>
+        <span className="text-petrol-950 mt-5 block text-base font-semibold">CIS Benchmarks</span>
+        <span className="mt-1 block min-h-4 text-xs font-semibold text-teal-700">Internal preview</span>
+        <span className="text-petrol-600 mt-3 block text-sm leading-6">
+          Readiness comparison of your Settings Catalog policies with a benchmark delivered from the licensed content
+          service.
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function FrameworkPicker({
   view,
   onSelect,
+  benchmarksAvailable,
+  onOpenBenchmarks,
 }: {
   view: ComplianceView | null;
   onSelect: (id: ComplianceFrameworkId) => void;
+  benchmarksAvailable: boolean;
+  onOpenBenchmarks: () => void;
 }) {
   return (
     <div role="list" aria-label="Compliance frameworks" className="grid grid-cols-1 gap-4 @2xl:grid-cols-2 @4xl:grid-cols-3">
@@ -114,6 +144,7 @@ function FrameworkPicker({
           </div>
         );
       })}
+      {benchmarksAvailable && <BenchmarksCard onOpen={onOpenBenchmarks} />}
     </div>
   );
 }
@@ -135,6 +166,7 @@ export function ComplianceScreen() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [recordPath, setRecordPath] = useState<string | null>(null);
   const [requestedFilter, setFilter] = useState<ControlFilter>("all");
+  const [exporting, setExporting] = useState(false);
   const record = useAsyncAction();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const focusTrigger = useRef(false);
@@ -222,6 +254,16 @@ export function ComplianceScreen() {
     blocker ??
     (report.phase === "running"
       ? "A report is already being created."
+      : exporting
+        ? "Available when the export finishes."
+        : loading
+          ? "Available when the assessment is up to date."
+          : null);
+  // The exports panel shows its own running export, so only other work blocks it.
+  const exportsBlocker =
+    blocker ??
+    (report.phase === "running"
+      ? "A report is already being created."
       : loading
         ? "Available when the assessment is up to date."
         : null);
@@ -290,7 +332,12 @@ export function ComplianceScreen() {
             {error}
           </Alert>
         )}
-        <FrameworkPicker view={view} onSelect={(id) => choose(id, true)} />
+        <FrameworkPicker
+          view={view}
+          onSelect={(id) => choose(id, true)}
+          benchmarksAvailable={state.benchmarks === "internal"}
+          onOpenBenchmarks={() => actions.navigate("benchmarks")}
+        />
       </div>
     );
   }
@@ -431,6 +478,14 @@ export function ComplianceScreen() {
               void runComplianceReport(dispatch, frameworkId, scope, () => void actions.refreshLicense())
             }
             onReset={() => dispatch({ type: "complianceReport", patch: initialComplianceReport })}
+          />
+
+          <ExportsPanel
+            request={{ frameworkId, scope }}
+            frameworkLabel={label}
+            ready={!loading}
+            blocker={exportsBlocker}
+            onBusyChange={setExporting}
           />
 
           {(selected.framework.note || selected.framework.source) && (

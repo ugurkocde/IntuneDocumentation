@@ -7,8 +7,16 @@ import {
   getItemLabel,
   getStableItemId,
 } from "../../../../src/lib/configuration-sections";
+import { setRedactionDigest } from "../../../../src/lib/intune-policy-registry";
 import { estimatePdfPageCount } from "../../../../src/lib/pdf-page-estimate";
+import { contentDigest } from "../../../../src/lib/snapshots/projection";
 import type { DetailedExportData } from "../../../../src/lib/configuration-analyzer";
+import {
+  assignmentsIncomplete,
+  itemFetchErrors,
+  resolveAssignments,
+} from "../../../../src/lib/compliance/assignments";
+import { canonicalPlatforms } from "../../../../src/lib/compliance/graph-rows";
 import {
   classifyItem,
   collectionBreakdown,
@@ -18,6 +26,7 @@ import {
   sectionLabel,
 } from "./classify";
 import type {
+  AssignmentTargets,
   FullCollectionSummary,
   PdfEstimate,
   SectionItemSummary,
@@ -72,13 +81,18 @@ export async function collectAll(
     event: Parameters<ProgressCallback>[0],
     loaded: number,
   ) => void,
-  options: { owner: string; signal?: AbortSignal; budgetMs?: number },
+  // keepDigests is set while history is on: the collector then keeps a
+  // digest of each value it redacts, so history can tell that a script or
+  // secret changed without storing it. The digests stay in main and are
+  // keyed before a snapshot keeps them.
+  options: { owner: string; signal?: AbortSignal; budgetMs?: number; keepDigests?: boolean },
 ): Promise<FullCollectionSummary> {
   if (collecting) {
     throw new Error("A collection is already running.");
   }
   collecting = true;
   let loaded = 0;
+  setRedactionDigest(options.keepDigests ? contentDigest : null);
   try {
     const service = new DetailedIntuneService(
       accessToken,
@@ -119,6 +133,7 @@ export async function collectAll(
     collectionOwner = options.owner;
     return summary;
   } finally {
+    setRedactionDigest(null);
     collecting = false;
   }
 }
@@ -138,41 +153,78 @@ function summarizeItem(
   section: { key: string; familyKey: string; label: string },
   item: Record<string, unknown>,
   index: number,
+  fetchErrors: FullCollection["fetchErrors"],
 ): SectionItemSummary {
   const classification = classifyItem(section, item);
-  const assignments = Array.isArray(item.assignments)
-    ? (item.assignments as Array<{ target?: Record<string, unknown> }>)
-    : null;
-  const targetType = (assignment: { target?: Record<string, unknown> }) =>
-    String(assignment.target?.["@odata.type"] ?? "");
-  const included = assignments?.filter(
-    (assignment) => !targetType(assignment).includes("exclusion"),
+  const incomplete = assignmentsIncomplete(
+    item,
+    itemFetchErrors(fetchErrors, item, section.familyKey),
+    section.familyKey,
   );
+  // A type with assignments whose assignments were not collected, or that
+  // Graph returned as no list or a value that is not one, reads unknown
+  // rather than as a type without assignments or as not assigned.
+  const assignments = Array.isArray(item.assignments) ? (item.assignments as unknown[]) : incomplete ? [] : null;
   return {
     id: getStableItemId(section, item, index),
     displayName: getItemLabel(section, item),
     odataType: text(item["@odata.type"]),
     description: text(item.description),
-    platforms: text(item.platforms) ?? text(item.platformType),
+    // Settings Catalog platforms in canonical form (graph-rows.ts); a value
+    // that is no set of documented members names no platform.
+    platforms: item.platforms != null ? canonicalPlatforms(item.platforms) : text(item.platformType),
     technologies: text(item.technologies),
     lastModifiedDateTime: text(item.lastModifiedDateTime),
-    assignmentCount: included
-      ? included.filter((assignment) => assignment.target?.groupId).length
-      : null,
-    assignedToAllUsers: Boolean(
-      included?.some((assignment) =>
-        targetType(assignment).includes("allLicensedUsers"),
-      ),
-    ),
-    assignedToAllDevices: Boolean(
-      included?.some((assignment) =>
-        targetType(assignment).includes("allDevices"),
-      ),
-    ),
+    ...assignmentTargets(assignments, incomplete),
     hasFetchError: item.hasFetchError === true,
     familyKey: classification.familyKey,
     ...(classification.microsoftDefault ? { microsoftDefault: true } : {}),
   };
+}
+
+/**
+ * What a policy is assigned to: the targets it applies to after its
+ * exclusions (case insensitive group ids) and removal intents, read by the
+ * engine's resolveAssignments, so the list, search and the engine count the
+ * same targets. An assignment of an undocumented type, intent or without
+ * what its type targets, or assignments that were not fully collected
+ * (assignmentsIncomplete, as the engine reads it), leave the targeting
+ * unknown rather than read as not assigned; so does a complete list whose
+ * targeting conflicts cannot be resolved (assignmentUnresolved).
+ */
+export function assignmentTargets(
+  assignments: unknown[] | null,
+  incomplete: boolean,
+): AssignmentTargets {
+  const targets: AssignmentTargets = {
+    assignmentCount: null,
+    assignmentUnknown: false,
+    assignedToAllUsers: false,
+    assignedToAllDevices: false,
+    assignedToCollections: 0,
+    assignedToOrganizationalUnits: 0,
+  };
+  if (!assignments) return targets;
+  const resolved = resolveAssignments(assignments, undefined, incomplete);
+  targets.assignmentUnknown = resolved.state === "unknown";
+  targets.assignmentUnresolved = resolved.uncertainty === "unresolved";
+  targets.assignmentCount = 0;
+  for (const { type } of resolved.effective) {
+    if (type === "alllicensedusersassignmenttarget")
+      targets.assignedToAllUsers = true;
+    else if (type === "alldevicesassignmenttarget")
+      targets.assignedToAllDevices = true;
+    else if (
+      type === "groupassignmenttarget" ||
+      type === "scopetaggroupassignmenttarget"
+    )
+      targets.assignmentCount += 1;
+    else if (type === "configurationmanagercollectionassignmenttarget")
+      targets.assignedToCollections += 1;
+    else if (type === "organizationalunitassignmenttarget")
+      targets.assignedToOrganizationalUnits += 1;
+  }
+  return targets;
 }
 
 // Returns display metadata only; full settings never leave the main process.
@@ -187,13 +239,14 @@ export function getSectionItems(
   if (!section) {
     throw new Error("This section is not part of the last collection.");
   }
+  const fetchErrors = lastCollection.fetchErrors;
   return {
     key: section.key,
     familyKey: sectionFamilyKey(section),
     label: sectionLabel(section),
     error: section.error?.message ?? null,
     items: section.items.map((item, index) =>
-      summarizeItem(section, item as Record<string, unknown>, index),
+      summarizeItem(section, item as Record<string, unknown>, index, fetchErrors),
     ),
   };
 }

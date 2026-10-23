@@ -2,21 +2,20 @@ import type { DetailedExportData } from "../../../../src/lib/configuration-analy
 import type { TokenProvider } from "../../../../src/lib/graph-client";
 import {
   assessCompliance,
-  BSI_IT_GRUNDSCHUTZ,
   compareControlIds,
   createEvidenceManifest,
   CYBER_ESSENTIALS,
   DEF_STAN_05_138,
+  DORA,
   essentialEightFramework,
-  HIPAA_OUTSIDE_INTUNE_SCOPE,
   HIPAA_SECURITY_RULE,
   ISO_27001,
   NIS2,
-  NIS2_OUTSIDE_INTUNE_SCOPE,
   NIST_800_171,
   NIST_800_171_R3,
   NIST_800_53,
   NIST_CSF,
+  outsideIntuneScope,
   SOC_2,
 } from "../../../../src/lib/compliance";
 import {
@@ -30,50 +29,71 @@ import type {
   BaselineFile,
   Crosswalk,
   ManagementSummary,
-  OutsideScopeMeasure,
 } from "../../../../src/lib/compliance/management/types";
 import { frameworkCoverageLabel } from "../../../../src/lib/compliance/presentation";
+import {
+  deviceStatusAnnexRows,
+  hasPolicyDeviceStatus,
+  policyKey,
+  policyStatusSourceFor,
+} from "../../../../src/lib/compliance/device-status-annex";
+import {
+  buildEvidencePack,
+  buildEvidenceRegister,
+  controlEvidence,
+  registerToCsv,
+  registerToXlsx,
+  safeFileName,
+  type PolicyStatusRow,
+} from "../../../../src/lib/compliance/export";
+import {
+  buildFixPackZip,
+  generateFixPack,
+  type FixPack,
+} from "../../../../src/lib/compliance/fix-pack";
+import { assignmentGroupIds } from "../../../../src/lib/compliance/graph-rows";
+import { getStableItemId } from "../../../../src/lib/configuration-sections";
 import type {
   AssessmentScope,
   ComplianceAssessment,
   CompliancePlatform,
   FrameworkDefinition,
+  PolicyDeviceStatus,
+  PolicyStatusSource,
 } from "../../../../src/lib/compliance/types";
 import type {
   ComplianceFrameworkId,
+  ComplianceRegisterFormat,
   ComplianceReportProgress,
   ComplianceRequest,
   ComplianceView,
+  FixPackPreview,
   ManagementUnassignedConfig,
+  PolicyDeviceStatusView,
 } from "../shared/ipc-types";
 import { localDateStamp } from "../shared/dates";
+import { tenantLabelOf } from "../shared/tenant-label";
 import { getCollectionOwner, getLastCollection } from "./collect";
+
+// Shared with the renderer, which names the tenant in documentation exports.
+export { tenantLabelOf };
 
 type Collection = NonNullable<ReturnType<typeof getLastCollection>>;
 
-// Unmapped measures listed in the management summary, where the framework
-// publishes them.
-const OUTSIDE_SCOPE: Partial<
-  Record<ComplianceFrameworkId, readonly OutsideScopeMeasure[]>
-> = {
-  "nis2-2022-2555": NIS2_OUTSIDE_INTUNE_SCOPE,
-  "hipaa-security-rule": HIPAA_OUTSIDE_INTUNE_SCOPE,
-};
-
 // Order of view.frameworks. The picker order comes from the renderer's
-// FRAMEWORK_OPTIONS, which places NIS2 after ISO 27001.
+// FRAMEWORK_OPTIONS, which places NIS2 and DORA after ISO 27001.
 const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "essential-eight": () => essentialEightFramework(1),
   "iso-27001-2022": () => ISO_27001,
   "soc2-tsc": () => SOC_2,
   "nist-800-53-r5": () => NIST_800_53,
   "nist-csf-2": () => NIST_CSF,
-  "bsi-it-grundschutz": () => BSI_IT_GRUNDSCHUTZ,
   "def-stan-05-138-i4": () => DEF_STAN_05_138,
   "cyber-essentials-v3": () => CYBER_ESSENTIALS,
   "nist-800-171-r2": () => NIST_800_171,
   "nist-800-171-r3": () => NIST_800_171_R3,
   "nis2-2022-2555": () => NIS2,
+  "dora-2022-2554": () => DORA,
   "hipaa-security-rule": () => HIPAA_SECURITY_RULE,
 };
 const FRAMEWORK_IDS = Object.keys(FRAMEWORKS) as ComplianceFrameworkId[];
@@ -151,16 +171,33 @@ function requireCollection(owner: string): Collection {
 
 // Group ids referenced by assignments and Conditional Access user conditions,
 // the same set the website resolves for its compliance view.
-function referencedGroupIds(collection: Collection): string[] {
+// Group ids named by assignments, Conditional Access and the Entra
+// authentication method policy, so history and Compare show group names.
+export function referencedGroupIds(collection: Collection): string[] {
   const ids = new Set<string>();
+  const methods = (collection as { tenantIdentityPolicies?: { authenticationMethods?: any } })
+    .tenantIdentityPolicies?.authenticationMethods;
+  const campaign = methods?.registrationEnforcement?.authenticationMethodsRegistrationCampaign;
+  for (const owner of [
+    ...(Array.isArray(methods?.authenticationMethodConfigurations)
+      ? methods.authenticationMethodConfigurations
+      : []),
+    ...(campaign ? [campaign] : []),
+  ]) {
+    for (const target of [
+      ...(Array.isArray(owner?.includeTargets) ? owner.includeTargets : []),
+      ...(Array.isArray(owner?.excludeTargets) ? owner.excludeTargets : []),
+    ]) {
+      // "all_users" is a fixed target, not a group id.
+      if (target?.targetType === "group" && typeof target.id === "string" && target.id && target.id !== "all_users") {
+        ids.add(target.id);
+      }
+    }
+  }
   for (const section of collection.sections) {
     for (const item of section.items as Array<Record<string, any>>) {
-      for (const assignment of Array.isArray(item.assignments)
-        ? item.assignments
-        : []) {
-        const groupId = assignment?.target?.groupId;
-        if (typeof groupId === "string" && groupId) ids.add(groupId);
-      }
+      // A scope tag target names its group by entraObjectId.
+      for (const groupId of assignmentGroupIds(item)) ids.add(groupId);
       const users = item.conditions?.users;
       for (const id of [
         ...(Array.isArray(users?.includeGroups) ? users.includeGroups : []),
@@ -272,7 +309,9 @@ export function managementSummaryFor(
   frameworkId: ComplianceFrameworkId,
 ): ManagementSummary {
   return buildManagementSummary(assessment, frameworkId, {
-    outsideScope: OUTSIDE_SCOPE[frameworkId],
+    // Unmapped measures, where the framework publishes them; the evidence
+    // report lists the same ones.
+    outsideScope: outsideIntuneScope(frameworkId),
   });
 }
 
@@ -455,11 +494,6 @@ export async function complianceView(
   );
 }
 
-// Reports and baselines name the tenant by a shortened id only.
-export function tenantLabelOf(tenantId: string | null): string | undefined {
-  return tenantId ? `${tenantId.slice(0, 8)}...` : undefined;
-}
-
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -498,21 +532,343 @@ export async function complianceReport(
 }
 
 // The machine readable evidence record the website offers next to the PDF.
-export async function complianceRecord(
+async function complianceRecordData(
   owner: string,
   token: TokenProvider,
   request: ComplianceRequest,
-): Promise<{ fileName: string; bytes: Uint8Array }> {
+) {
   const collection = requireCollection(owner);
   const { names: groupNames } = await groupNamesFor(collection, token);
   const manifest = await createEvidenceManifest(
     assessmentData(collection, groupNames, request.scope),
     request.scope,
   );
+  return { fileName: `compliance-evidence-${localDateStamp()}.json`, manifest };
+}
+
+export async function complianceRecord(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const { fileName, manifest } = await complianceRecordData(
+    owner,
+    token,
+    request,
+  );
   return {
-    fileName: `compliance-evidence-${localDateStamp()}.json`,
+    fileName,
     bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
   };
+}
+
+// ---------------------------------------------------------------- Exports
+// The evidence register, the Purview evidence pack and the draft fix pack are
+// paid desktop features built from the cached assessment of the scope.
+
+const POLICY_STATUS_SOURCE_LABELS: Record<PolicyStatusSource, string> = {
+  configurationPolicies: "Configuration report",
+  compliancePolicies: "Compliance report",
+  deviceConfigurations: "Profile status overview",
+};
+
+export function parseRegisterFormat(value: unknown): ComplianceRegisterFormat {
+  if (value !== "csv" && value !== "xlsx") {
+    throw new Error("Choose CSV or Excel for the evidence register.");
+  }
+  return value;
+}
+
+// The PDF report name with another prefix and extension, so every file of a
+// framework and tenant sorts together.
+function exportFileName(
+  reportFileName: string,
+  prefix: string,
+  extension: string,
+) {
+  return reportFileName
+    .replace(/^Compliance-Report-/, `${prefix}-`)
+    .replace(/\.pdf$/i, `.${extension}`);
+}
+
+async function reportFileNameFor(
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  tenantId: string | null,
+): Promise<string> {
+  const { complianceReportFileName } = await import(
+    "../../../../src/lib/compliance/report-pdf"
+  );
+  return complianceReportFileName(
+    request.frameworkId,
+    tenantLabelOf(tenantId),
+    request.scope.essentialEightMaturityLevel ?? 1,
+  );
+}
+
+// Device status counts for the policies the framework's controls cite, as
+// the register's Policy status sheet. Never an input to any status.
+export function registerPolicyStatus(
+  assessment: ComplianceAssessment,
+  frameworkId: ComplianceFrameworkId,
+  status: PolicyDeviceStatus | undefined,
+): PolicyStatusRow[] | undefined {
+  if (!hasPolicyDeviceStatus(status)) return undefined;
+  const framework = assessment.frameworks.find(
+    (item) => item.framework.id === frameworkId,
+  );
+  const capabilities = new Map(
+    assessment.capabilities.map((result) => [result.capability.id, result]),
+  );
+  const evidence = (framework?.controls ?? []).flatMap((control) =>
+    controlEvidence(control, capabilities),
+  );
+  return deviceStatusAnnexRows(evidence, status).map((row) => ({
+    policyId: row.policyId,
+    policyName: row.policyName,
+    source:
+      row.state === "notCollected"
+        ? `${POLICY_STATUS_SOURCE_LABELS[row.source]}, not collected`
+        : POLICY_STATUS_SOURCE_LABELS[row.source],
+    collectedAt: status.collectedAt,
+    succeeded: row.counts?.succeeded ?? null,
+    error: row.counts?.error ?? null,
+    conflict: row.counts?.conflict ?? null,
+    notApplicable: row.counts?.notApplicable ?? null,
+    pending: row.counts?.pending ?? null,
+    noStatusReported: row.state === "noStatusReported",
+  }));
+}
+
+export async function registerFile(
+  assessment: ComplianceAssessment,
+  frameworkId: ComplianceFrameworkId,
+  format: ComplianceRegisterFormat,
+  meta: {
+    reportFileName: string;
+    tenantLabel?: string;
+    policyDeviceStatus?: PolicyDeviceStatus;
+  },
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const register = buildEvidenceRegister(assessment, { frameworkId });
+  const fileName = exportFileName(
+    meta.reportFileName,
+    "Evidence-Register",
+    format,
+  );
+  if (format === "csv") {
+    return {
+      fileName,
+      bytes: new TextEncoder().encode(registerToCsv(register)),
+    };
+  }
+  const framework = assessment.frameworks.find(
+    (item) => item.framework.id === frameworkId,
+  )?.framework;
+  const bytes = await registerToXlsx(register, {
+    tenant: meta.tenantLabel,
+    collectedAt: assessment.provenance.collectedAt,
+    rulesetVersion: assessment.provenance.rulesetVersion,
+    framework: framework ? `${framework.name} ${framework.version}` : undefined,
+    generatedAt: new Date().toISOString(),
+    policyStatus: registerPolicyStatus(
+      assessment,
+      frameworkId,
+      meta.policyDeviceStatus,
+    ),
+  });
+  return { fileName, bytes };
+}
+
+export async function complianceRegister(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  format: ComplianceRegisterFormat,
+  tenantId: string | null,
+  onProgress: (progress: ComplianceReportProgress) => void,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const collection = requireCollection(owner);
+  onProgress({ stage: "groups" });
+  const groupNames = await groupNamesFor(collection, token);
+  onProgress({ stage: "generating" });
+  await yieldToEventLoop();
+  return registerFile(
+    assess(collection, groupNames, request.scope),
+    request.frameworkId,
+    format,
+    {
+      reportFileName: await reportFileNameFor(request, tenantId),
+      tenantLabel: tenantLabelOf(tenantId),
+      policyDeviceStatus: (collection as unknown as DetailedExportData)
+        .policyDeviceStatus,
+    },
+  );
+}
+
+// The framework PDF and the JSON evidence record, the same files the report
+// and record handlers save, packed for Purview Compliance Manager.
+export async function complianceEvidencePack(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  tenantId: string | null,
+  onProgress: (progress: ComplianceReportProgress) => void,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const collection = requireCollection(owner);
+  const report = await complianceReport(
+    owner,
+    token,
+    request,
+    tenantId,
+    onProgress,
+  );
+  const record = await complianceRecordData(owner, token, request);
+  // The PDF and the record must describe the same collection.
+  if (requireCollection(owner) !== collection) {
+    throw new Error(
+      "The tenant was collected again while the pack was created. Create the pack again.",
+    );
+  }
+  const bytes = await buildEvidencePack(
+    record.manifest.assessment,
+    record.manifest,
+    request.frameworkId,
+    {
+      reportPdf: report.bytes,
+      reportFileName: report.fileName,
+      recordFileName: record.fileName,
+      tenant: tenantLabelOf(tenantId),
+    },
+  );
+  return {
+    fileName: safeFileName(
+      exportFileName(report.fileName, "Purview-Evidence-Pack", "zip"),
+      "Purview-Evidence-Pack.zip",
+    ),
+    bytes,
+  };
+}
+
+export function fixPackPreviewOf(pack: FixPack): FixPackPreview {
+  return {
+    summary: pack.summary,
+    policies: pack.policies.map((policy) => ({
+      fileName: policy.fileName,
+      name: policy.json.name,
+      capabilityId: policy.capabilityId,
+    })),
+    notGeneratable: pack.notGeneratable,
+  };
+}
+
+async function fixPackFor(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+) {
+  const collection = requireCollection(owner);
+  const groupNames = await groupNamesFor(collection, token);
+  const assessment = assess(collection, groupNames, request.scope);
+  return {
+    assessment,
+    // The collection shows parent settings configured to another option,
+    // which leave no check in the assessment.
+    pack: generateFixPack(assessment, {
+      frameworkId: request.frameworkId,
+      collection: assessmentData(collection, groupNames.names, request.scope),
+    }),
+  };
+}
+
+export async function complianceFixPackPreview(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+): Promise<FixPackPreview> {
+  return fixPackPreviewOf((await fixPackFor(owner, token, request)).pack);
+}
+
+export async function complianceFixPack(
+  owner: string,
+  token: TokenProvider,
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId },
+  tenantId: string | null,
+  onProgress: (progress: ComplianceReportProgress) => void,
+): Promise<{ fileName: string; bytes: Uint8Array }> {
+  onProgress({ stage: "groups" });
+  const { assessment, pack } = await fixPackFor(owner, token, request);
+  onProgress({ stage: "generating" });
+  await yieldToEventLoop();
+  return {
+    fileName: exportFileName(
+      await reportFileNameFor(request, tenantId),
+      "Draft-Fix-Pack",
+      "zip",
+    ),
+    bytes: await buildFixPackZip(pack, assessment),
+  };
+}
+
+// Device status counts of one collected section, keyed like the section
+// items, or null when Intune reports no device status for its family.
+export function policyDeviceStatusOf(
+  collection: Pick<Collection, "sections"> & {
+    policyDeviceStatus?: PolicyDeviceStatus;
+  },
+  sectionKey: string,
+): PolicyDeviceStatusView | null {
+  const section = collection.sections.find((entry) => entry.key === sectionKey);
+  if (!section)
+    throw new Error("This section is not part of the last collection.");
+  const source = policyStatusSourceFor(section.familyKey);
+  if (!source) return null;
+  const status = collection.policyDeviceStatus;
+  const state = status?.sources[source] ?? "skipped";
+  const rows: PolicyDeviceStatusView["rows"] = {};
+  if (status && state === "collected") {
+    const reported = new Map(
+      status.rows
+        .filter((row) => row.source === source)
+        .map((row) => [policyKey(row.policyId), row]),
+    );
+    section.items.forEach((item, index) => {
+      const policyId = (item as { id?: unknown }).id;
+      const row =
+        typeof policyId === "string"
+          ? reported.get(policyKey(policyId))
+          : undefined;
+      if (!row) return;
+      rows[getStableItemId(section, item as Record<string, unknown>, index)] = {
+        succeeded: row.succeeded,
+        error: row.error,
+        conflict: row.conflict,
+        notApplicable: row.notApplicable,
+        pending: row.pending,
+      };
+    });
+  }
+  return {
+    source,
+    sourceLabel: POLICY_STATUS_SOURCE_LABELS[source],
+    state,
+    error: status
+      ? (status.errors?.[source] ?? null)
+      : "Device status was not part of this collection.",
+    collectedAt: status?.collectedAt ?? null,
+    rows,
+  };
+}
+
+export function complianceDeviceStatus(
+  owner: string,
+  sectionKey: string,
+): PolicyDeviceStatusView | null {
+  return policyDeviceStatusOf(
+    requireCollection(owner) as unknown as Parameters<
+      typeof policyDeviceStatusOf
+    >[0],
+    sectionKey,
+  );
 }
 
 export function frameworkSourceUrl(frameworkId: unknown): string {
@@ -524,4 +880,16 @@ export function frameworkSourceUrl(frameworkId: unknown): string {
     throw new Error("This framework has no publisher reference.");
   }
   return url;
+}
+
+// The collection, its full scope assessment and the resolved group names a
+// history snapshot stores.
+export async function snapshotInputs(owner: string, token: TokenProvider) {
+  const collection = requireCollection(owner);
+  const groupNames = await groupNamesFor(collection, token);
+  return {
+    collection,
+    assessment: assess(collection, groupNames, {}),
+    groupNames: groupNames.names,
+  };
 }

@@ -1,4 +1,8 @@
 import type { ConfigurationSectionData } from "~/lib/configuration-sections";
+import type {
+  PolicyDeviceStatus,
+  TenantIdentityPolicies,
+} from "~/lib/compliance/types";
 
 export interface PermissionError {
   resource: string;
@@ -39,6 +43,10 @@ export interface IntuneConfigurations {
   collectedAt?: string;
   collectionStartedAt?: string;
   collectionSkippedFamilies?: string[];
+  /** Entra tenant policies; never part of `sections`. */
+  tenantIdentityPolicies?: TenantIdentityPolicies;
+  /** Intune per-policy device status counts; an annex, never assessed. */
+  policyDeviceStatus?: PolicyDeviceStatus;
   settingsCatalog: DashboardConfigurationItem[];
   deviceConfigurations: DashboardConfigurationItem[];
   administrativeTemplates: DashboardConfigurationItem[];

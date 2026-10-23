@@ -1,3 +1,6 @@
+import { MANUAL_RECOMMENDATIONS_URL } from "../../../../src/lib/benchmarks/manual";
+import type { HelpKey } from "../shared/ipc-types";
+
 export interface DesktopAuthConfig {
   clientId: string;
   tenantId: string;
@@ -9,11 +12,21 @@ export { DEFAULT_SCOPES, SCOPE_REASONS } from "../shared/scopes";
 
 // The only external pages the renderer may open, by key.
 export const HELP_URLS = {
+  // The CIS page the manual recommendations notice points to.
+  cisBenchmarks: MANUAL_RECOMMENDATIONS_URL,
   entraAppRegistrations:
     "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
   gettingStarted: "https://intunedocumentation.com/desktop/getting-started",
   support: "https://intunedocumentation.com/support",
-} as const;
+} as const satisfies Record<HelpKey, string>;
+
+// The page for a key the renderer sent; anything else is refused.
+export function helpUrl(key: unknown): string {
+  if (typeof key !== "string" || !Object.hasOwn(HELP_URLS, key)) {
+    throw new Error("Refused to open an unexpected link.");
+  }
+  return HELP_URLS[key as HelpKey];
+}
 
 export const WEBSITE_URL = "https://intunedocumentation.com";
 

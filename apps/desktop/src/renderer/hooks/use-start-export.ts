@@ -9,15 +9,16 @@ import type { ExportFormat } from "../state/types";
 export function useStartExport(): (target: ExportTarget, format: ExportFormat) => void {
   const { state, dispatch, actions } = useApp();
   const familyKey = state.activeFamilyKey;
+  const tenantId = state.auth?.tenantId ?? null;
   return useCallback(
     (target, format) => {
       dispatch({ type: "navigate", screen: "export" });
       void runExport(
         dispatch,
-        { format, target, returnFamilyKey: familyKey },
+        { format, target, returnFamilyKey: familyKey, tenantId },
         () => void actions.refreshLicense(),
       );
     },
-    [dispatch, actions, familyKey],
+    [dispatch, actions, familyKey, tenantId],
   );
 }

@@ -13,6 +13,7 @@ import {
   unreadableAssignment,
 } from "./compliance/graph-rows";
 import { UNREADABLE_ASSIGNMENT } from "./configuration-parser";
+import { removalPrefix } from "./compliance/assignments";
 
 export class GroupResolver {
   private client: Client;
@@ -149,12 +150,16 @@ export class GroupResolver {
       const target = (assignment as { target: Record<string, any> }).target;
       const type = normalizeTargetType(target["@odata.type"]);
       const group = () => groupNames.get(target.groupId) || target.groupId;
-      if (type === "alldevicesassignmenttarget") return "All Devices";
-      if (type === "alllicensedusersassignmenttarget") return "All Users";
       if (type === "exclusiongroupassignmenttarget")
         return `Excluded: ${group()}`;
-      if (type === "groupassignmenttarget") return group();
-      return "Custom Assignment";
+      // A removal intent targets nobody, so it is labelled with it
+      // (compliance/assignments.ts removalPrefix).
+      const prefix = removalPrefix((assignment as { intent?: unknown }).intent);
+      if (type === "alldevicesassignmenttarget") return `${prefix}All Devices`;
+      if (type === "alllicensedusersassignmenttarget")
+        return `${prefix}All Users`;
+      if (type === "groupassignmenttarget") return `${prefix}${group()}`;
+      return `${prefix}Custom Assignment`;
     });
 
     return resolvedTargets;

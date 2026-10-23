@@ -4,6 +4,8 @@ import { METADATA_KEYS } from "../settings-flatten";
 import type { CapabilityStatus, ControlStatus } from "../compliance/types";
 import { assignmentsIncomplete } from "../compliance/assignments";
 import {
+  comparedId,
+  comparedTargetField,
   normalizeTargetType,
   TARGET_FIELDS,
   unidentifiedSources,
@@ -417,10 +419,15 @@ function assignmentsOf(
         ? `, filter ${typeof filterType === "string" ? filterType : "unknown"} ${filterId}`
         : "";
     const intent = typeof entry.intent === "string" ? `${entry.intent}: ` : "";
+    // Ids compare by their canonical text (graph-rows.ts
+    // comparedTargetField), so a group or filter id Graph returned in
+    // another case is the same assignment; the label keeps the text.
     const key = [
       normalizeTargetType(target["@odata.type"]),
-      ...TARGET_FIELDS.map((field) => target[field]),
-      filterId,
+      ...TARGET_FIELDS.map((field) =>
+        comparedTargetField(field, target[field]),
+      ),
+      comparedId(filterId),
       filterType,
       entry.intent,
     ]

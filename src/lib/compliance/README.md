@@ -26,7 +26,13 @@ HIPAA Security Rule (45 CFR Part 164, Subpart C).
    such as the three Windows firewall profiles, must occur together on one
    assigned policy. Different policies are not combined into a complete profile.
 4. **Assignment-aware.** Enforcing policies that are unassigned (or assigned
-   via exclusions only) yield `configuredNotAssigned`, not `enforced`.
+   via exclusions or removal intents only) yield `configuredNotAssigned`, not
+   `enforced`. A deviceConfigAssignmentIntent `remove` or an app `uninstall`
+   targets nobody: a remove of a target is read like an exclusion of it, and
+   an uninstall overrides an available intent of the same target, never a
+   required one. A remove of all users or all devices leaves every other
+   target unresolved, and an uninstall of them every available target, so
+   the assignment state is unknown (`assignments.ts` resolveAssignments).
    Failed or missing assignment reads yield `assignmentUnknown`. Filters and
    exclusion targets are preserved, and effective coverage remains unverified.
 5. **No verdicts.** Output statuses are evidence statements

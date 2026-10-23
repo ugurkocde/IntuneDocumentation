@@ -1,11 +1,11 @@
 import {
   assignmentsIncomplete,
   itemFetchErrors,
-  summarizeAssignments,
+  resolveAssignments,
   UNASSIGNABLE_REGISTRY_KEYS,
 } from "./compliance/assignments";
 import { collectionFamilies } from "./compliance/coverage";
-import { canonicalPlatforms, targetGroupId } from "./compliance/graph-rows";
+import { canonicalPlatforms } from "./compliance/graph-rows";
 import type {
   AssessmentScope,
   PolicyDeviceStatus,
@@ -136,6 +136,11 @@ export function analyzeConfigurations(
   // Entra object ids are case insensitive, so a group is counted once
   // however its ids are cased, under the id first seen for it.
   const groupKeys = new Map<string, string>();
+  const groupKey = (groupId: string) => {
+    const lower = groupId.toLowerCase();
+    if (!groupKeys.has(lower)) groupKeys.set(lower, groupId);
+    return groupKeys.get(lower)!;
+  };
   let assignedCount = 0;
   let unassignedCount = 0;
   let unknownCount = 0;
@@ -144,19 +149,23 @@ export function analyzeConfigurations(
   const familyOf = new Map<unknown, string>();
   for (const { family, items } of collectionFamilies(data))
     for (const item of items) familyOf.set(item, family);
+  // Assignments as the engine reads them (compliance/assignments.ts
+  // resolveAssignments): exclusions and removal intents applied.
+  const resolved = (config: any) =>
+    resolveAssignments(
+      config.assignments,
+      undefined,
+      assignmentsIncomplete(
+        config,
+        itemFetchErrors(data.fetchErrors, config, familyOf.get(config)),
+      ),
+    );
   const assignmentState = (config: any) =>
     nonAssignable.has(config) ||
     nonAssignableKeys.has(config.registryKey) ||
     config["@odata.type"] === "#microsoft.graph.conditionalAccessPolicy"
       ? "notApplicable"
-      : summarizeAssignments(
-          config.assignments,
-          undefined,
-          assignmentsIncomplete(
-            config,
-            itemFetchErrors(data.fetchErrors, config, familyOf.get(config)),
-          ),
-        ).state;
+      : resolved(config).state;
   const inventoryCounts = (items: any[]) => ({
     total: items.length,
     assigned: items.filter((item) => assignmentState(item) === "assigned")
@@ -173,45 +182,22 @@ export function analyzeConfigurations(
     const state = assignmentState(config);
     if (state === "assigned") {
       assignedCount++;
-      const typeOf = (assignment: any) =>
-        typeof assignment.target?.["@odata.type"] === "string"
-          ? assignment.target["@odata.type"].toLowerCase()
-          : "";
-      // An exclusion takes precedence over an inclusion of the same group
-      // in the policy (compliance/assignments.ts summarizeAssignments), so
-      // a group the policy both includes and excludes is not assigned.
-      const excluded = new Set<string>();
-      for (const assignment of config.assignments) {
-        const groupId = targetGroupId(assignment.target);
-        if (
-          groupId &&
-          typeOf(assignment).includes("exclusiongroupassignmenttarget")
-        )
-          excluded.add(groupId.toLowerCase());
+      // The targets the policy applies to, once each: a group it both
+      // includes and excludes, or includes and removes, is not assigned.
+      for (const target of resolved(config).effective) {
+        const key =
+          target.type === "alllicensedusersassignmenttarget"
+            ? "All Users"
+            : target.type === "alldevicesassignmenttarget"
+              ? "All Devices"
+              : target.type === "groupassignmenttarget" ||
+                  target.type === "scopetaggroupassignmenttarget"
+                ? groupKey(target.id!)
+                : undefined;
+        if (!key) continue;
+        uniqueGroups.add(key);
+        groupAssignmentCount[key] = (groupAssignmentCount[key] || 0) + 1;
       }
-      config.assignments.forEach((assignment: any) => {
-        const odataType = typeOf(assignment);
-
-        if (odataType.includes("exclusiongroupassignmenttarget")) return;
-        // A scope tag target names its group by entraObjectId.
-        const groupId = targetGroupId(assignment.target);
-        if (groupId && excluded.has(groupId.toLowerCase())) return;
-        if (groupId) {
-          const lower = groupId.toLowerCase();
-          if (!groupKeys.has(lower)) groupKeys.set(lower, groupId);
-          const key = groupKeys.get(lower)!;
-          uniqueGroups.add(key);
-          groupAssignmentCount[key] = (groupAssignmentCount[key] || 0) + 1;
-        } else if (odataType.includes("alllicensedusers")) {
-          uniqueGroups.add("All Users");
-          groupAssignmentCount["All Users"] =
-            (groupAssignmentCount["All Users"] || 0) + 1;
-        } else if (odataType.includes("alldevices")) {
-          uniqueGroups.add("All Devices");
-          groupAssignmentCount["All Devices"] =
-            (groupAssignmentCount["All Devices"] || 0) + 1;
-        }
-      });
     } else if (state === "notAssigned") {
       unassignedCount++;
     } else if (state === "unknown") {

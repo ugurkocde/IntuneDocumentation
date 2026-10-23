@@ -102,6 +102,37 @@ const isBinary = (value: unknown) => {
   );
 };
 
+/**
+ * The XML text of an omaSettingStringXml value. Graph documents the value
+ * as Edm.Binary, "UTF8 encoded byte array" (Microsoft Learn,
+ * omaSettingStringXml), which OData JSON carries as base64url or base64
+ * text (isBinary), so it is decoded as UTF-8. Bytes that start with a
+ * UTF-16 byte order mark, as Windows PowerShell 5.1 writes XML files, are
+ * decoded as UTF-16 in that byte order. Undefined when the value is no
+ * such text or its bytes are not valid in their encoding; a byte order
+ * mark is dropped.
+ */
+export function decodedXmlValue(value: unknown): string | undefined {
+  if (!isBinary(value)) return undefined;
+  const body = (value as string)
+    .replace(/=+$/, "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+  try {
+    const binary = atob(body.padEnd(Math.ceil(body.length / 4) * 4, "="));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const encoding =
+      bytes[0] === 0xff && bytes[1] === 0xfe
+        ? "utf-16le"
+        : bytes[0] === 0xfe && bytes[1] === 0xff
+          ? "utf-16be"
+          : "utf-8";
+    return new TextDecoder(encoding, { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
 // Edm.Double and Edm.Single as OData JSON carries them: a number, or one of
 // the strings NaN, INF and -INF. A Single is within its range.
 const SPECIAL_FLOATS = ["NaN", "INF", "-INF"];
@@ -145,7 +176,9 @@ const VALUE_TYPES: Readonly<Record<string, (value: unknown) => boolean>> = {
   omasettingfloatingpoint: isSingle,
   omasettingdatetime: isDateTimeOffset,
   omasettingbase64: isString,
-  omasettingstringxml: isBinary,
+  // Edm.Binary holding UTF-8 XML: bytes that are no UTF-8 text are no
+  // value of the type (decodedXmlValue).
+  omasettingstringxml: (value) => decodedXmlValue(value) !== undefined,
   devicemanagementintegersettinginstance: isInt32,
   devicemanagementbooleansettinginstance: isBoolean,
   devicemanagementstringsettinginstance: isString,
@@ -332,6 +365,17 @@ export const unreadableOmaValue = (row: unknown): boolean =>
     row.isEncrypted !== true &&
     !redacted(row.value) &&
     !documentedValue(row["@odata.type"], row.value));
+
+/**
+ * The value of a readable custom OMA-URI row as it is shown and read: an
+ * omaSettingStringXml value as its XML text (decodedXmlValue), any other
+ * as Graph returned it. Compare and History compare the value Graph
+ * returned in canonical form (canonicalRecordValue), not this text.
+ */
+export const shownOmaValue = (row: Record<string, unknown>): unknown =>
+  normalizeTargetType(row["@odata.type"]) === "omasettingstringxml"
+    ? (decodedXmlValue(row.value) ?? row.value)
+    : row.value;
 
 // Intent setting instances that hold their value only as JSON text
 // (deviceManagementCollectionSettingInstance, ...ComplexSettingInstance and
@@ -805,6 +849,11 @@ export const EDM_TYPES: Readonly<Record<string, (value: unknown) => boolean>> =
     DateTimeOffset: isDateTimeOffset,
     Guid: isGuid,
     Binary: isBinary,
+    // Not an Edm primitive: the String entries of a Conditional Access
+    // list of directory objects or applications (graph-property-types.ts),
+    // an id or a documented keyword, which CANONICAL_EDM compares ignoring
+    // case.
+    DirectoryObjectId: isString,
   };
 
 // One text per value of the Edm primitives whose JSON text is not unique,
@@ -842,6 +891,15 @@ export const EDM_TYPES: Readonly<Record<string, (value: unknown) => boolean>> =
 const pad2 = (part: string | undefined) => part ?? "00";
 const trimZeros = (digits: string | undefined) =>
   (digits ?? "").replace(/0+$/, "");
+
+const CA_KEYWORDS = [
+  "All",
+  "None",
+  "GuestsOrExternalUsers",
+  "Office365",
+  "MicrosoftAdminPortals",
+  "AllTrusted",
+];
 
 const CANONICAL_EDM: Readonly<Record<string, (value: any) => unknown>> = {
   TimeOfDay: (value: string) => {
@@ -886,6 +944,18 @@ const CANONICAL_EDM: Readonly<Record<string, (value: any) => unknown>> = {
     return `${sign === "-" ? "-" : ""}P${day ? `${day}D` : ""}${time ? `T${time}` : ""}`;
   },
   Guid: (value: string) => value.toLowerCase(),
+  // A Conditional Access id or keyword: a GUID is lower case (Guid), and a
+  // keyword Microsoft Learn documents for these lists (conditionalAccessUsers
+  // None, All and GuestsOrExternalUsers; conditionalAccessApplications All,
+  // Office365 and MicrosoftAdminPortals; conditionalAccessLocations All and
+  // AllTrusted) is written as documented, matched ignoring case. Other text
+  // is kept.
+  DirectoryObjectId: (value: string) =>
+    isGuid(value)
+      ? value.toLowerCase()
+      : (CA_KEYWORDS.find(
+          (keyword) => keyword.toLowerCase() === value.toLowerCase(),
+        ) ?? value),
   Binary: (value: string) => {
     const body = value.replace(/=+$/, "").replace(/-/g, "+").replace(/_/g, "/");
     return body.padEnd(Math.ceil(body.length / 4) * 4, "=");
@@ -915,12 +985,12 @@ export function canonicalEdmValue(type: string, value: unknown): unknown {
 
 // The Edm type of the value of the typed Graph records VALUE_TYPES reads
 // whose values have more than one JSON form: custom OMA-URI floating point
-// (Single), date and time (DateTimeOffset) and XML (Binary) values. The
-// other records hold integers, booleans and text, whose form is unique.
+// (Single) and date and time (DateTimeOffset) values. XML values are
+// compared by their text (canonicalRecordValue). The other records hold
+// integers, booleans and text, whose form is unique.
 const VALUE_EDM_TYPES: Readonly<Record<string, string>> = {
   omasettingfloatingpoint: "Single",
   omasettingdatetime: "DateTimeOffset",
-  omasettingstringxml: "Binary",
 };
 
 /**
@@ -929,6 +999,17 @@ const VALUE_EDM_TYPES: Readonly<Record<string, string>> = {
  */
 export function canonicalRecordValue(type: unknown, value: unknown): unknown {
   const name = normalizeTargetType(type);
+  // An XML value is its text: the same XML with or without a byte order
+  // mark, or in UTF-16, is one value, written as base64 of its UTF-8 bytes,
+  // the form Graph returns for UTF-8 XML without a mark.
+  if (name === "omasettingstringxml") {
+    const text = decodedXmlValue(value);
+    if (text === undefined) return value;
+    let binary = "";
+    for (const byte of new TextEncoder().encode(text))
+      binary += String.fromCharCode(byte);
+    return btoa(binary);
+  }
   return Object.hasOwn(VALUE_EDM_TYPES, name) && documentedValue(type, value)
     ? canonicalEdmValue(VALUE_EDM_TYPES[name]!, value)
     : value;
@@ -1258,6 +1339,33 @@ export const ASSIGNMENT_TARGET_FIELDS: Readonly<
 export const TARGET_FIELDS: readonly TargetField[] = [
   ...new Set(Object.values(ASSIGNMENT_TARGET_FIELDS).flat()),
 ];
+
+/**
+ * The text an identifier is compared and keyed by: a GUID, such as an Entra
+ * object id or an assignment filter id, is one id in either case (Edm.Guid,
+ * canonicalEdmValue), so it is lower case. Other ids, such as a
+ * Configuration Manager collection id, are compared as Graph returned them.
+ * Labels keep the text Graph returned.
+ */
+export const comparedId = (value: unknown): unknown =>
+  isGuid(value) ? (value as string).toLowerCase() : value;
+
+// Target fields that hold an Entra object id, which compares ignoring case
+// whatever its form.
+const OBJECT_ID_FIELDS: ReadonlySet<string> = new Set([
+  "groupId",
+  "entraObjectId",
+]);
+
+/**
+ * The text a field of an assignment target (ASSIGNMENT_TARGET_FIELDS) is
+ * compared and keyed by: an Entra group id in lower case, another id by
+ * comparedId, an enum such as targetType as Graph returned it.
+ */
+export const comparedTargetField = (field: string, value: unknown): unknown =>
+  OBJECT_ID_FIELDS.has(field) && typeof value === "string"
+    ? value.toLowerCase()
+    : comparedId(value);
 
 /**
  * The Entra group an assignment target names, for group name lookup: the

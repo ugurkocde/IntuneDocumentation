@@ -9,6 +9,7 @@
 // unreadable, never an empty, removed or changed value.
 import type { SnapshotTenantIdentityPolicies } from "./projection";
 import {
+  documentedMember,
   isDocumented,
   type DocumentedField,
 } from "../compliance/documented-values";
@@ -46,10 +47,16 @@ export interface IdentityRow {
   setting: string;
   name: string;
   path: string[];
-  // What is compared: target ids, not their display names.
+  // What is compared: target ids, not their display names, in canonical
+  // form: object ids and all_users in lower case, a value Graph matches
+  // ignoring case in its documented spelling ("Fido2" for "FIDO2").
   value: string;
-  // What is shown: target ids resolved to group names.
+  // What is shown: target ids resolved to group names, values as Graph
+  // returned them.
   display: string;
+  // What Compare compares instead of display (reference.ts): display with
+  // every value in its documented spelling. Absent when display already is.
+  token?: string;
   // The target is a directory object of this tenant (a group or user id),
   // so it means nothing in another tenant.
   tenantObject?: true;
@@ -143,17 +150,27 @@ function targetRows(
     const id = target.id as string;
     const type = target.targetType as string;
     const method = plain(target.targetedAuthenticationMethod);
+    // Graph matches the method ignoring case (documented-values.ts), so
+    // "FIDO2" and "Fido2" are one method.
+    const canonical =
+      method === null
+        ? null
+        : (documentedMember("targetedAuthenticationMethod", method) ?? method);
     const all = id.toLowerCase() === "all_users";
     const label = all
       ? "All users"
       : `${type.charAt(0).toUpperCase()}${type.slice(1)} ${groupNames[id] ?? id}`;
+    const display = method ? `${label} (${method})` : label;
+    const token = canonical ? `${label} (${canonical})` : label;
     return {
       policy,
       setting,
       name,
       path,
-      value: [type, id, method ?? ""].join(":"),
-      display: method ? `${label} (${method})` : label,
+      // Entra object ids and all_users compare ignoring case.
+      value: [type, id.toLowerCase(), canonical ?? ""].join(":"),
+      display,
+      ...(token !== display ? { token } : {}),
       ...(all ? {} : { tenantObject: true as const }),
     };
   });
@@ -186,9 +203,25 @@ function valueRow(
         ? expected(value)
         : isDocumented(expected, value);
   const text = plain(value);
-  return !valid || text === null
-    ? [unreadableRow(policy, setting, name, path)]
-    : [{ policy, setting, name, path, value: text, display: text }];
+  if (!valid || text === null)
+    return [unreadableRow(policy, setting, name, path)];
+  // A value Graph matches ignoring case compares in its documented
+  // spelling, shown as Graph returned it.
+  const canonical =
+    typeof expected === "string" && expected !== "boolean"
+      ? (documentedMember(expected, value) ?? text)
+      : text;
+  return [
+    {
+      policy,
+      setting,
+      name,
+      path,
+      value: canonical,
+      display: text,
+      ...(canonical !== text ? { token: canonical } : {}),
+    },
+  ];
 }
 
 // Microsoft Learn: minimum 0 days, maximum 14 days.

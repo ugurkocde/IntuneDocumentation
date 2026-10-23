@@ -1,5 +1,9 @@
 import { DOMParser } from "@xmldom/xmldom";
-import { documentedValue, unidentifiedOmaRow } from "./graph-rows";
+import {
+  documentedValue,
+  shownOmaValue,
+  unidentifiedOmaRow,
+} from "./graph-rows";
 import { canonicalOmaUri } from "./oma-uri";
 
 // Public CSP schema: https://learn.microsoft.com/windows/client-management/mdm/applocker-csp
@@ -12,10 +16,12 @@ const MODES = ["Enabled", "AuditOnly", "NotConfigured"];
 const OTHER_PLATFORM = /^#?(microsoft\.graph\.)?(android|aosp|ios|macos)/i;
 
 // The value of a custom OMA-URI row, or null when it is encrypted or not
-// of the documented type of its row (graph-rows.ts).
-const rowValue = (setting: any) =>
+// of the documented type of its row (graph-rows.ts). An omaSettingStringXml
+// value is Edm.Binary, the UTF-8 bytes of its XML, so it is read decoded
+// (shownOmaValue); the size and document type checks apply to the XML.
+const rowValue = (setting: any): any =>
   !setting.isEncrypted && documentedValue(setting["@odata.type"], setting.value)
-    ? setting.value
+    ? shownOmaValue(setting)
     : null;
 
 export function inspectAppLocker(config: Record<string, any>) {

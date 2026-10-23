@@ -165,9 +165,10 @@ export interface CollectProgress {
 
 // What a policy is assigned to (main/collect.ts assignmentTargets).
 export interface AssignmentTargets {
-  // Included group targets, scope tag groups among them. Null when the
-  // resource type has no assignments (for example Conditional Access or
-  // tenant wide settings).
+  // Distinct groups the policy applies to after its exclusions and removal
+  // intents, scope tag groups among them; the other counts and flags too.
+  // Null when the resource type has no assignments (for example Conditional
+  // Access or tenant wide settings).
   assignmentCount: number | null;
   // An assignment Graph returned of an undocumented type or without what
   // its type targets, or assignments not fully collected: the targeting is

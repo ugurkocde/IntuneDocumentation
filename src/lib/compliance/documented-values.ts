@@ -227,6 +227,22 @@ export function isDocumented(field: DocumentedField, value: unknown): boolean {
     : values.includes(value);
 }
 
+/**
+ * The documented spelling of a value Graph documents for the field, so
+ * values a field matches ignoring case compare as one; undefined for a
+ * value it does not document.
+ */
+export function documentedMember(
+  field: DocumentedField,
+  value: unknown,
+): string | undefined {
+  if (!isDocumented(field, value)) return undefined;
+  const values: readonly string[] = DOCUMENTED_VALUES[field];
+  return values.find(
+    (item) => item.toLowerCase() === (value as string).toLowerCase(),
+  );
+}
+
 /** The documented values of a Graph property signal, when it is an enum. */
 export function graphPropertyValues(
   propertyPath: string,

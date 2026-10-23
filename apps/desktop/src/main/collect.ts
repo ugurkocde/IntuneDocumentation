@@ -14,13 +14,9 @@ import type { DetailedExportData } from "../../../../src/lib/configuration-analy
 import {
   assignmentsIncomplete,
   itemFetchErrors,
-  summarizeAssignments,
+  resolveAssignments,
 } from "../../../../src/lib/compliance/assignments";
-import {
-  canonicalPlatforms,
-  normalizeTargetType,
-  unreadableAssignment,
-} from "../../../../src/lib/compliance/graph-rows";
+import { canonicalPlatforms } from "../../../../src/lib/compliance/graph-rows";
 import {
   classifyItem,
   collectionBreakdown,
@@ -187,11 +183,13 @@ function summarizeItem(
 }
 
 /**
- * What a policy is assigned to, read by the documented target types
- * (graph-rows.ts) through the engine's summarizeAssignments. An assignment
- * of an undocumented type or without what its type targets, or assignments
- * that were not fully collected (assignmentsIncomplete, as the engine reads
- * it), leave the targeting unknown rather than read as not assigned.
+ * What a policy is assigned to: the targets it applies to after its
+ * exclusions (case insensitive group ids) and removal intents, read by the
+ * engine's resolveAssignments, so the list, search and the engine count the
+ * same targets. An assignment of an undocumented type, intent or without
+ * what its type targets, or assignments that were not fully collected
+ * (assignmentsIncomplete, as the engine reads it), leave the targeting
+ * unknown rather than read as not assigned.
  */
 export function assignmentTargets(
   assignments: unknown[] | null,
@@ -206,15 +204,10 @@ export function assignmentTargets(
     assignedToOrganizationalUnits: 0,
   };
   if (!assignments) return targets;
-  targets.assignmentUnknown =
-    summarizeAssignments(assignments, undefined, incomplete).state ===
-    "unknown";
+  const resolved = resolveAssignments(assignments, undefined, incomplete);
+  targets.assignmentUnknown = resolved.state === "unknown";
   targets.assignmentCount = 0;
-  for (const assignment of assignments) {
-    if (unreadableAssignment(assignment)) continue;
-    const type = normalizeTargetType(
-      (assignment as { target: Record<string, unknown> }).target["@odata.type"],
-    );
+  for (const { type } of resolved.effective) {
     if (type === "alllicensedusersassignmenttarget")
       targets.assignedToAllUsers = true;
     else if (type === "alldevicesassignmenttarget")

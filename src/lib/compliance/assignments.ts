@@ -1,5 +1,7 @@
 import { INTUNE_POLICY_REGISTRY } from "../intune-policy-registry";
 import {
+  ASSIGNMENT_TARGET_FIELDS,
+  comparedTargetField,
   normalizeTargetType,
   targetGroupId,
   unreadableAssignment,
@@ -110,30 +112,146 @@ export const assignmentStatus = (
     ? "incomplete"
     : "complete";
 
-export function summarizeAssignments(
+/**
+ * What an assignment does by its intent (Graph beta $metadata, 23 October
+ * 2026; lab tenant: "apply" on device configurations, "required",
+ * "available" and "uninstall" on apps). deviceConfigAssignmentIntent remove
+ * ("ensure that the configuration profile is removed from devices that have
+ * previously installed it", Microsoft Learn) and installIntent uninstall
+ * take the policy or app away from what they target, so they target
+ * nobody. apply, required, available and availableWithoutEnrollment apply
+ * it, as does an assignment without an intent, which types without one
+ * (Settings Catalog, compliance, intents) return. An intent Graph does not
+ * document makes the assignment unreadable (graph-rows.ts).
+ */
+export type AssignmentRole = "apply" | "remove" | "uninstall";
+
+export const assignmentRole = (intent: unknown): AssignmentRole =>
+  intent === "remove"
+    ? "remove"
+    : intent === "uninstall"
+      ? "uninstall"
+      : "apply";
+
+/**
+ * The label prefix of an assignment with a removal intent, "Remove: " or
+ * "Uninstall: ", so no reader shows it as a target; empty for one that
+ * applies. The documentation exports, the group resolver and the engine
+ * label removals this way.
+ */
+export const removalPrefix = (intent: unknown): string => {
+  const role = assignmentRole(intent);
+  return role === "apply" ? "" : role === "remove" ? "Remove: " : "Uninstall: ";
+};
+
+// The intents an uninstall assignment takes precedence over for the same
+// target: Microsoft Learn (Assign apps to groups, How conflicts between app
+// intents are resolved) resolves Available and Uninstall to Uninstall and
+// Required and Uninstall to Required.
+const UNINSTALL_OVERRIDES: ReadonlySet<unknown> = new Set([
+  "available",
+  "availableWithoutEnrollment",
+]);
+
+/** A target a policy applies to after its exclusions and removals. */
+export interface EffectiveTarget {
+  // The normalized target type (graph-rows.ts normalizeTargetType).
+  type: string;
+  // The group, collection or organizational unit id as Graph returned it,
+  // the first spelling seen; none for all users and all devices.
+  id?: string;
+}
+
+/** Assignments as every reader reads them (summarizeAssignments). */
+export interface ResolvedAssignments extends AssignmentSummary {
+  // One entry per distinct target the policy applies to, so the desktop
+  // list, the analyzer and the engine count the same targets.
+  effective: EffectiveTarget[];
+}
+
+// What two assignments must share to name the same target: the Entra group
+// a group or scope tag target names (targetGroupId), in lower case as Entra
+// object ids compare, otherwise the type and the fields that say what it
+// targets (graph-rows.ts comparedTargetField).
+function targetKey(type: string, target: Record<string, unknown>): string {
+  const groupId = targetGroupId(target);
+  if (groupId) return `group|${groupId.toLowerCase()}`;
+  return [
+    type,
+    ...(ASSIGNMENT_TARGET_FIELDS[type] ?? []).map((field) =>
+      String(comparedTargetField(field, target[field])),
+    ),
+  ].join("|");
+}
+
+// What a removal must share with an applying assignment to take it away:
+// the target key, and for a scope tag target also whom in the group it
+// names, so removing the users of a group leaves its devices. Exclusions
+// match by the group alone (targetKey).
+const removalKey = (
+  type: string,
+  target: Record<string, unknown>,
+  key: string,
+) =>
+  type === "scopetaggroupassignmenttarget"
+    ? `${key}|${String(target.targetType)}`
+    : key;
+
+// Targets that name every user or every device.
+const BROAD_TARGETS: ReadonlySet<string> = new Set([
+  "alldevicesassignmenttarget",
+  "alllicensedusersassignmenttarget",
+]);
+
+/**
+ * The assignments of a policy read once for every reader: what each one
+ * targets (labels), excludes, removes and filters, and the targets the
+ * policy applies to. An exclusion takes precedence over an inclusion of the
+ * same group (Microsoft Learn, Include and exclude app assignments and
+ * Assign policies), so a group that is both targets nobody. A removal
+ * assignment (assignmentRole) targets nobody either: a remove intent takes
+ * the profile away from what it names, so it is read like an exclusion of
+ * the same target (Graph documents no precedence between apply and remove,
+ * so the profile is not claimed there), and an uninstall intent takes
+ * precedence over available intents of the same target, never over a
+ * required one (Microsoft Learn conflict table). A remove of all users or
+ * all devices may take the profile from every member of any other target,
+ * and an uninstall of them from every available one, so those targets are
+ * unresolved and the state unknown; required targets stay. Other targets
+ * that differ, such as two groups with common members, are not resolved:
+ * memberships are not read, so effective coverage stays unverified.
+ */
+export function resolveAssignments(
   assignments: unknown,
   groupNames: ReadonlyMap<string, string> = new Map(),
   incomplete = false,
-): AssignmentSummary {
-  const summary: AssignmentSummary = {
+): ResolvedAssignments {
+  const summary: ResolvedAssignments = {
     state: "unknown",
     targets: [],
     exclusions: [],
     filters: [],
     coverage: "unverified",
+    effective: [],
   };
   if (!Array.isArray(assignments)) return summary;
   let unknownTarget = false;
-  // Included targets other than groups, and the ids of included and
-  // excluded groups: an exclusion takes precedence over an inclusion of the
-  // same group (Microsoft Learn, Include and exclude app assignments and
-  // Assign policies), so a group that is both targets nobody.
-  let otherTargets = 0;
-  const includedGroups = new Set<string>();
+  const removals: string[] = [];
+  const included: Array<{
+    key: string;
+    removal: string;
+    type: string;
+    id?: string;
+    intent: unknown;
+  }> = [];
   const excludedGroups = new Set<string>();
+  const removed = new Set<string>();
+  const uninstalled = new Set<string>();
+  let broadRemove = false;
+  let broadUninstall = false;
   for (const assignment of assignments) {
     // An assignment of a type Graph does not document, or without what its
-    // type targets, its filter type or filter id, may target anyone
+    // type targets, its filter type, filter id or intent, may target anyone
     // (graph-rows.ts).
     if (unreadableAssignment(assignment)) unknownTarget = true;
     const target = assignment?.target;
@@ -144,6 +262,7 @@ export function summarizeAssignments(
     const group = (groupId: string) =>
       groupNames.get(groupId) ?? (target.groupName || groupId);
     let label: string;
+    let id: string | undefined;
     if (type === "alldevicesassignmenttarget") label = "All Devices";
     else if (type === "alllicensedusersassignmenttarget") label = "All Users";
     else if (
@@ -151,43 +270,56 @@ export function summarizeAssignments(
         type,
       ) &&
       field("groupId")
-    )
-      label = `Group: ${group(field("groupId"))}`;
-    else if (
+    ) {
+      id = field("groupId");
+      label = `Group: ${group(id)}`;
+    } else if (
       type === "configurationmanagercollectionassignmenttarget" &&
       field("collectionId")
-    )
-      label = `Configuration Manager collection: ${field("collectionId")}`;
-    else if (
+    ) {
+      id = field("collectionId");
+      label = `Configuration Manager collection: ${id}`;
+    } else if (
       type === "organizationalunitassignmenttarget" &&
       field("organizationalUnitId")
-    )
-      label = `Organizational unit: ${field("organizationalUnitId")}`;
-    else if (
+    ) {
+      id = field("organizationalUnitId");
+      label = `Organizational unit: ${id}`;
+    } else if (
       type === "scopetaggroupassignmenttarget" &&
       field("entraObjectId") &&
       ["user", "device"].includes(target.targetType)
-    )
-      label = `${target.targetType === "device" ? "Devices" : "Users"} in group: ${groupNames.get(field("entraObjectId")) ?? field("entraObjectId")}`;
-    else {
+    ) {
+      id = field("entraObjectId");
+      label = `${target.targetType === "device" ? "Devices" : "Users"} in group: ${groupNames.get(id) ?? id}`;
+    } else {
       unknownTarget = true;
       continue;
     }
-    const groupId = targetGroupId(target)?.toLowerCase();
+    const key = targetKey(type, target);
+    const removal = removalKey(type, target, key);
+    const role = assignmentRole(assignment.intent);
     if (type === "exclusiongroupassignmenttarget") {
       summary.exclusions.push(label);
-      if (groupId) excludedGroups.add(groupId);
-    } else {
+      excludedGroups.add(key);
+    } else if (role === "apply") {
       summary.targets.push(label);
-      if (groupId) includedGroups.add(groupId);
-      else otherTargets += 1;
+      included.push({ key, removal, type, id, intent: assignment.intent });
+    } else {
+      label = `${removalPrefix(assignment.intent)}${label}`;
+      removals.push(label);
+      (role === "remove" ? removed : uninstalled).add(removal);
+      if (BROAD_TARGETS.has(type)) {
+        if (role === "remove") broadRemove = true;
+        else broadUninstall = true;
+      }
     }
-    const id = target.deviceAndAppManagementAssignmentFilterId;
+    const filterId = target.deviceAndAppManagementAssignmentFilterId;
     const mode = target.deviceAndAppManagementAssignmentFilterType;
-    if (typeof id === "string" && id && mode !== "none") {
+    if (typeof filterId === "string" && filterId && mode !== "none") {
       summary.filters.push({
         target: label,
-        id,
+        id: filterId,
         mode: typeof mode === "string" ? mode : "unknown",
       });
     } else if (mode !== undefined && mode !== null && mode !== "none") {
@@ -200,20 +332,61 @@ export function summarizeAssignments(
       });
     }
   }
+  if (removals.length) summary.removals = removals;
+  const seen = new Set<string>();
+  let unresolved = false;
+  for (const entry of included) {
+    const overridden = UNINSTALL_OVERRIDES.has(entry.intent);
+    if (
+      excludedGroups.has(entry.key) ||
+      removed.has(entry.removal) ||
+      (overridden && uninstalled.has(entry.removal))
+    )
+      continue;
+    if (broadRemove || (broadUninstall && overridden)) {
+      unresolved = true;
+      continue;
+    }
+    if (seen.has(entry.key)) continue;
+    seen.add(entry.key);
+    summary.effective.push(
+      entry.id === undefined
+        ? { type: entry.type }
+        : { type: entry.type, id: entry.id },
+    );
+  }
   summary.state =
-    incomplete || unknownTarget
+    incomplete || unknownTarget || unresolved
       ? "unknown"
-      : otherTargets ||
-          [...includedGroups].some((id) => !excludedGroups.has(id))
+      : summary.effective.length
         ? "assigned"
         : "notAssigned";
   return summary;
+}
+
+/** The assignment summary of a policy (resolveAssignments). */
+export function summarizeAssignments(
+  assignments: unknown,
+  groupNames: ReadonlyMap<string, string> = new Map(),
+  incomplete = false,
+): AssignmentSummary {
+  const { state, targets, exclusions, removals, filters, coverage } =
+    resolveAssignments(assignments, groupNames, incomplete);
+  return {
+    state,
+    targets,
+    exclusions,
+    ...(removals ? { removals } : {}),
+    filters,
+    coverage,
+  };
 }
 
 export function assignmentDetails(assignment: AssignmentSummary): string[] {
   return [
     ...assignment.targets,
     ...assignment.exclusions.map((target) => `Excluded: ${target}`),
+    ...(assignment.removals ?? []),
     ...assignment.filters.map(
       (filter) => `Filter ${filter.mode}: ${filter.id} (${filter.target})`,
     ),

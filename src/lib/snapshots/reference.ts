@@ -412,7 +412,12 @@ export function identitySettings(
       ...(row.path.length ? { path: [...row.path] } : {}),
       ...(row.tenantObject || row.unreadable
         ? { redacted: true as const }
-        : shortened(row.display)),
+        : {
+            ...shortened(row.display),
+            // Compared in canonical form (identity.ts token), shown as
+            // Graph returned it.
+            ...(row.token !== undefined ? { token: digest(row.token) } : {}),
+          }),
       policy: IDENTITY_POLICY_LABELS[row.policy],
     }),
   );

@@ -4,6 +4,7 @@ import {
   MAX_SETTING_DEPTH,
   METADATA_KEYS,
   normalizeTargetType,
+  shownOmaValue,
   unreadableCatalogValue,
   unreadableIntentValue,
   unreadableOmaValue,
@@ -389,7 +390,10 @@ function omaRows(omaSettings: unknown): FlatSettingRow[] {
     const raw = record.value ?? record.omaSettingStringValue;
     // Told by the value Graph returned, never by its display text.
     if (!unreadable && isUnsetValue(raw)) return [];
-    const value = unreadable ? UNREADABLE_VALUE : formatValue(raw);
+    // An XML value is shown as its text (graph-rows.ts shownOmaValue).
+    const value = unreadable
+      ? UNREADABLE_VALUE
+      : formatValue(record.value != null ? shownOmaValue(record) : raw);
     const omaUri = definitionIdOf(record.omaUri);
     return [
       {

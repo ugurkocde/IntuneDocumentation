@@ -191,6 +191,10 @@ export interface AssignmentSummary {
   state: "assigned" | "notAssigned" | "unknown";
   targets: string[];
   exclusions: string[];
+  // Assignments with a removal intent (assignments.ts assignmentRole),
+  // labelled with it ("Remove: Group: ..."), which target nobody. Absent
+  // when there are none.
+  removals?: string[];
   filters: Array<{ target: string; id: string; mode: string }>;
   coverage: "unverified";
 }

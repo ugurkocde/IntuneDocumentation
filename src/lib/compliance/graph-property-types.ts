@@ -12,7 +12,8 @@
 
 /**
  * A Graph type name: an Edm primitive, Collection(...) or an enum type, or
- * Untyped for a kept property Graph does not document.
+ * Untyped for a kept property Graph does not document. DirectoryObjectId
+ * is the String of a Conditional Access id list (graph-rows.ts).
  */
 export type GraphTypeName = string;
 
@@ -160,26 +161,34 @@ export const GRAPH_PROPERTY_TYPES: Readonly<
     "conditions.clientAppTypes": "Collection(conditionalAccessClientApp)",
     ...Object.fromEntries(
       ["include", "exclude"].flatMap((mode) => [
+        // Lists of directory object or application ids and keywords, whose
+        // entries compare ignoring case (graph-rows.ts DirectoryObjectId).
         ...["Users", "Groups", "Roles"].map((target) => [
           `conditions.users.${mode}${target}`,
-          "Collection(String)",
+          "Collection(DirectoryObjectId)",
         ]),
-        [`conditions.applications.${mode}Applications`, "Collection(String)"],
+        [
+          `conditions.applications.${mode}Applications`,
+          "Collection(DirectoryObjectId)",
+        ],
         [
           `conditions.platforms.${mode}Platforms`,
           "Collection(conditionalAccessDevicePlatform)",
         ],
-        [`conditions.locations.${mode}Locations`, "Collection(String)"],
+        [
+          `conditions.locations.${mode}Locations`,
+          "Collection(DirectoryObjectId)",
+        ],
         [`conditions.deviceStates.${mode}States`, "Collection(String)"],
         [`conditions.devices.${mode}Devices`, "Collection(String)"],
         [`conditions.devices.${mode}DeviceStates`, "Collection(String)"],
         [
           `conditions.clientApplications.${mode}ServicePrincipals`,
-          "Collection(String)",
+          "Collection(DirectoryObjectId)",
         ],
         [
           `conditions.clientApplications.${mode}AgentIdServicePrincipals`,
-          "Collection(String)",
+          "Collection(DirectoryObjectId)",
         ],
         [
           `conditions.users.${mode}GuestsOrExternalUsers.guestOrExternalUserTypes`,
@@ -195,7 +204,7 @@ export const GRAPH_PROPERTY_TYPES: Readonly<
         ],
         [
           `conditions.users.${mode}GuestsOrExternalUsers.externalTenants.members`,
-          "Collection(String)",
+          "Collection(DirectoryObjectId)",
         ],
       ]),
     ),

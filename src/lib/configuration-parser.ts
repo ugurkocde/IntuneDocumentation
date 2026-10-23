@@ -15,7 +15,9 @@ import {
   unreadableIntentValue,
   unreadableOmaValue,
   unreadablePresentationValue,
+  shownOmaValue,
 } from "./compliance/graph-rows";
+import { removalPrefix } from "./compliance/assignments";
 
 /**
  * The value shown for an identified setting whose value Graph did not
@@ -587,7 +589,10 @@ function shownOmaSettings(rows: unknown[]): unknown[] {
     (unreadableOmaValue(row) ||
       (!Object.hasOwn(row, "value") && row.isEncrypted !== true))
       ? { ...row, value: UNREADABLE_VALUE }
-      : row,
+      : // An XML value is shown as its text (graph-rows.ts shownOmaValue).
+        row && typeof row === "object" && Object.hasOwn(row, "value")
+        ? { ...row, value: shownOmaValue(row) }
+        : row,
   );
 }
 
@@ -886,6 +891,10 @@ function assignmentLabel(assignment: unknown): string {
     // "Group: <id>" so the exports put the group name in its place.
     label = `${target.targetType === "device" ? "Devices" : "Users"} in Group: ${target.entraObjectId}`;
   else return UNREADABLE_ASSIGNMENT;
+  // A removal intent targets nobody, so it is labelled with it
+  // (compliance/assignments.ts removalPrefix).
+  if (type !== "exclusiongroupassignmenttarget")
+    label = `${removalPrefix((assignment as { intent?: unknown }).intent)}${label}`;
   const filterType = target.deviceAndAppManagementAssignmentFilterType;
   if (filterType !== "include" && filterType !== "exclude") return label;
   return `${label} [Filter (${filterType === "include" ? "Include" : "Exclude"}): ${target.deviceAndAppManagementAssignmentFilterId}]`;

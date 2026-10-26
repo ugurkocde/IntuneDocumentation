@@ -1,6 +1,6 @@
 import { History, RefreshCw, TrendingDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatRate } from "../../../../../../src/lib/benchmarks/display";
+import { formatRate, headlineBaseText } from "../../../../../../src/lib/benchmarks/display";
 import { sparklineSegments, trendChangeText } from "../../../../../../src/lib/benchmarks/trend";
 import type {
   BenchmarkHistoryView,
@@ -34,7 +34,8 @@ const sameSeries =
 
 function driftText(entry: DriftEntry): string {
   const change =
-    `from ${formatRate(entry.previousRate)} to ${formatRate(entry.currentRate)} ` +
+    `from ${formatRate(entry.previousRate)} (${headlineBaseText(entry.previousCounts)}) ` +
+    `to ${formatRate(entry.currentRate)} (${headlineBaseText(entry.currentCounts)}) ` +
     `since the comparison of ${formatDate(entry.previousAssessedAt)}`;
   return entry.kind === "below-bar"
     ? `The headline fell below 90%, ${change}.`
@@ -227,6 +228,7 @@ export function BenchmarkHistoryPanel({
                             <span className="text-petrol-950 font-semibold">
                               {point.rate === null ? "n/a" : formatRate(point.rate)}
                             </span>
+                            {point.rate !== null && <span>{headlineBaseText(point.counts)}</span>}
                             <span>{trendChangeText(point)}</span>
                           </li>
                         ))}

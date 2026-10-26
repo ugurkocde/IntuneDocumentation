@@ -29,6 +29,9 @@ export interface DriftEntry {
   level: BenchmarkLevel;
   previousRate: number;
   currentRate: number;
+  /** The counts behind each rate, so the drift names its base. */
+  previousCounts: ResultCounts;
+  currentCounts: ResultCounts;
   previousAssessedAt: string;
   assessedAt: string;
   kind: "decline" | "below-bar";
@@ -122,6 +125,8 @@ export function driftSignals(points: readonly TrendPoint[]): DriftEntry[] {
       level: current.level,
       previousRate: before.rate,
       currentRate: current.rate,
+      previousCounts: before.counts,
+      currentCounts: current.counts,
       previousAssessedAt: before.assessedAt,
       assessedAt: current.assessedAt,
       kind: belowBar ? "below-bar" : "decline",

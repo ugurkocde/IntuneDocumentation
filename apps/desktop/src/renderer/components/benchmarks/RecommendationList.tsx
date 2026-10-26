@@ -4,8 +4,9 @@ import type { Observation, ResultState, SettingFinding } from "../../../../../..
 import {
   REASON_LABELS,
   RESULT_LABELS,
-  SETTING_STATUS_LABELS,
+  matchingPolicies,
   observationLabel,
+  settingStatusText,
 } from "../../../../../../src/lib/benchmarks/display";
 import type { BenchmarkLevel } from "../../../shared/ipc-types";
 import { useDebouncedValue } from "../../hooks/use-debounced-value";
@@ -117,7 +118,18 @@ function RowDetail({ row, onAddException }: { row: ReviewRow; onAddException: (s
                 <code className="selectable text-petrol-950 min-w-0 flex-1 basis-64 font-mono text-[11px] leading-4 break-all">
                   {setting.id}
                 </code>
-                <ResultChip result={setting.result} label={SETTING_STATUS_LABELS[setting.status]} />
+                <ResultChip
+                  result={setting.result}
+                  label={settingStatusText(
+                    setting,
+                    matchingPolicies(
+                      setting.findingKeys
+                        .map((key) => findings.get(key))
+                        .filter((finding): finding is SettingFinding => Boolean(finding)),
+                      setting.id,
+                    ),
+                  )}
+                />
               </div>
               {setting.reason && setting.reason !== row.reason && (
                 <p className="text-petrol-600 mt-1.5 text-[11px] leading-4">{REASON_LABELS[setting.reason]}</p>

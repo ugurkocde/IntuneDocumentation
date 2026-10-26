@@ -67,15 +67,18 @@ import {
   READINESS_DISCLAIMER,
   REASON_LABELS,
   RESULT_LABELS,
-  SETTING_STATUS_LABELS,
   benchmarkDisplayName,
   coverageStatement,
   exclusionsText,
+  headlineBaseText,
   headlineLabel,
+  headlineWithBase,
   levelCheckSummary,
   levelsLabel,
+  matchingPolicies,
   observationLabel,
   ratePercent,
+  settingStatusText,
 } from "./display";
 import { appliesOn, localDate, type BenchmarkException } from "./exceptions";
 import {
@@ -141,14 +144,56 @@ export function headlineValue(rate: number | null): string {
   return value === null ? "n/a" : `${value}%`;
 }
 
-/** "Matches 3 of 4" for a headline, naming what the rate is made of. */
+const NOTHING_ASSESSED = "Nothing was assessed as Matches or Differs";
+
+/** The base written after a headline rate, "of 4 assessed, 2 need review". */
 export function headlineBasisText(
   counts: LevelSummary["headline"]["counts"],
 ): string {
-  const assessed = counts.pass + counts.fail;
-  return assessed
-    ? `Matches ${counts.pass} of ${assessed} (Matches plus Differs)`
-    : "Nothing was assessed as Matches or Differs";
+  return counts.pass + counts.fail
+    ? headlineBaseText(counts)
+    : NOTHING_ASSESSED;
+}
+
+// Helvetica, the standard PDF font, holds the WinAnsi characters only.
+// Others are measured and drawn wrongly, so a line holding them could run
+// into the badge beside it: they are written in a plain form where one is
+// usual, dropped when invisible and shown as ? otherwise.
+const WIN_ANSI_EXTRA = new Set(
+  "\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178",
+);
+const PLAIN_FORMS: Readonly<Record<string, string>> = {
+  "\u2264": "<=",
+  "\u2265": ">=",
+  "\u2260": "!=",
+  "\u2190": "<-",
+  "\u2192": "->",
+  "\u2194": "<->",
+  "\u2010": "-",
+  "\u2011": "-",
+  "\u2212": "-",
+  "\u2032": "'",
+  "\u2033": '"',
+};
+const INVISIBLE =
+  /[\u0000-\u001f\u007f-\u009f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
+
+/** Text the standard PDF font can measure and draw as it is. */
+export function pdfText(text: string): string {
+  return [...text]
+    .map((char) => {
+      const code = char.codePointAt(0)!;
+      if (
+        (code >= 0x20 && code <= 0x7e) ||
+        (code >= 0xa0 && code <= 0xff) ||
+        WIN_ANSI_EXTRA.has(char)
+      )
+        return char;
+      if (PLAIN_FORMS[char]) return PLAIN_FORMS[char];
+      if (/\s/.test(char)) return " ";
+      return INVISIBLE.test(char) ? "" : "?";
+    })
+    .join("");
 }
 
 function formatDate(value: Date, utc: boolean): string {
@@ -172,7 +217,7 @@ export function wrapText(
 ): string[] {
   const fits = (value: string) => textWidth(doc, value, size, style) <= width;
   const lines: string[] = [];
-  let rest = text.replace(/\s+/g, " ").trim();
+  let rest = pdfText(text.replace(/\s+/g, " ")).replace(/\s+/g, " ").trim();
   while (rest) {
     if (fits(rest)) {
       lines.push(rest);
@@ -302,11 +347,14 @@ export function renderReadinessPdf(
   const generatedAt = options.renderDate
     ? new Date(options.renderDate.getTime())
     : new Date();
+  // The shared chrome draws these as they are, so they are made drawable here.
   const name = options.benchmarkName?.trim()
-    ? options.benchmarkName.trim()
+    ? pdfText(options.benchmarkName.trim())
     : benchmarkDisplayName(assessment.benchmark);
   const title = `${name} ${assessment.version}`;
-  const tenant = options.tenantLabel?.trim() || undefined;
+  const tenant = pdfText(options.tenantLabel?.trim() ?? "").trim() || undefined;
+  const company =
+    pdfText(branding?.companyName?.trim() ?? "").trim() || undefined;
   const assessedAt = new Date(assessment.assessedAt);
   const collectedAt = assessment.collection.collectedAt
     ? new Date(assessment.collection.collectedAt)
@@ -412,7 +460,7 @@ export function renderReadinessPdf(
   drawCoverMasthead(doc, theme, frame, {
     productName: PRODUCT,
     logo: branding?.logo,
-    companyName: branding?.companyName,
+    companyName: company,
   });
   drawCoverHeadline(doc, theme, frame, {
     eyebrow: "CIS Benchmark readiness",
@@ -463,7 +511,7 @@ export function renderReadinessPdf(
   );
   const subLines = wrapText(
     doc,
-    headlineBasisText(coverCounts),
+    headlineWithBase(coverRate, coverCounts, NOTHING_ASSESSED),
     62,
     7,
     "normal",
@@ -544,7 +592,7 @@ export function renderReadinessPdf(
       value:
         assessment.basis === "recommendations" ? "Recommendations" : "Settings",
     },
-    { label: "Prepared by", value: branding?.companyName },
+    { label: "Prepared by", value: company },
   ];
   // Long values move the grid up so it stays clear of the footer notice.
   const controlTop = Math.min(
@@ -898,15 +946,21 @@ export function renderReadinessPdf(
           result: item.result,
           settings: item.settings
             .filter((setting) => setting.result !== "Pass")
-            .map((setting) => ({
-              id: setting.id,
-              status: SETTING_STATUS_LABELS[setting.status],
-              result: setting.result,
-              ...(setting.reason ? { reason: setting.reason } : {}),
-              findings: setting.findingKeys
+            .map((setting) => {
+              const held = setting.findingKeys
                 .map((key) => findings.get(key))
-                .filter((entry): entry is SettingFinding => Boolean(entry)),
-            })),
+                .filter((entry): entry is SettingFinding => Boolean(entry));
+              return {
+                id: setting.id,
+                status: settingStatusText(
+                  setting,
+                  matchingPolicies(held, setting.id),
+                ),
+                result: setting.result,
+                ...(setting.reason ? { reason: setting.reason } : {}),
+                findings: held,
+              };
+            }),
         }))
     : assessment.settings
         .filter((item) => item.result === "Fail" || item.result === "Review")
@@ -916,7 +970,10 @@ export function renderReadinessPdf(
           settings: [
             {
               id: item.settingId,
-              status: SETTING_STATUS_LABELS[item.status],
+              status: settingStatusText(
+                item,
+                matchingPolicies([item], item.settingId),
+              ),
               result: item.result,
               ...(item.reason ? { reason: item.reason } : {}),
               findings: [item],
@@ -979,14 +1036,21 @@ export function renderReadinessPdf(
         indent: number;
       }> = [];
       const reason = setting.reason ? ` ${REASON_LABELS[setting.reason]}` : "";
-      for (const line of wrapText(
-        doc,
-        setting.id,
-        contentWidth - 3,
-        SMALL,
-        "bold",
-      ))
-        lines.push({ text: line, style: "bold", color: theme.text, indent: 3 });
+      // A settings based entry is headed by its setting id already.
+      if (setting.id !== detail.id || detail.title)
+        for (const line of wrapText(
+          doc,
+          setting.id,
+          contentWidth - 3,
+          SMALL,
+          "bold",
+        ))
+          lines.push({
+            text: line,
+            style: "bold",
+            color: theme.text,
+            indent: 3,
+          });
       for (const line of wrapText(
         doc,
         `${setting.status}.${reason}`,
@@ -1199,9 +1263,7 @@ export function renderReadinessPdf(
   drawRunningChrome(doc, theme, frame, {
     title,
     titleMaxWidth: 90,
-    ...(tenant || branding?.companyName
-      ? { headerRight: tenant ?? branding?.companyName }
-      : {}),
+    ...(tenant || company ? { headerRight: tenant ?? company } : {}),
     footer,
     pageLabel: (page, count) => `Page ${page} of ${count}`,
   });

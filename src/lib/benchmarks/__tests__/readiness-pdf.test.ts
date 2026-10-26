@@ -120,9 +120,9 @@ describe("benchmark readiness PDF", () => {
     expect(rich[0]).toContain("Synthetic Bench 1.0.0");
   });
 
-  it("shows the headline as Matches out of Matches plus Differs", () => {
-    expect(rich[0]).toContain("20%");
-    expect(rich[0]).toContain("Matches 1 of 5 (Matches plus Differs)");
+  it("shows the headline with its base on the cover and in the summary", () => {
+    expect(rich[0]).toContain("20% of 5 assessed, 2 need review");
+    expect(rich[1]).toContain("20% of 5 assessed, 2 need review");
     expect(rich[1]).toContain("40% with 1 exclusion");
   });
 
@@ -208,9 +208,11 @@ describe("readiness PDF: values only on unassigned policies", () => {
     const detail = pages.find((text) =>
       text.includes("Differs and Needs review"),
     )!;
+    // The setting's own status says why a match needs review.
     expect(detail).toContain(
-      "Matches. The matching value is only on policies that are not assigned.",
+      "Matches, on an unassigned policy. The matching value is only on policies that are not assigned.",
     );
+    expect(detail).not.toContain("Matches. The matching value");
     expect(detail).toContain(
       "Needs review. Only policies that are not assigned hold this setting, and none of them matches the recommended value.",
     );
@@ -236,6 +238,106 @@ describe("readiness PDF: values only on unassigned policies", () => {
     expect(all).toContain(
       "Differs needs a readable tenant value that differs on a policy that is assigned or whose assignment could not be read",
     );
+  });
+});
+
+describe("readiness PDF: a pack without recommendations", () => {
+  const SPACED =
+    "com.synthetic.energysaver.desktop.acpower_display sleep timer";
+  const assessment = assessBenchmark(
+    collection({
+      policies: [
+        tenantPolicy({
+          name: TENANT_POLICY,
+          settings: [choice("synthetic_bench_alpha", "1")],
+        }),
+        tenantPolicy({
+          name: UNASSIGNED_POLICY,
+          settings: [choice("synthetic_bench_gamma", "1")],
+          assignments: [],
+        }),
+      ],
+    }),
+    pack([
+      {
+        name: PACK_POLICY,
+        settings: [
+          choice("synthetic_bench_alpha", "1"),
+          choice("synthetic_bench_gamma", "1"),
+          choice(SPACED, "1"),
+        ],
+      },
+    ]),
+    { now: NOW },
+  );
+  const pages = pageTexts(render(assessment));
+  const detail = pages.find((text) =>
+    text.includes("Differs and Needs review"),
+  )!;
+
+  it("counts settings, not recommendations, in the automatic check summary", () => {
+    expect(assessment.basis).toBe("settings");
+    const summary = pages[1]!;
+    expect(summary).toContain(
+      "Level 1: Intune Documentation checks 3 settings of this pack automatically.",
+    );
+    expect(summary).not.toMatch(/checks \d+ recommendations? of this pack/);
+  });
+
+  it("names each setting once in its detail entry", () => {
+    expect(detail.split(SPACED).length - 1).toBe(1);
+    expect(detail.split("synthetic_bench_gamma").length - 1).toBe(1);
+    expect(detail).toContain(
+      "synthetic_bench_gamma Needs review Matches, on an unassigned policy.",
+    );
+  });
+
+  it("shows the headline base for settings", () => {
+    expect(pages[0]).toContain("50% of 2 assessed, 1 needs review");
+  });
+});
+
+describe("readiness PDF: characters outside the standard font", () => {
+  it("writes them in a form the font draws, so lines are measured as drawn", () => {
+    const title =
+      "Synthetic value \u2264 15 minutes \u2192 or \u2265 the synthetic limit \u201cquoted\u201d, \u2018single\u2019 and \u2026 kept, \u4e2d unknown";
+    const assessment = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({ settings: [choice("synthetic_bench_alpha", "0")] }),
+        ],
+      }),
+      pack(
+        [{ settings: [choice("synthetic_bench_alpha", "1")] }],
+        [
+          {
+            id: "1.1",
+            title,
+            level: 1,
+            settings: ["synthetic_bench_alpha"],
+          },
+        ],
+      ),
+      { now: NOW },
+    );
+    const all = pageTexts(render(assessment)).join(" ");
+    expect(all).toContain(
+      "Synthetic value <= 15 minutes -> or >= the synthetic limit",
+    );
+    expect(all).toContain("? unknown");
+    const branded = pageTexts(
+      render(assessment, {
+        branding: { companyName: "Synthetic \u2192 Partner" },
+      } as Parameters<typeof render>[1]),
+    ).join(" ");
+    expect(branded).toContain("Synthetic -> Partner");
+    expect(branded).not.toContain("\u2192");
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const lines = wrapText(doc, title, 60, 8.6, "bold");
+    expect(lines.join(" ")).toContain(
+      "\u201cquoted\u201d, \u2018single\u2019 and \u2026 kept",
+    );
+    expect(lines.join(" ")).not.toMatch(/[\u2192\u2264\u2265\u4e2d]/);
   });
 });
 

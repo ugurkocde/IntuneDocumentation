@@ -1,6 +1,6 @@
 import { Building2, RefreshCw } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { benchmarkDisplayName, formatRate } from "../../../../../../src/lib/benchmarks/display";
+import { benchmarkDisplayName, formatRate, headlineBaseText } from "../../../../../../src/lib/benchmarks/display";
 import type { BenchmarkPortfolioRequest, BenchmarkPortfolioView } from "../../../shared/ipc-types";
 import { errorMessage, ipc } from "../../lib/ipc";
 import { Alert } from "../ui/Alert";
@@ -159,8 +159,14 @@ export function BenchmarkPortfolioPanel({ nameOf }: { nameOf: (benchmark: string
                         </p>
                         {entry && (
                           <p className="text-petrol-600 text-[10px]">
-                            {entry.counts.pass.toLocaleString()} of{" "}
-                            {(entry.counts.pass + entry.counts.fail).toLocaleString()}
+                            {entry.rate === null ? (
+                              <>
+                                {entry.counts.pass.toLocaleString()} of{" "}
+                                {(entry.counts.pass + entry.counts.fail).toLocaleString()}
+                              </>
+                            ) : (
+                              headlineBaseText(entry.counts)
+                            )}
                           </p>
                         )}
                       </div>

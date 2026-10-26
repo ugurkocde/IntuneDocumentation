@@ -6,6 +6,7 @@ import {
   coverageStatement,
   exclusionsText,
   formatRate,
+  headlineBaseText,
   headlineLabel,
 } from "../../../../../../src/lib/benchmarks/display";
 import { reasonCounts, type ReviewRow } from "../../lib/benchmarks-view";
@@ -27,10 +28,6 @@ export function ResultChip({ result, label }: { result: ResultState; label?: str
       {label ?? RESULT_LABELS[result]}
     </span>
   );
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
 // Needs review or Not assessed of one Level with the reasons, never hidden.
@@ -73,7 +70,6 @@ export function LevelHeadlines({
       {levels.map((level) => {
         const { headline } = level;
         const own = rows.filter((row) => row.level === level.level);
-        const assessed = headline.counts.pass + headline.counts.fail;
         const exclusions = exclusionsText(headline);
         return (
           <section
@@ -97,11 +93,7 @@ export function LevelHeadlines({
               <span className="text-petrol-700 text-sm tabular-nums">
                 {headline.rate === null
                   ? "Nothing could be assessed as Matches or Differs."
-                  : `${headline.counts.pass.toLocaleString()} ${RESULT_LABELS.Pass} out of ${plural(
-                      assessed,
-                      "result",
-                      "results",
-                    )} (${RESULT_LABELS.Pass} plus ${RESULT_LABELS.Fail})`}
+                  : headlineBaseText(headline.counts)}
               </span>
             </p>
             <p className="mt-1.5 text-xs font-semibold text-teal-700">{READINESS_DISCLAIMER}</p>

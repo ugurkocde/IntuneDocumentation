@@ -115,12 +115,61 @@ describe("stored benchmark runs", () => {
     expect(() => validateStoredRun({ ...run!, results: many })).toThrow(
       `holds more than ${MAX_STORED_RESULTS} results`,
     );
+    for (const id of [
+      "",
+      "x".repeat(501),
+      " synthetic_leading",
+      "synthetic_trailing ",
+      "synthetic\u0007bell",
+      "synthetic\nline",
+      "synthetic\u202eoverride",
+      "synthetic\u200bzero width",
+      "synthetic\u{e0041}tag",
+      "synthetic\ufe0fselector",
+      "synthetic\u3164filler",
+      "synthetic\ud800lone",
+    ])
+      expect(() =>
+        validateStoredRun({ ...run!, results: [["1.1", "fail", [id]]] }),
+      ).toThrow("invalid result 1: a setting id is empty, longer than 500");
     expect(() =>
-      validateStoredRun({
-        ...run!,
-        results: [["1.1", "fail", ["synthetic id with spaces"]]],
+      validateStoredRun({ ...run!, results: [["synthetic_a", "pass", []]] }),
+    ).toThrow("its id is not a recommendation id such as 1.2.3");
+  });
+
+  it("stores setting ids with spaces and other punctuation, as Graph names Apple settings", () => {
+    const ids = [
+      "com.synthetic.energysaver.desktop.acpower_display sleep timer",
+      "com.synthetic.preferences_applications_synthetic app (work).app_lcid",
+      "com.synthetic.extensiblesso_ignored_$typepicker",
+      "x".repeat(500),
+    ];
+    const settingsOnly = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({
+            settings: [choice(ids[0]!, "on"), choice(ids[1]!, "off")],
+          }),
+        ],
       }),
-    ).toThrow("an id is not 1 to 500 letters");
+      pack([
+        {
+          name: "Synthetic pack policy name",
+          settings: ids.map((id) => choice(id, "on")),
+        },
+      ]),
+      { now: NOW },
+    );
+    const runs = summarizeRuns(settingsOnly, DIGEST);
+    expect(runs).toHaveLength(1);
+    const stored = validateStoredRun(JSON.parse(JSON.stringify(runs[0])));
+    expect(stored.results.map((entry) => entry[0])).toEqual(ids);
+    expect(stored.results[1]).toEqual([ids[1], "fail", [ids[1]]]);
+    const byRecommendation = validateStoredRun({
+      ...summarizeRuns(assessment, DIGEST)[0]!,
+      results: [["1.1", "fail", [ids[0]!, ids[2]!]]],
+    });
+    expect(byRecommendation.results[0]![2]).toEqual([ids[0], ids[2]]);
   });
 
   it("rejects extra fields, free text and unknown codes", () => {

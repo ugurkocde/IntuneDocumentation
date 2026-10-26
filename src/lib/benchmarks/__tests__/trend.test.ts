@@ -89,6 +89,11 @@ describe("benchmark trend from stored runs", () => {
     expect(driftSignals(below).map((entry) => entry.kind)).toEqual([
       "below-bar",
     ]);
+    // The counts behind both rates, so the drift names its base.
+    expect(driftSignals(below)[0]).toMatchObject({
+      previousCounts: { pass: 95, fail: 5 },
+      currentCounts: { pass: 85, fail: 15 },
+    });
     const rise = benchmarkTrend([
       storedRun("2026-10-01T09:00:00Z", 85, 15),
       storedRun("2026-10-02T09:00:00Z", 95, 5),

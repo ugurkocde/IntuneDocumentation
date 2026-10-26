@@ -12,6 +12,7 @@ import {
   unreadableProperties,
 } from "../compliance/graph-rows";
 import { sha256 } from "../compliance/manifest";
+import { isDocumentedNonSecretDefinitionId } from "../intune-policy-registry";
 import {
   identityCollected,
   identityRows,
@@ -59,7 +60,9 @@ const OMITTED = "\u0000Not returned by Graph\u0000";
 const OMITTED_IN_JSON = JSON.stringify(OMITTED).slice(1, -1);
 const SEPARATOR = "\u0000";
 // Setting ids that name a secret, matched as the last word as the collector
-// does; their values are never stored, also when a collection kept one.
+// does; their values are never stored, also when a collection kept one. The
+// collector's documented non-secret ids (user rights holding account lists)
+// are not secret here either; a value Graph marks secret is still redacted.
 const SECRET_SETTING =
   /(apikey|password|passphrase|passcode|secret|token|privatekey|presharedkey|credentials?)$/i;
 
@@ -274,7 +277,7 @@ function itemRows(
       row.redacted ||
       row.value.includes(OMITTED) ||
       row.value.includes(OMITTED_IN_JSON) ||
-      SECRET_SETTING.test(id);
+      (SECRET_SETTING.test(id) && !isDocumentedNonSecretDefinitionId(id));
     const entry: ReferenceSetting = {
       platform,
       family: sectionKey,

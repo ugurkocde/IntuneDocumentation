@@ -78,6 +78,14 @@ describe("benchmark exception validation", () => {
     );
   });
 
+  it("keeps setting ids with spaces and punctuation, as Graph names Apple settings", () => {
+    const settingId =
+      "com.synthetic.preferences_synthetic app (work).app_display sleep timer";
+    expect(validateExceptions([{ ...stored, settingId }])[0]!.settingId).toBe(
+      settingId,
+    );
+  });
+
   it("strips control characters including newlines from text fields", () => {
     expect(
       validateExceptions([{ ...stored, reason: "line\none\u0007" }])[0]!.reason,

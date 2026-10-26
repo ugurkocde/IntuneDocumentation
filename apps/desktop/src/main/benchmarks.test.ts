@@ -723,13 +723,23 @@ describe("benchmark work wiring", () => {
     expect(tooMany.recommendations).toHaveLength(5001);
 
     const badId = pack(
-      [{ settings: [choice("synthetic alpha", "on")] }],
-      [{ id: "1.1", title: "Synthetic", level: 1, settings: ["synthetic alpha"] }],
+      [{ settings: [choice("synthetic\u0007alpha", "on")] }],
+      [{ id: "1.1", title: "Synthetic", level: 1, settings: ["synthetic\u0007alpha"] }],
     );
     const refused = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: badId, list: null });
     expect(refused.history?.recorded).toBe(false);
-    expect(refused.history?.reason).toContain("an id is not 1 to 500 letters");
+    expect(refused.history?.reason).toContain("a setting id is empty, longer than 500 characters");
     expect(deps.recordRuns).not.toHaveBeenCalled();
+
+    // Graph names Apple settings with spaces and punctuation; every Level is recorded.
+    const spaced = pack(
+      [{ settings: [choice("com.synthetic.energysaver_display sleep timer", "on")] }],
+      [{ id: "1.1", title: "Synthetic", level: 1, settings: ["com.synthetic.energysaver_display sleep timer"] }],
+    );
+    const stored = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: spaced, list: null });
+    expect(stored.history).toEqual({ recorded: true, reason: null });
+    expect(deps.recordRuns).toHaveBeenCalledTimes(1);
+    deps.recordRuns.mockClear();
 
     deps.recordRuns.mockResolvedValueOnce(false);
     const off = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });

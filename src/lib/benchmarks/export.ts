@@ -123,7 +123,8 @@ export function benchmarkCsv(assessment: BenchmarkAssessment): string {
     RESULT_LABELS[result],
     reason ?? "",
     reason ? REASON_LABELS[reason] : "",
-    open.join(" "),
+    // Setting ids may hold spaces (Apple ids do), so they are joined with "; ".
+    open.join("; "),
   ];
   const rows =
     assessment.basis === "recommendations"
@@ -184,6 +185,10 @@ export function benchmarkSummary(assessment: BenchmarkAssessment) {
       headline: {
         rate: level.headline.rate,
         ratePercent: ratePercent(level.headline.rate),
+        // The base of the rate: Matches plus Differs, and Needs review
+        // beside it.
+        assessed: level.headline.counts.pass + level.headline.counts.fail,
+        needsReview: level.headline.counts.review,
         adjusted: level.headline.adjusted,
         exceptionIds: [...level.headline.exceptionIds],
         counts: {

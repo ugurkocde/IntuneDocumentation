@@ -94,7 +94,29 @@ const RUN_FIELDS = new Set([
   "results",
 ]);
 const CODES = new Set<string>(Object.values(RESULT_CODES));
-const ID_PATTERN = /^[A-Za-z0-9_.{}~\-]{1,500}$/;
+// Recommendation ids are dotted numbers, as the pack validates them.
+const RECOMMENDATION_ID_PATTERN = /^\d{1,4}(?:\.\d{1,4}){1,9}$/;
+// Setting definition ids are free form in Graph: Apple ids hold spaces,
+// parentheses and $, for example
+// com.apple.mcx_com.apple.energysaver.desktop.acpower_display sleep timer.
+// Refused are control and format characters (zero width characters,
+// bidirectional controls, tags), line and paragraph separators, lone
+// surrogates, other invisible fillers and surrounding white space.
+const UNSAFE_ID_CHARACTERS =
+  /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}\u034f\u115f\u1160\u17b4\u17b5\u180e\u3164\ufe00-\ufe0f\uffa0]/u;
+const MAX_ID_LENGTH = 500;
+const SETTING_ID_RULE = `is empty, longer than ${MAX_ID_LENGTH} characters, starts or ends with white space or holds a control or invisible character`;
+
+/** True when value can be stored as a setting definition id. */
+function isStorableSettingId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_ID_LENGTH &&
+    value.trim() === value &&
+    !UNSAFE_ID_CHARACTERS.test(value)
+  );
+}
 const BENCHMARK_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -141,9 +163,14 @@ export function validateStoredRun(input: unknown): StoredBenchmarkRun {
     throw new Error(
       `The stored benchmark run holds more than ${MAX_STORED_RESULTS} results.`,
     );
+  // A recommendations run names recommendations, so a title never passes
+  // as a result id there; a settings run names settings.
+  const byRecommendation = value.basis === "recommendations";
+  const resultId = byRecommendation
+    ? (id: unknown) =>
+        typeof id === "string" && RECOMMENDATION_ID_PATTERN.test(id)
+    : isStorableSettingId;
   const results = value.results.map((entry, index): StoredResult => {
-    const storable = (id: unknown) =>
-      typeof id === "string" && ID_PATTERN.test(id);
     if (
       !Array.isArray(entry) ||
       entry.length !== 3 ||
@@ -154,11 +181,17 @@ export function validateStoredRun(input: unknown): StoredBenchmarkRun {
       throw new Error(
         `The stored benchmark run has an invalid result ${index + 1}.`,
       );
-    if (!storable(entry[0]) || !entry[2].every(storable))
+    if (!resultId(entry[0]) || !entry[2].every(isStorableSettingId))
       throw new Error(
-        `The stored benchmark run has an invalid result ${index + 1}: an id is not 1 to 500 letters, digits or _ . { } ~ -.`,
+        `The stored benchmark run has an invalid result ${index + 1}: ${
+          resultId(entry[0])
+            ? `a setting id ${SETTING_ID_RULE}`
+            : byRecommendation
+              ? "its id is not a recommendation id such as 1.2.3"
+              : `its setting id ${SETTING_ID_RULE}`
+        }.`,
       );
-    return [entry[0], entry[1] as ResultCode, [...(entry[2] as string[])]];
+    return [entry[0], entry[1] as ResultCode, [...entry[2]]];
   });
   return {
     benchmark: value.benchmark,

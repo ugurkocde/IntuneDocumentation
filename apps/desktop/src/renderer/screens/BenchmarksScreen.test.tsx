@@ -249,10 +249,15 @@ describe("BenchmarksScreen compare step", () => {
 describe("BenchmarksScreen review step", () => {
   it("shows each Level's headline with the readiness line and the counts outside the rate", async () => {
     await renderScreen();
-    await compare(syntheticAssessment({ count: 30, levels: [1, 2] }));
+    const assessment = syntheticAssessment({ count: 30, levels: [1, 2] });
+    await compare(assessment);
     const level1 = screen.getByRole("region", { name: "Level 1" });
     expect(within(level1).getByText("50%")).toBeTruthy();
-    expect(within(level1).getByText("5 Matches out of 10 results (Matches plus Differs)")).toBeTruthy();
+    // The rate with its base: how many results it is made of and how many need review.
+    const review = assessment.levels[0]!.headline.counts.review;
+    expect(
+      within(level1).getByText(`of 10 assessed, ${review} ${review === 1 ? "needs" : "need"} review`),
+    ).toBeTruthy();
     expect(within(level1).getByText("Readiness comparison, not a certification")).toBeTruthy();
     expect(within(level1).getByText(/outside the pack, so it is not assessed here/)).toBeTruthy();
     expect(within(level1).getByText(/Coverage of the full benchmark is not shown/)).toBeTruthy();
@@ -368,6 +373,30 @@ describe("BenchmarksScreen review step", () => {
     await click(row("Synthetic nested difference"));
     detail = within(list()).getByRole("list", { name: "Policies holding this setting" });
     expect(within(detail).getByText("Differs")).toBeTruthy();
+  });
+
+  it("says why a matching setting needs review beside its badge", async () => {
+    const { choice, collection, pack, tenantPolicy } = engine;
+    const setting = "synthetic_bench_unassigned_match";
+    const unassigned = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({ name: "Synthetic unassigned policy", settings: [choice(setting, "1")], assignments: [] }),
+        ],
+      }),
+      {
+        ...pack([{ settings: [choice(setting, "1")] }], [
+          { id: "1.1", title: "Synthetic unassigned match", level: 1, settings: [setting] },
+        ]),
+        version: "2.0.0",
+      },
+      { now: engine.NOW },
+    );
+    await renderScreen();
+    await compare(unassigned);
+    await click(row("Synthetic unassigned match"));
+    const detail = within(list()).getByRole("list", { name: "Settings" });
+    expect(within(detail).getByText("Matches, on an unassigned policy")).toBeTruthy();
   });
 
   // Round 39: another value on an unassigned policy never reads as a matching value.
@@ -596,7 +625,7 @@ describe("BenchmarksScreen history", () => {
     assessedAt,
     basis: "recommendations" as const,
     rate,
-    counts: { pass: 0, fail: 0, review: 0, notAssessed: 0 },
+    counts: { pass: Math.round(rate * 20), fail: 20 - Math.round(rate * 20), review: 1, notAssessed: 0 },
     comparison,
     change,
   });
@@ -614,6 +643,8 @@ describe("BenchmarksScreen history", () => {
           ...identity,
           previousRate: 0.95,
           currentRate: 0.5,
+          previousCounts: { pass: 19, fail: 1, review: 2, notAssessed: 0 },
+          currentCounts: { pass: 10, fail: 10, review: 3, notAssessed: 0 },
           previousAssessedAt: "2026-10-01T09:00:00.000Z",
           assessedAt: "2026-10-22T09:30:00.000Z",
           kind: "below-bar",
@@ -628,8 +659,13 @@ describe("BenchmarksScreen history", () => {
     const points = within(panel).getAllByRole("listitem").map((item) => item.textContent);
     expect(points).toHaveLength(2);
     expect(points[0]).toContain("-45.0 pp");
+    expect(points[0]).toContain("of 20 assessed, 1 needs review");
     expect(points[1]).toContain("First comparison");
-    expect(within(panel).getByText(/fell below 90%, from 95% to 50%/)).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        /fell below 90%, from 95% \(of 20 assessed, 2 need review\) to 50% \(of 20 assessed, 3 need review\)/,
+      ),
+    ).toBeTruthy();
     expect(within(panel).getByRole("img")).toBeTruthy();
   });
 
@@ -743,7 +779,7 @@ describe("BenchmarksScreen portfolio", () => {
     const one = within(panel).getByRole("listitem", { name: "Synthetic Tenant One" });
     expect(within(one).getByText("Signed in")).toBeTruthy();
     expect(within(one).getByText("75%")).toBeTruthy();
-    expect(within(one).getByText("3 of 4")).toBeTruthy();
+    expect(within(one).getByText("of 4 assessed, 0 need review")).toBeTruthy();
     const other = within(panel).getByRole("listitem", { name: "tenant-2" });
     expect(within(other).getByText("Stored comparisons of other benchmarks only")).toBeTruthy();
     expect(mocks.portfolio).toHaveBeenCalledWith(undefined);

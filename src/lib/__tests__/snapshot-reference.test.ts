@@ -704,3 +704,48 @@ describe("compareSettings", () => {
     expect(result.totals).toMatchObject({ missing: 0, extra: 0 });
   });
 });
+
+describe("reference secrets by setting name", () => {
+  const STRING = "#microsoft.graph.deviceManagementConfigurationStringSettingValue";
+  const SECRET = "#microsoft.graph.deviceManagementConfigurationSecretSettingValue";
+  const CREATE_TOKEN = "device_vendor_msft_policy_config_userrights_createtoken";
+  const policy = (id: string, settings: Array<[string, string, string]>) => ({
+    id,
+    name: `Synthetic ${id} policy`,
+    platforms: "windows10",
+    settings: settings.map(([definitionId, type, value], index) => ({
+      id: String(index),
+      settingInstance: {
+        "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance",
+        settingDefinitionId: definitionId,
+        simpleSettingCollectionValue: [{ "@odata.type": type, value }],
+      },
+    })),
+  });
+
+  it("keeps the documented non-secret user rights and still drops secret names and secret values", async () => {
+    const file = await reference(
+      collection([
+        section("cat", [
+          policy("rights", [
+            [CREATE_TOKEN, STRING, "*S-1-5-32-544"],
+            ["device_vendor_msft_policy_config_userrights_replaceprocessleveltoken", STRING, "*S-1-5-19"],
+            ["device_vendor_msft_synthetic_area_password", STRING, "CanarySyntheticPassword-4"],
+          ]),
+          policy("marked", [[CREATE_TOKEN, SECRET, "CanaryMarkedSecret-5"]]),
+        ]),
+      ]),
+    );
+    const text = serializeReference(file);
+    for (const canary of ["CanarySyntheticPassword-4", "CanaryMarkedSecret-5"]) expect(text).not.toContain(canary);
+    const rights = file.settings.filter((entry) => entry.policy === "Synthetic rights policy");
+    expect(rights.find((entry) => entry.setting === CREATE_TOKEN)).not.toHaveProperty("redacted");
+    expect(text).toContain("*S-1-5-32-544");
+    expect(text).toContain("*S-1-5-19");
+    expect(rights.find((entry) => entry.setting === "device_vendor_msft_synthetic_area_password")).toMatchObject({
+      redacted: true,
+    });
+    const marked = file.settings.find((entry) => entry.policy === "Synthetic marked policy");
+    expect(marked).toMatchObject({ redacted: true });
+  });
+});

@@ -112,6 +112,20 @@ describe("benchmark CSV", () => {
       for (const cell of line.split(",")) expect(cell).not.toMatch(/^[=+\-@]/);
   });
 
+  it("separates open setting ids that hold spaces", () => {
+    const assessment = richAssessment();
+    assessment.recommendations[0] = {
+      ...assessment.recommendations[0]!,
+      openSettingIds: [
+        "com.synthetic.energysaver_display sleep timer",
+        "synthetic_bench_beta",
+      ],
+    };
+    expect(benchmarkCsv(assessment)).toContain(
+      ",com.synthetic.energysaver_display sleep timer; synthetic_bench_beta\r\n",
+    );
+  });
+
   it("lists settings when the pack has no recommendations", () => {
     const assessment = {
       ...richAssessment(),
@@ -142,6 +156,12 @@ describe("benchmark JSON summary", () => {
       notAssessed: 1,
     });
     expect(summary.levels[0].headline.rate).toBe(0.2);
+    // The base of the rate beside the unchanged numbers.
+    expect(summary.levels[0].headline).toMatchObject({
+      ratePercent: 20,
+      assessed: 5,
+      needsReview: 2,
+    });
     expect(summary.results[1]).toMatchObject({
       id: "1.2",
       resultCode: "fail",
@@ -183,6 +203,10 @@ describe("benchmark JSON summary", () => {
   it("keeps a null headline when nothing was assessed", () => {
     const summary = JSON.parse(benchmarkJson(unassessedAssessment()));
     expect(summary.levels[0].headline.rate).toBeNull();
+    expect(summary.levels[0].headline).toMatchObject({
+      assessed: 0,
+      needsReview: 2,
+    });
     expect(summary.levels[0].coverage.source).toBe("none");
   });
 });

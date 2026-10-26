@@ -99,6 +99,70 @@ export function formatRate(rate: number | null): string {
   return value === null ? "Not available" : `${value}%`;
 }
 
+/**
+ * What a headline rate is based on: "of 1 assessed, 87 need review". The
+ * rate is Matches out of the assessed results (Matches plus Differs).
+ */
+export function headlineBaseText(
+  counts: Pick<LevelSummary["headline"]["counts"], "pass" | "fail" | "review">,
+): string {
+  const assessed = counts.pass + counts.fail;
+  return `of ${assessed.toLocaleString("en-US")} assessed, ${counts.review.toLocaleString("en-US")} ${counts.review === 1 ? "needs" : "need"} review`;
+}
+
+/**
+ * A headline rate with its base, "100% of 1 assessed, 87 need review". A
+ * null rate keeps its own wording.
+ */
+export function headlineWithBase(
+  rate: number | null,
+  counts: Pick<LevelSummary["headline"]["counts"], "pass" | "fail" | "review">,
+  nullText = "n/a",
+): string {
+  return rate === null
+    ? nullText
+    : `${formatRate(rate)} ${headlineBaseText(counts)}`;
+}
+
+/**
+ * The status of one setting beside its result. A setting that matches but
+ * needs review says why, so Matches never stands alone beside Needs review:
+ * "Matches, on an unassigned policy" or "Matches, assignment unknown".
+ * policies is the number of policies holding the matching value.
+ */
+export function settingStatusText(
+  setting: {
+    status: SettingStatus | "Unmapped";
+    result: ResultState;
+    reason?: ReasonCode;
+  },
+  policies = 0,
+): string {
+  const label = SETTING_STATUS_LABELS[setting.status];
+  if (setting.status !== "Present" || setting.result !== "Review") return label;
+  if (setting.reason === "notAssigned")
+    return `${label}, ${policies === 1 ? "on an unassigned policy" : "on unassigned policies"}`;
+  if (setting.reason === "assignmentUnknown")
+    return `${label}, assignment unknown`;
+  return `${label}, needs review`;
+}
+
+/** Policies whose value of the setting matches the recommended value. */
+export function matchingPolicies(
+  findings: ReadonlyArray<Pick<SettingFinding, "recommended" | "observations">>,
+  settingId: string,
+): number {
+  return findings.reduce(
+    (sum, finding) =>
+      sum +
+      finding.observations.filter(
+        (observation) =>
+          observationLabel(finding, observation, settingId) === "Matches",
+      ).length,
+    0,
+  );
+}
+
 export function headlineLabel(basis: "recommendations" | "settings"): string {
   return basis === "recommendations"
     ? "Matching recommendations"
@@ -136,7 +200,8 @@ export function benchmarkDisplayName(id: string): string {
 /**
  * How many recommendations of a Level are checked automatically and how many
  * need a manual check. With a list the total is its identifiers for the
- * Level; without one no total is claimed.
+ * Level; without one no total is claimed, and checked counts the assessed
+ * results, which are settings for a pack without recommendations.
  */
 export function levelCheckCounts(
   level: Pick<LevelSummary, "coverage" | "manual" | "listIdentifiers">,
@@ -158,16 +223,22 @@ export function levelCheckSummary(
   level: Pick<
     LevelSummary,
     "level" | "coverage" | "manual" | "listIdentifiers"
-  >,
+  > & { headline: Pick<LevelSummary["headline"], "basis"> },
   assessed: number,
   product = "Intune Documentation",
 ): string {
   const { checked, manual, total } = levelCheckCounts(level, assessed);
   const noun = (count: number) =>
     count === 1 ? "recommendation" : "recommendations";
+  const assessedNoun = (count: number) =>
+    level.headline.basis === "settings"
+      ? count === 1
+        ? "setting"
+        : "settings"
+      : noun(count);
   if (total === null) {
     const prefix = checked
-      ? `Level ${level.level}: ${product} checks ${checked} ${noun(checked)} of this pack automatically.`
+      ? `Level ${level.level}: ${product} checks ${checked} ${assessedNoun(checked)} of this pack automatically.`
       : `Level ${level.level}: ${product} compares the settings of this pack automatically.`;
     if (!manual)
       return `${prefix} Recommendations outside the pack, including manual ones, need a manual check.`;

@@ -73,7 +73,7 @@ import {
 import { FORM_DIFFERS, REASON_LABELS, UNREADABLE_CAUSE_LABELS, otherProfilesText, reachText } from "./display";
 import type { AssignmentReach, AssignmentState } from "./tenant-settings";
 import { canonicalPlatforms } from "../compliance/graph-rows";
-import { comparable, compareDefinition, differencePlace } from "./policies";
+import { compareDefinition, differencePlace, sameRecommendedValue } from "./policies";
 import {
   NOT_CONFIGURED,
   contrastedTexts,
@@ -361,37 +361,47 @@ const conflictCache = new WeakMap<BenchmarkAssessment, Map<string, string>>();
 /**
  * The findings whose setting the packs of the Levels compared recommend
  * with different values, by finding key, with the values in words: "Level 1
- * recommends 5, Level 2 recommends 10". A setting is the same where its
- * platforms and id are (sameSetting, as draftStates groups them); the
- * Levels conflict when the values each recommends are not the same. Values
- * that read alike (a group of settings is shown by its entry count) are not
- * repeated:
- * "Level 1 and Level 2 recommend different values".
+ * recommends 5, Level 2 recommends 10". Each finding is weighed against the
+ * findings of the same setting id whose platforms share a platform with its
+ * own (in canonical form): a device of that platform, and every tenant
+ * policy holding both, faces both values. Platforms with nothing in common
+ * stay independent. The Levels conflict when the values each recommends
+ * there are not the same values, two values being the same as compareSettings
+ * decides it (sameRecommendedValue), so reordered entries are one value.
+ * Values that read alike (a group of settings is shown by its entry count)
+ * are not repeated: "Level 1 and Level 2 recommend different values".
  */
 export function levelConflicts(assessment: BenchmarkAssessment): ReadonlyMap<string, string> {
   const known = conflictCache.get(assessment);
   if (known) return known;
-  const bySetting = new Map<string, SettingFinding[]>();
+  const bySetting = new Map<string, Array<{ finding: SettingFinding; platforms: readonly string[] }>>();
   for (const finding of assessment.settings) {
-    const key = sameSetting(finding);
-    bySetting.set(key, [...(bySetting.get(key) ?? []), finding]);
+    // Platforms that are no readable set are only the same as themselves.
+    const platforms = canonicalPlatforms(finding.platforms)?.split(",") ?? [`\n${finding.platforms}`];
+    bySetting.set(finding.settingId, [...(bySetting.get(finding.settingId) ?? []), { finding, platforms }]);
   }
+  // Two lists hold the same values when each value of one is the same as one of the other.
+  const covers = (a: readonly SettingFinding[], b: readonly SettingFinding[]) =>
+    a.every((x) => b.some((y) => sameRecommendedValue(x.recommended, y.recommended)));
   const conflicts = new Map<string, string>();
-  for (const findings of bySetting.values()) {
-    const levels = [...new Set(findings.map((finding) => finding.packLevel))].sort((a, b) => a - b);
-    if (levels.length < 2) continue;
-    const at = (level: BenchmarkLevel) => findings.filter((finding) => finding.packLevel === level);
-    const values = levels.map((level) =>
-      JSON.stringify(sorted(at(level).map((finding) => JSON.stringify(comparable(finding.recommended))))),
-    );
-    if (new Set(values).size < 2) continue;
-    const texts = levels.map((level) => joinedWith(sorted(at(level).map((finding) => finding.recommendedValue.text)), "or"));
-    const text =
-      new Set(texts).size === texts.length
-        ? levels.map((level, index) => `Level ${level} recommends ${texts[index]}`).join(", ")
-        : `${joinedWith(levels.map((level) => `Level ${level}`), "and")} recommend different values`;
-    for (const finding of findings) conflicts.set(finding.key, text);
-  }
+  for (const entries of bySetting.values())
+    for (const { finding, platforms } of entries) {
+      const related = entries
+        .filter((other) => other.platforms.some((platform) => platforms.includes(platform)))
+        .map((other) => other.finding);
+      const levels = [...new Set(related.map((item) => item.packLevel))].sort((a, b) => a - b);
+      if (levels.length < 2) continue;
+      const at = (level: BenchmarkLevel) => related.filter((item) => item.packLevel === level);
+      const first = at(levels[0]!);
+      if (levels.every((level) => covers(at(level), first) && covers(first, at(level)))) continue;
+      const texts = levels.map((level) => joinedWith(sorted(at(level).map((item) => item.recommendedValue.text)), "or"));
+      conflicts.set(
+        finding.key,
+        new Set(texts).size === texts.length
+          ? levels.map((level, index) => `Level ${level} recommends ${texts[index]}`).join(", ")
+          : `${joinedWith(levels.map((level) => `Level ${level}`), "and")} recommend different values`,
+      );
+    }
   conflictCache.set(assessment, conflicts);
   return conflicts;
 }
@@ -1513,12 +1523,18 @@ export function nextStepText(
     lines.push(...cautionLines(action));
   }
   // A value check another step of this result already names as a
-  // condition of assigning the same policy, for the same setting (one step
-  // for a setting compared at two Levels), is not repeated.
-  const where = (policyId: string, setting: FixSetting) => `${policyId}\n${sameSetting(setting)}`;
+  // condition of assigning the same policy, for the same setting, is not
+  // repeated: a policy holds one value of a setting, whatever platforms the
+  // pack policies of the Levels compared name. A change condition is no
+  // such check.
+  const where = (policyId: string, setting: FixSetting) => `${policyId}\n${setting.settingId}`;
   const conditioned = new Set(
     actions.flatMap((action) =>
-      action.policy ? (action.conditions ?? []).map((setting) => where(action.policy!.id, setting)) : [],
+      action.policy
+        ? (action.conditions ?? [])
+            .filter((setting) => setting.text.startsWith("Check "))
+            .map((setting) => where(action.policy!.id, setting))
+        : [],
     ),
   );
   for (const action of actions) {

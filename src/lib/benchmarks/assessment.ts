@@ -43,12 +43,12 @@
  *   but never lower it; null when nothing was assessed.
  */
 import {
-  comparable,
   compareDefinition,
   compareRoot,
   definitionIds,
   parsePolicies,
   readableRecommendation,
+  sameRecommendedValue,
   type BaselinePolicy,
   type Comparison,
   type RecordJson,
@@ -556,25 +556,15 @@ export function compareSettings(
     const platforms = canonicalPlatforms(policy.platforms);
     return platforms ? `${platforms}:${id}` : null;
   };
-  // The distinct recommended values per definition and platforms. Two values
-  // are the same when their content is, or when each matches the other as a
-  // tenant value would (compareRoot), so equivalent forms such as an empty,
-  // null or omitted child list, or reordered collection entries, are one.
+  // The distinct recommended values per definition and platforms
+  // (sameRecommendedValue).
   const recommended = new Map<string, RecordJson[]>();
   for (const policy of policies)
     for (const { settingInstance } of policy.settings) {
       const key = packKey(policy, settingInstance.settingDefinitionId);
       if (!key) continue;
       const values = recommended.get(key) ?? [];
-      const text = JSON.stringify(comparable(settingInstance));
-      if (
-        !values.some(
-          (value) =>
-            JSON.stringify(comparable(value)) === text ||
-            (compareRoot(value, settingInstance) === "match" &&
-              compareRoot(settingInstance, value) === "match"),
-        )
-      )
+      if (!values.some((value) => sameRecommendedValue(value, settingInstance)))
         values.push(settingInstance);
       recommended.set(key, values);
     }

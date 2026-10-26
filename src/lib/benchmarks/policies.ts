@@ -512,6 +512,19 @@ export function compareRoot(recommended: Json, observed: Json): Comparison {
 }
 
 /**
+ * Whether two recommended values are the same: their content is, or each
+ * matches the other as a tenant value would (compareRoot), so equivalent
+ * forms such as an empty, null or omitted child list, or reordered
+ * collection entries, are one value.
+ */
+export function sameRecommendedValue(a: Json, b: Json): boolean {
+  return (
+    JSON.stringify(comparable(a)) === JSON.stringify(comparable(b)) ||
+    (compareRoot(a, b) === "match" && compareRoot(b, a) === "match")
+  );
+}
+
+/**
  * Whether the recommended value of a definition, everything below it and
  * every parent above it has the documented shape. parsePolicies accepts any
  * instance with a definition id and a type, so a pack may hold a value this

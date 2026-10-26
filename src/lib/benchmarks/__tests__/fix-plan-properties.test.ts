@@ -15,6 +15,8 @@ import {
 } from "../assessment";
 import { actionsForResult, buildFixPlan, nextStepText, type FixAction, type FixActionKind, type FixPlan, type FixSetting } from "../fix-plan";
 import type { BenchmarkPack } from "../pack";
+import { comparable, compareRoot } from "../policies";
+import { canonicalPlatforms } from "../../compliance/graph-rows";
 import {
   NOW,
   choice,
@@ -46,7 +48,10 @@ type Holder = "assigned" | "unassigned" | "unknown" | "excluded" | "removal" | "
 type Second = "none" | "unassignedMatch" | "unassignedDiffer";
 type Collected = "complete" | "incomplete" | "otherProfiles";
 type PackValue = "readable" | "unreadable" | "profileChoice";
-type Levels = "single" | "equal" | "conflicting";
+/** Level 2 recommends Level 1's values, others, or Level 1's with the children of the root reversed. */
+type Levels = "single" | "equal" | "conflicting" | "reordered";
+/** How the platforms of the Level 2 pack policy relate to those of Level 1. */
+type Spread = "equal" | "subset" | "overlap" | "disjoint";
 type Delivery = "plain" | "template";
 type Basis = "recommendations" | "split" | "settings";
 
@@ -61,6 +66,7 @@ interface Case {
   levels: Levels;
   delivery: Delivery;
   basis: Basis;
+  spread: Spread;
   /**
    * The Level 1 pack delivers the root for macOS too, held there by an
    * unassigned policy that matches: a second root per declared setting and
@@ -71,23 +77,35 @@ interface Case {
 
 const declaredOf = (shape: Shape) => (shape === "single" ? [S] : [A, B]);
 
-/** A root of the shape with each declared setting's value (null leaves it out). */
-function root(shape: Shape, values: Record<string, Instance | null>): Instance {
+/**
+ * Platforms of the Level 1 and Level 2 pack policies, and of the tenant
+ * policies holding the root (all platforms of both, so they face both).
+ */
+const SPREADS: Record<Spread, { l1: string; l2: string; tenant: string }> = {
+  equal: { l1: "windows10", l2: "windows10", tenant: "windows10" },
+  subset: { l1: "windows10,iOS", l2: "windows10", tenant: "windows10,iOS" },
+  overlap: { l1: "windows10,iOS", l2: "windows10,linux", tenant: "windows10,iOS,linux" },
+  disjoint: { l1: "windows10", l2: "iOS", tenant: "windows10,iOS" },
+};
+
+/** A root of the shape with each declared setting's value (null leaves it out), children in order or reversed. */
+function root(shape: Shape, values: Record<string, Instance | null>, reversed = false): Instance {
   if (shape === "single") return values[S]!;
-  const children = [A, B].flatMap((id) => {
+  const children = (reversed ? [B, A] : [A, B]).flatMap((id) => {
     const value = values[id];
     return value ? [value] : [];
   });
   return shape === "group" ? groupCollection(GROUP, [children]) : choice(ROOT, "1", children);
 }
 
-function packRoot(shape: Shape, values: Record<string, number>, unreadable: boolean): Instance {
+function packRoot(shape: Shape, values: Record<string, number>, unreadable: boolean, reversed = false): Instance {
   const last = shape === "single" ? S : B;
   return root(
     shape,
     Object.fromEntries(
       declaredOf(shape).map((id) => [id, unreadable && id === last ? simpleSecret(id) : simpleInteger(id, values[id])]),
     ),
+    reversed,
   );
 }
 
@@ -135,12 +153,13 @@ function packsOf(item: Case): BenchmarkPack[] {
       : item.basis === "split"
         ? declared.map((id, index) => ({ id: `${level}.${index + 1}`, title: `Synthetic property ${level}.${index + 1}`, level, settings: [id] }))
         : [{ id: `${level}.1`, title: `Synthetic property ${level}.1`, level, settings: declared }];
+  const platforms = SPREADS[item.spread];
   const level1 = pack(
     [
-      { settings: [packRoot(item.shape, L1, item.packValue === "unreadable")] },
+      { platforms: platforms.l1, settings: [packRoot(item.shape, L1, item.packValue === "unreadable")] },
       ...(item.twin ? [{ platforms: "macOS", settings: [packRoot(item.shape, L1, false)] }] : []),
       ...(item.packValue === "profileChoice"
-        ? [{ settings: [packRoot(item.shape, { [S]: 7, [A]: 1, [B]: 7 }, false)] }]
+        ? [{ platforms: platforms.l1, settings: [packRoot(item.shape, { [S]: 7, [A]: 1, [B]: 7 }, false)] }]
         : []),
     ],
     recommendations(1),
@@ -152,7 +171,12 @@ function packsOf(item: Case): BenchmarkPack[] {
     };
   if (item.levels === "single") return [level1];
   const level2 = pack(
-    [{ settings: [packRoot(item.shape, item.levels === "equal" ? L1 : CONFLICT, false)] }],
+    [
+      {
+        platforms: platforms.l2,
+        settings: [packRoot(item.shape, item.levels === "conflicting" ? CONFLICT : L1, false, item.levels === "reordered")],
+      },
+    ],
     recommendations(2),
     2,
   );
@@ -161,12 +185,22 @@ function packsOf(item: Case): BenchmarkPack[] {
 
 function assessmentOf(item: Case): BenchmarkAssessment {
   const policies = [
-    ...(item.states ? [tenantPolicy({ name: "Synthetic property holder", settings: [tenantRoot(item.shape, item.states)], ...HOLDERS[item.holder] })] : []),
+    ...(item.states
+      ? [
+          tenantPolicy({
+            name: "Synthetic property holder",
+            platforms: SPREADS[item.spread].tenant,
+            settings: [tenantRoot(item.shape, item.states)],
+            ...HOLDERS[item.holder],
+          }),
+        ]
+      : []),
     ...(item.second === "none"
       ? []
       : [
           tenantPolicy({
             name: "Synthetic property second",
+            platforms: SPREADS[item.spread].tenant,
             settings: [tenantRoot(item.shape, declaredOf(item.shape).map(() => (item.second === "unassignedMatch" ? "match" : "differ")))],
             assignments: [],
           }),
@@ -302,11 +336,17 @@ function concerns(
   resultKey: string,
 ): boolean {
   if (!kindsFor(root.verdict, root.finding).includes(action.kind)) return false;
-  // A condition for one setting compared at two Levels with one value is one step.
+  // A condition for one setting compared at two Levels is one step on the
+  // policy where it names the same value (besides the note on a part of the
+  // pack value that is not readable), or where the Levels' platforms meet
+  // (one choice), whatever platforms their pack policies name.
+  const bare = (text: string) => text.replace(/ \(a setting below it is not readable\)$/, "");
   const condition = (action.conditions ?? []).some(
     (step) =>
       step.findingKey === root.finding.key ||
-      (step.settingId === root.finding.settingId && step.platforms === root.finding.platforms),
+      (step.settingId === root.finding.settingId &&
+        (bare(step.recommended) === bare(root.finding.recommendedValue.text) ||
+          shareAPlatform(step.platforms, root.finding.platforms))),
   );
   if (action.kind === "assignPolicy") {
     // Settled whole, or in part on this root; else a change it takes as a condition.
@@ -322,6 +362,12 @@ function concerns(
   if (!action.policy || action.kind === "addSetting") return true;
   return aloneKinds(root.finding, open.id, action.policy.id).includes(action.kind);
 }
+
+/** Whether two platform lists share a platform (in canonical form). */
+const shareAPlatform = (a: string, b: string) => {
+  const of = (value: string) => canonicalPlatforms(value)?.split(",") ?? [value];
+  return of(a).some((platform) => of(b).includes(platform));
+};
 
 /** Every invariant the plan breaks for one assessment, in words. */
 function violations(assessment: BenchmarkAssessment, plan: FixPlan): string[] {
@@ -405,6 +451,40 @@ function violations(assessment: BenchmarkAssessment, plan: FixPlan): string[] {
     if (advice && /recommended value|A draft policy is available/.test(advice) && !/target Level/i.test(advice))
       found.push(`(c) ${key} advice names a value: ${advice}`);
   }
+  // (f) a Level conflict is stated exactly where the Levels recommend other
+  // values on platforms they share: as the engine tells values apart (each
+  // matches the other, or the content is equal), never by entry order.
+  type Value = SettingFinding["recommended"];
+  const same = (a: Value, b: Value) =>
+    JSON.stringify(comparable(a)) === JSON.stringify(comparable(b)) ||
+    (compareRoot(a, b) === "match" && compareRoot(b, a) === "match");
+  for (const finding of assessment.settings) {
+    const related = assessment.settings.filter(
+      (other) => other.settingId === finding.settingId && shareAPlatform(other.platforms, finding.platforms),
+    );
+    const levels = [...new Set(related.map((item) => item.packLevel))];
+    const valuesAt = (level: number) => related.filter((item) => item.packLevel === level).map((item) => item.recommended);
+    const covered = (a: Value[], b: Value[]) => a.every((x) => b.some((y) => same(x, y)));
+    const expected =
+      levels.length > 1 && levels.some((level) => !covered(valuesAt(level), valuesAt(levels[0]!)) || !covered(valuesAt(levels[0]!), valuesAt(level)));
+    if (expected !== Boolean(plan.levelConflicts[finding.key]))
+      found.push(`(f) ${finding.key} L${finding.packLevel} ${finding.platforms} ${expected ? "has no Level conflict" : "has a false Level conflict"}`);
+  }
+  // (g) steps for one setting on one policy, on platforms they share, name
+  // one value or are all a choice; drafts never offer two values there.
+  const onPolicy = steps.filter(({ action }) => action.policy && setsValue.has(action.kind));
+  for (const [index, first] of onPolicy.entries())
+    for (const second of onPolicy.slice(index + 1)) {
+      if (first.action.policy!.id !== second.action.policy!.id || first.step.settingId !== second.step.settingId) continue;
+      if (!shareAPlatform(first.step.platforms, second.step.platforms)) continue;
+      if (Boolean(first.step.levelConflict) !== Boolean(second.step.levelConflict) || (!first.step.levelConflict && first.step.recommended !== second.step.recommended))
+        found.push(`(g) ${first.action.policy!.id} ${first.step.settingId}: steps name ${first.step.recommended} and ${second.step.recommended}`);
+    }
+  const offered = plan.actions.flatMap((action) => action.settings).filter((step) => step.draft === "available");
+  for (const [index, first] of offered.entries())
+    for (const second of offered.slice(index + 1))
+      if (first.settingId === second.settingId && shareAPlatform(first.platforms, second.platforms) && first.recommended !== second.recommended)
+        found.push(`(g) drafts offer ${first.recommended} and ${second.recommended} for ${first.settingId}`);
   // (e) each action counts exactly the results whose own declared settings it answers.
   for (const action of plan.actions) {
     if (action.kind === "assignPolicy") continue;
@@ -438,11 +518,13 @@ function cases(shape: Shape): Case[] {
       for (const second of ["none", "unassignedMatch", "unassignedDiffer"] as Second[])
         for (const collected of ["complete", "incomplete", "otherProfiles"] as Collected[])
           for (const packValue of ["readable", "unreadable", "profileChoice"] as PackValue[])
-            for (const levels of ["single", "equal", "conflicting"] as Levels[])
-              for (const delivery of ["plain", "template"] as Delivery[])
-                for (const basis of (shape === "single" ? ["recommendations", "settings"] : ["recommendations", "split", "settings"]) as Basis[])
-                  for (const twin of [false, true])
-                    all.push({ shape, states, holder, second, collected, packValue, levels, delivery, basis, twin });
+            // Reversed children are another order only below a root; one Level has one spread.
+            for (const levels of (shape === "single" ? ["single", "equal", "conflicting"] : ["single", "equal", "conflicting", "reordered"]) as Levels[])
+              for (const spread of (levels === "single" ? ["equal"] : ["equal", "subset", "overlap", "disjoint"]) as Spread[])
+                for (const delivery of ["plain", "template"] as Delivery[])
+                  for (const basis of (shape === "single" ? ["recommendations", "settings"] : ["recommendations", "split", "settings"]) as Basis[])
+                    for (const twin of [false, true])
+                      all.push({ shape, states, holder, second, collected, packValue, levels, spread, delivery, basis, twin });
   return all;
 }
 
@@ -451,15 +533,17 @@ const share = <T,>(items: T[], every: number) => items.filter((_, index) => inde
 
 describe("fix plan invariants over synthetic assessments", () => {
   for (const [shape, every] of [
-    ["single", 1],
-    ["group", 14],
-    ["choice", 14],
+    ["single", 5],
+    ["group", 61],
+    ["choice", 61],
   ] as Array<[Shape, number]>)
-    it(`holds for every combination with a ${shape} root`, () => {
+    it(`holds for every combination with a ${shape} root`, async () => {
       const failures = new Map<string, string>();
       // The dimensions the plan depends on are reached: several assignments in one plan, partial ones.
       const reached = { severalAssignments: 0, partial: 0 };
-      for (const item of share(cases(shape), Number(process.env.PROP_EVERY ?? every))) {
+      for (const [index, item] of share(cases(shape), Number(process.env.PROP_EVERY ?? every)).entries()) {
+        // Yield now and then, so the worker answers the runner while a long share runs.
+        if (index % 500 === 499) await new Promise((resolve) => setTimeout(resolve, 0));
         const assessment = assessmentOf(item);
         const plan = buildFixPlan(assessment);
         if (plan.actions.filter((action) => action.kind === "assignPolicy").length > 1) reached.severalAssignments += 1;

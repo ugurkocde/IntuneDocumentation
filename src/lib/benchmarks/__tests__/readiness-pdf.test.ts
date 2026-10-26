@@ -787,7 +787,7 @@ describe("readiness PDF: detail cards and page breaks", () => {
     const assessment = richAssessment();
     const pages = pageTexts(
       render(assessment, {
-        fixPlan: { actions: [], byResult: {}, advice: {}, withoutAction: 2 },
+        fixPlan: { actions: [], byResult: {}, advice: {}, levelConflicts: {}, withoutAction: 2 },
       }),
     );
     const all = pages.join(" ");

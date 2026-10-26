@@ -152,7 +152,11 @@ export function FixPlan({
           <p className="text-petrol-600 mt-1 max-w-2xl text-xs leading-5">
             {actions.length
               ? `${plural(actions.length, "step", "steps")} in order of impact. Each names the policy and the results it covers. Nothing is written to the tenant.`
-              : "Nothing to change: no result differs, is not configured or needs review."}
+              : plan.withoutAction > 0
+                ? // Results that need review with no single step (one that needs two
+                  // policies assigned together), so "nothing to change" would be false.
+                  `No single step covers ${plan.withoutAction === 1 ? "this result" : `these ${plan.withoutAction.toLocaleString()} results`}; see each result for what to check.`
+                : "Nothing to change: no result differs, is not configured or needs review."}
           </p>
         </div>
         {active && (

@@ -74,6 +74,12 @@ export interface BenchmarkDraftChange {
   recommendationIds: string[];
   /** Tenant policy names, as the collection shows them. */
   policies: string[];
+  /**
+   * The values the Levels compared recommend when they differ (fix-plan.ts
+   * levelConflicts): the value of the target Level is chosen, so no single
+   * value is named.
+   */
+  levelConflict?: string;
 }
 
 export interface BenchmarkDraftGap {
@@ -197,13 +203,30 @@ export function generateBenchmarkDrafts(
     const ids = recommendationIds(finding);
     if (finding.result === "Pass") continue;
     if (finding.status === "Different") {
-      changes.push({
+      const change: BenchmarkDraftChange = {
         settingId: finding.settingId,
         recommendationIds: ids,
         policies: sorted(
           policiesToChange(finding).map((observation) => observation.policyName),
         ),
-      });
+        ...(plan.levelConflicts[finding.key]
+          ? { levelConflict: plan.levelConflicts[finding.key] }
+          : {}),
+      };
+      // A setting compared at two Levels in the same policies is one
+      // change, as the fix plan counts it; its recommendations are joined.
+      const same = changes.find(
+        (other) =>
+          other.settingId === change.settingId &&
+          other.policies.join("\n") === change.policies.join("\n") &&
+          other.levelConflict === change.levelConflict,
+      );
+      if (same)
+        same.recommendationIds = sorted([
+          ...same.recommendationIds,
+          ...change.recommendationIds,
+        ]);
+      else changes.push(change);
       continue;
     }
     if (!available.has(finding.key)) {
@@ -342,7 +365,11 @@ export function benchmarkDraftsReadme(
     ...list(
       result.changes.map(
         (change) =>
-          `${named(change.settingId)}: change ${change.policies.length === 1 ? "policy" : "policies"} ${change.policies.join(", ")}.${idsText(change.recommendationIds)}`,
+          `${named(change.settingId)}: change ${change.policies.length === 1 ? "policy" : "policies"} ${change.policies.join(", ")}.${
+            change.levelConflict
+              ? ` ${change.levelConflict}: choose the value for your target Level.`
+              : ""
+          }${idsText(change.recommendationIds)}`,
       ),
       "None.",
     ),

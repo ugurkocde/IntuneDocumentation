@@ -1723,7 +1723,15 @@ export function renderReadinessPdf(
     doc.text(
       pdfText(
         detailResults.length
-          ? `No result differs. ${plural(detailResults.length, "result needs", "results need")} review; the steps above say what to check.`
+          ? // The What to Do page lists every step (only the first are above),
+            // and covers every result only when none is without a step.
+            `No result differs. ${plural(detailResults.length, "result needs", "results need")} review${
+              !plan.actions.length
+                ? `, and no single step covers ${detailResults.length === 1 ? "it" : "them"}: see the result detail.`
+                : plan.withoutAction
+                  ? "; see the What to Do page and the result detail."
+                  : "; the steps on the What to Do page say what to check."
+            }`
           : "No result differs or needs review.",
       ),
       margin,

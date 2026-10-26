@@ -399,6 +399,7 @@ const settingJson = (setting: FixSetting) => ({
   currentValue: setting.current,
   recommendedValue: setting.recommended,
   ...(setting.draft ? { draft: setting.draft } : {}),
+  ...(setting.levelConflict ? { levelConflict: setting.levelConflict } : {}),
   text: setting.text,
 });
 

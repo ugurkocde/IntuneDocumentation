@@ -197,11 +197,28 @@ export interface EffectiveTarget {
   id?: string;
 }
 
+/** A target or exclusion label with what identifies its target. */
+export interface LabelledTarget {
+  label: string;
+  // The target key (targetKey): two labels name one target when it is equal.
+  key: string;
+  // The group, collection or organizational unit id as Graph returned it.
+  id?: string;
+}
+
 /** Assignments as every reader reads them (summarizeAssignments). */
 export interface ResolvedAssignments extends AssignmentSummary {
   // One entry per distinct target the policy applies to, so the desktop
   // list, the analyzer and the engine count the same targets.
   effective: EffectiveTarget[];
+  // The entries of targets and exclusions, in their order, with what
+  // identifies each, so a reader matches an exclusion to its target by
+  // identity, never by a display name two groups can share; excluded marks
+  // a target an exclusion takes away.
+  labelled: {
+    targets: Array<LabelledTarget & { excluded: boolean }>;
+    exclusions: LabelledTarget[];
+  };
 }
 
 // What two assignments must share to name the same target: the Entra group
@@ -274,6 +291,7 @@ export function resolveAssignments(
     filters: [],
     coverage: "unverified",
     effective: [],
+    labelled: { targets: [], exclusions: [] },
   };
   if (!Array.isArray(assignments))
     return { ...summary, uncertainty: "incomplete" };
@@ -346,6 +364,7 @@ export function resolveAssignments(
     if (type === "exclusiongroupassignmenttarget") {
       label = `${label}${exclusionScopeSuffix(assignment.intent)}`;
       summary.exclusions.push(label);
+      summary.labelled.exclusions.push({ label, key, ...(id ? { id } : {}) });
       excluded.add(exclusionKey(assignment.intent, key));
     } else if (role === "apply") {
       summary.targets.push(label);
@@ -379,6 +398,12 @@ export function resolveAssignments(
   const isExcluded = (entry: { key: string; intent: unknown }) =>
     excluded.has(exclusionKey(undefined, entry.key)) ||
     excluded.has(exclusionKey(entry.intent, entry.key));
+  summary.labelled.targets = included.map((entry, index) => ({
+    label: summary.targets[index]!,
+    key: entry.key,
+    ...(entry.id ? { id: entry.id } : {}),
+    excluded: isExcluded(entry),
+  }));
   const removed = new Set<string>();
   const uninstalled = new Set<string>();
   let broadRemove = false;

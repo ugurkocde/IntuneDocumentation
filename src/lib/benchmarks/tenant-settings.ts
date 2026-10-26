@@ -30,7 +30,9 @@
 import type { DetailedExportData } from "../configuration-analyzer";
 import {
   assignmentsIncomplete,
-  summarizeAssignments,
+  resolveAssignments,
+  type LabelledTarget,
+  type ResolvedAssignments,
 } from "../compliance/assignments";
 import { buildCollectionCoverage } from "../compliance/coverage";
 import { canonicalPlatforms, catalogRoot } from "../compliance/graph-rows";
@@ -39,11 +41,47 @@ import { record, type RecordJson } from "./policies";
 export type AssignmentState = "assigned" | "notAssigned" | "unknown";
 
 /**
- * What a policy's assignments reach, as summarizeAssignments reads them:
+ * The reach of resolved assignments (AssignmentReach): a label that
+ * distinct targets share gets the start of the target's id, as much as tells
+ * them apart, so no output names two groups alike.
+ */
+function assignmentReach(summary: ResolvedAssignments): AssignmentReach {
+  const { targets, exclusions } = summary.labelled;
+  const entries: LabelledTarget[] = [...targets, ...exclusions];
+  const shown = (entry: LabelledTarget) => {
+    const others = entries.filter(
+      (other) => other.label === entry.label && other.key !== entry.key,
+    );
+    const id = entry.id;
+    if (!others.length || !id) return entry.label;
+    const start = (value: string | undefined, length: number) =>
+      (value ?? "").slice(0, length).toLowerCase();
+    let length = 8;
+    while (
+      length < id.length &&
+      others.some((other) => start(other.id, length) === start(id, length))
+    )
+      length += 1;
+    return `${entry.label} (${id.slice(0, length)})`;
+  };
+  return {
+    targets: targets.filter((target) => !target.excluded).map(shown),
+    exclusions: exclusions.map(shown),
+    removals: [...(summary.removals ?? [])],
+    filters: summary.filters.length,
+    ...(summary.uncertainty ? { uncertainty: summary.uncertainty } : {}),
+  };
+}
+
+/**
+ * What a policy's assignments reach, as resolveAssignments reads them:
  * target labels ("All Users", "All Devices", "Group: <name or id>"), with
- * group ids named where the collection resolved them, exclusions and
- * removals, the number of assignment filters, and why the state is unknown.
- * Group memberships are not read, so this names targets, not devices.
+ * group ids named where the collection resolved them, without the targets
+ * an exclusion takes away (matched by identity), exclusions and removals,
+ * the number of assignment filters, and why the state is unknown. Two
+ * distinct targets of one name carry the start of their id
+ * ("Group: Pilot (a1b2c3d4)"). Group memberships are not read, so this
+ * names targets, not devices.
  */
 export interface AssignmentReach {
   targets: string[];
@@ -476,7 +514,7 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
       gaps.push(`${name}: the platform was not returned readably.`);
     // The Settings Catalog collector always records a collection status,
     // so a policy without one was not read whole.
-    const summary = summarizeAssignments(
+    const summary = resolveAssignments(
       item.assignments,
       data.groupNames ?? new Map(),
       !record(item.collectionStatus) ||
@@ -497,13 +535,7 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
       settings,
       settingsComplete,
       assignment: summary.state,
-      reach: {
-        targets: [...summary.targets],
-        exclusions: [...summary.exclusions],
-        removals: [...(summary.removals ?? [])],
-        filters: summary.filters.length,
-        ...(summary.uncertainty ? { uncertainty: summary.uncertainty } : {}),
-      },
+      reach: assignmentReach(summary),
     });
   }
   const otherProfiles = otherProfileFamilies(data);

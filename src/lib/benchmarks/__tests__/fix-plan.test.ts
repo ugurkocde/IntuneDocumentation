@@ -531,7 +531,7 @@ describe("fix plan: the policy to add a missing setting to", () => {
     expect(missing).toHaveLength(2);
     for (const item of missing)
       expect(advice[item.key]).toBe(
-        `The packs compared recommend different values for this setting, so no draft is generated. Choose the value for your Level and set it in policy ${AREA_POLICY}, which is assigned and already holds settings of the same benchmark area.`,
+        `For ${AREA_MISSING}, Level 1 recommends 1, Level 2 recommends 2, so no draft is generated. Choose the value for your target Level and set it in policy ${AREA_POLICY}, which is assigned and already holds settings of the same benchmark area.`,
       );
   });
 });

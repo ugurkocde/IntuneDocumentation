@@ -188,17 +188,31 @@ describe("assignment reach", () => {
 
 describe("reach text", () => {
   it("never names an excluded group as a target", () => {
-    expect(
-      reachText({
-        assignment: "assigned",
-        reach: {
-          targets: ["Group: Synthetic both", "All Devices"],
-          exclusions: ["Group: Synthetic both"],
-          removals: [],
-          filters: 1,
-        },
-      }),
-    ).toBe("assigned to All Devices, excluding Group: Synthetic both, 1 assignment filter");
+    const both = "00000000-0000-0000-0000-0000000000b0";
+    const data = collection({
+      policies: [
+        tenantPolicy({
+          name: "Synthetic reach",
+          settings: [choice(ALPHA, "1")],
+          assignments: [
+            { id: "a1", target: { "@odata.type": "#microsoft.graph.groupAssignmentTarget", groupId: both } },
+            {
+              id: "a2",
+              target: {
+                "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
+                deviceAndAppManagementAssignmentFilterId: "00000000-0000-0000-0000-0000000000f1",
+                deviceAndAppManagementAssignmentFilterType: "include",
+              },
+            },
+            { id: "a3", target: { "@odata.type": "#microsoft.graph.exclusionGroupAssignmentTarget", groupId: both } },
+          ],
+        }),
+      ],
+    });
+    data.groupNames = new Map([[both, "Synthetic both"]]);
+    const [observation] = assessBenchmark(data, pack([{ settings: [choice(ALPHA, "1")] }]), { now: NOW }).settings[0]!
+      .observations;
+    expect(reachText(observation!)).toBe("assigned to All Devices, excluding Group: Synthetic both, 1 assignment filter");
     expect(reachText({ assignment: "unknown", reach: { targets: [], exclusions: [], removals: [], filters: 0, uncertainty: "unresolved" } })).toBe(
       "assignment unknown: effective targeting could not be resolved",
     );

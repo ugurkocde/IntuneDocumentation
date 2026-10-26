@@ -38,6 +38,14 @@
  *
  * advice holds one sentence per finding that is not Pass, the same words the
  * drafts README uses (drafts.ts), so the plan and the README never disagree.
+ *
+ * Level 2 is compared together with Level 1 and each Level is judged against
+ * its own pack's value (combineLevelAssessments), so where the two packs
+ * recommend different values for a setting no single value is the target:
+ * every step that would set the value (a change, a condition before
+ * assigning, the advice) states the conflict and asks for the value of the
+ * target Level instead of naming two changes that undo each other
+ * (levelConflicts), and counts it as a choice, not a change.
  */
 import {
   assessmentResults,
@@ -118,6 +126,12 @@ export interface FixSetting {
   cause?: UnreadableCause;
   /** For addSetting. */
   draft?: DraftState;
+  /**
+   * The values the Levels compared recommend for this setting when they
+   * differ ("Level 1 recommends 5, Level 2 recommends 10"): the step asks
+   * to choose the value of the target Level instead of naming a change.
+   */
+  levelConflict?: string;
   /** This setting's step in plain words. */
   text: string;
 }
@@ -178,6 +192,8 @@ export interface FixPlan {
   byResult: Record<string, string[]>;
   /** One sentence per finding that is not Pass, by finding key (the drafts README uses it). */
   advice: Record<string, string>;
+  /** The Level conflict of each finding whose setting the Levels recommend differently, by finding key. */
+  levelConflicts: Record<string, string>;
   /** Results that are neither Matches nor Not assessed and have no action; normally none. */
   withoutAction: number;
 }
@@ -294,6 +310,52 @@ function draftStates(assessment: BenchmarkAssessment): Map<string, DraftState> {
   return states;
 }
 
+const joinedWith = (items: readonly string[], word: "and" | "or") =>
+  items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} ${word} ${items.at(-1)}`;
+
+const conflictCache = new WeakMap<BenchmarkAssessment, Map<string, string>>();
+
+/**
+ * The findings whose setting the packs of the Levels compared recommend
+ * with different values, by finding key, with the values in words: "Level 1
+ * recommends 5, Level 2 recommends 10". A setting is the same where its
+ * platforms and id are (as draftStates groups them); the Levels conflict
+ * when the values each recommends are not the same. Values that read alike
+ * (a group of settings is shown by its entry count) are not repeated:
+ * "Level 1 and Level 2 recommend different values".
+ */
+export function levelConflicts(assessment: BenchmarkAssessment): ReadonlyMap<string, string> {
+  const known = conflictCache.get(assessment);
+  if (known) return known;
+  const bySetting = new Map<string, SettingFinding[]>();
+  for (const finding of assessment.settings) {
+    const key = `${finding.platforms}:${finding.settingId}`;
+    bySetting.set(key, [...(bySetting.get(key) ?? []), finding]);
+  }
+  const conflicts = new Map<string, string>();
+  for (const findings of bySetting.values()) {
+    const levels = [...new Set(findings.map((finding) => finding.packLevel))].sort((a, b) => a - b);
+    if (levels.length < 2) continue;
+    const at = (level: BenchmarkLevel) => findings.filter((finding) => finding.packLevel === level);
+    const values = levels.map((level) =>
+      JSON.stringify(sorted(at(level).map((finding) => JSON.stringify(comparable(finding.recommended))))),
+    );
+    if (new Set(values).size < 2) continue;
+    const texts = levels.map((level) => joinedWith(sorted(at(level).map((finding) => finding.recommendedValue.text)), "or"));
+    const text =
+      new Set(texts).size === texts.length
+        ? levels.map((level, index) => `Level ${level} recommends ${texts[index]}`).join(", ")
+        : `${joinedWith(levels.map((level) => `Level ${level}`), "and")} recommend different values`;
+    for (const finding of findings) conflicts.set(finding.key, text);
+  }
+  conflictCache.set(assessment, conflicts);
+  return conflicts;
+}
+
+/** The step that sets a value the Levels recommend differently: "For S, Level 1 recommends 5, ...: choose ...". */
+const chooseText = (name: string, conflict: string, where: string) =>
+  `For ${name}, ${conflict}: choose the value for your target Level and set it in ${where}.`;
+
 /**
  * The tenant policies to change for a Differs finding: those holding another
  * value that are assigned or of unknown assignment. A policy that is not
@@ -348,8 +410,7 @@ function findingAdvice(
         .filter((observation) => observation.comparison === comparison)
         .map((observation) => observation.policyName),
     );
-  const joined = (items: readonly string[], word: "and" | "or") =>
-    items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} ${word} ${items.at(-1)}`;
+  const joined = joinedWith;
   // "policy A", or "policies A and B"; any one of several to assign: "one of the policies A or B".
   const names = (comparison: Observation["comparison"]) => {
     const items = list(comparison);
@@ -377,16 +438,22 @@ function findingAdvice(
   const recommended = finding.recommendedValue.text;
   const unreadable = list("unknown").length ? names("unknown") : "";
   const many = (comparison: Observation["comparison"]) => list(comparison).length > 1;
+  const conflict = levelConflicts(assessment).get(finding.key);
+  const them = (comparison: Observation["comparison"]) => (many(comparison) ? "them" : "it");
   const check = unreadable
     ? ` The value in ${unreadable} could not be read; check it before assigning ${many("unknown") ? "them" : "that policy"}.${notes("unknown", "check")}`
     : "";
   if (finding.status === "Different") {
-    const policies = sorted(policiesToChange(finding).map((observation) => observation.policyName)).join(", ");
-    return `Change ${name} in policy ${policies} to the recommended value ${recommended}.`;
+    const holders = sorted(policiesToChange(finding).map((observation) => observation.policyName));
+    return conflict
+      ? chooseText(name, conflict, holders.length === 1 ? `policy ${holders[0]}` : `policies ${joined(holders, "and")}`)
+      : `Change ${name} in policy ${holders.join(", ")} to the recommended value ${recommended}.`;
   }
   if (finding.status === "Missing") {
     if (draft === "levelConflict")
-      return `${LEVEL_CONFLICT} Choose the value for your Level and set it in ${candidateText(candidate)}.`;
+      return conflict
+        ? `For ${name}, ${conflict}, so no draft is generated. Choose the value for your target Level and set it in ${candidateText(candidate)}.`
+        : `${LEVEL_CONFLICT} Choose the value for your Level and set it in ${candidateText(candidate)}.`;
     if (draft === "duplicate")
       return `${DUPLICATE} Import that draft, or add the setting to ${candidateText(candidate)}.`;
     if (draft && draft !== "available") return DRAFT_STATE_TEXT[draft];
@@ -396,9 +463,13 @@ function findingAdvice(
     case "notAssigned":
       return `${REASON_LABELS.notAssigned} Assign ${oneOf("match")} instead of importing a second one.${notes("match", "assign")}`;
     case "notAssignedMixed":
-      return `${REASON_LABELS.notAssignedMixed} Assign ${oneOf("match")} instead of importing a second one, and change the value in ${names("differ")} before assigning ${many("differ") ? "them" : "it"}.${notes("match", "assign")}${notes("differ", "change")}${check}`;
+      return conflict
+        ? `${REASON_LABELS.notAssignedMixed} Assign ${oneOf("match")} instead of importing a second one. ${chooseText(name, conflict, `${names("differ")} before assigning ${them("differ")}`)}${notes("match", "assign")}${notes("differ", "change")}${check}`
+        : `${REASON_LABELS.notAssignedMixed} Assign ${oneOf("match")} instead of importing a second one, and change the value in ${names("differ")} before assigning ${them("differ")}.${notes("match", "assign")}${notes("differ", "change")}${check}`;
     case "notAssignedDiffers":
-      return `${REASON_LABELS.notAssignedDiffers} Change the value in ${names("differ")} before assigning ${many("differ") ? "them" : "it"}, or set the recommended value in a policy that is assigned.${notes("differ", "change")}`;
+      return conflict
+        ? `${REASON_LABELS.notAssignedDiffers} ${chooseText(name, conflict, `${names("differ")} before assigning ${them("differ")}, or in a policy that is assigned`)}${notes("differ", "change")}`
+        : `${REASON_LABELS.notAssignedDiffers} Change the value in ${names("differ")} before assigning ${them("differ")}, or set the recommended value in a policy that is assigned.${notes("differ", "change")}`;
     case "otherProfiles":
       return `${REASON_LABELS.otherProfiles} Check ${otherProfilesText(assessment.collection.otherProfiles, finding.platforms)} for it.`;
     case "unreadableValue": {
@@ -486,8 +557,16 @@ function settingStep(
   const note = recommended.startsWith(own) ? recommended.slice(own.length) : "";
   const from = values?.current ?? current;
   const to = values ? `${values.recommended}${note}` : recommended;
+  // Where the Levels recommend different values, a step that sets the value
+  // asks for the target Level's, and one that names the value says whose.
+  const conflict = levelConflicts(assessment).get(finding.key);
+  const valueWords = conflict
+    ? `the value Level ${finding.packLevel} recommends, ${recommended}`
+    : `the recommended value ${recommended}`;
   const change = (when: string) =>
-    below
+    conflict
+      ? chooseText(name, conflict, `policy ${policy}${when}`)
+      : below
       ? `Change the settings below ${name} in policy ${policy} to the recommended values${when}${differing ? `: ${differing}` : ""}.`
       : from === to
         ? `Change ${name} in policy ${policy} to the recommended value ${recommended}${when}: its current value ${current} ${FORM_DIFFERS}.`
@@ -501,7 +580,7 @@ function settingStep(
       text = change(" before assigning it");
       break;
     case "assignPolicy":
-      text = `Policy ${policy} holds ${name} with the recommended value ${recommended}.`;
+      text = `Policy ${policy} holds ${name} with ${valueWords}.`;
       break;
     case "checkValue":
       text = observation
@@ -516,7 +595,7 @@ function settingStep(
       }`;
       break;
     case "checkAssignment":
-      text = `Check the assignments of policy ${policy}, which holds ${name} with the recommended value ${recommended}.`;
+      text = `Check the assignments of policy ${policy}, which holds ${name} with ${valueWords}.`;
       break;
     default:
       text = findingAdvice(assessment, finding, extra.draft, candidate, NO_ASSIGNMENT_NOTE);
@@ -532,6 +611,7 @@ function settingStep(
     ...(observation?.current.cause && (kind === "checkValue" || kind === "checkBeforeAssign")
       ? { cause: observation.current.cause }
       : {}),
+    ...(conflict ? { levelConflict: conflict } : {}),
     ...extra,
     text,
   };
@@ -565,28 +645,55 @@ function conditionsBesides(
 /**
  * The steps before assigning, counted by setting (one compared at two
  * Levels is one setting): "changing 1 setting it holds to the recommended
- * value and checking 1 setting whose value could not be read".
+ * value and checking 1 setting whose value could not be read". A value the
+ * Levels recommend differently is a choice, not a change.
  */
 function conditionsPhrase(
   conditions: AssignmentCheck["conditions"],
   form: "gerund" | "imperative",
   other = false,
 ): string {
-  const count = (change: boolean) =>
-    new Set(conditions.filter((item) => item.change === change).map((item) => item.step.settingId)).size;
-  const changes = count(true);
-  const checks = count(false);
+  const kindOf = (item: AssignmentCheck["conditions"][number]) =>
+    !item.change ? "check" : item.step.levelConflict ? "choose" : "change";
+  const count = (kind: ReturnType<typeof kindOf>) =>
+    new Set(conditions.filter((item) => kindOf(item) === kind).map((item) => item.step.settingId)).size;
+  const changes = count("change");
+  const choices = count("choose");
+  const checks = count("check");
   const setting = (n: number) => plural(n, other ? "other setting" : "setting", other ? "other settings" : "settings");
-  return [
-    changes
-      ? `${form === "gerund" ? "changing" : "change"} ${setting(changes)} it holds to the recommended ${changes === 1 ? "value" : "values"}`
-      : "",
-    checks
-      ? `${form === "gerund" ? "checking" : "check"} ${setting(checks)} it holds whose ${checks === 1 ? "value" : "values"} could not be read`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" and ");
+  const values = (n: number) => (n === 1 ? "value" : "values");
+  return joinedWith(
+    [
+      changes
+        ? `${form === "gerund" ? "changing" : "change"} ${setting(changes)} it holds to the recommended ${values(changes)}`
+        : "",
+      choices
+        ? `${form === "gerund" ? "choosing" : "choose"} the ${values(choices)} of ${setting(choices)} it holds for your target Level`
+        : "",
+      checks
+        ? `${form === "gerund" ? "checking" : "check"} ${setting(checks)} it holds whose ${values(checks)} could not be read`
+        : "",
+    ].filter(Boolean),
+    "and",
+  );
+}
+
+/**
+ * A change on one policy in words, counted by setting: the values to change
+ * and those the Levels recommend differently, which are chosen instead.
+ */
+function changeText(settings: readonly FixSetting[], where: string, when: string): string {
+  const chosen = new Set(settings.filter((setting) => setting.levelConflict).map((setting) => setting.settingId));
+  const changes = new Set(settings.map((setting) => setting.settingId).filter((id) => !chosen.has(id))).size;
+  const choices = chosen.size;
+  const values = (n: number) => (n === 1 ? "value" : "values");
+  const counted = (n: number) => plural(n, "setting", "settings");
+  const main = changes
+    ? `Change ${counted(changes)} in ${where} to the recommended ${values(changes)}${
+        choices ? `, and choose the ${values(choices)} of ${counted(choices)} for your target Level` : ""
+      }`
+    : `Choose the ${values(choices)} of ${counted(choices)} in ${where} for your target Level`;
+  return `${main}${when}${choices ? ": the Levels compared recommend different values" : ""}.`;
 }
 
 /**
@@ -973,9 +1080,9 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     const uncertainty = UNCERTAINTY_STEP[entry.policy.reach.uncertainty ?? "incomplete"];
     const text =
       entry.kind === "changeValue"
-        ? `Change ${settings} in policy ${entry.policy.name} (${reach}) to the recommended ${count === 1 ? "value" : "values"}.`
+        ? changeText(entry.settings, `policy ${entry.policy.name} (${reach})`, "")
         : entry.kind === "changeBeforeAssign"
-          ? `Change ${settings} in policy ${entry.policy.name} to the recommended ${count === 1 ? "value" : "values"} before assigning it.${
+          ? `${changeText(entry.settings, `policy ${entry.policy.name}`, " before assigning it")}${
               also
                 ? ` Before assigning it, also ${also}${
                     check!.regressions
@@ -1117,7 +1224,13 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   for (const action of actions)
     for (const result of action.results) (byResult[result.key] ??= []).push(action.id);
   const withoutAction = open.filter((item) => item.result !== "Not assessed" && !byResult[item.key]).length;
-  return { actions, byResult, advice, withoutAction };
+  return {
+    actions,
+    byResult,
+    advice,
+    levelConflicts: Object.fromEntries(levelConflicts(assessment)),
+    withoutAction,
+  };
 }
 
 /** The actions of one result, in plan order. */

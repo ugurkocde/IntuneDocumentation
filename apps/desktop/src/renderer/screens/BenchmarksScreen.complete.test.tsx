@@ -214,4 +214,47 @@ describe("BenchmarksScreen with the view main builds", () => {
     const items = within(conditions).getAllByRole("listitem").map((item) => item.textContent);
     expect(items).toEqual(HELD.map((id) => `Change ${id} in policy ${CANDIDATE} from 0 to 1 before assigning it.`));
   });
+
+  // Round 49: a recommendation matched on two unassigned policies needs both
+  // assigned, so no single step covers it and the plan has none.
+  it("says no single step covers a result that needs review, with a filter to it", async () => {
+    const A = "synthetic_bench_r49_together_a";
+    const B = "synthetic_bench_r49_together_b";
+    const assessment = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({ name: "Synthetic first half", settings: [choice(A, "1")], assignments: [] }),
+          tenantPolicy({ name: "Synthetic second half", settings: [choice(B, "1")], assignments: [] }),
+        ],
+      }),
+      pack(
+        [{ settings: [choice(A, "1"), choice(B, "1")] }],
+        [{ id: "1.1", title: "Synthetic recommendation together", level: 1, settings: [A, B] }],
+      ),
+      { now: NOW },
+    );
+    const view = withFixPlan(assessment);
+    expect(view.fixPlan).toMatchObject({ actions: [], withoutAction: 1 });
+    await showView(view);
+    const plan = screen.getByRole("region", { name: "What to do next" });
+    expect(plan.textContent).toContain("No single step covers this result; see each result for what to check.");
+    expect(plan.textContent).not.toContain("Nothing to change");
+    await click(within(plan).getByRole("button", { name: "Show 1 result" }));
+    expect(within(list()).getByRole("button", { name: /Synthetic recommendation together/ })).toBeTruthy();
+  });
+
+  it("says nothing is to change only when no result differs or needs review", async () => {
+    const ALPHA = "synthetic_bench_r49_alpha";
+    const assessment = assessBenchmark(
+      collection({ policies: [tenantPolicy({ name: "Synthetic assigned baseline", settings: [choice(ALPHA, "1")] })] }),
+      pack([{ settings: [choice(ALPHA, "1")] }], [{ id: "1.1", title: "Synthetic recommendation alpha", level: 1, settings: [ALPHA] }]),
+      { now: NOW },
+    );
+    const view = withFixPlan(assessment);
+    expect(view.fixPlan).toMatchObject({ actions: [], withoutAction: 0 });
+    await showView(view);
+    const plan = screen.getByRole("region", { name: "What to do next" });
+    expect(plan.textContent).toContain("Nothing to change: no result differs, is not configured or needs review.");
+    expect(within(plan).queryByRole("button", { name: /^Show / })).toBeNull();
+  });
 });

@@ -252,8 +252,10 @@ const ASSIGNMENT_STATE_LABELS: Readonly<Record<Observation["assignment"], string
 
 /**
  * Where a policy's assignments reach, in words: "assigned to Group: Pilot,
- * All Devices, excluding Group: Kiosk". Group memberships are not read, so
- * this names targets only.
+ * All Devices, excluding Group: Kiosk". The targets are those no exclusion
+ * takes away, matched by identity (tenant-settings.ts assignmentReach), so a
+ * target is never dropped for sharing a name with an excluded group. Group
+ * memberships are not read, so this names targets only.
  */
 export function reachText(
   observation: Pick<Observation, "assignment" | "reach">,
@@ -264,9 +266,7 @@ export function reachText(
       ? "assignment unknown: effective targeting could not be resolved"
       : "assignment unknown: assignments were not read completely";
   if (assignment === "notAssigned") return "not assigned";
-  // A target that is also excluded reaches nobody through that assignment.
-  const targets = reach.targets.filter((target) => !reach.exclusions.includes(target));
-  const parts = [`assigned to ${targets.join(", ")}`];
+  const parts = [reach.targets.length ? `assigned to ${reach.targets.join(", ")}` : "assigned"];
   if (reach.exclusions.length)
     parts.push(`excluding ${reach.exclusions.join(", ")}`);
   if (reach.filters)

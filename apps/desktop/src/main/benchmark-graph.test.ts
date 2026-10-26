@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { settingName } from "../../../../src/lib/benchmarks/values";
 import { DEFINITION_READS_AT_ONCE, benchmarkGraph } from "./benchmark-graph";
 
 // A stub of the shared Graph client: records the paths asked for and
@@ -58,6 +59,33 @@ describe("benchmark Graph reads", () => {
     // Counts only, never names.
     expect(log).toHaveBeenCalledWith("warn", "benchmark setting names", { asked: 14, named: 11, unknown: 1, failed: 1 });
     expect(JSON.stringify(log.mock.calls)).not.toContain("Synthetic name");
+  });
+
+  it("names a definition below another that has no display name within its root (shape verified with Lokka)", async () => {
+    const root = "synthetic_graph_admx_root";
+    const child = "synthetic_graph_admx_root_value";
+    // GET /beta/deviceManagement/configurationSettings/{id} of a setting below
+    // an administrative template setting: displayName is empty, name and
+    // rootDefinitionId are set.
+    const graph = stubGraph((path) => {
+      const id = decodeURIComponent(path.split("/").at(-1)!);
+      return id === root
+        ? { id, displayName: "Synthetic warning settings (User)", name: "L_SyntheticWarning", rootDefinitionId: root }
+        : {
+            id,
+            displayName: "",
+            name: "L_SyntheticWarningValue",
+            rootDefinitionId: root,
+            options: [{ itemId: `${child}_2`, displayName: "Synthetic block" }],
+          };
+    });
+    const names = await benchmarkGraph({ token: "t", log: vi.fn(), client: graph.client }).settingNames([child, root]);
+    expect(names[child]).toEqual({
+      name: "L_SyntheticWarningValue",
+      options: { [`${child}_2`]: "Synthetic block" },
+      within: root,
+    });
+    expect(settingName(names, child)).toBe("Synthetic warning settings (User): L_SyntheticWarningValue");
   });
 
   it("encodes ids that hold spaces and other characters", async () => {

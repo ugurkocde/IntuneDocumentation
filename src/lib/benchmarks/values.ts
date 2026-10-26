@@ -74,8 +74,44 @@ function simpleText(value: Json): string {
     : "";
 }
 
+/** How many characters of a value the views show. */
+const VALUE_SHOWN = 160;
+
+const shortened = (text: string) =>
+  text.length > VALUE_SHOWN ? `${text.slice(0, VALUE_SHOWN - 3)}...` : text;
+
 /** A short readable form of one instance's own value. */
 export function valueText(
+  instance: RecordJson | null,
+  names?: SettingNames,
+): string {
+  return shortened(fullValueText(instance, names));
+}
+
+/**
+ * A current and a recommended value side by side, shortened as valueText
+ * does, so that two values that differ never read alike: where their
+ * shortened forms are the same, each shows its part from shortly before the
+ * first character where they differ, with where that part starts and the
+ * length. Takes the full texts (fullValueText).
+ */
+export function contrastedTexts(
+  current: string,
+  recommended: string,
+): { current: string; recommended: string } {
+  const pair = { current: shortened(current), recommended: shortened(recommended) };
+  if (current === recommended || pair.current !== pair.recommended) return pair;
+  let at = 0;
+  while (current[at] === recommended[at]) at += 1;
+  const start = Math.max(0, at - 30);
+  const end = start + 90;
+  const part = (text: string) =>
+    `${start ? "..." : ""}${text.slice(start, end)}${text.length > end ? "..." : ""} (from character ${start + 1} of ${text.length})`;
+  return { current: part(current), recommended: part(recommended) };
+}
+
+/** The own value of one instance as text, in full. */
+export function fullValueText(
   instance: RecordJson | null,
   names?: SettingNames,
 ): string {
@@ -103,8 +139,7 @@ export function valueText(
     const count = list(instance.groupSettingCollectionValue).length;
     shown = `${count} ${count === 1 ? "entry" : "entries"}`;
   } else shown = "Group of settings";
-  if (!shown) return "Empty";
-  return shown.length > 160 ? `${shown.slice(0, 157)}...` : shown;
+  return shown || "Empty";
 }
 
 const DOCUMENTED_TYPES: ReadonlySet<string> = new Set(
@@ -233,9 +268,17 @@ export function recommendedValue(
   };
 }
 
-/** The display name of a setting, or its id when no definition names it. */
+/**
+ * The display name of a setting, or its id when no definition names it. A
+ * definition without a display name of its own (a setting below another,
+ * definitionNames) is named within the setting it belongs to: "Root name:
+ * DefinitionName".
+ */
 export function settingName(names: SettingNames | undefined, id: string): string {
-  return names?.[id]?.name ?? id;
+  const entry = names?.[id];
+  if (!entry) return id;
+  const root = entry.within ? names?.[entry.within] : undefined;
+  return root && !root.within ? `${root.name}: ${entry.name}` : entry.name;
 }
 
 /** A setting below a result's setting whose tenant value differs, as text. */
@@ -262,13 +305,15 @@ export function settingDifferences(
   names?: SettingNames,
 ): SettingDifference[] {
   return differingSettings(recommended, observed, settingId).map(
-    (difference) => ({
-      settingId: difference.settingId,
-      current: difference.observed
-        ? valueText(difference.observed, names)
-        : NOT_CONFIGURED,
-      recommended: valueText(difference.recommended, names),
-    }),
+    (difference) => {
+      const wanted = fullValueText(difference.recommended, names);
+      return {
+        settingId: difference.settingId,
+        ...(difference.observed
+          ? contrastedTexts(fullValueText(difference.observed, names), wanted)
+          : { current: NOT_CONFIGURED, recommended: shortened(wanted) }),
+      };
+    },
   );
 }
 

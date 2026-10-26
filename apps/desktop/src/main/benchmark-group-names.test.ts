@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BenchmarkCollection } from "../../../../src/lib/benchmarks/tenant-settings";
 import { choice, collection, pack, tenantPolicy } from "../../../../src/lib/benchmarks/__tests__/fixtures";
@@ -14,6 +15,8 @@ const state = vi.hoisted(() => ({
   collection: null as unknown,
   lookups: [] as string[][],
   fail: false,
+  // The name Graph returns for groupId.
+  groupName: "Synthetic pilot group",
 }));
 
 vi.mock("./collect", () => ({
@@ -27,7 +30,7 @@ vi.mock("../../../../src/lib/group-resolver", () => ({
       state.lookups.push([...ids]);
       if (state.fail) throw new Error("Synthetic outage");
       // A group Graph cannot name keeps its id, as GroupResolver does.
-      return new Map(ids.map((id) => [id, id === state.groupId ? "Synthetic pilot group" : id]));
+      return new Map(ids.map((id) => [id, id === state.groupId ? state.groupName : id]));
     }
   },
 }));
@@ -87,7 +90,45 @@ beforeEach(() => {
   state.collection = tenantCollection();
   state.lookups = [];
   state.fail = false;
+  state.groupName = "Synthetic pilot group";
 });
+
+/** Text of every page with whitespace collapsed, as the PDF tests read it. */
+function pdfText(bytes: Uint8Array): string {
+  const raw = Buffer.from(bytes);
+  const pdf = raw.toString("latin1");
+  const pages = [...pdf.matchAll(/(\d+) 0 obj\s*<<\s*\/Type \/Page\b(?!s)([\s\S]*?)endobj/g)];
+  return pages
+    .map((match) => {
+      const contentId = /\/Contents (\d+) 0 R/.exec(match[2] ?? "")?.[1];
+      const object = new RegExp(`(?:^|\\n)${contentId} 0 obj\\s*<<([\\s\\S]*?)>>\\s*stream\\n`).exec(pdf);
+      if (!object) return "";
+      const start = (object.index ?? 0) + object[0].length;
+      const length = Number(/\/Length (\d+)/.exec(object[1] ?? "")?.[1]);
+      const data = raw.subarray(start, start + length);
+      const stream = (object[1]?.includes("/FlateDecode") ? inflateSync(data) : data).toString("latin1");
+      return [...stream.matchAll(/\(((?:\\.|[^\\)])*)\)\s*Tj/g)]
+        .map((item) => (item[1] ?? "").replace(/\\(.)/g, "$1"))
+        .join(" ");
+    })
+    .join(" ")
+    .replace(/\s+/g, " ");
+}
+
+// The view main returns for a pack the tenant differs from, and its exports.
+async function differingViewAndExports() {
+  const benchmark = work();
+  const packs = [pack([{ settings: [choice(ALPHA, "off")] }], undefined, 1)];
+  const view = await benchmark.assessBenchmark({ owner: state.owner, tenantId: TENANT, packs, list: null });
+  const exported = async (format: "pdf" | "csv") =>
+    (await benchmark.exportBenchmark({ owner: state.owner, tenantId: TENANT, assessment: view, packs, format } as never))
+      .bytes;
+  return {
+    view,
+    pdf: pdfText(await exported("pdf")),
+    csv: new TextDecoder().decode(await exported("csv")),
+  };
+}
 
 describe("benchmark group names", () => {
   it("names the groups of the assessed collection and keeps the id of a group Graph cannot name", async () => {
@@ -116,6 +157,31 @@ describe("benchmark group names", () => {
     state.fail = false;
     expect(await reachTargets()).toEqual(["Group: Synthetic pilot group", `Group: ${state.otherId}`]);
     expect(state.lookups).toHaveLength(2);
+  });
+
+  it("carries the resolved names from the collection through the view into the PDF and the CSV", async () => {
+    const { view, pdf, csv } = await differingViewAndExports();
+    expect(view.settings[0]!.observations[0]!.reach.targets).toEqual([
+      "Group: Synthetic pilot group",
+      `Group: ${state.otherId}`,
+    ]);
+    // Wrapped lines are joined by a space; an identifier may wrap after a hyphen.
+    const joined = pdf.replace(/- /g, "-");
+    expect(joined).toContain("Group: Synthetic pilot group");
+    expect(joined).toContain(`Group: ${state.otherId}`);
+    expect(csv).toContain(`Synthetic assigned baseline: assigned to Group: Synthetic pilot group, Group: ${state.otherId}`);
+  });
+
+  it("never cuts a long group name or an unresolved id in the PDF", async () => {
+    state.groupName =
+      "Synthetic pilot group with a deliberately long display name that has to wrap over several lines of the assignment column";
+    const { pdf, csv } = await differingViewAndExports();
+    const joined = pdf.replace(/- /g, "-");
+    expect(joined).toContain(`Group: ${state.groupName}`);
+    expect(joined).toContain(`Group: ${state.otherId}`);
+    const cut = /Group: [^,]*?\.\.\./.exec(pdf);
+    expect(cut ? pdf.slice(cut.index, cut.index + 200) : null).toBeNull();
+    expect(csv).toContain(`Group: ${state.groupName}, Group: ${state.otherId}`);
   });
 
   it("looks up only the last collection", async () => {

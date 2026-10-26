@@ -58,6 +58,13 @@ export interface SettingDefinitionName {
   name: string;
   /** Option display names by option id (itemId). */
   options: Record<string, string>;
+  /**
+   * For a definition Graph gives no display name (a setting below another,
+   * such as the value of an administrative template setting): the id of the
+   * root definition it belongs to, and name is its Graph name. Views name it
+   * within that root (values.ts settingName).
+   */
+  within?: string;
 }
 
 /** Display names by setting definition id. */
@@ -372,14 +379,23 @@ const nameText = (value: unknown): string | null =>
  * Display names of the settingDefinitions on Graph's Settings Catalog
  * settings rows ($expand=settingDefinitions): displayName and the options'
  * itemId and displayName (deviceManagementConfigurationChoiceSettingDefinition,
- * verified with Lokka on 2026-10-26). Anything else is ignored.
+ * verified with Lokka on 2026-10-26). A definition below another may have an
+ * empty displayName (the value of an administrative template setting, for
+ * example); it keeps its Graph name with the root definition it belongs to
+ * (rootDefinitionId), so views name it within that root (verified with
+ * Lokka on 2026-10-26, both on the expanded rows and on GET
+ * /beta/deviceManagement/configurationSettings/{id}). Anything else is
+ * ignored.
  */
 export function definitionNames(definitions: unknown, into: SettingNames = {}): SettingNames {
   if (!Array.isArray(definitions)) return into;
   for (const definition of definitions) {
     if (!record(definition)) continue;
     const id = nameText(definition.id);
-    const name = nameText(definition.displayName);
+    const own = nameText(definition.displayName);
+    const root = nameText(definition.rootDefinitionId);
+    const within = !own && root && root !== id ? root : null;
+    const name = own ?? (within ? nameText(definition.name) : null);
     if (!id || !name || Object.hasOwn(into, id)) continue;
     const options: Record<string, string> = {};
     if (Array.isArray(definition.options))
@@ -389,7 +405,7 @@ export function definitionNames(definitions: unknown, into: SettingNames = {}): 
         const label = nameText(option.displayName);
         if (itemId && label) options[itemId] = label;
       }
-    into[id] = { name, options };
+    into[id] = { name, options, ...(within ? { within } : {}) };
   }
   return into;
 }

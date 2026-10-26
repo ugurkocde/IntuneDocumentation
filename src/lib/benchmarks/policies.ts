@@ -725,6 +725,86 @@ export interface DifferingSetting {
 }
 
 /**
+ * Where one definition of a tenant root definitely differs from the
+ * recommended one (compareDefinition): in a parent option, in its own value
+ * (the instance without the settings below it, compared as the leaves are),
+ * or only below it, with the settings below it that differ (in the order of
+ * the recommended root, none below one already named, none whose value or a
+ * parent's cannot be read on either side). Null when it does not definitely
+ * differ.
+ */
+function definitionDifference(
+  recommended: Json,
+  observed: Json,
+  definitionId: string,
+): { place: "parent" | "own" | "below"; below: DifferingSetting[] } | null {
+  const state = compareDefinition(recommended, observed, definitionId);
+  if (state?.holds !== "yes" || state.comparison !== "differ") return null;
+  if (state.parentDiffers) return { place: "parent", below: [] };
+  const want = clean(recommended);
+  const have = clean(observed);
+  if (!isInstance(want) || !isInstance(have)) return null;
+  const wantedInstances = new Map<string, SettingInstance>();
+  const heldInstances = new Map<string, SettingInstance>();
+  const wanted = leafValues(want, "", new Map(), 0, wantedInstances);
+  const held = leafValues(have, "", new Map(), 0, heldInstances);
+  const anchors = [...wanted.keys()].filter((path) =>
+    path.endsWith(`/${definitionId}`),
+  );
+  const differences = leafDifferences(wanted, held);
+  // A differing parent value above it decides, then a differing own value;
+  // either is the difference itself.
+  const at = (test: (path: string, anchor: string) => boolean) =>
+    differences.some(({ wanted: path }) =>
+      anchors.some((anchor) => test(path, anchor)),
+    );
+  if (at((path, anchor) => path !== anchor && inSubtree(anchor, path)))
+    return { place: "parent", below: [] };
+  if (at((path, anchor) => path === anchor)) return { place: "own", below: [] };
+  const below = differences.filter(
+    ({ wanted: path }) =>
+      wantedInstances.has(path) &&
+      anchors.some((anchor) => path !== anchor && inSubtree(path, anchor)),
+  );
+  const order = [...wantedInstances.keys()];
+  return {
+    place: "below",
+    below: below
+      .filter(
+        ({ wanted: path }) =>
+          !below.some(
+            (other) => other.wanted !== path && inSubtree(path, other.wanted),
+          ),
+      )
+      .sort((a, b) => order.indexOf(a.wanted) - order.indexOf(b.wanted))
+      .map(({ wanted: path, observed: at }) => {
+        const instance = wantedInstances.get(path)!;
+        return {
+          settingId: instance.settingDefinitionId,
+          recommended: instance,
+          observed: heldInstances.get(at) ?? null,
+        };
+      }),
+  };
+}
+
+/**
+ * Where a definition that definitely differs differs, from the raw values,
+ * never from their text: "parent" (a parent holds another option), "own"
+ * (its own value) or "below" (only settings below it, named or not). Null
+ * when it does not definitely differ.
+ */
+export function differencePlace(
+  recommended: Json,
+  observed: Json,
+  definitionId: string,
+): "parent" | "own" | "below" | null {
+  return (
+    definitionDifference(recommended, observed, definitionId)?.place ?? null
+  );
+}
+
+/**
  * The settings below one definition whose tenant value definitely differs
  * while the definition's own value matches: what a Differs result changes
  * when its own value reads like the recommended one. Empty unless the
@@ -738,52 +818,5 @@ export function differingSettings(
   observed: Json,
   definitionId: string,
 ): DifferingSetting[] {
-  const state = compareDefinition(recommended, observed, definitionId);
-  if (
-    state?.holds !== "yes" ||
-    state.comparison !== "differ" ||
-    state.parentDiffers
-  )
-    return [];
-  const want = clean(recommended);
-  const have = clean(observed);
-  if (!isInstance(want) || !isInstance(have)) return [];
-  const wantedInstances = new Map<string, SettingInstance>();
-  const heldInstances = new Map<string, SettingInstance>();
-  const wanted = leafValues(want, "", new Map(), 0, wantedInstances);
-  const held = leafValues(have, "", new Map(), 0, heldInstances);
-  const anchors = [...wanted.keys()].filter((path) =>
-    path.endsWith(`/${definitionId}`),
-  );
-  const differences = leafDifferences(wanted, held);
-  // A differing own value shows the difference itself, and below a parent
-  // with another option the settings below do not apply.
-  if (
-    differences.some(({ wanted: path }) =>
-      anchors.some((anchor) => inSubtree(anchor, path)),
-    )
-  )
-    return [];
-  const below = differences.filter(
-    ({ wanted: path }) =>
-      wantedInstances.has(path) &&
-      anchors.some((anchor) => path !== anchor && inSubtree(path, anchor)),
-  );
-  const order = [...wantedInstances.keys()];
-  return below
-    .filter(
-      ({ wanted: path }) =>
-        !below.some(
-          (other) => other.wanted !== path && inSubtree(path, other.wanted),
-        ),
-    )
-    .sort((a, b) => order.indexOf(a.wanted) - order.indexOf(b.wanted))
-    .map(({ wanted: path, observed: at }) => {
-      const instance = wantedInstances.get(path)!;
-      return {
-        settingId: instance.settingDefinitionId,
-        recommended: instance,
-        observed: heldInstances.get(at) ?? null,
-      };
-    });
+  return definitionDifference(recommended, observed, definitionId)?.below ?? [];
 }

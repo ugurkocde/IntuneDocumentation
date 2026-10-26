@@ -611,8 +611,9 @@ describe("fix plan: what assigning a policy as it is would break, in every outpu
   it("keeps the change in the PDF's What to Do and the result's next step", () => {
     const { assessment } = regression();
     const text = pdfText(renderReadinessPdf(assessment, { renderDate: new Date("2026-10-22T12:00:00.000Z"), tenantLabel: "Synthetic Tenant" }));
-    expect(text).toContain(STEP.slice(0, 40));
-    expect(text).toContain("Before assigning it: Change");
+    expect(text).toContain(STEP);
+    // The cards point to the step that lists the conditions in full.
+    expect(text).toMatch(new RegExp(`Before assigning policy ${CANDIDATE}, do the steps listed under step \\d+ on the What to Do page\\.`));
   });
 
   it("warns on a change before assigning when the policy holds another value a matching result reads", () => {

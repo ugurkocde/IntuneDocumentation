@@ -49,10 +49,19 @@ import {
   type ReasonCode,
   type SettingFinding,
 } from "./assessment";
-import { REASON_LABELS, UNREADABLE_CAUSE_LABELS, otherProfilesText, reachText } from "./display";
+import { FORM_DIFFERS, REASON_LABELS, UNREADABLE_CAUSE_LABELS, otherProfilesText, reachText } from "./display";
 import type { AssignmentReach, AssignmentState } from "./tenant-settings";
-import { comparable } from "./policies";
-import { NOT_CONFIGURED, differenceText, settingName, settingValue, type UnreadableCause } from "./values";
+import { comparable, compareDefinition, differencePlace } from "./policies";
+import {
+  NOT_CONFIGURED,
+  contrastedTexts,
+  differenceText,
+  findInstance,
+  fullValueText,
+  settingName,
+  settingValue,
+  type UnreadableCause,
+} from "./values";
 
 export type FixActionKind =
   | "changeValue"
@@ -448,20 +457,41 @@ function settingStep(
   const policy = observation?.policyName ?? "";
   // From and to only where the setting's own value differs: a group of
   // settings shows entry counts, and the engine ignores extra tenant
-  // entries, so its entries are named instead, with the settings below it
+  // entries, so its entries are named instead, with every setting below it
   // that the engine read as different (differenceText) where known.
   const type = finding.recommended["@odata.type"];
   const group = typeof type === "string" && GROUP_TYPES.test(type);
-  // The own values compare without the note on an unreadable part of the
-  // pack value ("5 (a setting below it is not readable)"); a difference
-  // the engine read below the setting makes it a change below too.
+  // Whether the own value differs or a setting below it comes from the raw
+  // values (differencePlace), never from the shortened texts; only a value
+  // that does not differ definitely falls back to them. The own values
+  // compare without the note on an unreadable part of the pack value
+  // ("5 (a setting below it is not readable)").
   const own = settingValue(finding.recommended, finding.settingId, assessment.settingNames).text;
-  const below = group || current === own || current === recommended || (observation?.differences?.length ?? 0) > 0;
-  const differing = below && observation ? differenceText(observation, assessment.settingNames) : null;
+  const place = observation ? differencePlace(finding.recommended, observation.value, finding.settingId) : null;
+  const below =
+    group ||
+    (place
+      ? place !== "own"
+      : current === own || current === recommended || (observation?.differences?.length ?? 0) > 0);
+  const differing =
+    below && observation ? differenceText(observation, assessment.settingNames, Number.POSITIVE_INFINITY) : null;
+  // Values whose shortened texts read alike are shown from where they differ.
+  const values =
+    !below && observation
+      ? contrastedTexts(
+          fullValueText(findInstance(observation.value, finding.settingId), assessment.settingNames),
+          fullValueText(findInstance(finding.recommended, finding.settingId), assessment.settingNames),
+        )
+      : null;
+  const note = recommended.startsWith(own) ? recommended.slice(own.length) : "";
+  const from = values?.current ?? current;
+  const to = values ? `${values.recommended}${note}` : recommended;
   const change = (when: string) =>
     below
       ? `Change the settings below ${name} in policy ${policy} to the recommended values${when}${differing ? `: ${differing}` : ""}.`
-      : `Change ${name} in policy ${policy} from ${current} to ${recommended}${when}.`;
+      : from === to
+        ? `Change ${name} in policy ${policy} to the recommended value ${recommended}${when}: its current value ${current} ${FORM_DIFFERS}.`
+        : `Change ${name} in policy ${policy} from ${from} to ${to}${when}.`;
   let text: string;
   switch (kind) {
     case "changeValue":
@@ -593,6 +623,8 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   // review for the rest).
   interface OpenSetting {
     item: AssessmentResult;
+    /** The declared setting id: a recommendation's setting, or the finding's own. */
+    id: string;
     status: SettingFinding["status"] | "Unmapped";
     result: SettingFinding["result"];
     reason?: ReasonCode;
@@ -606,6 +638,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
             .filter((setting) => setting.result !== "Pass")
             .map((setting) => ({
               item,
+              id: setting.id,
               status: setting.status,
               result: setting.result,
               ...(setting.reason ? { reason: setting.reason } : {}),
@@ -614,6 +647,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
         : [
             {
               item,
+              id: item.finding.settingId,
               status: item.finding.status,
               result: item.finding.result,
               ...(item.finding.reason ? { reason: item.finding.reason } : {}),
@@ -631,12 +665,47 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     addSetting: (setting) => setting.status === "Missing",
   };
   const ref = (item: AssessmentResult): FixResult => ({ level: item.level, kind: item.kind, id: item.id, key: item.key });
-  const resultsOf = (kind: FixActionKind, keys: Iterable<string>): FixResult[] => {
+  const findingByKey = new Map(assessment.settings.map((finding) => [finding.key, finding]));
+  // An action on one policy concerns a result only where that policy's own
+  // value of the declared setting is what the action answers: a root's key
+  // is shared by every setting below it, so policy X differing in child A
+  // and policy Y in child B each concern only the result declaring theirs.
+  const policyHolds = (kind: FixActionKind, policyId: string, setting: OpenSetting, key: string) =>
+    (findingByKey.get(key)?.observations ?? []).some((observation) => {
+      if (observation.policyId !== policyId) return false;
+      const state = compareDefinition(findingByKey.get(key)!.recommended, observation.value, setting.id);
+      if (!state) return false;
+      switch (kind) {
+        // A setting missing below a root the policy holds with another
+        // value is added by the change too (its step names it, "from Not
+        // configured"), when nothing else holds it.
+        case "changeValue":
+          return (
+            (state.holds === "yes" && state.comparison === "differ") ||
+            (setting.status === "Missing" && state.holds === "no" && observation.comparison === "differ")
+          );
+        case "changeBeforeAssign":
+          return state.holds === "yes" && state.comparison === "differ";
+        case "checkValue":
+          return state.holds === "maybe" || (state.holds === "yes" && state.comparison === "unknown");
+        case "checkAssignment":
+          return state.holds === "yes" && state.comparison === "match";
+        default:
+          return true;
+      }
+    });
+  const resultsOf = (kind: FixActionKind, keys: Iterable<string>, policyId?: string): FixResult[] => {
     const wanted = new Set(keys);
     const accept = accepts[kind] ?? ((setting: OpenSetting) => setting.result === "Review");
     const seen = new Map<string, AssessmentResult>();
     for (const setting of openSettings)
-      if (accept(setting) && setting.findingKeys.some((key) => wanted.has(key))) seen.set(setting.item.key, setting.item);
+      if (
+        accept(setting) &&
+        setting.findingKeys.some(
+          (key) => wanted.has(key) && (policyId === undefined || policyHolds(kind, policyId, setting, key)),
+        )
+      )
+        seen.set(setting.item.key, setting.item);
     return [...seen.values()].map(ref);
   };
   const drafts = draftStates(assessment);
@@ -655,7 +724,6 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   // Assigning one policy that is not assigned: the engine judges again.
   const review = open.filter((item) => item.result === "Review");
   const matching = results.filter((item) => item.result === "Pass");
-  const findingByKey = new Map(assessment.settings.map((finding) => [finding.key, finding]));
   const after = (item: AssessmentResult, simulated: ReturnType<typeof reassess>) =>
     item.kind === "recommendation"
       ? simulated.recommendations.get(`${item.level}:${item.id}`)
@@ -934,7 +1002,11 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       ...(conditions.length ? { conditions: conditions.map(({ step }) => step) } : {}),
       ...(warning ? { caution: warning } : {}),
       settings: entry.settings,
-      results: resultsOf(entry.kind, entry.settings.map((setting) => setting.findingKey)),
+      results: resultsOf(
+        entry.kind,
+        entry.settings.map((setting) => setting.findingKey),
+        entry.policy.id,
+      ),
       text,
     });
   }
@@ -1063,9 +1135,14 @@ export function actionCautionLines(action: FixAction): string[] {
  * The next step of one result as one line: the steps of its findings in
  * its highest impact actions ("Change S in policy P from A to B."), or the
  * action text when none of its findings is listed, each followed by the
- * action's caution and conditions (actionCautionLines).
+ * action's caution and conditions (actionCautionLines, or what cautionLines
+ * gives for an action, such as where a view lists its conditions in full).
  */
-export function nextStepText(plan: FixPlan, result: AssessmentResult): string {
+export function nextStepText(
+  plan: FixPlan,
+  result: AssessmentResult,
+  cautionLines: (action: FixAction) => string[] = actionCautionLines,
+): string {
   const actions = actionsForResult(plan, result.key);
   if (!actions.length) return "";
   const keys = new Set(
@@ -1077,14 +1154,14 @@ export function nextStepText(plan: FixPlan, result: AssessmentResult): string {
   const assign = actions.filter((action) => action.kind === "assignPolicy");
   if (assign.length) {
     lines.push(`Assign policy ${assign.map((action) => action.policy!.name).join(" or ")}.`);
-    for (const action of assign) lines.push(...actionCautionLines(action));
+    for (const action of assign) lines.push(...cautionLines(action));
   }
   for (const action of actions) {
     if (action.kind === "assignPolicy") continue;
     const own = action.settings.filter((setting) => keys.has(setting.findingKey));
     if (own.length) lines.push(...own.map((setting) => setting.text));
     else lines.push(action.text);
-    lines.push(...actionCautionLines(action));
+    lines.push(...cautionLines(action));
   }
   return [...new Set(lines)].join(" ");
 }

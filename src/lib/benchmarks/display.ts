@@ -16,7 +16,7 @@ import {
   type SettingFinding,
   type SettingStatus,
 } from "./assessment";
-import { compareDefinition } from "./policies";
+import { compareDefinition, differencePlace } from "./policies";
 import {
   otherProfilesFor,
   platformFamilies,
@@ -26,6 +26,9 @@ import {
 import {
   NOT_CONFIGURED,
   NOT_FOUND,
+  contrastedTexts,
+  findInstance,
+  fullValueText,
   recommendedValue,
   settingDifferences,
   settingName,
@@ -622,30 +625,79 @@ export interface HolderDetail {
    * Empty when none can be named.
    */
   differences: SettingDifference[];
+  /**
+   * For a holder that Differs: whether its own value differs or only a
+   * setting below it, from the raw values (policies.ts differencePlace),
+   * never from their shortened text.
+   */
+  differsAt?: "own" | "below";
+  /**
+   * For a holder whose own value differs while its shortened text reads like
+   * the recommended one: both values from where they differ
+   * (values.ts contrastedTexts).
+   */
+  contrast?: { current: string; recommended: string };
 }
 
-/** What a holder's value says when it reads like the recommended one while it differs. */
+/** What a holder's value says when only a setting below it differs. */
 export const BELOW_DIFFERS = "a setting below differs";
+
+/** What a holder's value says when its own value differs in a way its text does not show. */
+export const FORM_DIFFERS = "differs from the recommended value in a way the text does not show";
 
 /** The label before the differing settings below a holder's setting. */
 export const DIFFERS_BELOW_LABEL = "Settings below that differ";
 
 /**
- * A holder's current value as shown beside the recommended one. A setting
- * that differs while its own value reads like the recommended one differs in
- * a setting below it, and its value says so, so the same value never stands
- * beside Differs: "Enabled (a setting below differs)".
+ * A holder's current value as shown beside the recommended one, so the same
+ * value never stands beside Differs. Where it differs comes from the raw
+ * values (differsAt): only below it, "Enabled (a setting below differs)";
+ * its own value with the same shortened text, both values from where they
+ * differ; its own value with the same full text, a note that it differs in
+ * a way the text does not show. Without differsAt (details from before
+ * it was known) a value reading like the recommended one is taken to differ
+ * below it.
  */
 export function holderValueText(
-  holder: Pick<HolderDetail, "label" | "current" | "differences">,
+  holder: Pick<HolderDetail, "label" | "current" | "differences" | "differsAt" | "contrast">,
   recommended: readonly string[],
 ): string {
-  return holder.label === "Differs" &&
-    (holder.differences.length > 0 ||
-      // The recommended text may carry a note on an unreadable part: "5 (parent not readable)".
-      recommended.some((text) => text === holder.current.text || text.startsWith(`${holder.current.text} (`)))
-    ? `${holder.current.text} (${BELOW_DIFFERS})`
-    : holder.current.text;
+  const text = holder.current.text;
+  if (holder.label !== "Differs") return text;
+  if (holder.contrast)
+    return `${holder.contrast.current}, recommended ${holder.contrast.recommended}`;
+  // The recommended text may carry a note on an unreadable part: "5 (parent not readable)".
+  const alike = recommended.some((value) => value === text || value.startsWith(`${text} (`));
+  if (holder.differsAt === "own") return alike ? `${text} (${FORM_DIFFERS})` : text;
+  return holder.differsAt === "below" || holder.differences.length > 0 || alike
+    ? `${text} (${BELOW_DIFFERS})`
+    : text;
+}
+
+/**
+ * Where one holder's value of a setting differs, and both values from where
+ * they differ when their shortened texts read alike.
+ */
+export function holderDifference(
+  recommendedRoot: SettingFinding["recommended"],
+  value: Observation["value"],
+  settingId: string,
+  names?: BenchmarkAssessment["settingNames"],
+): Pick<HolderDetail, "differsAt" | "contrast"> {
+  const place = differencePlace(recommendedRoot, value, settingId);
+  if (place === "below") return { differsAt: "below" };
+  if (place !== "own") return {};
+  const contrast = contrastedTexts(
+    fullValueText(findInstance(value, settingId), names),
+    fullValueText(findInstance(recommendedRoot, settingId), names),
+  );
+  const shown = {
+    current: settingValue(value, settingId, names).text,
+    recommended: settingValue(recommendedRoot, settingId, names).text,
+  };
+  return contrast.current !== shown.current || contrast.recommended !== shown.recommended
+    ? { differsAt: "own", contrast }
+    : { differsAt: "own" };
 }
 
 /** One setting of a result: its name, recommended value and the policies holding it. */
@@ -713,6 +765,9 @@ export function resultSettingDetails(
                 ? ((setting.id === finding.settingId ? observation.differences : undefined) ??
                   settingDifferences(finding.recommended, observation.value, setting.id, assessment.settingNames))
                 : [],
+            ...(label === "Differs"
+              ? holderDifference(finding.recommended, observation.value, setting.id, assessment.settingNames)
+              : {}),
           },
         ];
       }),

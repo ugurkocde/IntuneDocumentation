@@ -725,19 +725,6 @@ export function renderReadinessPdf(
       color: theme.primary,
     });
   };
-  /** One line with the middle cut out, so both ends of a long id stay. */
-  const middleClamp = (text: string, width: number, size: number) => {
-    const value = pdfText(text);
-    if (textWidth(doc, value, size) <= width) return value;
-    let keep = Math.floor(value.length / 2);
-    while (
-      keep > 4 &&
-      textWidth(doc, `${value.slice(0, keep)}...${value.slice(-keep)}`, size) >
-        width
-    )
-      keep -= 1;
-    return `${value.slice(0, keep)}...${value.slice(-keep)}`;
-  };
   /** A dashed card with one muted line, the evidence report's empty state. */
   const emptyCard = (text: string) => {
     const lines = wrapText(doc, text, contentWidth - 10, 8.2);
@@ -820,8 +807,7 @@ export function renderReadinessPdf(
   const titleOf = (item: AssessmentResult) =>
     item.kind === "recommendation"
       ? item.recommendation.title
-      : (assessment.settingNames[item.finding.settingId]?.name ??
-        item.finding.settingId);
+      : settingName(assessment.settingNames, item.finding.settingId);
   // Differs and Not configured get a card per result. Needs review results
   // are grouped per Level by their first step in the plan, the one of the
   // highest impact, and without a step by their reason: one card per group,
@@ -829,6 +815,20 @@ export function renderReadinessPdf(
   const stepOf = new Map(
     plan.actions.map((action, index) => [action.id, index + 1]),
   );
+  /**
+   * Where the steps before assigning an action's policy are listed in full:
+   * under its step on the What to Do page. Empty without conditions.
+   */
+  const conditionsNote = (action: FixAction, step: number) => {
+    if (!action.conditions?.length) return "";
+    const policyName = action.policy ? `policy ${action.policy.name}` : "it";
+    return `Before assigning ${policyName}, do the steps listed under step ${step} on the What to Do page.`;
+  };
+  /** A result's next step names an action's caution, and where its conditions are listed. */
+  const nextStepCautions = (action: FixAction) => [
+    ...(action.caution ? [action.caution] : []),
+    ...[conditionsNote(action, stepOf.get(action.id) ?? 0)].filter(Boolean),
+  ];
   const reviewKeys = new Set(
     detailResults
       .filter((item) => item.result === "Review")
@@ -1551,16 +1551,10 @@ export function renderReadinessPdf(
 
   // The first steps and the key findings, measured before the sections so
   // the sections take the room that is left.
+  // In full: a step names policies and groups, never cut mid-name.
   const firstSteps = plan.actions.slice(0, 3).map((action) => ({
     action,
-    lines: wrapText(
-      doc,
-      prose(action.text),
-      contentWidth - 8 - 24,
-      7.8,
-      "normal",
-      2,
-    ),
+    lines: wrapText(doc, prose(action.text), contentWidth - 8 - 24, 7.8, "normal"),
   }));
   const stepsHeight = firstSteps.length
     ? 6.5 +
@@ -1785,7 +1779,7 @@ export function renderReadinessPdf(
     );
   plan.actions.forEach((action, index) => {
     const width = contentWidth - 8 - 26;
-    const textLines = wrapText(doc, prose(action.text), width, 9, "normal", 4);
+    const textLines = wrapText(doc, prose(action.text), width, 9, "normal");
     // Settings are named by their display names, their ids beneath.
     const levelTag = (text: string, level: number) =>
       multiLevel ? `${text} (Level ${level})` : text;
@@ -1824,7 +1818,7 @@ export function renderReadinessPdf(
         ? `; listed under step${under.length > 1 ? "s" : ""} ${under.join(", ")}`
         : ""
     }`;
-    const subLines = wrapText(doc, helps, width, 7.2, "normal", 3);
+    const subLines = wrapText(doc, helps, width, 7.2, "normal");
     const idLines = namedIds.length
       ? wrapText(
           doc,
@@ -1832,34 +1826,42 @@ export function renderReadinessPdf(
           width,
           5.8,
           "normal",
-          2,
         )
       : [];
-    // A setting compared at two Levels is one step. Assigning a policy
-    // lists the steps to do first (its conditions), not the values it holds.
+    // Every step of the action, complete: its warning where the text does
+    // not state it, then its settings (a setting compared at two Levels is
+    // one step). Assigning a policy lists the steps to do first (its
+    // conditions), not the values it holds. The steps continue on the next
+    // page when they do not fit, so none is left out.
     const steps = [
       ...new Set(
         [
-          ...(action.kind === "assignPolicy" || action.kind === "checkOtherProfiles" ? [] : action.settings),
-          ...(action.conditions ?? []),
-        ].map((setting) => prose(setting.text)),
+          ...(action.caution && !action.text.includes(action.caution)
+            ? [action.caution]
+            : []),
+          ...(action.kind === "assignPolicy" ||
+          action.kind === "checkOtherProfiles"
+            ? []
+            : action.settings.map((setting) => setting.text)),
+          ...(action.conditions ?? []).map((setting) => setting.text),
+        ].map(prose),
       ),
     ];
-    const listed = steps.slice(0, 3);
-    const settingLines = listed.map((text) =>
-      wrapText(doc, text, width - 4, 7.2, "normal", 2),
+    const settingLines = steps.map((text) =>
+      wrapText(doc, text, width - 4, 7.2, "normal"),
     );
-    const more = steps.length - listed.length;
-    const height =
+    const headHeight =
       2.4 +
       textLines.length * 4.1 +
       0.8 +
       subLines.length * 3.2 +
-      idLines.length * 2.5 +
-      settingLines.reduce((sum, lines) => sum + lines.length * 3.2 + 0.6, 0) +
-      (more > 0 ? 3.4 : 0) +
-      2.8;
-    if (ensure(height) && index > 0) caption("What to do (continued)");
+      idLines.length * 2.5;
+    // The head keeps its first step with it.
+    const firstStepHeight = settingLines[0]
+      ? Math.min(settingLines[0].length, 4) * 3.2 + 0.6
+      : 0;
+    if (ensure(headHeight + firstStepHeight + 2.8) && index > 0)
+      caption("What to do (continued)");
     const top = y;
     setFont(doc, 9, "bold", theme.primary);
     doc.text(`${index + 1}.`, margin + 1.5, top + 2.4 + capHeight(9));
@@ -1897,33 +1899,26 @@ export function renderReadinessPdf(
       2.5,
     );
     lineTop += idLines.length * 2.5;
-    for (const lines of settingLines) {
-      doc.setFillColor(...PALETTE.muted);
-      doc.circle(margin + 9, lineTop + 1.3, 0.45, "F");
-      drawLines(
-        doc,
-        lines,
-        margin + 12,
-        lineTop,
-        7.2,
-        "normal",
-        theme.text,
-        3.2,
-      );
-      lineTop += lines.length * 3.2 + 0.6;
-    }
-    if (more > 0) {
-      setFont(doc, 7.2, "italic", PALETTE.muted);
-      doc.text(
-        `and ${plural(more, "more setting", "more settings")}`,
-        margin + 12,
-        lineTop + capHeight(7.2),
-      );
-    }
     const target = actionTarget(action);
     if (target) pageRef(target, right - 1.5, top + 2.4 + capHeight(9), 7);
-    drawRule(doc, margin, top + height, right);
-    y += height;
+    y = lineTop;
+    for (const lines of settingLines) {
+      lines.forEach((line, lineIndex) => {
+        if (y + 3.2 + 2.8 > contentBottom) {
+          newPage();
+          caption(`What to do (continued), step ${index + 1}`);
+        }
+        if (!lineIndex) {
+          doc.setFillColor(...PALETTE.muted);
+          doc.circle(margin + 9, y + 1.3, 0.45, "F");
+        }
+        drawLines(doc, [line], margin + 12, y, 7.2, "normal", theme.text, 3.2);
+        y += 3.2;
+      });
+      y += 0.6;
+    }
+    y += 2.8;
+    drawRule(doc, margin, y, right);
   });
 
   // ------------------------------------------------------------- Results
@@ -1991,7 +1986,7 @@ export function renderReadinessPdf(
         );
         const rawLines =
           item.kind === "setting" && titleOf(item) !== item.id
-            ? [middleClamp(item.id, nameWidth - 2, 5.8)]
+            ? wrapText(doc, item.id, nameWidth - 2, 5.8, "normal")
             : [];
         const reason = shortReason(item);
         if (item.reason)
@@ -2463,7 +2458,11 @@ export function renderReadinessPdf(
       : holderValueText(holder, recommended);
   /** The differing settings below a holder's setting, as one sentence. */
   const differencesLine = (holder: HolderDetail) => {
-    const text = differenceStates(holder, assessment.settingNames);
+    const text = differenceStates(
+      holder,
+      assessment.settingNames,
+      Number.POSITIVE_INFINITY,
+    );
     return text ? `${DIFFERS_BELOW_LABEL}: ${text}.` : "";
   };
 
@@ -2702,7 +2701,6 @@ export function renderReadinessPdf(
           tableWidths[0] - 3,
           SMALL,
           "bold",
-          3,
         );
         const reach =
           holder.assignment === "assigned"
@@ -2719,9 +2717,16 @@ export function renderReadinessPdf(
         const chipLabel = inline
           ? pdfText(`${assignment}: ${reach}`)
           : assignment;
-        const reachLines =
+        // Targets that do not fit three lines of the column are named in
+        // full across the card below the row, never cut.
+        const columnReach =
           reach && !inline
-            ? wrapText(doc, reach, tableWidths[1] - 2, 6, "normal", 3)
+            ? wrapText(doc, reach, tableWidths[1] - 2, 6, "normal")
+            : [];
+        const reachLines = columnReach.length <= 3 ? columnReach : [];
+        const wideReachLines =
+          columnReach.length > 3
+            ? wrapText(doc, `Assigned to: ${reach}`, innerWidth - 2, 6.4, "normal")
             : [];
         const currentText = shownValue(holder, detail.recommended);
         const currentLines = wrapText(
@@ -2730,7 +2735,6 @@ export function renderReadinessPdf(
           tableWidths[2] - 3,
           SMALL,
           "bold",
-          6,
         );
         const recLines = wrapText(
           doc,
@@ -2738,7 +2742,6 @@ export function renderReadinessPdf(
           tableWidths[3] - 3,
           SMALL,
           "normal",
-          6,
         );
         const causeLines = holder.current.cause
           ? wrapText(
@@ -2752,9 +2755,11 @@ export function renderReadinessPdf(
           : [];
         const below = differencesLine(holder);
         const differenceLines = below
-          ? wrapText(doc, below, innerWidth - 2, 6.4, "normal", 6)
+          ? wrapText(doc, below, innerWidth - 2, 6.4, "normal")
           : [];
-        const notesTop = causeLines.length ? causeLines.length * 2.8 + 0.4 : 0;
+        const notesTop =
+          (causeLines.length ? causeLines.length * 2.8 + 0.4 : 0) +
+          (wideReachLines.length ? wideReachLines.length * 2.8 + 0.4 : 0);
         const row = rowLabel(holder);
         const body = Math.max(
           policyLines.length * 3.1,
@@ -2880,6 +2885,19 @@ export function renderReadinessPdf(
             );
             drawLines(
               doc,
+              wideReachLines,
+              innerX,
+              cellTop +
+                body +
+                0.4 +
+                (causeLines.length ? causeLines.length * 2.8 + 0.4 : 0),
+              6.4,
+              "normal",
+              PALETTE.muted,
+              2.8,
+            );
+            drawLines(
+              doc,
               differenceLines,
               innerX,
               cellTop + body + 0.4 + notesTop,
@@ -2927,57 +2945,63 @@ export function renderReadinessPdf(
         });
       }
     });
-    // The reason and the next step close the card as short muted lines.
-    const next = prose(nextStepText(plan, item));
+    // The reason and the next step close the card as short muted lines, in
+    // full; the steps before assigning a policy are listed under its step on
+    // the What to Do page, and the next step says so.
+    const next = prose(nextStepText(plan, item, nextStepCautions));
     // A reason the next step already states is not repeated.
     const whyLines = whyTexts
       .filter((text) => !next.includes(text))
-      .flatMap((text) => wrapText(doc, text, innerWidth, 6.8, "normal", 4));
+      .flatMap((text) => wrapText(doc, text, innerWidth, 6.8, "normal"));
     const nextLines = next
-      ? wrapText(doc, next, innerWidth - 18, 7, "normal", 6)
+      ? wrapText(doc, next, innerWidth - 18, 7, "normal")
       : [];
-    if (whyLines.length || nextLines.length)
+    // One block, or for a long step blocks of a few lines each, so it
+    // continues on the next page instead of running past it.
+    const CHUNK = 12;
+    const rows = [
+      ...whyLines.map((line) => ({ line, next: false })),
+      ...nextLines.map((line) => ({ line, next: true })),
+    ];
+    const chunks: (typeof rows)[] = [];
+    const size = rows.length > 2 * CHUNK ? CHUNK : rows.length;
+    for (let at = 0; at < rows.length; at += size)
+      chunks.push(rows.slice(at, at + size));
+    chunks.forEach((chunk, index) => {
+      const first = index === 0;
+      const why = chunk.filter((row) => !row.next).map((row) => row.line);
+      const next = chunk.filter((row) => row.next).map((row) => row.line);
+      // The eyebrow sits on the first line of the next step.
+      const eyebrow = nextLines.length > 0 && chunk.includes(rows[whyLines.length]!);
+      const gap = why.length && next.length ? 1 : 0;
       blocks.push({
         height:
-          1.6 +
-          whyLines.length * 3 +
-          (nextLines.length
-            ? (whyLines.length ? 1 : 0) + nextLines.length * 3.1
-            : 0) +
-          0.6,
+          (first ? 1.6 : 0) + why.length * 3 + gap + next.length * 3.1 + 0.6,
         draw: (top) => {
-          drawRule(doc, innerX, top + 0.4, right - pad, PALETTE.border, 0.25);
-          let lineTop = top + 1.6;
-          drawLines(
-            doc,
-            whyLines,
-            innerX,
-            lineTop,
-            6.8,
-            "normal",
-            PALETTE.muted,
-            3,
-          );
-          lineTop += whyLines.length * 3 + (whyLines.length ? 1 : 0);
-          if (nextLines.length) {
+          if (first)
+            drawRule(doc, innerX, top + 0.4, right - pad, PALETTE.border, 0.25);
+          let lineTop = top + (first ? 1.6 : 0);
+          drawLines(doc, why, innerX, lineTop, 6.8, "normal", PALETTE.muted, 3);
+          lineTop += why.length * 3 + gap;
+          if (eyebrow)
             drawEyebrow(doc, "Next step", innerX, lineTop + capHeight(7), {
               color: PALETTE.muted,
               size: 5.4,
               charSpace: 0.2,
             });
-            drawLines(
-              doc,
-              nextLines,
-              innerX + 18,
-              lineTop,
-              7,
-              "normal",
-              theme.text,
-              3.1,
-            );
-          }
+          drawLines(
+            doc,
+            next,
+            innerX + 18,
+            lineTop,
+            7,
+            "normal",
+            theme.text,
+            3.1,
+          );
         },
       });
+    });
     return { blocks, rowIndexes };
   };
 
@@ -3050,7 +3074,6 @@ export function renderReadinessPdf(
       textWidthHere,
       8.2,
       "bold",
-      5,
     );
     const subText = policy
       ? `Policy ${policy.name}`
@@ -3064,14 +3087,14 @@ export function renderReadinessPdf(
           textWidthHere,
           7,
           policy ? "bold" : "normal",
-          policy ? 2 : 4,
+          policy ? Number.POSITIVE_INFINITY : 4,
         )
       : [];
     const reach = policy
       ? reachText(policy).replace(/^./, (char) => char.toUpperCase())
       : "";
     const reachLines = [
-      ...(reach ? wrapText(doc, reach, textWidthHere, 6.6, "normal", 3) : []),
+      ...(reach ? wrapText(doc, reach, textWidthHere, 6.6, "normal") : []),
       ...(earlier > 0
         ? wrapText(
             doc,
@@ -3102,15 +3125,15 @@ export function renderReadinessPdf(
             2,
           )
         : []),
-      // The steps to do before assigning the policy, as the plan names them.
-      ...(action?.conditions?.length
+      // The steps to do before assigning the policy, listed in full under
+      // the step on the What to Do page.
+      ...(action && group.step !== undefined && conditionsNote(action, group.step)
         ? wrapText(
             doc,
-            `Before assigning it: ${[...new Set(action.conditions.map((setting) => prose(setting.text)))].join(" ")}`,
+            conditionsNote(action, group.step),
             textWidthHere,
             6.6,
             "normal",
-            6,
           )
         : []),
     ];
@@ -3230,7 +3253,7 @@ export function renderReadinessPdf(
           : [];
         const rawLines =
           detail.name !== detail.settingId
-            ? [middleClamp(detail.settingId, nameWidth, 5.6)]
+            ? wrapText(doc, detail.settingId, nameWidth, 5.6, "normal")
             : [];
         // The step's policy when it holds the setting, otherwise every holder.
         const own = policy
@@ -3279,7 +3302,7 @@ export function renderReadinessPdf(
           ? [listed && `${listed}.`, ...below].filter(Boolean).join(" ")
           : listed;
         const otherLines = note
-          ? wrapText(doc, note, nameWidth, 6, "italic", 14)
+          ? wrapText(doc, note, nameWidth, 6, "italic")
           : [];
         const current = !holders.length
           ? detail.status === "Missing"
@@ -3295,7 +3318,6 @@ export function renderReadinessPdf(
           widths[2]! - 3,
           6.8,
           currentStyle.style,
-          8,
         );
         const recLines = wrapText(
           doc,
@@ -3303,7 +3325,6 @@ export function renderReadinessPdf(
           widths[3]! - 3,
           6.8,
           "normal",
-          6,
         );
         return {
           nameLines,
@@ -3516,7 +3537,7 @@ export function renderReadinessPdf(
     if (
       y + total > contentBottom &&
       ((card.whole && total <= contentBottom - contentTop - 8) ||
-        contentBottom - y < 40)
+        contentBottom - y < Math.max(40, (blocks[0]?.height ?? 0) + bottomPad))
     ) {
       newPage();
       caption(`${groupHeading} (continued)`);

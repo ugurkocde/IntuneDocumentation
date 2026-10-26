@@ -7,7 +7,10 @@ import { definitionNames, type SettingNames } from "../../../../src/lib/benchmar
 //   packs carry no settingDefinitions): GET /beta/deviceManagement/
 //   configurationSettings/{id}, the deviceManagementConfigurationSettingDefinition
 //   with displayName and, for choice settings, options[].itemId and
-//   displayName; an id Graph does not know answers 404. Verified with Lokka
+//   displayName; an id Graph does not know answers 404. A setting below
+//   another (the value of an administrative template setting) answers with
+//   an empty displayName, its name and rootDefinitionId, and is named within
+//   its root (tenant-settings.ts definitionNames). Verified with Lokka
 //   (lab tenant, app-only) on 2026-10-26; covered by
 //   DeviceManagementConfiguration.Read.All. The same list with $filter=id eq
 //   ... answers too, but took 9 to 15 seconds per request in the lab, while

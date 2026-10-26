@@ -10,7 +10,6 @@ import { REASON_LABELS, RESULT_LABELS } from "../display";
 import {
   PACK_POLICY,
   TENANT_POLICY,
-  UNASSIGNED_POLICY,
   richAssessment,
   richPack,
   unassessedAssessment,
@@ -65,37 +64,51 @@ describe("benchmark export file names", () => {
   });
 });
 
+const rowStarting = (lines: readonly string[], start: string) =>
+  lines.find((line) => line.startsWith(`${start},`));
+
 describe("benchmark CSV", () => {
   it("lists ids, result codes, labels, reasons and open settings without titles", () => {
     const csv = benchmarkCsv(richAssessment());
     const lines = csv.replace(/^﻿/, "").trimEnd().split("\r\n");
     expect(lines[0]).toBe(
-      "Benchmark,Version,Level,Item level,Item,ID,Result code,Result,Reason code,Reason,Open setting IDs",
+      "Benchmark,Version,Level,Item level,Item,ID,Result code,Result,Reason code,Reason,Open setting IDs,Setting names,Holding policies,Assignment,Current value,Recommended value,Next action",
     );
-    expect(lines).toContain(
-      "synthetic-bench,1.0.0,1,1,Recommendation,1.1,pass,Matches,,,",
-    );
-    expect(lines).toContain(
-      "synthetic-bench,1.0.0,1,1,Recommendation,2.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_gamma",
-    );
+    expect(rowStarting(lines, "synthetic-bench,1.0.0,1,1,Recommendation,1.1,pass,Matches,,,")).toBeTruthy();
+    expect(
+      rowStarting(
+        lines,
+        "synthetic-bench,1.0.0,1,1,Recommendation,2.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_gamma",
+      ),
+    ).toBeTruthy();
     expect(lines).toHaveLength(1 + richAssessment().recommendations.length);
     for (const item of richAssessment().recommendations)
       expect(csv).not.toContain(item.title);
-    expect(csv).not.toContain(TENANT_POLICY);
+    // Holding policies are the tenant's own; pack policy names never appear.
+    expect(csv).not.toContain(PACK_POLICY);
     expect(csv.startsWith("﻿")).toBe(true);
   });
 
   it("tells matching, differing and mixed values on unassigned policies apart", () => {
     const lines = benchmarkCsv(unassignedAssessment()).split("\r\n");
-    expect(lines).toContain(
-      "synthetic-bench,1.0.0,1,1,Recommendation,1.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_alpha",
-    );
-    expect(lines).toContain(
-      'synthetic-bench,1.0.0,1,1,Recommendation,1.2,review,Needs review,notAssignedDiffers,"Only policies that are not assigned hold this setting, and none of them matches the recommended value.",synthetic_bench_length',
-    );
-    expect(lines).toContain(
-      "synthetic-bench,1.0.0,1,1,Recommendation,1.3,review,Needs review,notAssignedMixed,Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.,synthetic_bench_gamma",
-    );
+    expect(
+      rowStarting(
+        lines,
+        "synthetic-bench,1.0.0,1,1,Recommendation,1.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_alpha",
+      ),
+    ).toBeTruthy();
+    expect(
+      rowStarting(
+        lines,
+        'synthetic-bench,1.0.0,1,1,Recommendation,1.2,review,Needs review,notAssignedDiffers,"Only policies that are not assigned hold this setting, and none of them matches the recommended value.",synthetic_bench_length',
+      ),
+    ).toBeTruthy();
+    expect(
+      rowStarting(
+        lines,
+        "synthetic-bench,1.0.0,1,1,Recommendation,1.3,review,Needs review,notAssignedMixed,Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.,synthetic_bench_gamma",
+      ),
+    ).toBeTruthy();
   });
 
   it("neutralises cells a spreadsheet would read as a formula", () => {
@@ -107,7 +120,7 @@ describe("benchmark CSV", () => {
     };
     const csv = benchmarkCsv(assessment);
     expect(csv).toContain(",'=HYPERLINK(1),");
-    expect(csv).toContain(",'+cmd\r\n");
+    expect(csv).toContain(",'+cmd,");
     for (const line of csv.split("\r\n"))
       for (const cell of line.split(",")) expect(cell).not.toMatch(/^[=+\-@]/);
   });
@@ -122,27 +135,34 @@ describe("benchmark CSV", () => {
       ],
     };
     expect(benchmarkCsv(assessment)).toContain(
-      ",com.synthetic.energysaver_display sleep timer; synthetic_bench_beta\r\n",
+      ",com.synthetic.energysaver_display sleep timer; synthetic_bench_beta,",
     );
   });
 
   it("lists settings when the pack has no recommendations", () => {
+    const rich = richAssessment();
     const assessment = {
-      ...richAssessment(),
+      ...rich,
       basis: "settings" as const,
       recommendations: [],
+      levels: rich.levels.map((level) => ({
+        ...level,
+        headline: { ...level.headline, basis: "settings" as const },
+      })),
     };
     const csv = benchmarkCsv(assessment);
     expect(csv).toContain(
-      "synthetic-bench,1.0.0,1,1,Setting,synthetic_bench_beta,fail,Differs,,,synthetic_bench_beta",
+      "synthetic-bench,1.0.0,1,1,Setting,synthetic_bench_beta,fail,Differs,,,synthetic_bench_beta,",
     );
   });
 });
 
 describe("benchmark JSON summary", () => {
   it("is deterministic with sorted keys", () => {
-    const text = benchmarkJson(richAssessment());
-    expect(benchmarkJson(richAssessment())).toBe(text);
+    // The same assessment gives the same text (fixture policy ids differ per call).
+    const assessment = richAssessment();
+    const text = benchmarkJson(assessment);
+    expect(benchmarkJson(assessment)).toBe(text);
     expect(keysSorted(JSON.parse(text))).toBe(true);
   });
 
@@ -174,8 +194,9 @@ describe("benchmark JSON summary", () => {
     expect(summary.disclaimer).toBe(
       "Readiness comparison, not a certification",
     );
-    for (const name of [TENANT_POLICY, UNASSIGNED_POLICY, PACK_POLICY])
-      expect(text).not.toContain(name);
+    // Tenant policies holding the settings are named; pack policies never.
+    expect(text).toContain(TENANT_POLICY);
+    expect(text).not.toContain(PACK_POLICY);
     for (const item of richAssessment().recommendations)
       expect(text).not.toContain(item.title);
   });

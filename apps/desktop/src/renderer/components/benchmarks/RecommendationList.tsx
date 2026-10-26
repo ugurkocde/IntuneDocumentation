@@ -168,7 +168,7 @@ export function RecommendationList({
   onAddException,
 }: {
   rows: readonly ReviewRow[];
-  basis: "recommendations" | "settings";
+  basis: "recommendations" | "settings" | "mixed";
   onAddException: (settingId: string) => void;
 }) {
   const [result, setResult] = useState<ResultFilter>("all");
@@ -187,7 +187,7 @@ export function RecommendationList({
   ]);
   useEffect(() => setLimit(PAGE_SIZE), [result, level, search, rows]);
   const filtered = result !== "all" || level !== "all" || search.trim() !== "";
-  const noun = basis === "recommendations" ? "recommendation" : "setting";
+  const noun = basis === "recommendations" ? "recommendation" : basis === "settings" ? "setting" : "result";
   const clear = () => {
     setResult("all");
     setLevel("all");

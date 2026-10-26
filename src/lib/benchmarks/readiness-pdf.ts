@@ -54,7 +54,6 @@ import {
   type DocumentControlCell,
   tableHeaderLines,
 } from "../compliance/pdf-chrome";
-import { childLists, MAX_SETTING_DEPTH } from "../compliance/graph-rows";
 import type {
   BenchmarkAssessment,
   LevelSummary,
@@ -63,11 +62,15 @@ import type {
   ResultState,
   SettingFinding,
 } from "./assessment";
+import { assessmentResults } from "./assessment";
 import {
+  COVER_LEAD,
+  KPI_CAPTIONS,
   READINESS_DISCLAIMER,
   REASON_LABELS,
   RESULT_LABELS,
   benchmarkDisplayName,
+  benchmarkName,
   coverageStatement,
   exclusionsText,
   headlineBaseText,
@@ -86,13 +89,10 @@ import {
   MANUAL_RECOMMENDATIONS_NOTICE,
   MANUAL_RECOMMENDATIONS_URL,
 } from "./manual";
-import {
-  readableOwnValue,
-  readableRecommendation,
-  record,
-  type Json,
-  type RecordJson,
-} from "./policies";
+import { readableRecommendation } from "./policies";
+import { findInstance, valueText } from "./values";
+
+export { valueText };
 
 export interface ReadinessPdfOptions {
   /** Benchmark name from the delivered catalog; the id in words otherwise. */
@@ -251,72 +251,6 @@ export function wrapText(
   return lines;
 }
 
-/**
- * The instance of a definition id inside a root, the root itself included,
- * found through the child lists the shared instance rules read
- * (graph-rows.ts childLists) to MAX_SETTING_DEPTH, as the comparison does.
- */
-function findInstance(
-  value: Json | undefined,
-  id: string,
-  depth = 0,
-): RecordJson | null {
-  if (!record(value) || depth > MAX_SETTING_DEPTH) return null;
-  if (value.settingDefinitionId === id) return value;
-  for (const children of childLists(value) ?? [])
-    for (const child of children) {
-      const found = findInstance(child as Json, id, depth + 1);
-      if (found) return found;
-    }
-  return null;
-}
-
-function choiceText(value: Json, id: string): string {
-  const raw =
-    record(value) && typeof value.value === "string" ? value.value : "";
-  return raw.startsWith(`${id}_`) ? raw.slice(id.length + 1) : raw;
-}
-
-function simpleText(value: Json): string {
-  if (!record(value)) return "";
-  const { value: own } = value;
-  return typeof own === "string" ||
-    typeof own === "number" ||
-    typeof own === "boolean"
-    ? String(own)
-    : "";
-}
-
-/** A short readable form of one instance's own value. */
-export function valueText(instance: RecordJson | null): string {
-  if (!instance) return "Not set";
-  if (!readableOwnValue(instance)) return "Not readable";
-  const text = (value: Json | undefined) =>
-    typeof value === "string" ? value : "";
-  const id = text(instance.settingDefinitionId);
-  const list = (value: Json | undefined) => (Array.isArray(value) ? value : []);
-  const type = text(instance["@odata.type"]).toLowerCase();
-  let shown: string;
-  if (type.endsWith("choicesettinginstance"))
-    shown = choiceText(instance.choiceSettingValue ?? null, id);
-  else if (type.endsWith("choicesettingcollectioninstance"))
-    shown = list(instance.choiceSettingCollectionValue)
-      .map((entry) => choiceText(entry, id))
-      .join(", ");
-  else if (type.endsWith("simplesettinginstance"))
-    shown = simpleText(instance.simpleSettingValue ?? null);
-  else if (type.endsWith("simplesettingcollectioninstance"))
-    shown = list(instance.simpleSettingCollectionValue)
-      .map(simpleText)
-      .join(", ");
-  else if (type.endsWith("groupsettingcollectioninstance")) {
-    const count = list(instance.groupSettingCollectionValue).length;
-    shown = `${count} ${count === 1 ? "entry" : "entries"}`;
-  } else shown = "Group of settings";
-  if (!shown) return "Empty";
-  return shown.length > 160 ? `${shown.slice(0, 157)}...` : shown;
-}
-
 /** One table column: label and width in mm. */
 interface Column {
   label: string;
@@ -349,7 +283,7 @@ export function renderReadinessPdf(
     : new Date();
   // The shared chrome draws these as they are, so they are made drawable here.
   const name = options.benchmarkName?.trim()
-    ? pdfText(options.benchmarkName.trim())
+    ? pdfText(benchmarkName(options.benchmarkName))
     : benchmarkDisplayName(assessment.benchmark);
   const title = `${name} ${assessment.version}`;
   const tenant = pdfText(options.tenantLabel?.trim() ?? "").trim() || undefined;
@@ -466,7 +400,7 @@ export function renderReadinessPdf(
     eyebrow: "CIS Benchmark readiness",
     title,
     subtitle: levelsLabel(assessment),
-    lead: `${READINESS_DISCLAIMER}. The delivered pack compared with the last collection of Settings Catalog policies.`,
+    lead: `${READINESS_DISCLAIMER}. ${COVER_LEAD}`,
   });
   drawCoverTenantBlock(doc, theme, frame, {
     tenantEyebrow: "Tenant",
@@ -580,7 +514,7 @@ export function renderReadinessPdf(
   const controlCells: DocumentControlCell[] = [
     { label: "Benchmark", value: name, span: 2 },
     { label: "Version", value: assessment.version },
-    { label: "Level", value: String(assessment.level) },
+    { label: "Level", value: levelsLabel(assessment).replace(/^Levels? /, "") },
     { label: "Tenant", value: tenant },
     { label: "Assessed", value: formatDate(assessedAt, fixed) },
     {
@@ -590,7 +524,11 @@ export function renderReadinessPdf(
     {
       label: "Basis",
       value:
-        assessment.basis === "recommendations" ? "Recommendations" : "Settings",
+        assessment.basis === "recommendations"
+          ? "Recommendations"
+          : assessment.basis === "settings"
+            ? "Settings"
+            : "Recommendations and settings",
     },
     { label: "Prepared by", value: company },
   ];
@@ -732,10 +670,9 @@ export function renderReadinessPdf(
     lead: "The headline is Matches out of Matches plus Differs. Needs review and Not assessed are counted next to it and never lower it.",
   });
 
+  const allResults = assessmentResults(assessment);
   const itemsOf = (level: number) =>
-    assessment.basis === "recommendations"
-      ? assessment.recommendations.filter((item) => item.level === level)
-      : assessment.settings;
+    allResults.filter((item) => item.level === level);
   const reasonRows = (
     items: ReadonlyArray<{ result: ResultState; reason?: ReasonCode }>,
     state: ResultState,
@@ -801,8 +738,8 @@ export function renderReadinessPdf(
         value: String(counts[state]),
         caption:
           state === "Pass" || state === "Fail"
-            ? "Counted in the headline."
-            : "Not counted in the headline.",
+            ? KPI_CAPTIONS.counted
+            : KPI_CAPTIONS.notCounted,
         marker: style.marker,
         markerColor: style.color,
         valueColor: theme.primary,
@@ -863,7 +800,13 @@ export function renderReadinessPdf(
 
   // ---------------------------------------------------------- Recommendations
   newPage();
-  const byRecommendation = assessment.basis === "recommendations";
+  const recommendationRows = allResults.flatMap((item) =>
+    item.kind === "recommendation" ? [item.recommendation] : [],
+  );
+  const settingRows = allResults.flatMap((item) =>
+    item.kind === "setting" ? [item.finding] : [],
+  );
+  const byRecommendation = recommendationRows.length > 0;
   const totals = assessment.levels.reduce(
     (sum, level) =>
       sum + Object.values(level.headline.counts).reduce((a, b) => a + b, 0),
@@ -872,10 +815,10 @@ export function renderReadinessPdf(
   y = drawPageTitle(doc, theme, frame, y, {
     eyebrow: byRecommendation ? "Recommendations" : "Settings",
     title: byRecommendation ? "Recommendation results" : "Setting results",
-    lead: `${byRecommendation ? assessment.recommendations.length : assessment.settings.length} results with the reason for every result that is not Matches.${totals ? "" : " Nothing was assessed."}`,
+    lead: `${allResults.length} results with the reason for every result that is not Matches.${totals ? "" : " Nothing was assessed."}`,
   });
   const multiLevel =
-    new Set(assessment.recommendations.map((item) => item.level)).size > 1;
+    new Set(recommendationRows.map((item) => item.level)).size > 1;
   if (byRecommendation) {
     const columns: Column[] = [
       { label: "ID", width: 20 },
@@ -885,7 +828,7 @@ export function renderReadinessPdf(
     ];
     drawTable(
       columns,
-      assessment.recommendations.map((item) => [
+      recommendationRows.map((item) => [
         {
           lines: [
             ...wrapText(doc, item.id, 17, BODY, "bold", 2),
@@ -903,7 +846,9 @@ export function renderReadinessPdf(
       ]),
       "Recommendation results, continued",
     );
-  } else {
+  }
+  if (settingRows.length || !byRecommendation) {
+    if (byRecommendation) ensure(30);
     const columns: Column[] = [
       { label: "Setting", width: contentWidth - 28 - 58 },
       { label: "Result", width: 28 },
@@ -911,7 +856,7 @@ export function renderReadinessPdf(
     ];
     drawTable(
       columns,
-      assessment.settings.map((finding) => [
+      settingRows.map((finding) => [
         textCell(finding.settingId, columns[0]!.width, { size: SMALL }),
         { result: finding.result },
         textCell(finding.reason ? REASON_LABELS[finding.reason] : "", 58, {
@@ -937,8 +882,8 @@ export function renderReadinessPdf(
     title?: string;
     result: ResultState;
     settings: DetailSetting[];
-  }> = byRecommendation
-    ? assessment.recommendations
+  }> = [
+    ...recommendationRows
         .filter((item) => item.result === "Fail" || item.result === "Review")
         .map((item) => ({
           id: item.id,
@@ -961,8 +906,8 @@ export function renderReadinessPdf(
                 findings: held,
               };
             }),
-        }))
-    : assessment.settings
+        })),
+    ...settingRows
         .filter((item) => item.result === "Fail" || item.result === "Review")
         .map((item) => ({
           id: item.settingId,
@@ -979,7 +924,8 @@ export function renderReadinessPdf(
               findings: [item],
             },
           ],
-        }));
+        })),
+  ];
 
   newPage();
   y = drawPageTitle(doc, theme, frame, y, {
@@ -1202,7 +1148,7 @@ export function renderReadinessPdf(
     (exception) =>
       exception.benchmark === assessment.benchmark &&
       exception.version === assessment.version &&
-      exception.level === assessment.level,
+      assessment.levels.some((level) => level.level === exception.level),
   );
   const inUse = new Set(
     assessment.levels.flatMap((level) => level.headline.exceptionIds),

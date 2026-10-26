@@ -34,6 +34,7 @@ import { projectSnapshot } from "../../../../src/lib/snapshots/projection";
 import { AuthService } from "./auth";
 import { BenchmarkExceptionStore } from "./benchmark-exceptions";
 import { benchmarkWork, registerBenchmarksIpc } from "./benchmarks";
+import { benchmarkGraph } from "./benchmark-graph";
 import {
   clearCollection,
   collectAll,
@@ -1556,6 +1557,7 @@ function registerIpc(): void {
   });
 
   // CIS Benchmarks: refused without the signed claim; checked in benchmarks.ts.
+  const benchmarksGraph = benchmarkGraph({ token: tokenProvider, log });
   benchmarksIpc = registerBenchmarksIpc({
     handle,
     requireOwner,
@@ -1588,6 +1590,11 @@ function registerIpc(): void {
       },
       history: historyHandlers,
       tenantLabel: tenantLabelOf,
+      // Setting definition names and the tenant display name, GET only
+      // within the requested scopes (benchmark-graph.ts).
+      tenantName: (tenantId) => benchmarksGraph.tenantName(tenantId),
+      settingNames: (ids) => benchmarksGraph.settingNames(ids),
+      resetGraph: () => benchmarksGraph.reset(),
       log,
     }),
   });

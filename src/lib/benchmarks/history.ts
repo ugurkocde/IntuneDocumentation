@@ -11,7 +11,7 @@ import type {
   ResultCounts,
   ResultState,
 } from "./assessment";
-import { headlineRate } from "./assessment";
+import { assessmentResults, headlineRate } from "./assessment";
 
 export type ResultCode = "pass" | "fail" | "review" | "notAssessed";
 
@@ -40,48 +40,35 @@ export interface StoredBenchmarkRun {
  * The stored runs of one assessment, one per Level the assessment shows:
  * the series is the benchmark, version and recommendation Level, so a Level 2
  * pack holding Level 1 and Level 2 recommendations stores two runs whose
- * headlines are the two live Level cards. A pack without recommendations is
- * judged by settings and stores one run at its own Level.
+ * headlines are the two live Level cards. A Level judged by settings stores
+ * the settings of its pack. Each run takes its Level's basis
+ * (assessmentResults), so Levels compared together store the same runs as
+ * Levels compared alone; packDigest names the pack of each Level.
  */
 export function summarizeRuns(
   assessment: BenchmarkAssessment,
-  packDigest: string,
+  packDigest: string | ((level: BenchmarkLevel) => string),
 ): StoredBenchmarkRun[] {
-  const run = (
-    level: BenchmarkLevel,
-    results: StoredResult[],
-  ): StoredBenchmarkRun => ({
+  const results = assessmentResults(assessment);
+  return assessment.levels.map(({ level, headline }) => ({
     benchmark: assessment.benchmark,
     version: assessment.version,
     level,
     assessedAt: assessment.assessedAt,
-    packDigest,
-    basis: assessment.basis,
-    results,
-  });
-  if (assessment.basis === "settings")
-    return [
-      run(
-        assessment.level,
-        assessment.settings.map((finding) => [
-          finding.settingId,
-          RESULT_CODES[finding.result],
-          finding.result === "Pass" ? [] : [finding.settingId],
-        ]),
-      ),
-    ];
-  return assessment.levels.map(({ level }) =>
-    run(
-      level,
-      assessment.recommendations
-        .filter((item) => item.level === level)
-        .map((item) => [
-          item.id,
-          RESULT_CODES[item.result],
-          [...item.openSettingIds],
-        ]),
-    ),
-  );
+    packDigest: typeof packDigest === "string" ? packDigest : packDigest(level),
+    basis: headline.basis,
+    results: results
+      .filter((item) => item.level === level)
+      .map((item): StoredResult => [
+        item.id,
+        RESULT_CODES[item.result],
+        item.kind === "recommendation"
+          ? [...item.recommendation.openSettingIds]
+          : item.result === "Pass"
+            ? []
+            : [item.id],
+      ]),
+  }));
 }
 
 const RUN_FIELDS = new Set([

@@ -41,6 +41,7 @@ import type {
 } from "../../../../src/lib/benchmarks/pack";
 import type { BenchmarkAssessment } from "../../../../src/lib/benchmarks/assessment";
 import type { BenchmarkDraftGap } from "../../../../src/lib/benchmarks/drafts";
+import type { FixPlan } from "../../../../src/lib/benchmarks/fix-plan";
 import type { BenchmarkException } from "../../../../src/lib/benchmarks/exceptions";
 import type { StoredBenchmarkRun } from "../../../../src/lib/benchmarks/history";
 import type { DriftEntry, TrendPoint } from "../../../../src/lib/benchmarks/trend";
@@ -644,7 +645,20 @@ export interface BenchmarkAvailability {
 // open setting ids and the pack digest), one run per Level shown, is added
 // to the snapshot of the assessed collection; history says whether it was
 // and, when not, why.
-export type BenchmarkAssessmentView = BenchmarkAssessment & { history?: BenchmarkRunRecord };
+//
+// Level 2 packs add to Level 1, so comparing Level 2 assesses the Level 1
+// and Level 2 packs and returns both Levels in one view (level is 2, levels
+// holds both, each finding and recommendation names its packLevel); a
+// Level 2 pack that holds Level 1 recommendations itself is compared alone.
+// fixPlan is the next steps of the view (src/lib/benchmarks/fix-plan.ts);
+// settingNames names the settings (collected definitions, then the Graph
+// definition lookup; a setting without a name shows its id); tenantName is
+// the tenant's display name when Graph returned it.
+export type BenchmarkAssessmentView = BenchmarkAssessment & {
+  history?: BenchmarkRunRecord;
+  fixPlan: FixPlan;
+  tenantName?: string;
+};
 
 // Whether the runs of a comparison were stored with the snapshot of its
 // collection. reason is plain text for display when they were not.

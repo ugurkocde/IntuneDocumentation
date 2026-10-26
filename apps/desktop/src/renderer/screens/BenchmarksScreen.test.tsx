@@ -260,7 +260,7 @@ describe("BenchmarksScreen review step", () => {
     ).toBeTruthy();
     expect(within(level1).getByText("Readiness comparison, not a certification")).toBeTruthy();
     expect(within(level1).getByText(/outside the pack, so it is not assessed here/)).toBeTruthy();
-    expect(within(level1).getByText(/Coverage of the full benchmark is not shown/)).toBeTruthy();
+    expect(within(level1).getByText(/coverage of the full benchmark will be shown once its list is published/)).toBeTruthy();
     const level2 = screen.getByRole("region", { name: "Level 2" });
     expect(within(level2).getByText("The matching value is only on policies that are not assigned.")).toBeTruthy();
     const text = document.body.textContent ?? "";

@@ -4,16 +4,32 @@
  * Matches, Differs, Needs review and Not assessed. The product never calls a
  * result compliant, a score or certified.
  */
-import type {
-  BenchmarkAssessment,
-  LevelSummary,
-  Observation,
-  ReasonCode,
-  ResultState,
-  SettingFinding,
-  SettingStatus,
+import {
+  isNotConfigured,
+  type AssessmentResult,
+  type BenchmarkAssessment,
+  type HeadlineStates,
+  type LevelSummary,
+  type Observation,
+  type ReasonCode,
+  type ResultState,
+  type SettingFinding,
+  type SettingStatus,
 } from "./assessment";
 import { compareDefinition } from "./policies";
+import {
+  otherProfilesFor,
+  type OtherProfileFamily,
+  type OtherProfileFamilyKey,
+} from "./tenant-settings";
+import {
+  NOT_CONFIGURED,
+  NOT_FOUND,
+  settingName,
+  settingValue,
+  type UnreadableCause,
+  type ValueText,
+} from "./values";
 
 export const RESULT_LABELS: Readonly<Record<ResultState, string>> = {
   Pass: "Matches",
@@ -27,7 +43,7 @@ export const SETTING_STATUS_LABELS: Readonly<
 > = {
   Present: "Matches",
   Different: "Differs",
-  Missing: "Missing",
+  Missing: NOT_CONFIGURED,
   Review: "Needs review",
   Unmapped: "Not assessed",
 };
@@ -55,6 +71,208 @@ export const REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
 };
 
 export const READINESS_DISCLAIMER = "Readiness comparison, not a certification";
+
+/**
+ * The label of a result for people: Differs, except Not configured for a
+ * Differs result whose differing settings the collection proves missing.
+ */
+export function resultLabel(
+  item: Parameters<typeof isNotConfigured>[0],
+): string {
+  return isNotConfigured(item) ? NOT_CONFIGURED : RESULT_LABELS[item.result];
+}
+
+/** What each unreadable cause means, where the engine can tell which applies. */
+export const UNREADABLE_CAUSE_LABELS: Readonly<
+  Record<UnreadableCause, string>
+> = {
+  secret:
+    "The value is a secret, which Microsoft Graph never returns in a readable form.",
+  redacted: "The value was redacted when it was collected.",
+  wrongType: "The value does not have the type its setting documents.",
+  undocumented: "The setting uses a value type that is not documented.",
+};
+
+/** Needs review and manual recommendations are different things; this says how. */
+export const NEEDS_REVIEW_NOTE =
+  "Needs review means the setting was checked automatically, but the collected data does not show whether it matches. Manual recommendations are a separate group: this view does not check them.";
+
+/** For a Level judged by settings. */
+export const SETTINGS_BASIS_NOTE =
+  "This pack is delivered as settings without recommendation ids, so results are per setting.";
+
+/** For a comparison of Level 2, which shows Level 1 too. */
+export const LEVEL_2_NOTE =
+  "Level 2 adds settings for environments that need stronger protection on top of Level 1. Comparing Level 2 compares both Levels, and each Level has its own headline.";
+
+/** The lead line of the readiness PDF cover. */
+export const COVER_LEAD =
+  "This report compares the delivered benchmark pack with the Settings Catalog policies of the last collection.";
+
+/** Captions of the result count tiles. */
+export const KPI_CAPTIONS = {
+  counted: "Counted in the headline",
+  notCounted: "Not counted in the headline",
+} as const;
+
+/**
+ * When a percentage may lead: at least HERO_MIN_ASSESSED results assessed
+ * (Matches, Differs or Not configured) and at least HERO_MIN_SHARE of all
+ * results of the Level. Below that a percentage overstates what was shown
+ * ("100%" of 1 result while 87 need review), so the counts lead and the
+ * rate is shown with its base beside them. The rate itself is unchanged.
+ */
+export const HERO_MIN_ASSESSED = 10;
+export const HERO_MIN_SHARE = 0.25;
+
+export function rateIsHero(
+  states: Pick<HeadlineStates, "assessed" | "total">,
+): boolean {
+  return (
+    states.assessed >= HERO_MIN_ASSESSED &&
+    states.total > 0 &&
+    states.assessed / states.total >= HERO_MIN_SHARE
+  );
+}
+
+/** The per state counts in display order, with their labels. */
+export function stateCounts(
+  states: HeadlineStates,
+): Array<{ state: keyof HeadlineStates; label: string; count: number }> {
+  return [
+    { state: "matches" as const, label: RESULT_LABELS.Pass, count: states.matches },
+    { state: "differs" as const, label: RESULT_LABELS.Fail, count: states.differs },
+    { state: "notConfigured" as const, label: NOT_CONFIGURED, count: states.notConfigured },
+    { state: "needsReview" as const, label: RESULT_LABELS.Review, count: states.needsReview },
+    { state: "notAssessed" as const, label: RESULT_LABELS["Not assessed"], count: states.notAssessed },
+  ].filter((entry) => entry.state !== "notConfigured" || entry.count > 0);
+}
+
+/** "3 matches, 1 differs, 87 need review": the counts as one line. */
+export function stateCountsText(states: HeadlineStates): string {
+  return stateCounts(states)
+    .map(({ label, count }) => `${count.toLocaleString("en-US")} ${label.toLowerCase()}`)
+    .join(", ");
+}
+
+/** Order of rows: Differs and Not configured first, then Needs review, Not assessed and Matches. */
+export const SEVERITY_ORDER: readonly ResultState[] = [
+  "Fail",
+  "Review",
+  "Not assessed",
+  "Pass",
+];
+
+const numeric = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true });
+
+/** Compares two rows by severity, then by id. */
+export function bySeverity(
+  a: { result: ResultState; id: string; level?: number },
+  b: { result: ResultState; id: string; level?: number },
+): number {
+  return (
+    SEVERITY_ORDER.indexOf(a.result) - SEVERITY_ORDER.indexOf(b.result) ||
+    (a.level ?? 0) - (b.level ?? 0) ||
+    numeric(a.id, b.id)
+  );
+}
+
+const ASSIGNMENT_STATE_LABELS: Readonly<Record<Observation["assignment"], string>> = {
+  assigned: "Assigned",
+  notAssigned: "Not assigned",
+  unknown: "Assignment unknown",
+};
+
+/**
+ * Where a policy's assignments reach, in words: "assigned to Group: Pilot,
+ * All Devices, excluding Group: Kiosk". Group memberships are not read, so
+ * this names targets only.
+ */
+export function reachText(
+  observation: Pick<Observation, "assignment" | "reach">,
+): string {
+  const { assignment, reach } = observation;
+  if (assignment === "unknown")
+    return reach.uncertainty === "unresolved"
+      ? "assignment unknown: effective targeting could not be resolved"
+      : "assignment unknown: assignments were not read completely";
+  if (assignment === "notAssigned") return "not assigned";
+  // A target that is also excluded reaches nobody through that assignment.
+  const targets = reach.targets.filter((target) => !reach.exclusions.includes(target));
+  const parts = [`assigned to ${targets.join(", ")}`];
+  if (reach.exclusions.length)
+    parts.push(`excluding ${reach.exclusions.join(", ")}`);
+  if (reach.filters)
+    parts.push(
+      `${reach.filters} assignment ${reach.filters === 1 ? "filter" : "filters"}`,
+    );
+  return parts.join(", ");
+}
+
+/** "Assigned", "Not assigned" or "Assignment unknown". */
+export function assignmentLabel(assignment: Observation["assignment"]): string {
+  return ASSIGNMENT_STATE_LABELS[assignment];
+}
+
+/**
+ * A Matches result with where it applies: "Matches, policy P, assigned to
+ * Group: G". Only for a result that is Pass; only assigned policies whose
+ * value of the setting matches are named; null otherwise.
+ */
+export function matchReachText(
+  finding: Pick<SettingFinding, "recommended" | "observations">,
+  settingId: string,
+  result: ResultState,
+): string | null {
+  if (result !== "Pass") return null;
+  const assigned = finding.observations.filter(
+    (observation) =>
+      observation.assignment === "assigned" &&
+      observationLabel(finding, observation, settingId) === "Matches",
+  );
+  if (!assigned.length) return null;
+  return `${RESULT_LABELS.Pass}, ${assigned
+    .map((observation) => `policy ${observation.policyName}, ${reachText(observation)}`)
+    .join("; ")}`;
+}
+
+/** Older profile families by name, as the advice to check them says it. */
+export const OTHER_PROFILE_LABELS: Readonly<Record<OtherProfileFamilyKey, string>> = {
+  deviceConfigurations: "device configuration profiles",
+  windowsUpdatePolicies: "update rings",
+  administrativeTemplates: "administrative templates",
+  securityBaselines: "security baselines and endpoint security profiles of the older template type",
+};
+
+const PLATFORM_LABELS: Readonly<Record<string, string>> = {
+  windows: "Windows",
+  macos: "macOS",
+  ios: "iOS",
+  android: "Android",
+  linux: "Linux",
+};
+
+/** One older profile family as text: its name and why it may hold the setting. */
+export function otherProfileText(family: OtherProfileFamily): string {
+  const name = OTHER_PROFILE_LABELS[family.family];
+  if (!family.complete) return `${name} (not collected completely)`;
+  if (family.platforms === null) return `${name} (platform not collected)`;
+  return `${name} (${family.platforms.map((platform) => PLATFORM_LABELS[platform] ?? platform).join(", ")})`;
+}
+
+/** The older profile families that may set a setting on these pack platforms, as a list. */
+export function otherProfilesText(
+  families: readonly OtherProfileFamily[],
+  platforms: string,
+): string {
+  const relevant = otherProfilesFor(families, platforms).filter(
+    (family) => !family.complete || family.count > 0,
+  );
+  return relevant.length
+    ? relevant.map(otherProfileText).join(", ")
+    : "profiles of other types";
+}
 
 export type ObservationLabel =
   | "Matches"
@@ -163,10 +381,14 @@ export function matchingPolicies(
   );
 }
 
-export function headlineLabel(basis: "recommendations" | "settings"): string {
+export function headlineLabel(
+  basis: "recommendations" | "settings" | "mixed",
+): string {
   return basis === "recommendations"
     ? "Matching recommendations"
-    : "Matching settings";
+    : basis === "settings"
+      ? "Matching settings"
+      : "Matching results";
 }
 
 /** "X% with N exclusions" next to the headline, or null when no exception is in use. */
@@ -195,6 +417,21 @@ export function benchmarkDisplayName(id: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+/**
+ * A delivered benchmark name in one form: without a leading "CIS" and a
+ * trailing "Benchmark", which the headers around it already say ("CIS
+ * Benchmark readiness"). A name that would be left without its own words
+ * stays as it is.
+ */
+export function benchmarkName(name: string): string {
+  const trimmed = name
+    .trim()
+    .replace(/^CIS\s+/i, "")
+    .replace(/\s+Benchmarks?$/i, "")
+    .trim();
+  return trimmed && !/^benchmarks?$/i.test(trimmed) ? trimmed : name.trim();
 }
 
 /**
@@ -255,11 +492,25 @@ export function levelCheckSummary(
 
 /** Coverage of the full benchmark in plain words; never estimated without a list. */
 export function coverageStatement(
-  level: Pick<LevelSummary, "level" | "coverage">,
+  level: Pick<LevelSummary, "level" | "coverage"> & {
+    headline?: Pick<LevelSummary["headline"], "basis" | "states">;
+  },
 ): string {
   const { coverage } = level;
-  if (coverage.source === "none")
-    return "Coverage of the full benchmark is not shown because the list of all its automated recommendations is not available.";
+  if (coverage.source === "none") {
+    const covered = level.headline
+      ? `This pack covers ${level.headline.states.total.toLocaleString("en-US")} ${
+          level.headline.basis === "settings"
+            ? level.headline.states.total === 1
+              ? "setting"
+              : "settings"
+            : level.headline.states.total === 1
+              ? "recommendation"
+              : "recommendations"
+        }. `
+      : "";
+    return `${covered}The full benchmark also has manual and other recommendations; coverage of the full benchmark will be shown once its list is published.`;
+  }
   if (coverage.coverage === null)
     return `Coverage of the full benchmark is not shown because the recommendation list marks none of Level ${level.level} as automated.`;
   return `Coverage: ${formatRate(coverage.coverage)} (${coverage.numerator} of ${coverage.denominator} automated recommendations), from the delivered recommendation list.`;
@@ -277,4 +528,99 @@ export function levelsLabel(
     : [assessment.level];
   if (levels.length === 1) return `Level ${levels[0]}`;
   return `Levels ${levels.slice(0, -1).join(", ")} and ${levels.at(-1)}`;
+}
+
+/**
+ * The current value of a setting no collected policy holds: Not configured
+ * only where the engine proves it missing, otherwise not found.
+ */
+export function absentValueText(status: SettingStatus | "Unmapped"): string {
+  return status === "Missing" ? NOT_CONFIGURED : NOT_FOUND;
+}
+
+/** One tenant policy holding a setting of a result, with its value and reach. */
+export interface HolderDetail {
+  policyId: string;
+  policyName: string;
+  assignment: Observation["assignment"];
+  /** reachText: "assigned to Group: G", "not assigned" or why it is unknown. */
+  assignedTo: string;
+  label: ObservationLabel;
+  current: ValueText;
+}
+
+/** One setting of a result: its name, recommended value and the policies holding it. */
+export interface ResultSettingDetail {
+  settingId: string;
+  /** Display name, or the id when no definition names it. */
+  name: string;
+  status: SettingStatus | "Unmapped";
+  result: ResultState;
+  reason?: ReasonCode;
+  /** The recommended values of the pack roots holding it, once each. */
+  recommended: string[];
+  holders: HolderDetail[];
+}
+
+/**
+ * The settings of one result with names, the current value in every policy
+ * that holds them and the recommended value, for the CSV, the JSON, the PDF
+ * and the screen. A policy whose root does not hold the setting is left out;
+ * no holder means the setting is not configured in any collected policy.
+ */
+export function resultSettingDetails(
+  assessment: Pick<BenchmarkAssessment, "settings" | "settingNames">,
+  result: AssessmentResult,
+): ResultSettingDetail[] {
+  const findings = new Map(assessment.settings.map((finding) => [finding.key, finding]));
+  const settings =
+    result.kind === "recommendation"
+      ? result.recommendation.settings
+      : [
+          {
+            id: result.finding.settingId,
+            status: result.finding.status,
+            result: result.finding.result,
+            ...(result.finding.reason ? { reason: result.finding.reason } : {}),
+            findingKeys: [result.finding.key],
+          },
+        ];
+  return settings.map((setting) => {
+    const own = setting.findingKeys
+      .map((key) => findings.get(key))
+      .filter((finding): finding is SettingFinding => Boolean(finding));
+    const recommended = [
+      ...new Set(
+        own.map((finding) => settingValue(finding.recommended, setting.id, assessment.settingNames).text),
+      ),
+    ];
+    const holders = own.flatMap((finding) =>
+      finding.observations.flatMap((observation): HolderDetail[] => {
+        const label = observationLabel(finding, observation, setting.id);
+        if (label === "Not set in this policy") return [];
+        return [
+          {
+            policyId: observation.policyId,
+            policyName: observation.policyName,
+            assignment: observation.assignment,
+            assignedTo: reachText(observation),
+            label,
+            current:
+              setting.id === finding.settingId
+                ? observation.current
+                : settingValue(observation.value, setting.id, assessment.settingNames),
+          },
+        ];
+      }),
+    );
+    return {
+      settingId: setting.id,
+      name: settingName(assessment.settingNames, setting.id),
+      status: setting.status,
+      result: setting.result,
+      ...(setting.reason ? { reason: setting.reason } : {}),
+      recommended,
+      holders,
+    };
+  });
 }

@@ -80,7 +80,9 @@ describe("benchmark readiness PDF", () => {
       expect(text, `page ${index + 1}`).toContain(
         `Intune Documentation. ${READINESS_DISCLAIMER}.`,
       );
-    expect(rich[0]).toContain(`${READINESS_DISCLAIMER}. The delivered pack`);
+    expect(rich[0]).toContain(
+      `${READINESS_DISCLAIMER}. This report compares the delivered benchmark pack`,
+    );
   });
 
   it("carries the manual notice and its URL on every page and next to the manual items", () => {
@@ -143,7 +145,9 @@ describe("benchmark readiness PDF", () => {
     const without = pageTexts(render(richAssessment({ list: false }))).join(
       " ",
     );
-    expect(without).toContain("Coverage of the full benchmark is not shown");
+    expect(without).toContain(
+      "coverage of the full benchmark will be shown once its list is published",
+    );
     expect(without).not.toContain("Coverage: ");
   });
 

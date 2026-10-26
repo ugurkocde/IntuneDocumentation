@@ -23,16 +23,19 @@ import {
   FIX_PACK_DESCRIPTION_MAX,
   FIX_PACK_WARNING,
 } from "../compliance/fix-pack";
-import type {
-  BenchmarkAssessment,
-  Observation,
-  SettingFinding,
-} from "./assessment";
-import { READINESS_DISCLAIMER, REASON_LABELS } from "./display";
+import type { BenchmarkAssessment, SettingFinding } from "./assessment";
+import { READINESS_DISCLAIMER } from "./display";
+import {
+  DRAFT_STATE_TEXT,
+  buildFixPlan,
+  policiesToChange,
+  type FixPlan,
+} from "./fix-plan";
 import type { BenchmarkPack } from "./pack";
 import {
   parsePolicies,
   record,
+  type BaselinePolicy,
   type Json,
   type SettingInstance,
 } from "./policies";
@@ -82,10 +85,7 @@ export interface BenchmarkDrafts {
   notGenerated: BenchmarkDraftGap[];
 }
 
-const INCOMPLETE =
-  "The collection could not establish that the setting is missing. Refresh the policies with a complete collection and generate the drafts again.";
-const TEMPLATED =
-  "The pack delivers this setting in a policy created from a template, which drafts do not generate. Configure it in the matching template policy.";
+const INCOMPLETE = DRAFT_STATE_TEXT.incomplete;
 
 const sorted = (values: Iterable<string>) =>
   [...new Set(values)].sort((a, b) =>
@@ -103,45 +103,19 @@ function withoutTemplateReferences(value: Json): Json {
   );
 }
 
-/** Why a Missing finding gets no draft, or null when a draft may be generated. */
-function blocker(
-  finding: SettingFinding,
-  complete: boolean,
-  templated: boolean,
-): string | null {
-  if (!complete || finding.observations.length) return INCOMPLETE;
-  if (templated) return TEMPLATED;
-  return null;
-}
-
 /**
- * The README line for a finding that is neither a draft nor in place. Only
- * unassigned policies hold a setting with a notAssigned reason: a policy that
- * matches is the one to assign, a policy that differs needs its value changed
- * before it is assigned, and a policy whose value cannot be read is named to
- * check, never to change (notAssignedDiffers has none: such a value makes
- * the reason unreadableValue).
+ * The README line for a finding that is neither a draft nor in place: the
+ * fix plan's advice (fix-plan.ts), so the README and the plan say the same,
+ * and why no draft is generated where the advice does not say it already.
  */
-function gapReason(finding: SettingFinding): string {
-  const names = (comparison: Observation["comparison"]) =>
-    sorted(
-      finding.observations
-        .filter((observation) => observation.comparison === comparison)
-        .map((observation) => observation.policyName),
-    ).join(", ");
-  const unreadable = names("unknown");
-  const check = unreadable
-    ? ` The value in policy ${unreadable} could not be read; check it before assigning that policy.`
-    : "";
-  if (finding.reason === "notAssigned")
-    return `${REASON_LABELS.notAssigned} Assign policy ${names("match")} instead of importing a second one.`;
-  if (finding.reason === "notAssignedMixed")
-    return `${REASON_LABELS.notAssignedMixed} Assign policy ${names("match")} instead of importing a second one, and change the value in policy ${names("differ")} before assigning it.${check}`;
+function gapReason(finding: SettingFinding, plan: FixPlan): string {
+  const advice = plan.advice[finding.key] ?? "";
+  if (finding.status === "Missing") return advice;
+  if (finding.reason === "notAssigned" || finding.reason === "notAssignedMixed")
+    return advice;
   if (finding.reason === "notAssignedDiffers")
-    return `${REASON_LABELS.notAssignedDiffers} Change the value in policy ${names("differ")} before assigning it, or set the recommended value in a policy that is assigned. No draft is generated, because a second policy with this setting conflicts once both are assigned.`;
-  if (finding.reason)
-    return `${REASON_LABELS[finding.reason]} No draft is generated for a setting that needs review.`;
-  return "No draft is generated for a setting that needs review.";
+    return `${advice} No draft is generated, because a second policy with this setting conflicts once both are assigned.`;
+  return `${advice} No draft is generated for a setting that needs review.`;
 }
 
 /** The fixed text plus as many recommendation ids as fit. */
@@ -156,37 +130,52 @@ function draftDescription(fixed: string, ids: readonly string[]): string {
 }
 
 /**
- * Drafts, changes and settings not generated for one assessment. The pack is
- * the delivered pack the assessment was made from: it supplies the policy
- * technologies and template references the assessment does not keep.
+ * Drafts, changes and settings not generated for one assessment. The packs
+ * are the delivered packs the assessment was made from, one per pack Level
+ * (Level 2 is compared together with Level 1): they supply the policy
+ * technologies and template references the assessment does not keep. What
+ * gets a draft, what is a change and why the rest is not generated come
+ * from the fix plan.
  */
 export function generateBenchmarkDrafts(
   assessment: BenchmarkAssessment,
-  pack: BenchmarkPack,
+  packs: BenchmarkPack | readonly BenchmarkPack[],
+  plan: FixPlan = buildFixPlan(assessment),
 ): BenchmarkDrafts {
-  if (
-    pack.benchmark !== assessment.benchmark ||
-    pack.version !== assessment.version ||
-    pack.level !== assessment.level
-  )
-    throw new Error(
-      "The pack does not match the benchmark, version and Level of the assessment.",
-    );
-  const policies = parsePolicies(pack.policies);
-  const complete = assessment.collection.complete;
+  const list = Array.isArray(packs) ? packs : [packs as BenchmarkPack];
+  const byLevel = new Map<number, BaselinePolicy[]>();
+  for (const pack of list) {
+    if (
+      pack.benchmark !== assessment.benchmark ||
+      pack.version !== assessment.version
+    )
+      throw new Error(
+        "The pack does not match the benchmark, version and Level of the assessment.",
+      );
+    byLevel.set(pack.level, parsePolicies(pack.policies));
+  }
   const recommendationIds = (finding: SettingFinding) =>
     sorted(
       assessment.recommendations
         .filter((item) => item.findingKeys.includes(finding.key))
         .map((item) => item.id),
     );
-  const grouped = new Map<number, SettingFinding[]>();
-  // One draft per platform and setting: a second pack policy with the same
-  // root would only duplicate it.
-  const drafted = new Set<string>();
+  const available = new Set(
+    plan.actions
+      .filter((action) => action.kind === "addSetting")
+      .flatMap((action) => action.settings)
+      .filter((setting) => setting.draft === "available")
+      .map((setting) => setting.findingKey),
+  );
+  const grouped = new Map<string, { level: number; policyIndex: number; findings: SettingFinding[] }>();
   const changes: BenchmarkDraftChange[] = [];
   const notGenerated: BenchmarkDraftGap[] = [];
   for (const finding of assessment.settings) {
+    const policies = byLevel.get(finding.packLevel);
+    if (!policies)
+      throw new Error(
+        "The pack does not match the benchmark, version and Level of the assessment.",
+      );
     const policy = policies[finding.policyIndex];
     const declared = policy?.settings[finding.settingIndex]?.settingInstance;
     if (!policy || declared?.settingDefinitionId !== finding.settingId)
@@ -196,71 +185,48 @@ export function generateBenchmarkDrafts(
     const ids = recommendationIds(finding);
     if (finding.result === "Pass") continue;
     if (finding.status === "Different") {
-      const differing = finding.observations.filter(
-        (observation) => observation.comparison === "differ",
-      );
       changes.push({
         settingId: finding.settingId,
         recommendationIds: ids,
         policies: sorted(
-          (differing.length ? differing : finding.observations).map(
-            (observation) => observation.policyName,
-          ),
+          policiesToChange(finding).map((observation) => observation.policyName),
         ),
       });
       continue;
     }
-    if (finding.status !== "Missing") {
+    if (!available.has(finding.key)) {
       notGenerated.push({
         settingId: finding.settingId,
         recommendationIds: ids,
-        reason: gapReason(finding),
+        reason: gapReason(finding, plan),
       });
       continue;
     }
-    const blocked = blocker(
-      finding,
-      complete,
-      Boolean(policy.templateReference?.templateId),
-    );
-    if (blocked) {
-      notGenerated.push({
-        settingId: finding.settingId,
-        recommendationIds: ids,
-        reason: blocked,
-      });
-      continue;
-    }
-    const key = `${finding.platforms}:${finding.settingId}`;
-    if (drafted.has(key)) {
-      notGenerated.push({
-        settingId: finding.settingId,
-        recommendationIds: ids,
-        reason: "Another draft in this ZIP already holds this setting.",
-      });
-      continue;
-    }
-    drafted.add(key);
-    const list = grouped.get(finding.policyIndex) ?? [];
-    list.push(finding);
-    grouped.set(finding.policyIndex, list);
+    const key = `${finding.packLevel}:${finding.policyIndex}`;
+    const entry = grouped.get(key) ?? {
+      level: finding.packLevel,
+      policyIndex: finding.policyIndex,
+      findings: [],
+    };
+    entry.findings.push(finding);
+    grouped.set(key, entry);
   }
 
   const { benchmark, version, level } = assessment;
-  const drafts = [...grouped.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([policyIndex, findings], index): BenchmarkDraft => {
-      const policy = policies[policyIndex]!;
+  const drafts = [...grouped.values()]
+    .sort((a, b) => a.level - b.level || a.policyIndex - b.policyIndex)
+    .map(({ level: packLevel, policyIndex, findings }, index): BenchmarkDraft => {
+      const policy = byLevel.get(packLevel)![policyIndex]!;
       const number = index + 1;
       const ids = sorted(findings.flatMap(recommendationIds));
       return {
-        fileName: `${String(number).padStart(2, "0")}-${benchmark}-${version}-L${level}-draft-${number}.json`,
+        fileName: `${String(number).padStart(2, "0")}-${benchmark}-${version}-L${packLevel}-draft-${number}.json`,
         recommendationIds: ids,
         settingIds: findings.map((finding) => finding.settingId),
         json: {
-          name: `${benchmark} ${version} L${level} draft ${number}`,
+          name: `${benchmark} ${version} L${packLevel} draft ${number}`,
           description: draftDescription(
-            `${FIX_PACK_WARNING} Benchmark ${benchmark} ${version}, Level ${level}.`,
+            `${FIX_PACK_WARNING} Benchmark ${benchmark} ${version}, Level ${packLevel}.`,
             ids,
           ),
           platforms: policy.platforms,

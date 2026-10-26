@@ -53,9 +53,11 @@ describe("catalog selection", () => {
 });
 
 describe("review rows", () => {
-  it("lists recommendations in id order with their findings", () => {
+  it("lists recommendations most severe first, in id order within a result, with their findings", () => {
     const rows = reviewRows(syntheticAssessment({ count: 12 }));
-    expect(rows.slice(0, 3).map((row) => row.id)).toEqual(["1.1.1", "1.2.10", "2.1.2"]);
+    // Differs and Not configured first, then Needs review, Not assessed and Matches.
+    expect(rows.slice(0, 3).map((row) => row.id)).toEqual(["2.1.2", "3.1.3", "8.1.8"]);
+    expect([...new Set(rows.map((row) => row.result))]).toEqual(["Fail", "Review", "Not assessed", "Pass"]);
     const differs = rows.find((row) => row.id === "2.1.2")!;
     expect(differs.result).toBe("Fail");
     expect(differs.findings.map((finding) => finding.settingId)).toEqual([
@@ -67,6 +69,7 @@ describe("review rows", () => {
     const rows = reviewRows(syntheticAssessment({ count: 6, basis: "settings" }));
     // The Not assessed recommendation has no finding, so five settings remain.
     expect(rows).toHaveLength(5);
+    // Without a delivered or collected name, the title is the setting id.
     expect(rows[0]!.title).toBe(rows[0]!.id);
     expect(rows[0]!.context).toBe("Synthetic pack policy");
   });
@@ -121,7 +124,12 @@ describe("drafts and exceptions", () => {
     const child = `${root}_synthetic_child`;
     differs.settings = differs.settings.map((setting) => ({ ...setting, id: child }));
     expect(differingSettingIds(assessment)).toEqual([child]);
-    expect(differingSettingIds({ ...assessment, basis: "settings" })).toEqual([root]);
+    const bySettings = {
+      ...assessment,
+      basis: "settings" as const,
+      levels: assessment.levels.map((level) => ({ ...level, headline: { ...level.headline, basis: "settings" as const } })),
+    };
+    expect(differingSettingIds(bySettings)).toEqual([root]);
   });
 });
 

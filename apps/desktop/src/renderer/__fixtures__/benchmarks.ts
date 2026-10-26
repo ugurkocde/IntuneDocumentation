@@ -57,7 +57,7 @@ export function syntheticAssessment({
   complete = true,
   levels = [1] as BenchmarkLevel[],
   longTitles = false,
-  basis = "recommendations" as BenchmarkAssessment["basis"],
+  basis = "recommendations" as LevelSummary["headline"]["basis"],
   version = "2.0.0",
   level: compared = levels[0]!,
 }: {
@@ -65,7 +65,7 @@ export function syntheticAssessment({
   complete?: boolean;
   levels?: BenchmarkLevel[];
   longTitles?: boolean;
-  basis?: BenchmarkAssessment["basis"];
+  basis?: LevelSummary["headline"]["basis"];
   version?: string;
   // The Level that was compared; defaults to the first of levels.
   level?: BenchmarkLevel;
@@ -78,10 +78,13 @@ export function syntheticAssessment({
     const settingId = `device_vendor_msft_policy_config_synthetic_area_synthetic_setting_${index + 1}`;
     const key = `0:${index}`;
     if (status !== "Unmapped") {
+      const current = status === "Different" ? "Disabled" : status === "Review" ? "Not readable" : "Enabled";
       settings.push({
         key,
+        packLevel: basis === "recommendations" ? 1 : levels[0]!,
         policyIndex: 0,
         settingIndex: index,
+        templated: false,
         policyName: "Synthetic pack policy",
         platforms: "windows10",
         settingId,
@@ -89,6 +92,7 @@ export function syntheticAssessment({
         result,
         ...(reason ? { reason } : {}),
         recommended: { settingDefinitionId: settingId, choiceSettingValue: { value: `${settingId}_1` } },
+        recommendedValue: { text: "Enabled", raw: null },
         observations:
           status === "Missing"
             ? []
@@ -98,6 +102,11 @@ export function syntheticAssessment({
                   policyName: `Synthetic tenant policy ${index + 1}`,
                   templated: false,
                   assignment: reason === "notAssigned" ? "notAssigned" : "assigned",
+                  reach:
+                    reason === "notAssigned"
+                      ? { targets: [], exclusions: [], removals: [], filters: 0 }
+                      : { targets: ["Group: Synthetic pilot devices"], exclusions: [], removals: [], filters: 0 },
+                  current: { text: current, raw: null },
                   value: { settingDefinitionId: settingId },
                   comparison: status === "Different" ? "differ" : status === "Review" ? "unknown" : "match",
                 },
@@ -106,6 +115,7 @@ export function syntheticAssessment({
     }
     recommendations.push({
       id: `${(index % 9) + 1}.${Math.floor(index / 9) + 1}.${index + 1}`,
+      packLevel: 1,
       title: `Synthetic recommendation ${index + 1}${longTitles ? LONG_TITLE : ""}`,
       level,
       result,
@@ -133,6 +143,9 @@ export function syntheticAssessment({
       notAssessed: count("Not assessed"),
     };
     const assessed = counts.pass + counts.fail;
+    const notConfigured = own.filter((item) =>
+      "status" in item ? item.status === "Missing" : item.settings.every((setting) => setting.status === "Missing"),
+    ).length;
     return {
       level,
       headline: {
@@ -141,6 +154,15 @@ export function syntheticAssessment({
         adjusted: null,
         exceptionIds: [],
         counts,
+        states: {
+          matches: counts.pass,
+          differs: counts.fail - notConfigured,
+          notConfigured,
+          needsReview: counts.review,
+          notAssessed: counts.notAssessed,
+          assessed,
+          total: own.length,
+        },
       },
       coverage: {
         level,
@@ -177,6 +199,8 @@ export function syntheticAssessment({
       gaps: complete
         ? []
         : ["Synthetic policy 3: settings were not read completely.", "A Settings Catalog entry could not be read."],
+      otherProfilePlatforms: [],
+      otherProfiles: [],
     },
     basis,
     settings,
@@ -185,5 +209,6 @@ export function syntheticAssessment({
     listUsed: false,
     manualNote: MANUAL_NOT_ASSESSED_NOTE,
     notice: { text: MANUAL_RECOMMENDATIONS_NOTICE, url: MANUAL_RECOMMENDATIONS_URL },
+    settingNames: {},
   };
 }

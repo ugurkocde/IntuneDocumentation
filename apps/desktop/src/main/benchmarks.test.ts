@@ -57,6 +57,7 @@ const {
   MAX_CACHED_CONTENT,
   benchmarkWork,
   contentBaseUrl,
+  exceptionsForLevel,
   registerBenchmarksIpc,
 } = await import("./benchmarks");
 const exportModule = await import("../../../../src/lib/benchmarks/export");
@@ -120,10 +121,12 @@ function harness(options: { work?: boolean } = {}) {
   const log = vi.fn();
   const work = {
     assessBenchmark: vi.fn(
-      async (input: { pack: { benchmark: string; version: string; level: 1 | 2 } }): Promise<BenchmarkAssessmentView> => ({
-        benchmark: input.pack.benchmark,
-        version: input.pack.version,
-        level: input.pack.level,
+      async (input: {
+        packs: Array<{ benchmark: string; version: string; level: 1 | 2 }>;
+      }): Promise<BenchmarkAssessmentView> => ({
+        benchmark: input.packs.at(-1)!.benchmark,
+        version: input.packs.at(-1)!.version,
+        level: input.packs.at(-1)!.level,
         assessedAt: "2026-10-22T10:00:00.000Z",
       }),
     ),
@@ -545,7 +548,7 @@ describe("benchmarks memory cache", () => {
     // The pack the assessment was made from goes with it (drafts need it);
     // only the PDF asks the catalog for the benchmark name.
     expect(h.work.exportBenchmark).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: TENANT, format: "csv", pack: packOf(), benchmarkName: null }),
+      expect.objectContaining({ tenantId: TENANT, format: "csv", packs: [packOf()], benchmarkName: null }),
     );
     expect(h.fetch.mock.calls.some(([url]) => url.endsWith("/catalog"))).toBe(false);
     await h.call("benchmarks:export", { format: "pdf" });
@@ -575,8 +578,9 @@ describe("benchmarks memory cache", () => {
       draftSettings: 3,
       notGenerated: [],
     });
-    // The newest assessment and the pack it was made from, nothing fetched again.
-    expect(h.work.draftsPreview).toHaveBeenCalledWith({ assessment: level2, pack: packOf(2) });
+    // The newest assessment and the packs it was made from, nothing fetched
+    // again: Level 2 is compared with the Level 1 pack, held from before.
+    expect(h.work.draftsPreview).toHaveBeenCalledWith({ assessment: level2, packs: [packOf(1), packOf(2)] });
     expect(h.packFetches()).toBe(2);
     h.requireOwner.mockResolvedValueOnce("owner-2");
     await expect(h.call("benchmarks:previewDrafts")).rejects.toThrow(BENCHMARK_ASSESS_FIRST);
@@ -673,7 +677,7 @@ describe("benchmark work wiring", () => {
 
   it("assesses the owner's last collection with the tenant's exceptions and stores the run without titles", async () => {
     const { deps, work } = workHarness();
-    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [delivered()], list: null });
     expect(assessment.recommendations.map((item) => [item.id, item.result])).toEqual([
       ["1.1", "Pass"],
       ["1.2", "Fail"],
@@ -701,7 +705,7 @@ describe("benchmark work wiring", () => {
 
   it("says in the view when a run is not recorded and why: schema limits, history off, no time (finding 6)", async () => {
     const { deps, state, work } = workHarness();
-    const recorded = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    const recorded = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [delivered()], list: null });
     expect(recorded.history).toEqual({ recorded: true, reason: null });
 
     const many = pack(
@@ -714,7 +718,7 @@ describe("benchmark work wiring", () => {
       })),
     );
     deps.recordRuns.mockClear();
-    const tooMany = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: many, list: null });
+    const tooMany = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [many], list: null });
     expect(tooMany.history).toEqual({
       recorded: false,
       reason: "This comparison is not stored in history. The stored benchmark run holds more than 5000 results.",
@@ -726,7 +730,7 @@ describe("benchmark work wiring", () => {
       [{ settings: [choice("synthetic\u0007alpha", "on")] }],
       [{ id: "1.1", title: "Synthetic", level: 1, settings: ["synthetic\u0007alpha"] }],
     );
-    const refused = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: badId, list: null });
+    const refused = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [badId], list: null });
     expect(refused.history?.recorded).toBe(false);
     expect(refused.history?.reason).toContain("a setting id is empty, longer than 500 characters");
     expect(deps.recordRuns).not.toHaveBeenCalled();
@@ -736,17 +740,17 @@ describe("benchmark work wiring", () => {
       [{ settings: [choice("com.synthetic.energysaver_display sleep timer", "on")] }],
       [{ id: "1.1", title: "Synthetic", level: 1, settings: ["com.synthetic.energysaver_display sleep timer"] }],
     );
-    const stored = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: spaced, list: null });
+    const stored = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [spaced], list: null });
     expect(stored.history).toEqual({ recorded: true, reason: null });
     expect(deps.recordRuns).toHaveBeenCalledTimes(1);
     deps.recordRuns.mockClear();
 
     deps.recordRuns.mockResolvedValueOnce(false);
-    const off = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    const off = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [delivered()], list: null });
     expect(off.history).toEqual({ recorded: false, reason: RUN_NOT_KEPT });
 
     state.collection = { ...collected(), collectedAt: undefined } as unknown as ReturnType<typeof collected>;
-    const untimed = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    const untimed = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [delivered()], list: null });
     expect(untimed.history).toEqual({ recorded: false, reason: RUN_NOT_TIMED });
   });
 
@@ -760,7 +764,7 @@ describe("benchmark work wiring", () => {
       ],
       2,
     );
-    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: mixed, list: null });
+    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [mixed], list: null });
     expect(assessment.history).toEqual({ recorded: true, reason: null });
     expect(deps.recordRuns).toHaveBeenCalledTimes(1);
     const runs = deps.recordRuns.mock.calls[0]![3];
@@ -787,7 +791,7 @@ describe("benchmark work wiring", () => {
       stored.push(...runs);
       return true;
     });
-    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: mixed, list: null });
+    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [mixed], list: null });
     expect(deps.recordRuns).toHaveBeenCalledTimes(1);
     expect(deps.recordRuns.mock.calls[0]![3].map((run) => run.level)).toEqual([1, 2]);
     expect(stored).toEqual([]);
@@ -796,11 +800,11 @@ describe("benchmark work wiring", () => {
 
   it("needs the owner's own collection", async () => {
     const { deps, state, work } = workHarness();
-    await expect(work.assessBenchmark({ owner: "owner-2", tenantId: TENANT, pack: delivered(), list: null })).rejects.toThrow(
+    await expect(work.assessBenchmark({ owner: "owner-2", tenantId: TENANT, packs: [delivered()], list: null })).rejects.toThrow(
       "Collect tenant data first.",
     );
     state.collection = null;
-    await expect(work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null })).rejects.toThrow(
+    await expect(work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [delivered()], list: null })).rejects.toThrow(
       "Collect tenant data first.",
     );
     expect(deps.recordRuns).not.toHaveBeenCalled();
@@ -810,7 +814,7 @@ describe("benchmark work wiring", () => {
     const { deps, work } = workHarness();
     deps.exceptions.list.mockRejectedValueOnce(new Error("The exceptions key could not be unlocked right now."));
     deps.recordRuns.mockRejectedValueOnce(new Error("The stored benchmark run has an invalid result 1."));
-    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: delivered(), list: null });
+    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [delivered()], list: null });
     expect(assessment.levels[0]!.headline).toMatchObject({ rate: 0.5, adjusted: null });
     expect(assessment.history).toEqual({ recorded: false, reason: RUN_NOT_STORED });
     const logged = JSON.stringify(deps.log.mock.calls);
@@ -823,14 +827,14 @@ describe("benchmark work wiring", () => {
   it("exports with the assessed pack, the stored exceptions of that benchmark, version and level, and the catalog name", async () => {
     const { work } = workHarness();
     const used = delivered();
-    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, pack: used, list: null });
+    const assessment = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [used], list: null });
     const exportSpy = vi.mocked(exportModule.exportBenchmark);
     exportSpy.mockClear();
-    const input = { owner: OWNER, tenantId: TENANT, assessment, pack: used, benchmarkName: NAME };
+    const input = { owner: OWNER, tenantId: TENANT, assessment, packs: [used], benchmarkName: NAME };
     const pdf = await work.exportBenchmark({ ...input, format: "pdf" });
     const [, format, options] = exportSpy.mock.calls[0]!;
     expect(format).toBe("pdf");
-    expect(options!.pack).toBe(used);
+    expect(options!.pack).toEqual([used]);
     expect(options!.benchmarkName).toBe(NAME);
     expect(options!.tenantLabel).toBe("11111111...");
     expect(options!.exceptions).toEqual([exception()]);
@@ -838,7 +842,7 @@ describe("benchmark work wiring", () => {
     // Drafts are made from the same pack; without a name the PDF uses the id.
     const drafts = await work.exportBenchmark({ ...input, benchmarkName: null, format: "drafts" });
     expect(exportSpy.mock.calls[1]![2]).not.toHaveProperty("benchmarkName");
-    expect(exportSpy.mock.calls[1]![2]!.pack).toBe(used);
+    expect(exportSpy.mock.calls[1]![2]!.pack).toEqual([used]);
     expect([...drafts.bytes.slice(0, 2)]).toEqual([0x50, 0x4b]);
     const csv = await work.exportBenchmark({ ...input, format: "csv" });
     const text = new TextDecoder().decode(csv.bytes);
@@ -891,7 +895,7 @@ describe("benchmark work wiring", () => {
     exportSpy.mockClear();
     await h.call("benchmarks:export", { format: "drafts", confirmed: true });
     await h.call("benchmarks:export", { format: "pdf" });
-    expect(exportSpy.mock.calls[0]![2]!.pack).toEqual(delivered());
+    expect(exportSpy.mock.calls[0]![2]!.pack).toEqual([delivered()]);
     expect(exportSpy.mock.calls[1]![2]!.benchmarkName).toBe(NAME);
     expect(h.saveFile.mock.calls.map(([name]) => String(name).split(".").at(-1))).toEqual(["zip", "pdf"]);
     ipc.reset();
@@ -950,6 +954,154 @@ describe("benchmark work wiring", () => {
 });
 
 // main.ts starts Electron when imported, so its wiring is checked in the source.
+describe("Level 2 together with Level 1", () => {
+  const level2Of = (recommendationLevel: 1 | 2) => ({
+    ...packOf(2),
+    recommendations: [{ id: "7.2.1", title: TITLE, level: recommendationLevel, settings: [SETTING] }],
+  });
+  const answering = (level2: unknown, level1Status = 200) =>
+    vi.fn(async (url: string, _init: RequestInit) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith("/packs/synthetic-bench/9.9.9/2")) return json(level2);
+      if (path.endsWith("/packs/synthetic-bench/9.9.9/1"))
+        return level1Status === 200 ? json(packOf(1)) : json({ error: "not found" }, { status: level1Status });
+      return service(url);
+    });
+
+  it("compares a Level 2 delta pack with the Level 1 pack, in Level order", async () => {
+    const h = harness();
+    h.fetch.mockImplementation(answering(level2Of(2)));
+    await h.call("benchmarks:assess", { ...IDENTITY, level: 2 });
+    expect(h.work.assessBenchmark.mock.calls[0]![0]).toMatchObject({ packs: [packOf(1), level2Of(2)] });
+    expect(h.packFetches()).toBe(2);
+  });
+
+  it("compares a Level 2 pack alone when it holds Level 1 recommendations itself", async () => {
+    const h = harness();
+    h.fetch.mockImplementation(answering(level2Of(1)));
+    await h.call("benchmarks:assess", { ...IDENTITY, level: 2 });
+    expect(h.work.assessBenchmark.mock.calls[0]![0]).toMatchObject({ packs: [level2Of(1)] });
+    expect(h.packFetches()).toBe(1);
+  });
+
+  it("compares Level 2 alone when the service has no Level 1 pack, and fails on other errors", async () => {
+    const missing = harness();
+    missing.fetch.mockImplementation(answering(level2Of(2), 404));
+    await missing.call("benchmarks:assess", { ...IDENTITY, level: 2 });
+    expect(missing.work.assessBenchmark.mock.calls[0]![0]).toMatchObject({ packs: [level2Of(2)] });
+    const failing = harness();
+    failing.fetch.mockImplementation(answering(level2Of(2), 503));
+    await expect(failing.call("benchmarks:assess", { ...IDENTITY, level: 2 })).rejects.toThrow(/503/);
+    expect(failing.work.assessBenchmark).not.toHaveBeenCalled();
+  });
+
+  it("applies exceptions recorded at the compared Level to the Level 1 part too, unless Level 1 has its own", () => {
+    const base = {
+      benchmark: "synthetic-bench",
+      version: "9.9.9",
+      owner: "Synthetic Owner",
+      reason: "Synthetic reason",
+      expiresOn: "2099-12-31",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const all = [
+      { ...base, id: "one-a", level: 1 as const, settingId: "synthetic_a" },
+      { ...base, id: "two-a", level: 2 as const, settingId: "synthetic_a" },
+      { ...base, id: "two-b", level: 2 as const, settingId: "synthetic_b" },
+    ];
+    expect(exceptionsForLevel(all, 1, 2).map((entry) => [entry.id, entry.level])).toEqual([
+      ["one-a", 1],
+      ["two-b", 1],
+    ]);
+    expect(exceptionsForLevel(all, 2, 2).map((entry) => entry.id)).toEqual(["two-a", "two-b"]);
+    expect(exceptionsForLevel(all, 1, 1).map((entry) => entry.id)).toEqual(["one-a"]);
+  });
+
+  it("returns both Levels with names, the fix plan and the tenant name, stores both runs and exports with the name", async () => {
+    const { choice, collection, pack, tenantPolicy } = fixtures;
+    const level1 = pack(
+      [{ settings: [choice("synthetic_alpha", "on")] }],
+      [{ id: "1.1", title: "Synthetic level one", level: 1, settings: ["synthetic_alpha"] }],
+      1,
+    );
+    const level2 = pack([{ settings: [choice("synthetic_gamma", "on")] }], undefined, 2);
+    const recordRuns = vi.fn(async (..._args: [string, string, string, StoredRun[]]) => true);
+    const settingNames = vi.fn(async (ids: readonly string[]) =>
+      Object.fromEntries(ids.map((id) => [id, { name: `Synthetic name of ${id}`, options: {} }])),
+    );
+    const work = benchmarkWork({
+      collectionFor: () =>
+        collection({ policies: [tenantPolicy({ name: "Synthetic tenant policy", settings: [choice("synthetic_alpha", "on")] })] }),
+      exceptions: { list: vi.fn(async () => []), set: vi.fn(async () => []), remove: vi.fn(async () => []) },
+      isCurrent: () => true,
+      recordRuns,
+      history: {
+        benchmarkHistory: vi.fn(async () => ({ enabled: true, available: true, reason: null, trend: [], drift: [], runs: [] })),
+        benchmarkPortfolio: vi.fn(async () => ({ available: true, reason: null, benchmarks: [], selected: null, rows: [] })),
+      },
+      tenantLabel: (tenantId: string) => `${tenantId.slice(0, 8)}...`,
+      tenantName: async () => "Synthetic Tenant Display",
+      settingNames,
+      log: vi.fn(),
+    });
+    const view = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [level1, level2], list: null });
+    expect(view.level).toBe(2);
+    expect(view.levels.map((level) => level.level)).toEqual([1, 2]);
+    expect(view.tenantName).toBe("Synthetic Tenant Display");
+    expect(settingNames).toHaveBeenCalledWith(["synthetic_alpha", "synthetic_gamma"]);
+    expect(view.settingNames.synthetic_gamma!.name).toBe("Synthetic name of synthetic_gamma");
+    expect(view.fixPlan.actions.map((action) => action.kind)).toEqual(["addSetting"]);
+    const runs = recordRuns.mock.calls[0]![3];
+    expect(runs.map((run) => [run.level, run.basis])).toEqual([
+      [1, "recommendations"],
+      [2, "settings"],
+    ]);
+    expect(runs[0]!.packDigest).not.toBe(runs[1]!.packDigest);
+    const exportSpy = vi.mocked(exportModule.exportBenchmark);
+    exportSpy.mockClear();
+    const file = await work.exportBenchmark({
+      owner: OWNER,
+      tenantId: TENANT,
+      assessment: view,
+      packs: [level1, level2],
+      benchmarkName: null,
+      format: "csv",
+    });
+    expect(exportSpy.mock.calls[0]![2]).toMatchObject({ tenantLabel: "Synthetic Tenant Display", pack: [level1, level2] });
+    expect(file.fileName).toContain("-L2-synthetic-tenant-display-");
+    const preview = await work.draftsPreview({ assessment: view, packs: [level1, level2] });
+    expect(preview).toMatchObject({ draftPolicies: 1, draftSettings: 1 });
+  });
+
+  it("keeps ids when the name lookup fails and the short tenant id when no name is known", async () => {
+    const { choice, collection, pack, tenantPolicy } = fixtures;
+    const log = vi.fn();
+    const work = benchmarkWork({
+      collectionFor: () => collection({ policies: [tenantPolicy({ settings: [choice("synthetic_alpha", "on")] })] }),
+      exceptions: { list: vi.fn(async () => []), set: vi.fn(async () => []), remove: vi.fn(async () => []) },
+      isCurrent: () => true,
+      recordRuns: vi.fn(async () => false),
+      history: {
+        benchmarkHistory: vi.fn(async () => ({ enabled: true, available: true, reason: null, trend: [], drift: [], runs: [] })),
+        benchmarkPortfolio: vi.fn(async () => ({ available: true, reason: null, benchmarks: [], selected: null, rows: [] })),
+      },
+      tenantLabel: (tenantId: string) => `${tenantId.slice(0, 8)}...`,
+      tenantName: async () => undefined,
+      settingNames: async () => {
+        throw new Error("Synthetic outage");
+      },
+      log,
+    });
+    const level1 = pack([{ settings: [choice("synthetic_alpha", "on")] }], undefined, 1);
+    const view = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [level1], list: null });
+    expect(view.settingNames).toEqual({});
+    expect(view.tenantName).toBeUndefined();
+    expect(log).toHaveBeenCalledWith("warn", "benchmark setting names not read", { message: "Synthetic outage" });
+    const file = await work.exportBenchmark({ owner: OWNER, tenantId: TENANT, assessment: view, packs: [level1], benchmarkName: null, format: "json" });
+    expect(file.fileName).toContain(`-${TENANT.slice(0, 8)}-`);
+  });
+});
+
 const realFs = await vi.importActual<typeof import("node:fs")>("node:fs");
 const mainSource = realFs.readFileSync(new URL("./main.ts", import.meta.url), "utf8");
 

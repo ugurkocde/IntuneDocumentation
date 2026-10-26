@@ -7,16 +7,26 @@
 import type { BrandingOptions } from "~/types/branding";
 import { dateParts } from "../compliance/pdf-kit";
 import { toCsv, type CellValue } from "../compliance/export/csv";
-import type { BenchmarkAssessment, ResultState } from "./assessment";
+import {
+  assessmentResults,
+  type BenchmarkAssessment,
+  type RecommendationSettingResult,
+} from "./assessment";
 import {
   READINESS_DISCLAIMER,
   REASON_LABELS,
-  RESULT_LABELS,
   SETTING_STATUS_LABELS,
+  absentValueText,
   coverageStatement,
+  rateIsHero,
   ratePercent,
+  resultLabel,
+  resultSettingDetails,
+  type ResultSettingDetail,
 } from "./display";
 import { buildBenchmarkDraftsZip, generateBenchmarkDrafts } from "./drafts";
+import { buildFixPlan, nextStepText, type FixPlan } from "./fix-plan";
+import { NOT_READABLE } from "./values";
 import type { BenchmarkException } from "./exceptions";
 import { RESULT_CODES } from "./history";
 import type { BenchmarkPack } from "./pack";
@@ -25,7 +35,10 @@ import { renderReadinessPdf } from "./readiness-pdf";
 export type BenchmarkExportFormat = "pdf" | "csv" | "json" | "drafts";
 
 export interface BenchmarkExportOptions {
-  /** Shortened tenant label; it names the file and the PDF tenant. */
+  /**
+   * The tenant's display name when known, otherwise its shortened id; it
+   * names the file, the PDF tenant and the JSON tenant.
+   */
   tenantLabel?: string;
   /** Fixed render time for the PDF and the file name: same input, same bytes. */
   renderDate?: Date;
@@ -34,8 +47,11 @@ export interface BenchmarkExportOptions {
   benchmarkName?: string;
   /** Stored exceptions, listed in the PDF. */
   exceptions?: readonly BenchmarkException[];
-  /** The delivered pack the assessment was made from; drafts need it. */
-  pack?: BenchmarkPack;
+  /**
+   * The delivered pack or packs the assessment was made from (Level 1 and
+   * Level 2 when Level 2 was compared); drafts need them.
+   */
+  pack?: BenchmarkPack | readonly BenchmarkPack[];
 }
 
 export interface BenchmarkExport {
@@ -98,56 +114,94 @@ const CSV_HEADER = [
   "Reason code",
   "Reason",
   "Open setting IDs",
+  "Setting names",
+  "Holding policies",
+  "Assignment",
+  "Current value",
+  "Recommended value",
+  "Next action",
 ] as const;
 
-/** One row per result: recommendations, or settings when the pack has none. */
-export function benchmarkCsv(assessment: BenchmarkAssessment): string {
-  const base = [
+/**
+ * The value columns of one result: per setting, the policies holding it,
+ * their assignment, their current value and the recommended value. A
+ * result with several settings prefixes each part with the setting name.
+ */
+function detailCells(
+  details: readonly ResultSettingDetail[],
+): [string, string, string, string, string] {
+  const several = details.length > 1;
+  const part = (detail: ResultSettingDetail, text: string) =>
+    several ? `${detail.name}: ${text}` : text;
+  const join = (values: string[]) => [...new Set(values)].join("; ");
+  return [
+    join(details.map((detail) => detail.name)),
+    join(details.flatMap((detail) => detail.holders.map((holder) => holder.policyName))),
+    join(
+      details.flatMap((detail) =>
+        detail.holders.map((holder) => `${holder.policyName}: ${holder.assignedTo}`),
+      ),
+    ),
+    join(
+      details.map((detail) =>
+        part(
+          detail,
+          detail.status === "Unmapped"
+            ? ""
+            : detail.holders.length
+            ? detail.holders
+                .map((holder) => `${holder.policyName}: ${holder.current.text}`)
+                .join(", ")
+            : absentValueText(detail.status),
+        ),
+      ),
+    ),
+    join(
+      details.map((detail) =>
+        part(
+          detail,
+          detail.status === "Unmapped"
+            ? ""
+            : detail.recommended.join(", ") || NOT_READABLE,
+        ),
+      ),
+    ),
+  ];
+}
+
+/**
+ * One row per result of every Level shown (assessmentResults): its ids and
+ * codes, then the setting names, the tenant policies holding its settings
+ * with their assignment and current value, the recommended value and the
+ * next step from the fix plan. No titles and no pack policy names.
+ */
+export function benchmarkCsv(
+  assessment: BenchmarkAssessment,
+  plan: FixPlan = buildFixPlan(assessment),
+): string {
+  const rows = assessmentResults(assessment).map((item): CellValue[] => [
     assessment.benchmark,
     assessment.version,
     assessment.level,
-  ] as const;
-  const row = (
-    level: number,
-    kind: string,
-    id: string,
-    result: ResultState,
-    reason: keyof typeof REASON_LABELS | undefined,
-    open: readonly string[],
-  ): CellValue[] => [
-    ...base,
-    level,
-    kind,
-    id,
-    RESULT_CODES[result],
-    RESULT_LABELS[result],
-    reason ?? "",
-    reason ? REASON_LABELS[reason] : "",
+    item.level,
+    item.kind === "recommendation" ? "Recommendation" : "Setting",
+    item.id,
+    RESULT_CODES[item.result],
+    item.kind === "recommendation"
+      ? resultLabel(item.recommendation)
+      : resultLabel(item.finding),
+    item.reason ?? "",
+    item.reason ? REASON_LABELS[item.reason] : "",
     // Setting ids may hold spaces (Apple ids do), so they are joined with "; ".
-    open.join("; "),
-  ];
-  const rows =
-    assessment.basis === "recommendations"
-      ? assessment.recommendations.map((item) =>
-          row(
-            item.level,
-            "Recommendation",
-            item.id,
-            item.result,
-            item.reason,
-            item.openSettingIds,
-          ),
-        )
-      : assessment.settings.map((finding) =>
-          row(
-            assessment.level,
-            "Setting",
-            finding.settingId,
-            finding.result,
-            finding.reason,
-            finding.result === "Pass" ? [] : [finding.settingId],
-          ),
-        );
+    (item.kind === "recommendation"
+      ? item.recommendation.openSettingIds
+      : item.result === "Pass"
+        ? []
+        : [item.id]
+    ).join("; "),
+    ...detailCells(resultSettingDetails(assessment, item)),
+    nextStepText(plan, item),
+  ]);
   return toCsv([[...CSV_HEADER], ...rows], { bom: true });
 }
 
@@ -162,17 +216,26 @@ function sortKeys(value: unknown): unknown {
   );
 }
 
-/** The assessment summary: ids, codes, labels, reasons and counts, no titles or pack policy names. */
-export function benchmarkSummary(assessment: BenchmarkAssessment) {
+/**
+ * The assessment summary: ids, codes, labels, reasons, counts, setting
+ * names, values and the tenant policies holding them, and the fix plan. No
+ * titles or pack policy names.
+ */
+export function benchmarkSummary(
+  assessment: BenchmarkAssessment,
+  options: { tenantName?: string; plan?: FixPlan } = {},
+) {
+  const plan = options.plan ?? buildFixPlan(assessment);
   const reason = (code: keyof typeof REASON_LABELS | undefined) =>
     code ? { reasonCode: code, reason: REASON_LABELS[code] } : {};
   return {
     kind: "benchmarkReadinessSummary",
-    schemaVersion: 1,
+    schemaVersion: 2,
     disclaimer: READINESS_DISCLAIMER,
     benchmark: assessment.benchmark,
     version: assessment.version,
     level: assessment.level,
+    ...(options.tenantName ? { tenant: options.tenantName } : {}),
     assessedAt: assessment.assessedAt,
     basis: assessment.basis,
     collection: {
@@ -182,6 +245,7 @@ export function benchmarkSummary(assessment: BenchmarkAssessment) {
     },
     levels: assessment.levels.map((level) => ({
       level: level.level,
+      basis: level.headline.basis,
       headline: {
         rate: level.headline.rate,
         ratePercent: ratePercent(level.headline.rate),
@@ -197,6 +261,8 @@ export function benchmarkSummary(assessment: BenchmarkAssessment) {
           review: level.headline.counts.review,
           notAssessed: level.headline.counts.notAssessed,
         },
+        states: { ...level.headline.states },
+        rateIsHero: rateIsHero(level.headline.states),
       },
       coverage: {
         source: level.coverage.source,
@@ -207,46 +273,108 @@ export function benchmarkSummary(assessment: BenchmarkAssessment) {
       },
       manualIdentifiers: level.manual.map((item) => item.identifier),
     })),
-    results:
-      assessment.basis === "recommendations"
-        ? assessment.recommendations.map((item) => ({
-            id: item.id,
-            level: item.level,
-            resultCode: RESULT_CODES[item.result],
-            result: RESULT_LABELS[item.result],
-            ...reason(item.reason),
-            openSettingIds: [...item.openSettingIds],
-            settings: item.settings.map((setting) => ({
-              id: setting.id,
-              status: SETTING_STATUS_LABELS[setting.status],
-              resultCode: RESULT_CODES[setting.result],
-              ...reason(setting.reason),
-            })),
-          }))
-        : assessment.settings.map((finding) => ({
-            id: finding.settingId,
-            level: assessment.level,
-            resultCode: RESULT_CODES[finding.result],
-            result: RESULT_LABELS[finding.result],
-            ...reason(finding.reason),
-            openSettingIds:
-              finding.result === "Pass" ? [] : [finding.settingId],
-            settings: [
-              {
-                id: finding.settingId,
-                status: SETTING_STATUS_LABELS[finding.status],
-                resultCode: RESULT_CODES[finding.result],
-                ...reason(finding.reason),
-              },
-            ],
+    results: assessmentResults(assessment).map((item) => {
+      const details = resultSettingDetails(assessment, item);
+      const own: ReadonlyArray<{
+        id: string;
+        status: RecommendationSettingResult["status"];
+        result: RecommendationSettingResult["result"];
+        reason?: RecommendationSettingResult["reason"];
+      }> =
+        item.kind === "recommendation"
+          ? item.recommendation.settings
+          : [
+              withReasonOf(
+                {
+                  id: item.finding.settingId,
+                  status: item.finding.status,
+                  result: item.finding.result,
+                },
+                item.finding.reason,
+              ),
+            ];
+      return {
+        id: item.id,
+        level: item.level,
+        kind: item.kind,
+        resultCode: RESULT_CODES[item.result],
+        result:
+          item.kind === "recommendation"
+            ? resultLabel(item.recommendation)
+            : resultLabel(item.finding),
+        ...reason(item.reason),
+        openSettingIds:
+          item.kind === "recommendation"
+            ? [...item.recommendation.openSettingIds]
+            : item.result === "Pass"
+              ? []
+              : [item.id],
+        settings: own.map((setting, index) => ({
+          id: setting.id,
+          name: details[index]!.name,
+          status: SETTING_STATUS_LABELS[setting.status],
+          resultCode: RESULT_CODES[setting.result],
+          ...reason(setting.reason),
+          recommendedValue: details[index]!.recommended,
+          policies: details[index]!.holders.map((holder) => ({
+            id: holder.policyId,
+            name: holder.policyName,
+            assignment: holder.assignment,
+            assignedTo: holder.assignedTo,
+            comparison: holder.label,
+            currentValue: holder.current.text,
+            ...(holder.current.cause ? { unreadableCause: holder.current.cause } : {}),
           })),
+        })),
+        actionIds: [...(plan.byResult[item.key] ?? [])],
+        nextAction: nextStepText(plan, item),
+      };
+    }),
+    fixPlan: plan.actions.map((action) => ({
+      id: action.id,
+      kind: action.kind,
+      text: action.text,
+      ...(action.reason ? { reasonCode: action.reason } : {}),
+      ...(action.policy
+        ? {
+            policy: {
+              id: action.policy.id,
+              name: action.policy.name,
+              assignment: action.policy.assignment,
+            },
+          }
+        : {}),
+      ...(action.unlocks ? { unlocks: { ...action.unlocks } } : {}),
+      settings: action.settings.map((setting) => ({
+        id: setting.settingId,
+        name: setting.name,
+        level: setting.packLevel,
+        currentValue: setting.current,
+        recommendedValue: setting.recommended,
+        ...(setting.draft ? { draft: setting.draft } : {}),
+        text: setting.text,
+      })),
+      results: action.results.map((result) => ({
+        level: result.level,
+        kind: result.kind,
+        id: result.id,
+      })),
+    })),
     manualNote: assessment.manualNote,
     notice: { text: assessment.notice.text, url: assessment.notice.url },
   };
 }
 
-export function benchmarkJson(assessment: BenchmarkAssessment): string {
-  return `${JSON.stringify(sortKeys(benchmarkSummary(assessment)), null, 2)}\n`;
+const withReasonOf = <T extends object>(
+  value: T,
+  code: keyof typeof REASON_LABELS | undefined,
+) => (code ? { ...value, reason: code } : value);
+
+export function benchmarkJson(
+  assessment: BenchmarkAssessment,
+  options: { tenantName?: string; plan?: FixPlan } = {},
+): string {
+  return `${JSON.stringify(sortKeys(benchmarkSummary(assessment, options)), null, 2)}\n`;
 }
 
 /** One export of an assessment as a file name and its bytes. */
@@ -277,7 +405,15 @@ export async function exportBenchmark(
     case "csv":
       return { fileName, bytes: text(benchmarkCsv(assessment)) };
     case "json":
-      return { fileName, bytes: text(benchmarkJson(assessment)) };
+      return {
+        fileName,
+        bytes: text(
+          benchmarkJson(
+            assessment,
+            options.tenantLabel ? { tenantName: options.tenantLabel } : {},
+          ),
+        ),
+      };
     case "drafts": {
       if (!options.pack)
         throw new Error(

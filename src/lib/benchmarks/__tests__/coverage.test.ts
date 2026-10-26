@@ -71,7 +71,9 @@ describe("coverage of the full benchmark", () => {
       null,
       null,
     ]);
-    expect(coverageStatement({ level: 1, coverage })).toMatch(/not shown/);
+    expect(coverageStatement({ level: 1, coverage })).toBe(
+      "The full benchmark also has manual and other recommendations; coverage of the full benchmark will be shown once its list is published.",
+    );
   });
 
   it("shows coverage, manual items and the check summary in an assessment with a matching list", () => {
@@ -124,7 +126,9 @@ describe("coverage of the full benchmark", () => {
       list: list(items, { version: "2.0.0" }),
     });
     expect(otherVersion.listUsed).toBe(false);
-    expect(coverageStatement(otherVersion.levels[0]!)).toMatch(/not shown/);
+    expect(coverageStatement(otherVersion.levels[0]!)).toMatch(
+      /^This pack covers \d+ recommendations?\. The full benchmark also has manual and other recommendations; coverage of the full benchmark will be shown once its list is published\.$/,
+    );
     expect(levelCheckSummary(otherVersion.levels[0]!, 1)).toBe(
       "Level 1: Intune Documentation checks 1 recommendation of this pack automatically. The one listed here and any recommendations outside the pack need a manual check.",
     );

@@ -1,11 +1,14 @@
-import type {
-  BenchmarkAssessment,
-  LevelSummary,
-  ReasonCode,
-  RecommendationSettingResult,
-  ResultState,
-  SettingFinding,
+import {
+  assessmentResults,
+  type BenchmarkAssessment,
+  type LevelSummary,
+  type ReasonCode,
+  type RecommendationSettingResult,
+  type ResultState,
+  type SettingFinding,
 } from "../../../../../src/lib/benchmarks/assessment";
+import { bySeverity } from "../../../../../src/lib/benchmarks/display";
+import { settingName } from "../../../../../src/lib/benchmarks/values";
 import type {
   BenchmarkAssessmentView,
   BenchmarkCatalog,
@@ -96,48 +99,50 @@ export interface ReviewRow {
   findings: SettingFinding[];
 }
 
+// Rows of every Level shown (assessmentResults), most severe first
+// (bySeverity: Differs and Not configured, Needs review, Not assessed,
+// Matches; Level and id order within). A setting row is titled by the
+// setting's display name where one is known, its id otherwise.
 export function reviewRows(assessment: BenchmarkAssessment): ReviewRow[] {
   const findings = new Map(assessment.settings.map((finding) => [finding.key, finding]));
   const found = (keys: readonly string[]) =>
     keys.map((key) => findings.get(key)).filter((finding): finding is SettingFinding => Boolean(finding));
-  if (assessment.basis === "recommendations") {
-    return assessment.recommendations
-      .map(
-        (item): ReviewRow => ({
-          key: `r:${item.id}`,
+  return assessmentResults(assessment)
+    .map((item): ReviewRow => {
+      if (item.kind === "recommendation")
+        return {
+          key: `r:${item.level}:${item.id}`,
           id: item.id,
-          title: item.title,
+          title: item.recommendation.title,
           context: null,
           level: item.level,
           result: item.result,
           ...(item.reason ? { reason: item.reason } : {}),
-          settings: item.settings,
-          findings: found(item.findingKeys),
-        }),
-      )
-      .sort((a, b) => numeric(a.id, b.id));
-  }
-  return assessment.settings.map(
-    (finding): ReviewRow => ({
-      key: `s:${finding.key}`,
-      id: finding.settingId,
-      title: finding.settingId,
-      context: finding.policyName,
-      level: assessment.level,
-      result: finding.result,
-      ...(finding.reason ? { reason: finding.reason } : {}),
-      settings: [
-        {
-          id: finding.settingId,
-          status: finding.status,
-          result: finding.result,
-          ...(finding.reason ? { reason: finding.reason } : {}),
-          findingKeys: [finding.key],
-        },
-      ],
-      findings: [finding],
-    }),
-  );
+          settings: item.recommendation.settings,
+          findings: found(item.recommendation.findingKeys),
+        };
+      const finding = item.finding;
+      return {
+        key: `s:${finding.key}`,
+        id: finding.settingId,
+        title: settingName(assessment.settingNames, finding.settingId),
+        context: finding.policyName,
+        level: item.level,
+        result: finding.result,
+        ...(finding.reason ? { reason: finding.reason } : {}),
+        settings: [
+          {
+            id: finding.settingId,
+            status: finding.status,
+            result: finding.result,
+            ...(finding.reason ? { reason: finding.reason } : {}),
+            findingKeys: [finding.key],
+          },
+        ],
+        findings: [finding],
+      };
+    })
+    .sort(bySeverity);
 }
 
 export type ResultFilter = ResultState | "all";
@@ -207,11 +212,12 @@ export function missingSettings(assessment: BenchmarkAssessment): number {
 // The headline looks exceptions up by the ids a recommendation checks, which
 // may be nested children of a root, so recommendation mode offers those.
 export function differingSettingIds(assessment: BenchmarkAssessment): string[] {
-  const ids =
-    assessment.basis === "recommendations"
-      ? assessment.recommendations
-          .filter((item) => item.result === "Fail")
-          .flatMap((item) => item.settings.filter((setting) => setting.result === "Fail").map((setting) => setting.id))
-      : assessment.settings.filter((finding) => finding.result === "Fail").map((finding) => finding.settingId);
+  const ids = assessmentResults(assessment)
+    .filter((item) => item.result === "Fail")
+    .flatMap((item) =>
+      item.kind === "recommendation"
+        ? item.recommendation.settings.filter((setting) => setting.result === "Fail").map((setting) => setting.id)
+        : [item.finding.settingId],
+    );
   return [...new Set(ids)].sort(numeric);
 }

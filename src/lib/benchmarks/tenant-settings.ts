@@ -38,6 +38,49 @@ import { record, type RecordJson } from "./policies";
 
 export type AssignmentState = "assigned" | "notAssigned" | "unknown";
 
+/**
+ * What a policy's assignments reach, as summarizeAssignments reads them:
+ * target labels ("All Users", "All Devices", "Group: <name or id>"), with
+ * group ids named where the collection resolved them, exclusions and
+ * removals, the number of assignment filters, and why the state is unknown.
+ * Group memberships are not read, so this names targets, not devices.
+ */
+export interface AssignmentReach {
+  targets: string[];
+  exclusions: string[];
+  removals: string[];
+  filters: number;
+  uncertainty?: "incomplete" | "unresolved";
+}
+
+/** The display name of one setting definition and of its choice options. */
+export interface SettingDefinitionName {
+  name: string;
+  /** Option display names by option id (itemId). */
+  options: Record<string, string>;
+}
+
+/** Display names by setting definition id. */
+export type SettingNames = Record<string, SettingDefinitionName>;
+
+/** Families of older profile types that can carry Settings Catalog equivalents. */
+export type OtherProfileFamilyKey =
+  | "deviceConfigurations"
+  | "windowsUpdatePolicies"
+  | "administrativeTemplates"
+  | "securityBaselines";
+
+/** What the collection holds of one older profile family. */
+export interface OtherProfileFamily {
+  family: OtherProfileFamilyKey;
+  /** False when the family was not collected completely: it may hold profiles for any platform. */
+  complete: boolean;
+  /** Profiles collected. */
+  count: number;
+  /** Platforms of its profiles; null when a profile's platform is not known. */
+  platforms: string[] | null;
+}
+
 export interface TenantPolicy {
   id: string;
   name: string;
@@ -54,6 +97,7 @@ export interface TenantPolicy {
   /** Every setting of the policy was read. */
   settingsComplete: boolean;
   assignment: AssignmentState;
+  reach: AssignmentReach;
 }
 
 export interface TenantSettings {
@@ -74,6 +118,10 @@ export interface TenantSettings {
    * be ruled out for any platform. An absent setting there is never Missing.
    */
   otherProfilePlatforms: string[] | null;
+  /** The older profile families, for naming what to check (otherProfiles). */
+  otherProfiles: OtherProfileFamily[];
+  /** Display names from the settingDefinitions the collector expanded. */
+  definitions: SettingNames;
 }
 
 export type BenchmarkCollection = Omit<DetailedExportData, "groupNames"> & {
@@ -192,12 +240,12 @@ function settingsView(
 }
 
 // Families of older profile types that can carry Settings Catalog equivalents.
-const OTHER_FAMILIES = [
+const OTHER_FAMILIES: readonly OtherProfileFamilyKey[] = [
   "deviceConfigurations",
   "windowsUpdatePolicies",
   "administrativeTemplates",
   "securityBaselines",
-] as const;
+];
 
 const PLATFORM_PREFIXES: ReadonlyArray<[string, string]> = [
   ["windows", "windows"],
@@ -243,32 +291,107 @@ export function platformFamilies(platforms: string): string[] {
   ];
 }
 
-/** Platforms with profiles of older types, or null when any platform may have one. */
-function otherProfilePlatforms(data: BenchmarkCollection): string[] | null {
+/**
+ * The older profile families of the collection: complete or not, how many
+ * profiles and on which platforms. Administrative templates are Windows;
+ * intents (securityBaselines) and device configuration types of unknown
+ * platform leave the platforms unknown.
+ */
+function otherProfileFamilies(data: BenchmarkCollection): OtherProfileFamily[] {
   const rows = buildCollectionCoverage(data, [], true);
-  const found = new Set<string>();
-  for (const family of OTHER_FAMILIES) {
+  return OTHER_FAMILIES.map((family): OtherProfileFamily => {
     const row = rows.find((entry) => entry.family === family);
-    if (!row || row.status !== "complete") return null;
     const items = data.sections?.length
       ? data.sections
           .filter((section) => section.familyKey === family)
           .flatMap((section) => section.items)
       : (((data as unknown as Record<string, unknown>)[family] as unknown[]) ??
         []);
+    const found = new Set<string>();
+    let known = true;
     for (const item of items) {
       if (family === "administrativeTemplates") {
         found.add("windows");
         continue;
       }
-      if (family === "securityBaselines") return null;
+      if (family === "securityBaselines") {
+        known = false;
+        continue;
+      }
       const type = record(item) ? text(item["@odata.type"]) : null;
       const platform = type ? platformFamily(type) : null;
-      if (!platform) return null;
-      found.add(platform);
+      if (platform) found.add(platform);
+      else known = false;
     }
+    return {
+      family,
+      complete: Boolean(row && row.status === "complete"),
+      count: items.length,
+      platforms: known ? [...found].sort() : null,
+    };
+  });
+}
+
+/** Platforms with profiles of older types, or null when any platform may have one. */
+function otherProfilePlatforms(
+  families: readonly OtherProfileFamily[],
+): string[] | null {
+  const found = new Set<string>();
+  for (const family of families) {
+    if (!family.complete || !family.platforms) return null;
+    for (const platform of family.platforms) found.add(platform);
   }
   return [...found].sort();
+}
+
+/**
+ * The older profile families that may set a setting of a pack platforms
+ * value: those not collected completely, those of unknown platform and
+ * those with profiles on one of its platforms.
+ */
+export function otherProfilesFor(
+  families: readonly OtherProfileFamily[],
+  platforms: string,
+): OtherProfileFamily[] {
+  const wanted = platformFamilies(platforms);
+  return families.filter(
+    (family) =>
+      !family.complete ||
+      family.platforms === null ||
+      family.platforms.some((platform) => wanted.includes(platform)),
+  );
+}
+
+const MAX_NAME = 300;
+const nameText = (value: unknown): string | null =>
+  typeof value === "string" && value.trim()
+    ? value.trim().slice(0, MAX_NAME)
+    : null;
+
+/**
+ * Display names of the settingDefinitions on Graph's Settings Catalog
+ * settings rows ($expand=settingDefinitions): displayName and the options'
+ * itemId and displayName (deviceManagementConfigurationChoiceSettingDefinition,
+ * verified with Lokka on 2026-10-26). Anything else is ignored.
+ */
+export function definitionNames(definitions: unknown, into: SettingNames = {}): SettingNames {
+  if (!Array.isArray(definitions)) return into;
+  for (const definition of definitions) {
+    if (!record(definition)) continue;
+    const id = nameText(definition.id);
+    const name = nameText(definition.displayName);
+    if (!id || !name || Object.hasOwn(into, id)) continue;
+    const options: Record<string, string> = {};
+    if (Array.isArray(definition.options))
+      for (const option of definition.options) {
+        if (!record(option)) continue;
+        const itemId = nameText(option.itemId);
+        const label = nameText(option.displayName);
+        if (itemId && label) options[itemId] = label;
+      }
+    into[id] = { name, options };
+  }
+  return into;
 }
 
 /** Whether a setting of a pack platforms value may be set outside the Settings Catalog. */
@@ -303,6 +426,7 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
         : [`Settings Catalog collection is ${row.status}.`]),
     );
   const policies: TenantPolicy[] = [];
+  const definitions: SettingNames = {};
   for (const item of items ?? []) {
     if (!record(item)) {
       gaps.push("A Settings Catalog entry could not be read.");
@@ -336,12 +460,15 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
       gaps.push(`${name}: the platform was not returned readably.`);
     // The Settings Catalog collector always records a collection status,
     // so a policy without one was not read whole.
-    const assignment = summarizeAssignments(
+    const summary = summarizeAssignments(
       item.assignments,
       data.groupNames ?? new Map(),
       !record(item.collectionStatus) ||
         assignmentsIncomplete(item, policyErrors),
-    ).state;
+    );
+    if (Array.isArray(item.settings))
+      for (const row of item.settings)
+        if (record(row)) definitionNames(row.settingDefinitions, definitions);
     const reference = record(item.templateReference)
       ? item.templateReference
       : {};
@@ -353,14 +480,24 @@ export function tenantSettings(data: BenchmarkCollection): TenantSettings {
       templated: Boolean(text(reference.templateId)),
       settings,
       settingsComplete,
-      assignment,
+      assignment: summary.state,
+      reach: {
+        targets: [...summary.targets],
+        exclusions: [...summary.exclusions],
+        removals: [...(summary.removals ?? [])],
+        filters: summary.filters.length,
+        ...(summary.uncertainty ? { uncertainty: summary.uncertainty } : {}),
+      },
     });
   }
+  const otherProfiles = otherProfileFamilies(data);
   return {
     collectedAt,
     policies,
     complete: gaps.length === 0,
     gaps: [...new Set(gaps)],
-    otherProfilePlatforms: otherProfilePlatforms(data),
+    otherProfilePlatforms: otherProfilePlatforms(otherProfiles),
+    otherProfiles,
+    definitions,
   };
 }

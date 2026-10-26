@@ -136,10 +136,10 @@ describe("benchmark draft policies", () => {
       `The matching value is only on policies that are not assigned. Assign policy ${UNASSIGNED_MATCH} instead of importing a second one.`,
     );
     expect(reasons[LENGTH]).toBe(
-      `Only policies that are not assigned hold this setting, and none of them matches the recommended value. Change the value in policy ${UNASSIGNED_OTHER} before assigning it, or set the recommended value in a policy that is assigned. No draft is generated, because a second policy with this setting conflicts once both are assigned.`,
+      `Only policies that are not assigned hold this setting, and none of them matches the recommended value. Change the value in policy ${UNASSIGNED_OTHER} before assigning it, or set the recommended value in a policy that is assigned. Change ${GAMMA} in policy ${UNASSIGNED_OTHER} from 2 to 1 before assigning it. No draft is generated, because a second policy with this setting conflicts once both are assigned.`,
     );
     expect(reasons[GAMMA]).toBe(
-      `Only policies that are not assigned hold this setting: some match the recommended value and some hold another value. Assign policy ${UNASSIGNED_MATCH} instead of importing a second one, and change the value in policy ${UNASSIGNED_OTHER} before assigning it. The value in policy ${UNASSIGNED_UNREADABLE} could not be read; check it before assigning that policy.`,
+      `Only policies that are not assigned hold this setting: some match the recommended value and some hold another value. Assign policy ${UNASSIGNED_MATCH} instead of importing a second one, and change the value in policy ${UNASSIGNED_OTHER} before assigning it. Change ${LENGTH} in policy ${UNASSIGNED_OTHER} from 9 to 14 before assigning it. The value in policy ${UNASSIGNED_UNREADABLE} could not be read; check it before assigning that policy.`,
     );
     for (const id of [LENGTH, GAMMA])
       expect(reasons[id]).not.toContain(
@@ -323,5 +323,42 @@ describe("benchmark draft policies", () => {
         /\bfetch\(|XMLHttpRequest|graph\.microsoft\.com|net\.request/,
       );
     }
+  });
+});
+
+// Round 47 lab review: the README says what the ZIP holds, by readable names.
+describe("benchmark drafts README wording", () => {
+  it("says the ZIP holds no draft and gives no import steps when nothing is drafted", () => {
+    const assessment = unassignedAssessment();
+    const readme = benchmarkDraftsReadme(generateBenchmarkDrafts(assessment, unassignedPack()), assessment);
+    expect(readme).toContain("This ZIP holds no draft policy.");
+    expect(readme).not.toContain("Each JSON file is a draft");
+    expect(readme).not.toContain("How to import a policy");
+  });
+
+  it("names settings by their readable name with the id beside it", () => {
+    const assessment = {
+      ...unassignedAssessment(),
+      settingNames: { [LENGTH]: { name: "Synthetic minimum length", options: {} } },
+    };
+    const readme = benchmarkDraftsReadme(generateBenchmarkDrafts(assessment, unassignedPack()), assessment);
+    expect(readme).toContain(`- Synthetic minimum length (${LENGTH}): `);
+    expect(readme).toContain(`- ${GAMMA}: `);
+  });
+
+  it("does not say no recommendation is mapped for settings judged by themselves", () => {
+    const setting = "synthetic_bench_settings_only";
+    const settingsPack = pack([{ settings: [choice(setting, "1")] }]);
+    const assessment = assessBenchmark(
+      collection({ policies: [tenantPolicy({ name: "Synthetic unassigned", settings: [choice(setting, "1")], assignments: [] })] }),
+      settingsPack,
+      { now: NOW },
+    );
+    expect(assessment.basis).toBe("settings");
+    const drafts = generateBenchmarkDrafts(assessment, settingsPack);
+    expect(drafts.notGenerated.map((gap) => gap.recommendationIds)).toEqual([[]]);
+    const readme = benchmarkDraftsReadme(drafts, assessment);
+    expect(readme).toContain(`- ${setting}: The matching value is only on policies that are not assigned.`);
+    expect(readme).not.toContain("No recommendation mapped.");
   });
 });

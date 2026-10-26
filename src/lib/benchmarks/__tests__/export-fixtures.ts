@@ -2,7 +2,11 @@
  * Synthetic assessments for the export, PDF and draft tests: benchmark id
  * "synthetic-bench", invented setting ids and titles marked Synthetic.
  */
-import { assessBenchmark, type BenchmarkAssessment } from "../assessment";
+import {
+  assessBenchmark,
+  combineLevelAssessments,
+  type BenchmarkAssessment,
+} from "../assessment";
 import type { BenchmarkException } from "../exceptions";
 import type { BenchmarkPack } from "../pack";
 import {
@@ -10,6 +14,7 @@ import {
   NOW,
   choice,
   collection,
+  deviceConfiguration,
   list,
   pack,
   simpleInteger,
@@ -281,4 +286,65 @@ export function unassignedAssessment(
     unassignedPack(),
     { now: NOW },
   );
+}
+
+/**
+ * Level 1 and Level 2 packs judged by settings, combined as choosing Level 2
+ * does. Level 1: 11 settings match, 1 differs, 1 only on an unassigned
+ * policy, 2 absent; Level 2: 3 absent. A device configuration exists for the
+ * platform, so the absent settings need review (otherProfiles) under one
+ * step of both Levels. Every setting has a display name.
+ */
+export function levelsAssessment(): BenchmarkAssessment {
+  const l1 = Array.from(
+    { length: 15 },
+    (_, index) => `synthetic_bench_level1_${index + 1}`,
+  );
+  const l2 = Array.from(
+    { length: 3 },
+    (_, index) => `synthetic_bench_level2_${index + 1}`,
+  );
+  const names = Object.fromEntries(
+    [...l1, ...l2].map((id) => [
+      id,
+      {
+        name: `Synthetic ${id.replace(/^synthetic_bench_level(\d)_/, "level $1 setting ")}`,
+        options: {},
+      },
+    ]),
+  );
+  const tenant = collection({
+    policies: [
+      tenantPolicy({
+        name: TENANT_POLICY,
+        settings: [
+          ...l1.slice(0, 11).map((id) => choice(id, "1")),
+          choice(l1[11]!, "0"),
+        ],
+      }),
+      tenantPolicy({
+        name: UNASSIGNED_POLICY,
+        settings: [choice(l1[12]!, "1")],
+        assignments: [],
+      }),
+    ],
+    other: {
+      deviceConfigurations: [
+        deviceConfiguration("windows10GeneralConfiguration"),
+      ],
+    },
+  });
+  const options = { now: NOW, names };
+  return combineLevelAssessments([
+    assessBenchmark(
+      tenant,
+      pack([{ settings: l1.map((id) => choice(id, "1")) }]),
+      options,
+    ),
+    assessBenchmark(
+      tenant,
+      pack([{ settings: l2.map((id) => choice(id, "1")) }], undefined, 2),
+      options,
+    ),
+  ]);
 }

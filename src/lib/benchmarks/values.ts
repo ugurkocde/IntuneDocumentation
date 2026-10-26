@@ -9,6 +9,7 @@
 import { MAX_SETTING_DEPTH, childLists } from "../compliance/graph-rows";
 import { isRedactedValue } from "../intune-policy-registry";
 import {
+  differingSettings,
   readableOwnValue,
   record,
   unreadableRecommendationPart,
@@ -235,4 +236,104 @@ export function recommendedValue(
 /** The display name of a setting, or its id when no definition names it. */
 export function settingName(names: SettingNames | undefined, id: string): string {
   return names?.[id]?.name ?? id;
+}
+
+/** A setting below a result's setting whose tenant value differs, as text. */
+export interface SettingDifference {
+  settingId: string;
+  /** The tenant's value; Not configured when the policy does not hold it. */
+  current: string;
+  recommended: string;
+}
+
+/** How many differing settings below a setting are named in one line. */
+export const DIFFERENCES_SHOWN = 3;
+
+/**
+ * The settings below one setting of a root whose tenant value definitely
+ * differs while the setting's own value matches (policies.ts
+ * differingSettings), with both values as text. Empty when the own value
+ * differs, a parent option differs, or no difference below it is readable.
+ */
+export function settingDifferences(
+  recommended: Json,
+  observed: Json,
+  settingId: string,
+  names?: SettingNames,
+): SettingDifference[] {
+  return differingSettings(recommended, observed, settingId).map(
+    (difference) => ({
+      settingId: difference.settingId,
+      current: difference.observed
+        ? valueText(difference.observed, names)
+        : NOT_CONFIGURED,
+      recommended: valueText(difference.recommended, names),
+    }),
+  );
+}
+
+const more = (rest: number) =>
+  `${rest} more ${rest === 1 ? "setting" : "settings"}`;
+
+/**
+ * The first limit differences in words, the rest as a count: "a, b and c"
+ * or "a, b, c and 2 more settings" with ", ", "a; b; and 2 more settings"
+ * with "; ".
+ */
+function listed(
+  differences: readonly SettingDifference[],
+  part: (difference: SettingDifference) => string,
+  separator: ", " | "; ",
+  limit: number,
+): string {
+  const shown = differences.slice(0, Math.max(1, limit)).map(part);
+  const rest = differences.length - shown.length;
+  if (separator === "; ")
+    return [...shown, ...(rest > 0 ? [`and ${more(rest)}`] : [])].join(separator);
+  const items = rest > 0 ? [...shown, more(rest)] : shown;
+  return items.length < 2
+    ? items.join("")
+    : `${items.slice(0, -1).join(separator)} and ${items.at(-1)}`;
+}
+
+/**
+ * The differing settings below one policy's setting as a change, for a fix
+ * step: "S1 from A to B, S2 from Not configured to D and 1 more setting".
+ * Null when no difference below it is known.
+ */
+export function differenceText(
+  observation: { differences?: readonly SettingDifference[] },
+  names?: SettingNames,
+  limit = DIFFERENCES_SHOWN,
+): string | null {
+  const differences = observation.differences ?? [];
+  if (!differences.length) return null;
+  return listed(
+    differences,
+    (difference) =>
+      `${settingName(names, difference.settingId)} from ${difference.current} to ${difference.recommended}`,
+    ", ",
+    limit,
+  );
+}
+
+/**
+ * The differing settings below one policy's setting as they are, for the
+ * views: "S1 (current A, recommended B); S2 (current Not configured,
+ * recommended D)". Null when no difference below it is known.
+ */
+export function differenceStates(
+  observation: { differences?: readonly SettingDifference[] },
+  names?: SettingNames,
+  limit = DIFFERENCES_SHOWN,
+): string | null {
+  const differences = observation.differences ?? [];
+  if (!differences.length) return null;
+  return listed(
+    differences,
+    (difference) =>
+      `${settingName(names, difference.settingId)} (current ${difference.current}, recommended ${difference.recommended})`,
+    "; ",
+    limit,
+  );
 }

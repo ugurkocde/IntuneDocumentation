@@ -32,6 +32,10 @@ export function stepLabel(plan: Plan, id: string): string | null {
   return index < 0 ? null : `Step ${index + 1}: ${ACTION_LABELS[plan.actions[index]!.kind]}`;
 }
 
+// A setting compared at two Levels with one value is one line.
+const distinct = (settings: FixAction["settings"]) =>
+  settings.filter((setting, index) => settings.findIndex((other) => other.text === setting.text) === index);
+
 function Step({
   action,
   number,
@@ -76,13 +80,26 @@ function Step({
             {active ? "Shown in the list" : `Show ${plural(results, "result", "results")}`}
           </Button>
         </div>
+        {/* What the engine's simulation shows assigning the policy as it is would break, to do first. */}
+        {action.conditions && action.conditions.length > 0 && (
+          <div className="mt-2 max-w-3xl rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-xs">
+            <p className="font-semibold text-amber-900">Before assigning it</p>
+            <ul className="mt-1 space-y-1" aria-label={`Before assigning the policy of step ${number}`}>
+              {distinct(action.conditions).map((setting) => (
+                <li key={`${setting.findingKey}:${setting.settingId}`} className="leading-5 break-words text-amber-950">
+                  {setting.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {action.settings.length > 0 && (
           <details className="text-petrol-700 mt-2 text-xs">
             <DisclosureSummary className="font-semibold hover:text-teal-700">
-              {plural(action.settings.length, "setting", "settings")}
+              {plural(new Set(action.settings.map((setting) => setting.settingId)).size, "setting", "settings")}
             </DisclosureSummary>
             <ul className="border-petrol-950/6 mt-2 max-h-72 space-y-2 overflow-y-auto border-l-2 pr-1 pl-3" aria-label={`Settings of step ${number}`}>
-              {action.settings.map((setting) => (
+              {distinct(action.settings).map((setting) => (
                 <li key={`${setting.findingKey}:${setting.settingId}`} className="leading-5">
                   <span className="text-petrol-800 max-w-3xl break-words">{setting.text}</span>
                   {setting.name !== setting.settingId && (

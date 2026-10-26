@@ -238,7 +238,8 @@ export class BenchmarkExceptionStore {
 }
 
 // The benchmarks:exceptions request: list, set or remove, answered with the
-// exceptions of the requested benchmark, version and level.
+// exceptions of the requested benchmark and version at every level, since a
+// comparison of Level 2 applies those of Level 1 and Level 2.
 export async function answerExceptions(
   store: Pick<BenchmarkExceptionStore, "list" | "set" | "remove">,
   tenantId: string,
@@ -264,5 +265,5 @@ export async function answerExceptions(
             isCurrent,
           )
         : await store.remove(tenantId, { benchmark, version, level, settingId: request.settingId }, isCurrent);
-  return all.filter((entry) => entry.benchmark === benchmark && entry.version === version && entry.level === level);
+  return all.filter((entry) => entry.benchmark === benchmark && entry.version === version);
 }

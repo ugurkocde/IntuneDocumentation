@@ -867,7 +867,11 @@ describe("benchmark work wiring", () => {
   it("answers exceptions through the store with the account guard, and history through history", async () => {
     const { deps, work } = workHarness();
     const request = { action: "list" as const, benchmark: fixtures.BENCH, version: fixtures.VERSION, level: 1 as const };
-    await expect(work.benchmarkExceptions({ owner: OWNER, tenantId: TENANT, request })).resolves.toEqual([exception()]);
+    // Every level of the benchmark and version: comparing Level 2 applies both.
+    await expect(work.benchmarkExceptions({ owner: OWNER, tenantId: TENANT, request })).resolves.toEqual([
+      exception(),
+      exception({ id: "other-level", level: 2 }),
+    ]);
     await work.benchmarkExceptions({
       owner: OWNER,
       tenantId: TENANT,
@@ -1029,6 +1033,69 @@ describe("Level 2 together with Level 1", () => {
     ]);
     expect(exceptionsForLevel(all, 2, 2).map((entry) => entry.id)).toEqual(["two-a", "two-b"]);
     expect(exceptionsForLevel(all, 1, 1).map((entry) => entry.id)).toEqual(["one-a"]);
+  });
+
+  it("assesses each Level with its exceptions by precedence, names them by id in the view and exports those of both Levels", async () => {
+    const { choice, collection, pack, tenantPolicy } = fixtures;
+    const shared = "synthetic_shared";
+    const levelPack = (level: 1 | 2) =>
+      pack(
+        [{ settings: [choice(shared, "on")] }],
+        [{ id: `${level}.1`, title: `Synthetic shared ${level}`, level, settings: [shared] }],
+        level,
+      );
+    const base = {
+      benchmark: fixtures.BENCH,
+      version: fixtures.VERSION,
+      settingId: shared,
+      owner: "Synthetic Owner",
+      reason: "Synthetic reason",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const expiredOne = { ...base, id: "one", level: 1 as const, expiresOn: "2026-01-31" };
+    const activeTwo = { ...base, id: "two", level: 2 as const, expiresOn: "2099-12-31" };
+    const elsewhere = { ...activeTwo, id: "other-version", version: "1.0.1" };
+    const work = benchmarkWork({
+      collectionFor: () => collection({ policies: [tenantPolicy({ settings: [choice(shared, "off")] })] }),
+      exceptions: {
+        list: vi.fn(async () => [expiredOne, activeTwo, elsewhere]),
+        set: vi.fn(async () => []),
+        remove: vi.fn(async () => []),
+      },
+      isCurrent: () => true,
+      recordRuns: vi.fn(async () => true),
+      history: {
+        benchmarkHistory: vi.fn(async () => ({ enabled: true, available: true, reason: null, trend: [], drift: [], runs: [] })),
+        benchmarkPortfolio: vi.fn(async () => ({ available: true, reason: null, benchmarks: [], selected: null, rows: [] })),
+      },
+      tenantLabel: (tenantId: string) => `${tenantId.slice(0, 8)}...`,
+      log: vi.fn(),
+    });
+    const packs = [levelPack(1), levelPack(2)];
+    const view = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs, list: null });
+    // Level 1 keeps its own expired exception; Level 2 is credited with its own.
+    expect(view.recommendations.map((item) => [item.id, item.settings[0]!.exception, item.credited ?? false])).toEqual([
+      ["1.1", { id: "one", applies: false }, false],
+      ["2.1", { id: "two", applies: true }, true],
+    ]);
+    expect(view.levels.map((level) => level.headline.exceptionIds)).toEqual([[], ["two"]]);
+    const exportSpy = vi.mocked(exportModule.exportBenchmark);
+    exportSpy.mockClear();
+    await work.exportBenchmark({ owner: OWNER, tenantId: TENANT, assessment: view, packs, benchmarkName: null, format: "json" });
+    expect(exportSpy.mock.calls[0]![2]!.exceptions).toEqual([expiredOne, activeTwo]);
+    // A Level 2 pack compared alone, even with Level 1 recommendations, applies Level 2 exceptions only.
+    const mixed = pack(
+      [{ settings: [choice(shared, "on")] }],
+      [
+        { id: "1.1", title: "Synthetic one", level: 1, settings: [shared] },
+        { id: "2.1", title: "Synthetic two", level: 2, settings: [shared] },
+      ],
+      2,
+    );
+    const alone = await work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [mixed], list: null });
+    exportSpy.mockClear();
+    await work.exportBenchmark({ owner: OWNER, tenantId: TENANT, assessment: alone, packs: [mixed], benchmarkName: null, format: "json" });
+    expect(exportSpy.mock.calls[0]![2]!.exceptions).toEqual([activeTwo]);
   });
 
   it("returns both Levels with names, the fix plan and the tenant name, stores both runs and exports with the name", async () => {

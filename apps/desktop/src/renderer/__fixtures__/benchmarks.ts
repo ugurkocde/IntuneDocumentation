@@ -1,5 +1,6 @@
 import type {
   BenchmarkAssessment,
+  ExceptionUse,
   LevelSummary,
   Observation,
   RecommendationResult,
@@ -283,4 +284,29 @@ export function withFixPlan(
   assessment: BenchmarkAssessment & Partial<Pick<BenchmarkAssessmentView, "history" | "tenantName">>,
 ): BenchmarkAssessmentView {
   return { tenantName: "Synthetic Contoso Lab", ...assessment, fixPlan: buildFixPlan(assessment) };
+}
+
+// The exception state assessBenchmark records, for a synthetic view judged
+// by recommendations: each exception in effect on the open settings it names
+// (by setting id), and the result credited when every open setting differs
+// with one that applies. Headlines stay as they are; set them in the test.
+export function withExceptionUses(
+  view: BenchmarkAssessmentView,
+  uses: Readonly<Record<string, ExceptionUse>>,
+): BenchmarkAssessmentView {
+  return {
+    ...view,
+    recommendations: view.recommendations.map((item) => {
+      const settings = item.settings.map((setting) => {
+        const use = setting.result === "Pass" ? undefined : uses[setting.id];
+        return use ? { ...setting, exception: use } : setting;
+      });
+      const open = settings.filter((setting) => setting.result !== "Pass");
+      const credited =
+        item.result === "Fail" &&
+        open.length > 0 &&
+        open.every((setting) => setting.result === "Fail" && setting.exception?.applies);
+      return { ...item, settings, ...(credited ? { credited: true as const } : {}) };
+    }),
+  };
 }

@@ -2,25 +2,30 @@ import { ArrowRight, Check, ChevronDown, Search, ShieldCheck, ShieldOff, X } fro
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SettingFinding } from "../../../../../../src/lib/benchmarks/assessment";
 import {
+  DIFFERS_BELOW_LABEL,
   REASON_LABELS,
   SETTING_STATUS_LABELS,
   STATE_LABELS,
   absentValueText,
+  holderValueText,
   matchingPolicies,
   resultSettingDetails,
   settingStatusText,
   type ResultSettingDetail,
 } from "../../../../../../src/lib/benchmarks/display";
-import { isActive, localDate } from "../../../../../../src/lib/benchmarks/exceptions";
+import type { SettingNames } from "../../../../../../src/lib/benchmarks/tenant-settings";
+import { settingName } from "../../../../../../src/lib/benchmarks/values";
 import { nextStepText } from "../../../../../../src/lib/benchmarks/fix-plan";
 import type { BenchmarkAssessmentView, BenchmarkException, BenchmarkLevel } from "../../../shared/ipc-types";
 import { useDebouncedValue } from "../../hooks/use-debounced-value";
 import {
   ROW_STATES,
+  exceptionBadgeView,
   filterRows,
-  formatDay,
+  rowExceptionBadge,
   sortRows,
   stateCountsOf,
+  type ExceptionBadgeView,
   type LevelFilter,
   type ReviewRow,
   type RowOrder,
@@ -94,17 +99,13 @@ function Json({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-// An exception on a result: accepted until its date, or expired.
-function ExceptionBadge({ exception }: { exception: BenchmarkException }) {
-  const active = isActive(exception, localDate());
+// The exception the engine used for a result or setting: accepted until its
+// date only when the engine credited the result (exceptionBadgeView).
+function ExceptionBadge({ view }: { view: ExceptionBadgeView }) {
   return (
-    <Badge
-      variant={active ? "info" : "warning"}
-      className="text-[11px]"
-      title={`Owner: ${exception.owner}. ${exception.reason}`}
-    >
-      {active ? <ShieldCheck className="h-3 w-3" aria-hidden="true" /> : null}
-      {active ? `Accepted until ${formatDay(exception.expiresOn)}` : `Exception expired ${formatDay(exception.expiresOn)}`}
+    <Badge variant={view.tone} className="text-[11px]" title={view.title}>
+      {view.accepted ? <ShieldCheck className="h-3 w-3" aria-hidden="true" /> : null}
+      {view.label}
     </Badge>
   );
 }
@@ -116,19 +117,26 @@ function ExceptionBadge({ exception }: { exception: BenchmarkException }) {
 function SettingDetail({
   setting,
   findings,
+  names,
   rowReason,
   rowLabel,
   exception,
+  packLevel,
   onAddException,
 }: {
   setting: ResultSettingDetail;
   findings: readonly SettingFinding[];
+  // Display names of the settings below it that differ.
+  names: SettingNames;
   rowReason?: string;
   // The label of the row's chip when this is its only setting: a setting
   // chip saying the same is left out.
   rowLabel: string | null;
-  exception?: BenchmarkException;
-  onAddException: (settingId: string) => void;
+  // The exception in effect for this setting, as the engine used it.
+  exception?: { exception: BenchmarkException; badge: ExceptionBadgeView };
+  // The pack Level of the row: a new exception is recorded there.
+  packLevel: BenchmarkLevel;
+  onAddException: (settingId: string, level: BenchmarkLevel) => void;
 }) {
   const named = setting.name !== setting.settingId;
   const status = settingStatusText(setting, matchingPolicies(findings, setting.settingId));
@@ -163,10 +171,25 @@ function SettingDetail({
             <ul className="mt-1 space-y-2" aria-label="Policies holding this setting">
               {setting.holders.map((holder, index) => (
                 <li key={`${holder.policyId}:${index}`} className="text-xs leading-5">
-                  <span className="text-petrol-950 selectable block font-semibold break-words">{holder.current.text}</span>
+                  <span className="text-petrol-950 selectable block font-semibold break-words">
+                    {holderValueText(holder, setting.recommended)}
+                  </span>
                   <span className="text-petrol-700 block break-words">
                     <span className="text-petrol-950 font-medium">{holder.policyName}</span>, {holder.assignedTo}
                   </span>
+                  {holder.differences.length > 0 && (
+                    <span className="mt-1 block">
+                      <span className="text-petrol-600 block text-[11px] font-semibold">{DIFFERS_BELOW_LABEL}</span>
+                      <ul className="text-petrol-800 space-y-0.5 text-[11px] leading-4" aria-label={DIFFERS_BELOW_LABEL}>
+                        {holder.differences.map((difference, position) => (
+                          <li key={`${difference.settingId}:${position}`} className="selectable break-words">
+                            <span className="text-petrol-950 font-medium">{settingName(names, difference.settingId)}</span>
+                            : {difference.current}, recommended {difference.recommended}
+                          </li>
+                        ))}
+                      </ul>
+                    </span>
+                  )}
                   {/* The state is said once: a single holder repeats neither its value nor the setting's status. */}
                   {!(
                     setting.holders.length === 1 &&
@@ -207,7 +230,10 @@ function SettingDetail({
       </details>
       {(exception || setting.result === "Fail") && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {exception && <ExceptionBadge exception={exception} />}
+          {exception && <ExceptionBadge view={exception.badge} />}
+          {exception && exception.exception.level !== packLevel && (
+            <span className="text-petrol-600 text-[11px]">Recorded at Level {exception.exception.level}</span>
+          )}
           {setting.result === "Fail" && (
             <Button
               size="sm"
@@ -215,7 +241,8 @@ function SettingDetail({
               icon={ShieldOff}
               className="-ml-2"
               aria-label={`${exception ? "Change the exception" : "Add an exception"} for ${setting.name}`}
-              onClick={() => onAddException(setting.settingId)}
+              // The exception in effect is changed at the Level it is stored at.
+              onClick={() => onAddException(setting.settingId, exception?.exception.level ?? packLevel)}
             >
               {exception ? "Change exception" : "Add exception"}
             </Button>
@@ -235,9 +262,20 @@ function RowDetail({
   row: ReviewRow;
   assessment: BenchmarkAssessmentView;
   exceptions: ReadonlyMap<string, BenchmarkException>;
-  onAddException: (settingId: string) => void;
+  onAddException: (settingId: string, level: BenchmarkLevel) => void;
 }) {
   const details = useMemo(() => resultSettingDetails(assessment, row.item), [assessment, row.item]);
+  // The exception the engine used for a setting, by its stored id.
+  const exceptionOf = (index: number) => {
+    const use = row.settings[index]?.exception;
+    const exception = use && exceptions.get(use.id);
+    return use && exception
+      ? {
+          exception,
+          badge: exceptionBadgeView(exception, use, row.credited, row.packLevel, assessment.assessedAt),
+        }
+      : undefined;
+  };
   const next = useMemo(() => nextStepText(assessment.fixPlan, row.item), [assessment.fixPlan, row.item]);
   const findings = new Map(row.findings.map((finding) => [finding.key, finding]));
   const reason = row.reason ? REASON_LABELS[row.reason] : undefined;
@@ -265,9 +303,11 @@ function RowDetail({
               findings={(row.settings[index]?.findingKeys ?? [])
                 .map((key) => findings.get(key))
                 .filter((finding): finding is SettingFinding => Boolean(finding))}
+              names={assessment.settingNames}
               rowReason={reason}
               rowLabel={details.length === 1 ? row.label : null}
-              exception={exceptions.get(setting.settingId)}
+              exception={exceptionOf(index)}
+              packLevel={row.packLevel}
               onAddException={onAddException}
             />
           ))}
@@ -298,7 +338,7 @@ export function RecommendationList({
   // The fix plan step the list is narrowed to, with the result keys it covers.
   step: { label: string; note: string; keys: ReadonlySet<string> } | null;
   onClearStep: () => void;
-  onAddException: (settingId: string) => void;
+  onAddException: (settingId: string, level: BenchmarkLevel) => void;
 }) {
   const [state, setState] = useState<StateFilter>("all");
   const [level, setLevel] = useState<LevelFilter>("all");
@@ -310,8 +350,9 @@ export function RecommendationList({
   const input = useRef<HTMLInputElement>(null);
   const search = useDebouncedValue(query, 150);
   const levels = useMemo(() => [...new Set(rows.map((row) => row.level))].sort((a, b) => a - b), [rows]);
+  // Loaded exceptions by id: the engine names the one each result used.
   const byExceptions = useMemo(
-    () => new Map(exceptions.map((exception) => [exception.settingId, exception])),
+    () => new Map(exceptions.map((exception) => [exception.id, exception])),
     [exceptions],
   );
   const ordered = useMemo(() => sortRows(rows, order), [rows, order]);
@@ -493,10 +534,7 @@ export function RecommendationList({
         >
           {visible.slice(0, limit).map((row) => {
             const open = expanded.has(row.key);
-            const exception = row.settings
-              .filter((setting) => setting.result === "Fail")
-              .map((setting) => byExceptions.get(setting.id))
-              .find(Boolean);
+            const exception = rowExceptionBadge(row, byExceptions, assessment.assessedAt);
             const named = row.title !== row.id;
             return (
               <li
@@ -533,7 +571,7 @@ export function RecommendationList({
                       {levels.length > 1 && (
                         <span className="text-petrol-600 text-[11px] font-bold">Level {row.level}</span>
                       )}
-                      {exception && <ExceptionBadge exception={exception} />}
+                      {exception && <ExceptionBadge view={exception} />}
                     </span>
                     {row.reason && !open && (
                       <span className="text-petrol-600 mt-0.5 block text-[11px] leading-4">

@@ -6,12 +6,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BenchmarkAssessment } from "../../../../../src/lib/benchmarks/assessment";
-import { assessBenchmark } from "../../../../../src/lib/benchmarks/assessment";
+import { assessBenchmark, combineLevelAssessments } from "../../../../../src/lib/benchmarks/assessment";
+import { exceptionsForLevel, type BenchmarkException } from "../../../../../src/lib/benchmarks/exceptions";
 import * as engine from "../../../../../src/lib/benchmarks/__tests__/fixtures";
 import { unassignedAssessment } from "../../../../../src/lib/benchmarks/__tests__/export-fixtures";
 import { LEVEL_2_NOTE, READINESS_DISCLAIMER, SETTINGS_BASIS_NOTE } from "../../../../../src/lib/benchmarks/display";
 import type { BenchmarkAssessmentView } from "../../shared/ipc-types";
-import { SYNTHETIC_CATALOG, syntheticAssessment, withFixPlan } from "../__fixtures__/benchmarks";
+import { SYNTHETIC_CATALOG, syntheticAssessment, withExceptionUses, withFixPlan } from "../__fixtures__/benchmarks";
 import { formatDay } from "../lib/benchmarks-view";
 
 const mocks = vi.hoisted(() => ({
@@ -530,6 +531,44 @@ describe("BenchmarksScreen review step", () => {
     expect(within(detail).getByText("2")).toBeTruthy();
   });
 
+  it("names the differing setting below a root whose own value matches, with both values", async () => {
+    const { choice, collection, pack, simpleInteger, tenantPolicy } = engine;
+    const parent = "synthetic_bench_screen_root";
+    const childA = "synthetic_bench_screen_a";
+    const childB = "synthetic_bench_screen_b";
+    const names = {
+      [parent]: { name: "Synthetic screen root", options: { [`${parent}_1`]: "Enabled" } },
+      [childA]: { name: "Synthetic screen child", options: { [`${childA}_1`]: "On", [`${childA}_0`]: "Off" } },
+    };
+    const assessment = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({
+            name: "Synthetic screen policy",
+            settings: [choice(parent, "1", [choice(childA, "0"), simpleInteger(childB, 5)])],
+          }),
+        ],
+      }),
+      {
+        ...pack(
+          [{ settings: [choice(parent, "1", [choice(childA, "1"), simpleInteger(childB, 5)])] }],
+          [{ id: "1.1", title: "Synthetic child difference", level: 1, settings: [parent] }],
+        ),
+        version: "2.0.0",
+      },
+      { now: engine.NOW, names },
+    );
+    await renderScreen();
+    await compare(assessment);
+    await click(row("Synthetic child difference"));
+    const detail = within(list()).getByRole("list", { name: "Policies holding this setting" });
+    // The own value matches, so the value says a setting below differs instead of repeating "Enabled".
+    expect(within(detail).getByText("Enabled (a setting below differs)")).toBeTruthy();
+    expect(within(detail).queryByText("Enabled")).toBeNull();
+    const below = within(detail).getByRole("list", { name: "Settings below that differ" });
+    expect(below.textContent).toBe("Synthetic screen child: Off, recommended On");
+  });
+
   it("says why a matching setting needs review beside its badge", async () => {
     const { choice, collection, pack, tenantPolicy } = engine;
     const setting = "synthetic_bench_unassigned_match";
@@ -609,10 +648,13 @@ describe("BenchmarksScreen exceptions", () => {
     createdAt: "2026-10-22T09:00:00.000Z",
   };
 
+  // The engine names the exception each result used (assessBenchmark).
+  const used = (view = syntheticAssessment()) => withExceptionUses(view, { [stored.settingId]: { id: stored.id, applies: true } });
+
   it("lists, adds from a result and removes exceptions", async () => {
     mocks.exceptions.mockResolvedValueOnce([stored]);
     await renderScreen();
-    await compare();
+    await compare(used());
     expect(mocks.exceptions).toHaveBeenCalledWith({ action: "list", ...identity });
     const panel = screen.getByRole("region", { name: "Accepted differences" });
     const recorded = within(panel).getByRole("list", { name: "Exceptions" });
@@ -662,7 +704,7 @@ describe("BenchmarksScreen exceptions", () => {
     const added = { ...stored, id: "exception-2", settingId, reason: "Synthetic" };
     mocks.exceptions.mockResolvedValueOnce([stored, added]);
     // Main applies the exceptions when the benchmark is compared again.
-    const adjusted = syntheticAssessment();
+    const adjusted = withExceptionUses(used(), { [settingId]: { id: "exception-2", applies: true } });
     adjusted.levels[0]!.headline = { ...adjusted.levels[0]!.headline, adjusted: 0.6, exceptionIds: ["exception-2"] };
     mocks.assess.mockResolvedValueOnce(adjusted);
     await act(async () =>
@@ -682,7 +724,7 @@ describe("BenchmarksScreen exceptions", () => {
     expect(mocks.assess).toHaveBeenLastCalledWith(identity);
 
     mocks.exceptions.mockResolvedValueOnce([added]);
-    mocks.assess.mockResolvedValueOnce(syntheticAssessment());
+    mocks.assess.mockResolvedValueOnce(withExceptionUses(syntheticAssessment(), { [settingId]: { id: "exception-2", applies: true } }));
     await click(within(panel).getByRole("button", { name: "Remove the exception for Synthetic setting 2" }));
     expect(mocks.exceptions).toHaveBeenLastCalledWith({ action: "remove", ...identity, settingId: stored.settingId });
     expect(within(within(panel).getByRole("list", { name: "Exceptions" })).queryByText("Synthetic reason")).toBeNull();
@@ -730,6 +772,146 @@ describe("BenchmarksScreen exceptions", () => {
     expect(within(panel).queryByRole("button", { name: "Add exception" })).toBeNull();
     await click(within(panel).getByRole("button", { name: "Try again" }));
     expect(within(panel).getByRole("button", { name: "Add exception" })).toBeTruthy();
+  });
+});
+
+// Comparing Level 2 assesses the Level 1 and Level 2 packs. A Level's own
+// exception wins; a Level 2 one applies to the Level 1 result only when Level 1
+// has none (expired or not). Rows show what the engine credited, by id.
+describe("BenchmarksScreen exceptions of a Level 1 with Level 2 comparison", () => {
+  const SHARED = "synthetic_bench_shared";
+  const EXPIRED = { expiresOn: "2026-10-01", createdAt: "2026-09-01T09:00:00.000Z" };
+  const exception = (id: string, level: 1 | 2, extra: Partial<BenchmarkException> = {}): BenchmarkException => ({
+    id,
+    benchmark: "synthetic-bench",
+    version: "2.0.0",
+    level,
+    settingId: SHARED,
+    owner: `Synthetic Owner ${id}`,
+    reason: "Synthetic reason",
+    expiresOn: "2999-12-31",
+    createdAt: "2026-10-01T09:00:00.000Z",
+    ...extra,
+  });
+  // What main returns: both packs assessed with the Level precedence (exceptionsForLevel).
+  function comparedWith(stored: BenchmarkException[]) {
+    const { choice, collection, pack, tenantPolicy } = engine;
+    const tenant = collection({
+      policies: [tenantPolicy({ name: "Synthetic tenant policy", settings: [choice(SHARED, "0")] })],
+    });
+    return combineLevelAssessments(
+      ([1, 2] as const).map((level) =>
+        assessBenchmark(
+          tenant,
+          {
+            ...pack(
+              [{ settings: [choice(SHARED, "1")] }],
+              [{ id: `${level}.1`, title: `Synthetic shared at Level ${level}`, level, settings: [SHARED] }],
+              level,
+            ),
+            version: "2.0.0",
+          },
+          { now: engine.NOW, exceptions: exceptionsForLevel(stored, level, 2) },
+        ),
+      ),
+    );
+  }
+  async function show(stored: BenchmarkException[]) {
+    // Main answers with every Level of the benchmark and version.
+    mocks.exceptions.mockResolvedValue(stored);
+    mocks.assess.mockResolvedValue(view(comparedWith(stored)));
+    await renderScreen();
+    await compare(comparedWith(stored));
+  }
+  const ONE = "Synthetic shared at Level 1";
+  const TWO = "Synthetic shared at Level 2";
+  const accepted = (date: string) => `Accepted until ${formatDay(date)}`;
+  const panel = () => screen.getByRole("region", { name: "Accepted differences" });
+  const expand = async (title: string) => {
+    await click(row(title));
+    return within(list()).getByRole("list", { name: "Settings" });
+  };
+
+  it("(a) shows the expired Level 1 exception on Level 1 without credit, and the Level 2 one on Level 2", async () => {
+    await show([exception("one", 1, EXPIRED), exception("two", 2)]);
+    expect(within(row(ONE)).getByText(`Exception expired ${formatDay("2026-10-01")}`)).toBeTruthy();
+    expect(within(row(ONE)).queryByText(/Accepted until/)).toBeNull();
+    expect(within(row(TWO)).getByText(accepted("2999-12-31"))).toBeTruthy();
+
+    // Changing it from the Level 1 row changes the Level 1 exception.
+    const detail = await expand(ONE);
+    expect(within(detail).queryByText(/Recorded at Level/)).toBeNull();
+    await click(within(detail).getByRole("button", { name: `Change the exception for ${SHARED}` }));
+    expect((within(panel()).getByLabelText("Level") as HTMLSelectElement).value).toBe("1");
+    expect((within(panel()).getByLabelText("Owner") as HTMLInputElement).value).toBe("Synthetic Owner one");
+    expect(
+      within(panel()).getByText(
+        `This setting already has an exception at Level 1, expired on ${formatDay("2026-10-01")}. Saving replaces it.`,
+      ),
+    ).toBeTruthy();
+    await act(async () =>
+      fireEvent.change(within(panel()).getByLabelText("Expires on"), { target: { value: "2999-06-30" } }),
+    );
+    await click(within(panel()).getByRole("button", { name: "Replace exception" }));
+    expect(mocks.exceptions).toHaveBeenLastCalledWith({
+      action: "set",
+      benchmark: "synthetic-bench",
+      version: "2.0.0",
+      level: 1,
+      settingId: SHARED,
+      owner: "Synthetic Owner one",
+      reason: "Synthetic reason",
+      expiresOn: "2999-06-30",
+    });
+
+    // Each stored exception is listed with its Level and removed at it.
+    const recorded = within(panel()).getByRole("list", { name: "Exceptions" });
+    expect(within(recorded).getByText("Level 1")).toBeTruthy();
+    expect(within(recorded).getByText("Level 2")).toBeTruthy();
+    await click(within(panel()).getByRole("button", { name: `Remove the exception for ${SHARED}, Level 1` }));
+    expect(mocks.exceptions).toHaveBeenLastCalledWith({
+      action: "remove",
+      benchmark: "synthetic-bench",
+      version: "2.0.0",
+      level: 1,
+      settingId: SHARED,
+    });
+  });
+
+  it("(b) shows each Level its own exception when both have one", async () => {
+    await show([exception("one", 1, { expiresOn: "2999-06-30" }), exception("two", 2)]);
+    expect(within(row(ONE)).getByText(accepted("2999-06-30"))).toBeTruthy();
+    expect(within(row(TWO)).getByText(accepted("2999-12-31"))).toBeTruthy();
+  });
+
+  it("(c) shows the Level 2 exception on both rows when Level 1 has none, and changes it at Level 2", async () => {
+    await show([exception("two", 2)]);
+    expect(within(row(ONE)).getByText(accepted("2999-12-31"))).toBeTruthy();
+    expect(within(row(TWO)).getByText(accepted("2999-12-31"))).toBeTruthy();
+    const detail = await expand(ONE);
+    expect(within(detail).getByText("Recorded at Level 2")).toBeTruthy();
+    await click(within(detail).getByRole("button", { name: `Change the exception for ${SHARED}` }));
+    expect((within(panel()).getByLabelText("Level") as HTMLSelectElement).value).toBe("2");
+    expect((within(panel()).getByLabelText("Owner") as HTMLInputElement).value).toBe("Synthetic Owner two");
+  });
+
+  it("(d) shows a Level 1 exception on Level 1 only, and adds from the Level 2 row at Level 2", async () => {
+    await show([exception("one", 1)]);
+    expect(within(row(ONE)).getByText(accepted("2999-12-31"))).toBeTruthy();
+    expect(within(row(TWO)).queryByText(/Accepted until|Exception/)).toBeNull();
+    const detail = await expand(TWO);
+    await click(within(detail).getByRole("button", { name: `Add an exception for ${SHARED}` }));
+    expect((within(panel()).getByLabelText("Level") as HTMLSelectElement).value).toBe("2");
+    expect(within(panel()).queryByText(/Saving replaces it/)).toBeNull();
+    expect(within(panel()).getByRole("button", { name: "Add exception" })).toBeTruthy();
+  });
+
+  it("adds from a Level 1 row without an exception at Level 1", async () => {
+    await show([]);
+    const detail = await expand(ONE);
+    await click(within(detail).getByRole("button", { name: `Add an exception for ${SHARED}` }));
+    expect((within(panel()).getByLabelText("Level") as HTMLSelectElement).value).toBe("1");
+    expect(within(panel()).getByText(/One at Level 2 also applies to the Level 1 result of the same setting/)).toBeTruthy();
   });
 });
 
@@ -1033,6 +1215,38 @@ describe("BenchmarksScreen portfolio", () => {
 });
 
 describe("BenchmarksScreen fix plan", () => {
+  // Round 47: assigning a policy as it is would break a match; the step says what to change first.
+  it("shows what to change before assigning a policy, and the row's next step warns", async () => {
+    const { choice, collection, pack, tenantPolicy } = engine;
+    const a = "synthetic_bench_waits_a";
+    const b = "synthetic_bench_waits_b";
+    const assessment = assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({ name: "Synthetic assigned match", settings: [choice(b, "1")] }),
+          tenantPolicy({ name: "Synthetic candidate", settings: [choice(a, "1"), choice(b, "0")], assignments: [] }),
+        ],
+      }),
+      {
+        ...pack([{ settings: [choice(a, "1"), choice(b, "1")] }], [
+          { id: "1.1", title: "Synthetic waiting recommendation", level: 1, settings: [a] },
+          { id: "1.2", title: "Synthetic matching recommendation", level: 1, settings: [b] },
+        ]),
+        version: "2.0.0",
+      },
+      { now: engine.NOW },
+    );
+    await renderScreen();
+    await compare(assessment);
+    const plan = screen.getByRole("region", { name: "What to do next" });
+    const before = within(plan).getByRole("list", { name: "Before assigning the policy of step 1" });
+    expect(before.textContent).toBe(`Change ${b} in policy Synthetic candidate from 0 to 1 before assigning it.`);
+    await click(row("Synthetic waiting recommendation"));
+    expect(list().textContent).toContain(
+      "Assigned as it is, policy Synthetic candidate would make 1 result that matches now no longer match.",
+    );
+  });
+
   it("lists the engine's steps in order with policy names and counts", async () => {
     await renderScreen();
     const assessment = syntheticAssessment({ count: 12 });
@@ -1298,7 +1512,11 @@ describe("BenchmarksScreen review round", () => {
       { id: "e", benchmark: "synthetic-bench", version: "2.0.0", level: 1, settingId: "device_vendor_msft_policy_config_synthetic_area_synthetic_setting_2", owner: "Synthetic Owner", reason: "Synthetic", expiresOn: "2999-12-31", createdAt: "2026-10-22T09:00:00.000Z" },
     ]);
     await renderScreen();
-    await compare(syntheticAssessment({ count: 12, levels: [1, 2] }));
+    await compare(
+      withExceptionUses(syntheticAssessment({ count: 12, levels: [1, 2] }), {
+        device_vendor_msft_policy_config_synthetic_area_synthetic_setting_2: { id: "e", applies: true },
+      }),
+    );
     await click(row("Synthetic recommendation 2"));
     // The shared Badge base is 10 px; every use here overrides it with 11 px,
     // which the stylesheet emits later. The page header eyebrow is shared by all screens.

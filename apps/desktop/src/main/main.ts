@@ -54,6 +54,7 @@ import {
   WEBSITE_URL,
 } from "./config";
 import {
+  collectionGroupNames,
   complianceDeviceStatus,
   complianceEvidencePack,
   complianceFixPack,
@@ -66,6 +67,7 @@ import {
   parseComplianceRequest,
   parseFrameworkId,
   parseRegisterFormat,
+  resetGroupNames,
   snapshotInputs,
   tenantLabelOf,
 } from "./compliance";
@@ -1594,7 +1596,12 @@ function registerIpc(): void {
       // within the requested scopes (benchmark-graph.ts).
       tenantName: (tenantId) => benchmarksGraph.tenantName(tenantId),
       settingNames: (ids) => benchmarksGraph.settingNames(ids),
-      resetGraph: () => benchmarksGraph.reset(),
+      // Group names through the compliance lookup and its cache.
+      groupNames: (collection) => collectionGroupNames(collection, tokenProvider),
+      resetGraph: () => {
+        benchmarksGraph.reset();
+        resetGroupNames();
+      },
       log,
     }),
   });

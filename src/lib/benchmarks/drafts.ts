@@ -25,6 +25,7 @@ import {
 } from "../compliance/fix-pack";
 import type { BenchmarkAssessment, SettingFinding } from "./assessment";
 import { READINESS_DISCLAIMER } from "./display";
+import { settingName } from "./values";
 import {
   DRAFT_STATE_TEXT,
   buildFixPlan,
@@ -266,20 +267,31 @@ const addToText = (policies: readonly string[]) =>
       ? ` Instead of importing it, you can add its settings to policy ${policies[0]}, which is assigned (as the fix plan says).`
       : ` Instead of importing it, you can add its settings to the assigned policies the fix plan names for them: ${policies.join(", ")}.`;
 
-const idsText = (ids: readonly string[]) =>
-  ids.length
-    ? `Recommendations ${ids.join(", ")}.`
-    : "No recommendation mapped.";
+type ReadmeAssessment = Pick<
+  BenchmarkAssessment,
+  "assessedAt" | "collection" | "settings"
+> &
+  Partial<Pick<BenchmarkAssessment, "settingNames" | "basis">>;
 
 export function benchmarkDraftsReadme(
   result: BenchmarkDrafts,
-  assessment: Pick<
-    BenchmarkAssessment,
-    "assessedAt" | "collection" | "settings"
-  >,
+  assessment: ReadmeAssessment,
 ): string {
   const list = (rows: string[], empty: string) =>
     rows.length ? rows.map((row) => `- ${row}`) : [empty];
+  // A setting by its readable name, its id beside it.
+  const named = (settingId: string) => {
+    const name = settingName(assessment.settingNames ?? {}, settingId);
+    return name === settingId ? settingId : `${name} (${settingId})`;
+  };
+  // Settings judged by themselves map to no recommendation, so that is not said.
+  const idsText = (ids: readonly string[]) =>
+    ids.length
+      ? ` Recommendations ${ids.join(", ")}.`
+      : assessment.basis === "settings"
+        ? ""
+        : " No recommendation mapped.";
+  const drafted = result.drafts.length > 0;
   // Missing findings without a draft (such as those in template policies)
   // are listed under Not generated, so an empty Drafts list says nothing is
   // missing only when no Missing finding exists.
@@ -290,27 +302,33 @@ export function benchmarkDraftsReadme(
     `Intune Documentation benchmark drafts: ${result.benchmark} ${result.version}, Level ${result.level}`,
     "",
     "What this is",
-    "Each JSON file is a draft Settings Catalog policy for benchmark settings that the last complete collection shows as missing from every Settings Catalog policy. Intune Documentation never writes to your tenant. You decide what to import.",
+    drafted
+      ? "Each JSON file is a draft Settings Catalog policy for benchmark settings that the last complete collection shows as missing from every Settings Catalog policy. Intune Documentation never writes to your tenant. You decide what to import."
+      : "This ZIP holds no draft policy. It lists the policies to change and why no draft was generated. Intune Documentation never writes to your tenant.",
     "",
     "Important",
-    `- ${FIX_PACK_WARNING}`,
+    ...(drafted ? [`- ${FIX_PACK_WARNING}`] : []),
     "- Drafts are generated only for missing settings. A setting held with another value names the policy to change instead, because a second policy with a different value conflicts on devices.",
     "- The values come from the delivered benchmark pack, not from your organisation's requirements, exceptions or change process.",
     "- Assign each policy to a pilot group first and widen the assignment after testing.",
     "",
-    "How to import a policy",
-    "1. Sign in to the Microsoft Intune admin center (https://intune.microsoft.com).",
-    "2. Go to Devices > Manage devices > Configuration.",
-    "3. Select Create > Import policy.",
-    "4. Select one JSON file, enter a name for the new policy and select Save.",
-    "5. Open the new policy and review its settings. Assign it to a pilot group when you are ready.",
-    "Repeat these steps for each file.",
-    "",
+    ...(drafted
+      ? [
+          "How to import a policy",
+          "1. Sign in to the Microsoft Intune admin center (https://intune.microsoft.com).",
+          "2. Go to Devices > Manage devices > Configuration.",
+          "3. Select Create > Import policy.",
+          "4. Select one JSON file, enter a name for the new policy and select Save.",
+          "5. Open the new policy and review its settings. Assign it to a pilot group when you are ready.",
+          "Repeat these steps for each file.",
+          "",
+        ]
+      : []),
     "Drafts",
     ...list(
       result.drafts.map(
         (draft) =>
-          `${draft.fileName}: ${draft.json.name}, ${draft.settingIds.length} ${draft.settingIds.length === 1 ? "setting" : "settings"}. ${idsText(draft.recommendationIds)}${addToText(draft.addTo)}`,
+          `${draft.fileName}: ${draft.json.name}, ${draft.settingIds.length} ${draft.settingIds.length === 1 ? "setting" : "settings"}.${idsText(draft.recommendationIds)}${addToText(draft.addTo)}`,
       ),
       missing
         ? "No draft policies were generated; see Not generated."
@@ -324,7 +342,7 @@ export function benchmarkDraftsReadme(
     ...list(
       result.changes.map(
         (change) =>
-          `${change.settingId}: change policy ${change.policies.join(", ")}. ${idsText(change.recommendationIds)}`,
+          `${named(change.settingId)}: change ${change.policies.length === 1 ? "policy" : "policies"} ${change.policies.join(", ")}.${idsText(change.recommendationIds)}`,
       ),
       "None.",
     ),
@@ -333,7 +351,7 @@ export function benchmarkDraftsReadme(
     ...list(
       result.notGenerated.map(
         (gap) =>
-          `${gap.settingId}: ${gap.reason} ${idsText(gap.recommendationIds)}`,
+          `${named(gap.settingId)}: ${gap.reason}${idsText(gap.recommendationIds)}`,
       ),
       "None.",
     ),
@@ -348,10 +366,7 @@ export function benchmarkDraftsReadme(
 /** Deterministic ZIP with README.txt and one JSON file per draft. */
 export async function buildBenchmarkDraftsZip(
   result: BenchmarkDrafts,
-  assessment: Pick<
-    BenchmarkAssessment,
-    "assessedAt" | "collection" | "settings"
-  >,
+  assessment: ReadmeAssessment,
 ): Promise<Uint8Array> {
   return buildDraftZip(
     benchmarkDraftsReadme(result, assessment),

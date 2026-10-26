@@ -22,11 +22,15 @@ import {
   ratePercent,
   resultLabel,
   resultSettingDetails,
+  DIFFERS_BELOW_LABEL,
+  holderValueText,
+  type HolderDetail,
   type ResultSettingDetail,
 } from "./display";
 import { buildBenchmarkDraftsZip, generateBenchmarkDrafts } from "./drafts";
-import { buildFixPlan, nextStepText, type FixPlan } from "./fix-plan";
-import { NOT_READABLE } from "./values";
+import { buildFixPlan, nextStepText, type FixPlan, type FixSetting } from "./fix-plan";
+import { NOT_READABLE, differenceStates, settingName } from "./values";
+import type { SettingNames } from "./tenant-settings";
 import type { BenchmarkException } from "./exceptions";
 import { RESULT_CODES } from "./history";
 import type { BenchmarkPack } from "./pack";
@@ -123,12 +127,29 @@ const CSV_HEADER = [
 ] as const;
 
 /**
+ * A holder's current value for the CSV: a value that reads like the
+ * recommended one while it differs names every differing setting below it
+ * with both values, or says that one differs when none can be named.
+ */
+function csvValue(
+  holder: HolderDetail,
+  detail: ResultSettingDetail,
+  names: SettingNames,
+): string {
+  const below = differenceStates(holder, names, Number.POSITIVE_INFINITY);
+  return below
+    ? `${holder.current.text} (${DIFFERS_BELOW_LABEL.toLowerCase()}: ${below})`
+    : holderValueText(holder, detail.recommended);
+}
+
+/**
  * The value columns of one result: per setting, the policies holding it,
  * their assignment, their current value and the recommended value. A
  * result with several settings prefixes each part with the setting name.
  */
 function detailCells(
   details: readonly ResultSettingDetail[],
+  names: SettingNames,
 ): [string, string, string, string, string] {
   const several = details.length > 1;
   const part = (detail: ResultSettingDetail, text: string) =>
@@ -150,7 +171,7 @@ function detailCells(
             ? ""
             : detail.holders.length
             ? detail.holders
-                .map((holder) => `${holder.policyName}: ${holder.current.text}`)
+                .map((holder) => `${holder.policyName}: ${csvValue(holder, detail, names)}`)
                 .join(", ")
             : absentValueText(detail.status),
         ),
@@ -199,7 +220,7 @@ export function benchmarkCsv(
         ? []
         : [item.id]
     ).join("; "),
-    ...detailCells(resultSettingDetails(assessment, item)),
+    ...detailCells(resultSettingDetails(assessment, item), assessment.settingNames),
     nextStepText(plan, item),
   ]);
   return toCsv([[...CSV_HEADER], ...rows], { bom: true });
@@ -322,7 +343,17 @@ export function benchmarkSummary(
             assignment: holder.assignment,
             assignedTo: holder.assignedTo,
             comparison: holder.label,
-            currentValue: holder.current.text,
+            currentValue: holderValueText(holder, details[index]!.recommended),
+            ...(holder.differences.length
+              ? {
+                  differences: holder.differences.map((difference) => ({
+                    id: difference.settingId,
+                    name: settingName(assessment.settingNames, difference.settingId),
+                    currentValue: difference.current,
+                    recommendedValue: difference.recommended,
+                  })),
+                }
+              : {}),
             ...(holder.current.cause ? { unreadableCause: holder.current.cause } : {}),
           })),
         })),
@@ -345,15 +376,10 @@ export function benchmarkSummary(
           }
         : {}),
       ...(action.unlocks ? { unlocks: { ...action.unlocks } } : {}),
-      settings: action.settings.map((setting) => ({
-        id: setting.settingId,
-        name: setting.name,
-        level: setting.packLevel,
-        currentValue: setting.current,
-        recommendedValue: setting.recommended,
-        ...(setting.draft ? { draft: setting.draft } : {}),
-        text: setting.text,
-      })),
+      ...(action.caution ? { caution: action.caution } : {}),
+      ...(action.alternatives ? { alternativeIds: [...action.alternatives] } : {}),
+      settings: action.settings.map(settingJson),
+      ...(action.conditions ? { conditions: action.conditions.map(settingJson) } : {}),
       results: action.results.map((result) => ({
         level: result.level,
         kind: result.kind,
@@ -364,6 +390,17 @@ export function benchmarkSummary(
     notice: { text: assessment.notice.text, url: assessment.notice.url },
   };
 }
+
+/** One setting step of a fix plan action, as the JSON writes it. */
+const settingJson = (setting: FixSetting) => ({
+  id: setting.settingId,
+  name: setting.name,
+  level: setting.packLevel,
+  currentValue: setting.current,
+  recommendedValue: setting.recommended,
+  ...(setting.draft ? { draft: setting.draft } : {}),
+  text: setting.text,
+});
 
 const withReasonOf = <T extends object>(
   value: T,

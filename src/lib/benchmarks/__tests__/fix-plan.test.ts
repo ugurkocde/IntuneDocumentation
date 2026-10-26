@@ -3,7 +3,10 @@ import { assessBenchmark, assessmentResults } from "../assessment";
 import { benchmarkDraftsReadme, generateBenchmarkDrafts } from "../drafts";
 import { FIX_ACTION_ORDER, actionsForResult, buildFixPlan, nextStepText } from "../fix-plan";
 import { combineLevelAssessments } from "../assessment";
-import { benchmarkCsv } from "../export";
+import { benchmarkCsv, benchmarkSummary } from "../export";
+import { otherProfilesText } from "../display";
+import { renderReadinessPdf } from "../readiness-pdf";
+import { inflateSync } from "node:zlib";
 import {
   ASSIGNED,
   NOW,
@@ -305,7 +308,7 @@ describe("fix plan against the engine's verdicts (review findings)", () => {
     const [assign] = buildFixPlan(assessment).actions.filter((action) => action.kind === "assignPolicy");
     expect(assign!.unlocks).toEqual({ judged: 1, matches: 1, differs: 0, regressions: 1 });
     expect(assign!.text).toBe(
-      "Assign policy Synthetic candidate, which would let 1 result be judged: 1 would match, and 1 result that matches now would no longer match. Change the values it holds first. Assign it to a pilot group first.",
+      "Assign policy Synthetic candidate after first changing 1 setting it holds to the recommended value. Assigned as it is, it would let 1 result be judged: 1 would match, and 1 result that matches now would no longer match. Assign it to a pilot group first.",
     );
   });
 
@@ -343,9 +346,10 @@ describe("fix plan against the engine's verdicts (review findings)", () => {
     const plan = buildFixPlan(assessment);
     const [change] = plan.actions.filter((action) => action.kind === "changeValue");
     expect(change!.results.map((result) => result.id)).toEqual(["1.2"]);
-    // A group root is named by its settings, never by entry counts.
+    // A group root is named by its settings, never by entry counts, with
+    // the settings below it that differ.
     expect(change!.settings[0]!.text).toBe(
-      `Change the settings below ${ROOT} in policy Synthetic assigned group to the recommended values.`,
+      `Change the settings below ${ROOT} in policy Synthetic assigned group to the recommended values: ${LEAF_X} from Not configured to 1 and ${LEAF_Y} from 2 to 1.`,
     );
     expect(plan.byResult["r:1:1.3"]).toBeUndefined();
     expect(plan.byResult["r:1:1.1"]).toEqual(["assignPolicy:" + assessment.settings[0]!.observations[1]!.policyId]);
@@ -529,5 +533,255 @@ describe("fix plan: the policy to add a missing setting to", () => {
       expect(advice[item.key]).toBe(
         `The packs compared recommend different values for this setting, so no draft is generated. Choose the value for your Level and set it in policy ${AREA_POLICY}, which is assigned and already holds settings of the same benchmark area.`,
       );
+  });
+});
+
+/** Text of every page of a PDF, whitespace collapsed (as readiness-pdf.test.ts reads it). */
+function pdfText(bytes: Uint8Array): string {
+  const raw = Buffer.from(bytes);
+  const pdf = raw.toString("latin1");
+  return [...pdf.matchAll(/<<([^>]*?)>>\s*stream\n/g)]
+    .map((match) => {
+      const start = (match.index ?? 0) + match[0].length;
+      const length = Number(/\/Length (\d+)/.exec(match[1] ?? "")?.[1]);
+      const data = raw.subarray(start, start + length);
+      const stream = (match[1]?.includes("/FlateDecode") ? inflateSync(data) : data).toString("latin1");
+      return [...stream.matchAll(/\(((?:\\.|[^\\)])*)\)\s*Tj/g)].map((item) => (item[1] ?? "").replace(/\\(.)/g, "$1")).join(" ");
+    })
+    .join(" ")
+    .replace(/\s+/g, " ");
+}
+
+// Round 47: an unassigned policy matches setting A and holds another value
+// of setting B, which matches today through an assigned policy. Assigning it
+// as it is would break B; every output that says to assign it says so.
+describe("fix plan: what assigning a policy as it is would break, in every output", () => {
+  const CANDIDATE = "Synthetic candidate";
+  const regression = () => {
+    const data = collection({
+      policies: [
+        tenantPolicy({ name: "Synthetic assigned match", settings: [choice(WAITS_B, "1")] }),
+        tenantPolicy({ name: CANDIDATE, settings: [choice(WAITS_A, "1"), choice(WAITS_B, "0")], assignments: [] }),
+      ],
+    });
+    const recommendations = [
+      { id: "1.1", title: "Synthetic recommendation title a", level: 1 as const, settings: [WAITS_A] },
+      { id: "1.2", title: "Synthetic recommendation title b", level: 1 as const, settings: [WAITS_B] },
+    ];
+    const packed = pack([{ settings: [choice(WAITS_A, "1"), choice(WAITS_B, "1")] }], recommendations);
+    return { assessment: assessBenchmark(data, packed, { now: NOW }), packed };
+  };
+  const WARNING = `Assigned as it is, policy ${CANDIDATE} would make 1 result that matches now no longer match.`;
+  const STEP = `Change ${WAITS_B} in policy ${CANDIDATE} from 0 to 1 before assigning it.`;
+
+  it("names the warning and the change to make first on the action", () => {
+    const { assessment } = regression();
+    const plan = buildFixPlan(assessment);
+    const [assign] = plan.actions.filter((action) => action.kind === "assignPolicy");
+    expect(assign!.caution).toBe(WARNING);
+    expect(assign!.conditions!.map((setting) => setting.text)).toEqual([STEP]);
+    expect(assign!.text.startsWith(`Assign policy ${CANDIDATE} after first changing 1 setting it holds`)).toBe(true);
+  });
+
+  it("keeps the warning and the change in the next step, the CSV and the JSON", () => {
+    const { assessment } = regression();
+    const plan = buildFixPlan(assessment);
+    const result = assessmentResults(assessment).find((item) => item.id === "1.1")!;
+    expect(nextStepText(plan, result)).toBe(`Assign policy ${CANDIDATE}. ${WARNING} ${STEP}`);
+    const csv = benchmarkCsv(assessment, plan);
+    expect(csv.split("\n").find((line) => line.includes(",Recommendation,1.1,"))).toContain(`${WARNING} ${STEP}`);
+    const summary = benchmarkSummary(assessment, { plan });
+    expect(summary.results.find((item) => item.id === "1.1")!.nextAction).toContain(STEP);
+    const action = summary.fixPlan.find((item) => item.kind === "assignPolicy") as Record<string, unknown>;
+    expect(action.caution).toBe(WARNING);
+    expect((action.conditions as Array<{ text: string }>).map((item) => item.text)).toEqual([STEP]);
+  });
+
+  it("keeps the warning and the change in the advice and the drafts README", () => {
+    const { assessment, packed } = regression();
+    const plan = buildFixPlan(assessment);
+    const finding = assessment.settings.find((item) => item.settingId === WAITS_A)!;
+    expect(plan.advice[finding.key]).toBe(
+      `The matching value is only on policies that are not assigned. Assign policy ${CANDIDATE} instead of importing a second one. ${WARNING} ${STEP}`,
+    );
+    const readme = benchmarkDraftsReadme(generateBenchmarkDrafts(assessment, packed, plan), assessment);
+    expect(readme).toContain(`${WARNING} ${STEP}`);
+  });
+
+  it("keeps the change in the PDF's What to Do and the result's next step", () => {
+    const { assessment } = regression();
+    const text = pdfText(renderReadinessPdf(assessment, { renderDate: new Date("2026-10-22T12:00:00.000Z"), tenantLabel: "Synthetic Tenant" }));
+    expect(text).toContain(STEP.slice(0, 40));
+    expect(text).toContain("Before assigning it: Change");
+  });
+
+  it("warns on a change before assigning when the policy holds another value a matching result reads", () => {
+    // The policy differs on A (no other holder) and on B (matched by an assigned policy).
+    const data = collection({
+      policies: [
+        tenantPolicy({ name: "Synthetic assigned match", settings: [choice(WAITS_B, "1")] }),
+        tenantPolicy({ name: CANDIDATE, settings: [choice(WAITS_A, "0"), choice(WAITS_B, "0")], assignments: [] }),
+      ],
+    });
+    const assessment = assessBenchmark(
+      data,
+      pack(
+        [{ settings: [choice(WAITS_A, "1"), choice(WAITS_B, "1")] }],
+        [
+          { id: "1.1", title: "Synthetic recommendation title a", level: 1, settings: [WAITS_A] },
+          { id: "1.2", title: "Synthetic recommendation title b", level: 1, settings: [WAITS_B] },
+        ],
+      ),
+      { now: NOW },
+    );
+    const plan = buildFixPlan(assessment);
+    const [change] = plan.actions.filter((action) => action.kind === "changeBeforeAssign");
+    expect(change!.conditions!.map((setting) => setting.text)).toEqual([STEP]);
+    expect(change!.caution).toBe(WARNING);
+    expect(change!.text).toBe(
+      `Change 1 setting in policy ${CANDIDATE} to the recommended value before assigning it. Before assigning it, also change 1 other setting it holds to the recommended value: assigned as it is, it would make 1 result that matches now no longer match.`,
+    );
+    const result = assessmentResults(assessment).find((item) => item.id === "1.1")!;
+    expect(nextStepText(plan, result)).toBe(
+      `Change ${WAITS_A} in policy ${CANDIDATE} from 0 to 1 before assigning it. ${WARNING} ${STEP}`,
+    );
+    const finding = assessment.settings.find((item) => item.settingId === WAITS_A)!;
+    expect(plan.advice[finding.key]).toContain(`${WARNING} ${STEP}`);
+  });
+
+  it("says why assignments need checking in the next step too", () => {
+    const assessment = planAssessment();
+    const plan = buildFixPlan(assessment);
+    const result = assessmentResults(assessment).find((item) => item.id === "1.8")!;
+    expect(nextStepText(plan, result)).toContain("Its assignments were not read completely; collect again to read them.");
+  });
+});
+
+// Round 47 lab review: one step per policy, only the results a step changes,
+// and alternatives said.
+describe("fix plan: steps per policy on real data shapes", () => {
+  it("merges changing values of a policy into assigning it", () => {
+    // The unassigned policy matches A and differs on B; nobody else holds B.
+    const data = collection({
+      policies: [
+        tenantPolicy({ name: "Synthetic both", settings: [choice(WAITS_A, "1"), choice(WAITS_B, "0")], assignments: [] }),
+      ],
+    });
+    const assessment = assessBenchmark(
+      data,
+      pack(
+        [{ settings: [choice(WAITS_A, "1"), choice(WAITS_B, "1")] }],
+        [
+          { id: "1.1", title: "Synthetic recommendation title a", level: 1, settings: [WAITS_A] },
+          { id: "1.2", title: "Synthetic recommendation title b", level: 1, settings: [WAITS_B] },
+        ],
+      ),
+      { now: NOW },
+    );
+    const plan = buildFixPlan(assessment);
+    expect(plan.actions.map((action) => action.kind)).toEqual(["assignPolicy"]);
+    const [assign] = plan.actions;
+    expect(assign!.results.map((result) => result.id)).toEqual(["1.1", "1.2"]);
+    expect(assign!.conditions!.map((setting) => setting.text)).toEqual([
+      `Change ${WAITS_B} in policy Synthetic both from 0 to 1 before assigning it.`,
+    ]);
+    expect(assign!.text).toBe(
+      "Assign policy Synthetic both after first changing 1 setting it holds to the recommended value. Assigned as it is, it would let 2 results be judged: 1 would match and 1 would differ. Assign it to a pilot group first.",
+    );
+  });
+
+  it("lists under a change only the results whose own setting it changes", () => {
+    const ROOT = "synthetic_plan_root";
+    const LEAF_X = "synthetic_plan_root_leaf_x";
+    const LEAF_Y = "synthetic_plan_root_leaf_y";
+    const data = collection({
+      policies: [
+        tenantPolicy({
+          name: "Synthetic unassigned group",
+          settings: [groupCollection(ROOT, [[simpleInteger(LEAF_X, 1), simpleInteger(LEAF_Y, 2)]])],
+          assignments: [],
+        }),
+      ],
+      // ELSEWHERE is absent while Windows device configurations exist: Needs review.
+      other: { deviceConfigurations: [deviceConfiguration("windows10CustomConfiguration")] },
+    });
+    const assessment = assessBenchmark(
+      data,
+      pack(
+        [{ settings: [groupCollection(ROOT, [[simpleInteger(LEAF_X, 1), simpleInteger(LEAF_Y, 1)]]), choice(ELSEWHERE, "1")] }],
+        [
+          { id: "1.1", title: "Synthetic recommendation title x", level: 1, settings: [LEAF_X, ELSEWHERE] },
+          { id: "1.2", title: "Synthetic recommendation title y", level: 1, settings: [LEAF_Y] },
+        ],
+      ),
+      { now: NOW },
+    );
+    expect(assessment.recommendations.map((item) => item.result)).toEqual(["Review", "Review"]);
+    const plan = buildFixPlan(assessment);
+    const [change] = plan.actions.filter((action) => action.kind === "changeBeforeAssign");
+    expect(change!.results.map((result) => result.id)).toEqual(["1.2"]);
+  });
+
+  it("marks policies that would let the same results match as alternatives", () => {
+    const data = collection({
+      policies: [
+        tenantPolicy({ name: "Synthetic version 1", settings: [choice(WAITS_A, "1"), choice(WAITS_B, "1")], assignments: [] }),
+        tenantPolicy({ name: "Synthetic version 2", settings: [choice(WAITS_A, "1")], assignments: [] }),
+      ],
+    });
+    const assessment = assessBenchmark(
+      data,
+      pack(
+        [{ settings: [choice(WAITS_A, "1"), choice(WAITS_B, "1")] }],
+        [
+          { id: "1.1", title: "Synthetic recommendation title a", level: 1, settings: [WAITS_A] },
+          { id: "1.2", title: "Synthetic recommendation title b", level: 1, settings: [WAITS_B] },
+        ],
+      ),
+      { now: NOW },
+    );
+    const plan = buildFixPlan(assessment);
+    const [first, second] = plan.actions;
+    expect([first!.policy!.name, second!.policy!.name]).toEqual(["Synthetic version 1", "Synthetic version 2"]);
+    expect(first!.alternatives).toEqual([second!.id]);
+    expect(second!.alternatives).toEqual([first!.id]);
+    expect(first!.text).toContain("Step 2 is an alternative for 1 of these results: assigning one of the policies is enough for it.");
+    expect(second!.text).toContain("Step 1 is an alternative for 1 of these results: assigning one of the policies is enough for it.");
+    const finding = assessment.settings.find((item) => item.settingId === WAITS_A)!;
+    expect(plan.advice[finding.key]).toContain("Assign one of the policies Synthetic version 1 or Synthetic version 2 instead");
+  });
+
+  // Round 47 review: a setting compared at two Levels with one value is one condition.
+  it("names a setting held at two Levels once among the steps before assigning", () => {
+    const data = collection({
+      policies: [
+        tenantPolicy({ name: "Synthetic both", settings: [choice(WAITS_A, "1"), choice(WAITS_B, "0")], assignments: [] }),
+      ],
+    });
+    const level = (packLevel: 1 | 2) =>
+      assessBenchmark(
+        data,
+        pack(
+          [{ settings: [choice(WAITS_A, "1"), choice(WAITS_B, "1")] }],
+          [
+            { id: `${packLevel}.1`, title: "Synthetic recommendation title a", level: packLevel, settings: [WAITS_A] },
+            { id: `${packLevel}.2`, title: "Synthetic recommendation title b", level: packLevel, settings: [WAITS_B] },
+          ],
+          packLevel,
+        ),
+        { now: NOW },
+      );
+    const plan = buildFixPlan(combineLevelAssessments([level(1), level(2)]));
+    const [assign] = plan.actions.filter((action) => action.kind === "assignPolicy");
+    expect(assign!.conditions!.map((setting) => setting.text)).toEqual([
+      `Change ${WAITS_B} in policy Synthetic both from 0 to 1 before assigning it.`,
+    ]);
+    expect(assign!.text).toContain("after first changing 1 setting it holds");
+  });
+
+  it("names only the pack's platforms for older profile families", () => {
+    const families = [{ family: "deviceConfigurations" as const, complete: true, count: 3, platforms: ["macos", "windows"] }];
+    expect(otherProfilesText(families, "windows10")).toBe("device configuration profiles (Windows)");
+    expect(otherProfilesText(families, "macOS")).toBe("device configuration profiles (macOS)");
   });
 });

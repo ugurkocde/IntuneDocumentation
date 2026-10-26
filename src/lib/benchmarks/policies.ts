@@ -302,15 +302,18 @@ const inSubtree = (path: string, anchor: string) =>
  * its occurrence, and entries of a collection by position (compareLeaves
  * matches group and choice collection entries regardless of it). A leaf whose
  * own value is not readable maps to UNREADABLE. The instance must still carry
- * its @odata.type (clean, not comparable).
+ * its @odata.type (clean, not comparable). instances, when given, receives
+ * the instance of every own leaf by its path.
  */
 function leafValues(
   instance: SettingInstance,
   path: string,
   out: Map<string, string>,
   depth = 0,
+  instances?: Map<string, SettingInstance>,
 ): Map<string, string> {
   const own = `${path}/${instance.settingDefinitionId}`;
+  instances?.set(own, instance);
   // An instance below the depth limit, or one whose children cannot be
   // read by the shared rules (graph-rows.ts childLists), such as one of an
   // undocumented type or with a value in another type's property, is
@@ -361,6 +364,7 @@ function leafValues(
             `${own}${at}${occurrence ? `#${occurrence}` : ""}`,
             out,
             depth + 1,
+            instances,
           );
         }
         // A child list is never part of the own value: its instances are
@@ -656,4 +660,130 @@ export function compareDefinition(
     compareLeaves(subtree, haveLeaves) !== "differ"
     ? { holds: "yes", comparison, parentDiffers: true }
     : { holds: "yes", comparison };
+}
+
+/** A leaf that definitely differs: its path in the recommended and in the tenant root. */
+interface LeafDifference {
+  wanted: string;
+  observed: string;
+}
+
+/**
+ * The leaves where a tenant root definitely differs from the recommended one,
+ * as compareLeaves finds them: readable leaves below parents readable on both
+ * sides. A collection is entered only when it pairs one recommended entry
+ * with one tenant entry; with more, which entry should change is not certain
+ * (entries are matched, not paired), so none of them is named.
+ */
+function leafDifferences(
+  wanted: Iterable<[string, string]>,
+  have: Map<string, string>,
+): LeafDifference[] {
+  const wantedLeaves = [...wanted];
+  const unreadable = [...have, ...wantedLeaves]
+    .filter(([, value]) => value === UNREADABLE)
+    .map(([at]) => at);
+  const shadowed = (path: string) =>
+    unreadable.some((at) => inSubtree(path, at));
+  const want = splitEntries(wantedLeaves);
+  const found = want.direct
+    .filter(
+      ([path, value]) =>
+        value !== UNREADABLE && !shadowed(path) && have.get(path) !== value,
+    )
+    .map(([path]): LeafDifference => ({ wanted: path, observed: path }));
+  const held = splitEntries(have).collections;
+  for (const [at, entries] of want.collections) {
+    const candidates = [...(held.get(at)?.entries() ?? [])];
+    const [pair] = [...entries];
+    const [candidate] = candidates;
+    if (
+      shadowed(at) ||
+      shadowed(`${at}[0]`) ||
+      entries.size !== 1 ||
+      candidates.length !== 1 ||
+      !pair ||
+      !candidate
+    )
+      continue;
+    for (const difference of leafDifferences(pair[1], new Map(candidate[1])))
+      found.push({
+        wanted: `${at}[${pair[0]}]${difference.wanted}`,
+        observed: `${at}[${candidate[0]}]${difference.observed}`,
+      });
+  }
+  return found;
+}
+
+/** A setting below a recommended one whose tenant value definitely differs. */
+export interface DifferingSetting {
+  settingId: string;
+  /** The recommended instance, cleaned of export annotations. */
+  recommended: SettingInstance;
+  /** The tenant instance; null when the tenant root does not hold it. */
+  observed: SettingInstance | null;
+}
+
+/**
+ * The settings below one definition whose tenant value definitely differs
+ * while the definition's own value matches: what a Differs result changes
+ * when its own value reads like the recommended one. Empty unless the
+ * definition differs (compareDefinition) without a parent option or its own
+ * value differing. A setting whose value, or a parent's, cannot be read on
+ * either side is never named, and neither is one below a setting already
+ * named. In the order of the recommended root.
+ */
+export function differingSettings(
+  recommended: Json,
+  observed: Json,
+  definitionId: string,
+): DifferingSetting[] {
+  const state = compareDefinition(recommended, observed, definitionId);
+  if (
+    state?.holds !== "yes" ||
+    state.comparison !== "differ" ||
+    state.parentDiffers
+  )
+    return [];
+  const want = clean(recommended);
+  const have = clean(observed);
+  if (!isInstance(want) || !isInstance(have)) return [];
+  const wantedInstances = new Map<string, SettingInstance>();
+  const heldInstances = new Map<string, SettingInstance>();
+  const wanted = leafValues(want, "", new Map(), 0, wantedInstances);
+  const held = leafValues(have, "", new Map(), 0, heldInstances);
+  const anchors = [...wanted.keys()].filter((path) =>
+    path.endsWith(`/${definitionId}`),
+  );
+  const differences = leafDifferences(wanted, held);
+  // A differing own value shows the difference itself, and below a parent
+  // with another option the settings below do not apply.
+  if (
+    differences.some(({ wanted: path }) =>
+      anchors.some((anchor) => inSubtree(anchor, path)),
+    )
+  )
+    return [];
+  const below = differences.filter(
+    ({ wanted: path }) =>
+      wantedInstances.has(path) &&
+      anchors.some((anchor) => path !== anchor && inSubtree(path, anchor)),
+  );
+  const order = [...wantedInstances.keys()];
+  return below
+    .filter(
+      ({ wanted: path }) =>
+        !below.some(
+          (other) => other.wanted !== path && inSubtree(path, other.wanted),
+        ),
+    )
+    .sort((a, b) => order.indexOf(a.wanted) - order.indexOf(b.wanted))
+    .map(({ wanted: path, observed: at }) => {
+      const instance = wantedInstances.get(path)!;
+      return {
+        settingId: instance.settingDefinitionId,
+        recommended: instance,
+        observed: heldInstances.get(at) ?? null,
+      };
+    });
 }

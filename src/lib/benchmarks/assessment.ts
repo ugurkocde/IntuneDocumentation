@@ -53,12 +53,7 @@ import {
   type Comparison,
   type RecordJson,
 } from "./policies";
-import {
-  appliesOn,
-  exceptionKey,
-  localDate,
-  type BenchmarkException,
-} from "./exceptions";
+import { appliesOn, localDate, type BenchmarkException } from "./exceptions";
 import { computeCoverage, type LevelCoverage } from "./coverage";
 import {
   MANUAL_NOT_ASSESSED_NOTE,
@@ -77,7 +72,13 @@ import {
   type SettingNames,
   type TenantSettings,
 } from "./tenant-settings";
-import { recommendedValue, settingValue, type ValueText } from "./values";
+import {
+  recommendedValue,
+  settingDifferences,
+  settingValue,
+  type SettingDifference,
+  type ValueText,
+} from "./values";
 import type {
   BenchmarkLevel,
   BenchmarkPack,
@@ -119,6 +120,23 @@ export interface Observation {
   value: RecordJson;
   /** This root against the recommended root. */
   comparison: Comparison;
+  /**
+   * Settings below the finding's setting whose readable value definitely
+   * differs while the setting's own value matches, with both values as
+   * text; only set when there are any. Never stored in history.
+   */
+  differences?: SettingDifference[];
+}
+
+/** The differences of one policy below the finding's setting, as an optional field. */
+function differencesOf(
+  recommended: RecordJson,
+  value: RecordJson,
+  settingId: string,
+  names: SettingNames,
+): { differences?: SettingDifference[] } {
+  const differences = settingDifferences(recommended, value, settingId, names);
+  return differences.length ? { differences } : {};
 }
 
 export interface SettingFinding {
@@ -144,6 +162,23 @@ export interface SettingFinding {
   /** The recommended value of the setting as text, with the raw instance. */
   recommendedValue: ValueText;
   observations: Observation[];
+  /**
+   * For a Level judged by settings: the exception in effect when the
+   * setting does not pass, and whether the adjusted headline counts it.
+   */
+  exception?: ExceptionUse;
+  credited?: true;
+}
+
+/**
+ * The exception in effect for a setting of a result that does not pass: the
+ * pack Level's own, else one recorded at the compared Level
+ * (exceptionsForLevel), by its stored id, and whether it applies on the
+ * as-of date (created by then and not expired). Ids only.
+ */
+export interface ExceptionUse {
+  id: string;
+  applies: boolean;
 }
 
 export interface RecommendationSettingResult {
@@ -152,6 +187,8 @@ export interface RecommendationSettingResult {
   result: ResultState;
   reason?: ReasonCode;
   findingKeys: string[];
+  /** The exception in effect when the setting does not pass. */
+  exception?: ExceptionUse;
 }
 
 export interface RecommendationResult {
@@ -167,6 +204,11 @@ export interface RecommendationResult {
   findingKeys: string[];
   /** Declared settings whose result is not Pass. */
   openSettingIds: string[];
+  /**
+   * The adjusted headline counts this Fail result as Pass: every setting
+   * that does not pass is Fail with an exception that applies.
+   */
+  credited?: true;
 }
 
 export interface ResultCounts {
@@ -522,6 +564,7 @@ export function compareSettings(
           ...observation,
           current: settingValue(observation.value, settingId, names),
           comparison: compareRoot(settingInstance, observation.value),
+          ...differencesOf(settingInstance, observation.value, settingId, names),
         }));
       const base = {
         key: `${policyIndex}:${settingIndex}`,
@@ -692,9 +735,83 @@ export function headlineRate(
 }
 
 /**
- * The headline of one Level. An exception credits a Fail item only when every
- * setting of it that does not pass is Fail and has an exception that applies
- * on the as-of date; Review items are excluded from the rate either way.
+ * The exceptions of one pack Level in effect per setting id. Of two for the
+ * same setting, one that applies on the date wins.
+ */
+function exceptionsInEffect(
+  exceptions: readonly BenchmarkException[],
+  pack: Pick<BenchmarkPack, "benchmark" | "version" | "level">,
+  date: string,
+): Map<string, ExceptionUse> {
+  const inEffect = new Map<string, ExceptionUse>();
+  for (const exception of exceptions) {
+    if (
+      exception.benchmark !== pack.benchmark ||
+      exception.version !== pack.version ||
+      exception.level !== pack.level
+    )
+      continue;
+    const use = { id: exception.id, applies: appliesOn(exception, date) };
+    if (use.applies || !inEffect.get(exception.settingId)?.applies)
+      inEffect.set(exception.settingId, use);
+  }
+  return inEffect;
+}
+
+/**
+ * An exception credits a Fail result only when every setting of it that does
+ * not pass is Fail and has an exception that applies on the as-of date.
+ */
+function credits(
+  result: ResultState,
+  open: ReadonlyArray<{ result: ResultState; exception?: ExceptionUse }>,
+): boolean {
+  return (
+    result === "Fail" &&
+    open.length > 0 &&
+    open.every(
+      (setting) => setting.result === "Fail" && setting.exception?.applies,
+    )
+  );
+}
+
+/** A recommendation with the exceptions in effect for its open settings. */
+function withRecommendationExceptions(
+  item: RecommendationResult,
+  inEffect: ReadonlyMap<string, ExceptionUse>,
+): RecommendationResult {
+  if (!inEffect.size) return item;
+  let touched = false;
+  const settings = item.settings.map((setting) => {
+    const use =
+      setting.result === "Pass" ? undefined : inEffect.get(setting.id);
+    if (!use) return setting;
+    touched = true;
+    return { ...setting, exception: use };
+  });
+  if (!touched) return item;
+  const open = settings.filter((setting) => setting.result !== "Pass");
+  return credits(item.result, open)
+    ? { ...item, settings, credited: true }
+    : { ...item, settings };
+}
+
+/** A setting result with the exception in effect when it does not pass. */
+function withFindingException(
+  finding: SettingFinding,
+  inEffect: ReadonlyMap<string, ExceptionUse>,
+): SettingFinding {
+  const use =
+    finding.result === "Pass" ? undefined : inEffect.get(finding.settingId);
+  if (!use) return finding;
+  return credits(finding.result, [{ result: finding.result, exception: use }])
+    ? { ...finding, exception: use, credited: true }
+    : { ...finding, exception: use };
+}
+
+/**
+ * The headline of one Level. A credited item (credits) counts as Pass in the
+ * adjusted rate; Review items are excluded from the rate either way.
  */
 function levelHeadline(
   basis: LevelHeadline["basis"],
@@ -704,22 +821,19 @@ function levelHeadline(
       id: string;
       result: ResultState;
       status: SettingStatus | "Unmapped";
+      exception?: ExceptionUse;
     }>;
+    credited?: true;
   }>,
-  exceptionFor: (settingId: string) => BenchmarkException | undefined,
 ): LevelHeadline {
   const counts = countResults(items);
   const notConfigured = items.filter(isNotConfigured).length;
-  const used = new Map<string, BenchmarkException>();
+  const used = new Set<string>();
   let credited = 0;
   for (const item of items) {
-    if (item.result !== "Fail") continue;
-    if (item.failing.some((setting) => setting.result !== "Fail")) continue;
-    const exceptions = item.failing.map((setting) => exceptionFor(setting.id));
-    if (!exceptions.length || exceptions.some((exception) => !exception))
-      continue;
+    if (!item.credited) continue;
     credited += 1;
-    for (const exception of exceptions) used.set(exception!.id, exception!);
+    for (const setting of item.failing) used.add(setting.exception!.id);
   }
   const rate = headlineRate(counts);
   return {
@@ -729,7 +843,7 @@ function levelHeadline(
       used.size && rate !== null
         ? (counts.pass + credited) / (counts.pass + counts.fail)
         : null,
-    exceptionIds: [...used.keys()],
+    exceptionIds: [...used],
     counts,
     states: {
       matches: counts.pass,
@@ -796,41 +910,25 @@ export function assessBenchmark(
   const now = options.now ?? new Date();
   const assessedAt = new Date(now).toISOString();
   const today = localDate(now);
-  const settings = compareSettings(policies, tenant, {
+  const compared = compareSettings(policies, tenant, {
     packLevel: pack.level,
     ...(options.names ? { names: options.names } : {}),
   });
+  // Each result records the exception in effect for its open settings and
+  // whether it is credited, so every view shows what the headline counted.
+  const inEffect = exceptionsInEffect(options.exceptions ?? [], pack, today);
   const recommendations = recommendationResults(
-    settings,
+    compared,
     pack.recommendations ?? [],
     tenant,
     pack.level,
-  );
+  ).map((item) => withRecommendationExceptions(item, inEffect));
   const basis = recommendations.length ? "recommendations" : "settings";
+  const settings =
+    basis === "settings"
+      ? compared.map((finding) => withFindingException(finding, inEffect))
+      : compared;
   const list = matchingList(pack, options.list);
-  const applicable = new Map(
-    (options.exceptions ?? [])
-      .filter(
-        (exception) =>
-          exception.benchmark === pack.benchmark &&
-          exception.version === pack.version &&
-          exception.level === pack.level &&
-          appliesOn(exception, today),
-      )
-      .map((exception) => [
-        exceptionKey(
-          exception.benchmark,
-          exception.version,
-          exception.level,
-          exception.settingId,
-        ),
-        exception,
-      ]),
-  );
-  const exceptionFor = (settingId: string) =>
-    applicable.get(
-      exceptionKey(pack.benchmark, pack.version, pack.level, settingId),
-    );
   const levelNumbers = [
     ...new Set<BenchmarkLevel>(
       basis === "recommendations"
@@ -850,8 +948,8 @@ export function assessBenchmark(
               failing: item.settings.filter(
                 (setting) => setting.result !== "Pass",
               ),
+              ...(item.credited ? { credited: true as const } : {}),
             })),
-            exceptionFor,
           )
         : levelHeadline(
             basis,
@@ -865,10 +963,13 @@ export function assessBenchmark(
                         id: finding.settingId,
                         result: finding.result,
                         status: finding.status,
+                        ...(finding.exception
+                          ? { exception: finding.exception }
+                          : {}),
                       },
                     ],
+              ...(finding.credited ? { credited: true as const } : {}),
             })),
-            exceptionFor,
           );
     const coverage = computeCoverage({
       level,
@@ -996,6 +1097,12 @@ export function withSettingNames(
       observations: finding.observations.map((observation) => ({
         ...observation,
         current: settingValue(observation.value, finding.settingId, settingNames),
+        ...differencesOf(
+          finding.recommended,
+          observation.value,
+          finding.settingId,
+          settingNames,
+        ),
       })),
     })),
   };
@@ -1069,6 +1176,27 @@ export function assessmentResults(
             ),
           ),
   );
+}
+
+/**
+ * The Levels whose stored exceptions an assessment applies: the Level of
+ * each pack compared and the compared Level (a Level 2 exception also
+ * applies to the Level 1 part, exceptionsForLevel). A Level 2 pack holding
+ * Level 1 recommendations applies Level 2 exceptions only.
+ */
+export function exceptionLevels(
+  assessment: Pick<
+    BenchmarkAssessment,
+    "level" | "settings" | "recommendations"
+  >,
+): BenchmarkLevel[] {
+  return [
+    ...new Set<BenchmarkLevel>([
+      assessment.level,
+      ...assessment.settings.map((finding) => finding.packLevel),
+      ...assessment.recommendations.map((item) => item.packLevel),
+    ]),
+  ].sort((a, b) => a - b);
 }
 
 /**

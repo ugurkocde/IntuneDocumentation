@@ -3,6 +3,7 @@ import {
   isNotConfigured,
   type AssessmentResult,
   type BenchmarkAssessment,
+  type ExceptionUse,
   type HeadlineStates,
   type LevelSummary,
   type ReasonCode,
@@ -11,10 +12,12 @@ import {
   type SettingFinding,
 } from "../../../../../src/lib/benchmarks/assessment";
 import { SEVERITY_ORDER, bySeverity, resultLabel } from "../../../../../src/lib/benchmarks/display";
+import { localDate } from "../../../../../src/lib/benchmarks/exceptions";
 import { settingName } from "../../../../../src/lib/benchmarks/values";
 import type {
   BenchmarkAssessmentView,
   BenchmarkCatalog,
+  BenchmarkException,
   BenchmarkIdentity,
   BenchmarkLevel,
 } from "../../shared/ipc-types";
@@ -137,6 +140,11 @@ export interface ReviewRow {
   findings: SettingFinding[];
   // The engine's result, for resultSettingDetails and nextStepText.
   item: AssessmentResult;
+  // The Level of the pack the result comes from: its exceptions are
+  // recorded at this Level unless one of the compared Level is in effect.
+  packLevel: BenchmarkLevel;
+  // The engine counted the result as accepted in the adjusted headline.
+  credited: boolean;
 }
 
 // Rows of every Level shown (assessmentResults), most severe first
@@ -161,6 +169,8 @@ export function reviewRows(assessment: BenchmarkAssessment): ReviewRow[] {
         state: isNotConfigured(shown) ? ("notConfigured" as const) : STATE_OF[item.result],
         label: resultLabel(shown),
         item,
+        packLevel: shown.packLevel,
+        credited: shown.credited === true,
       };
       if (item.kind === "recommendation")
         return {
@@ -179,6 +189,7 @@ export function reviewRows(assessment: BenchmarkAssessment): ReviewRow[] {
           result: finding.result,
           ...(finding.reason ? { reason: finding.reason } : {}),
           findingKeys: [finding.key],
+          ...(finding.exception ? { exception: finding.exception } : {}),
         },
       ];
       return {
@@ -294,12 +305,15 @@ export interface ExceptionChoice {
   recommendationIds: string[];
   // Titles of those recommendations, in the same order.
   recommendationTitles: string[];
+  // Levels of the packs where the setting differs.
+  packLevels: BenchmarkLevel[];
 }
 
 export function exceptionChoices(assessment: BenchmarkAssessment): ExceptionChoice[] {
   const byId = new Map<string, ExceptionChoice>();
   for (const item of assessmentResults(assessment)) {
     if (item.result !== "Fail") continue;
+    const packLevel = item.kind === "recommendation" ? item.recommendation.packLevel : item.finding.packLevel;
     const entries =
       item.kind === "recommendation"
         ? item.recommendation.settings
@@ -315,7 +329,9 @@ export function exceptionChoices(assessment: BenchmarkAssessment): ExceptionChoi
         name: settingName(assessment.settingNames, settingId),
         recommendationIds: [],
         recommendationTitles: [],
+        packLevels: [],
       };
+      if (!choice.packLevels.includes(packLevel)) choice.packLevels = [...choice.packLevels, packLevel].sort();
       if (recommendation && !choice.recommendationIds.includes(recommendation.id)) {
         choice.recommendationIds.push(recommendation.id);
         choice.recommendationTitles.push(recommendation.title);
@@ -336,6 +352,72 @@ export function exceptionChoices(assessment: BenchmarkAssessment): ExceptionChoi
   return sorted.sort(
     (a, b) => numeric(first(a), first(b)) || a.name.localeCompare(b.name) || numeric(a.settingId, b.settingId),
   );
+}
+
+// True when an exception recorded at a Level is applied to results of a
+// pack Level: its own, and the compared Level's for the packs below it
+// (exceptionsForLevel), so the form offers only settings it can accept.
+export function exceptionReaches(level: BenchmarkLevel, packLevel: BenchmarkLevel, compared: BenchmarkLevel): boolean {
+  return level === packLevel || (level === compared && packLevel < compared);
+}
+
+// How a result row or a setting shows the exception the engine used: by its
+// stored id, with whether it applies on the comparison date and whether the
+// result was credited. A stored exception that is not in the loaded list
+// (still loading) shows nothing.
+export interface ExceptionBadgeView {
+  label: string;
+  tone: "info" | "warning";
+  accepted: boolean;
+  title: string;
+}
+
+export function exceptionBadgeView(
+  exception: BenchmarkException,
+  use: ExceptionUse,
+  credited: boolean,
+  packLevel: BenchmarkLevel,
+  assessedAt: string,
+): ExceptionBadgeView {
+  const recordedAt = exception.level === packLevel ? "" : ` Recorded at Level ${exception.level}.`;
+  const title = `Owner: ${exception.owner}. ${exception.reason}${recordedAt}`;
+  if (use.applies && credited)
+    return { label: `Accepted until ${formatDay(exception.expiresOn)}`, tone: "info", accepted: true, title };
+  if (use.applies)
+    return {
+      label: `Exception until ${formatDay(exception.expiresOn)}, not counted`,
+      tone: "warning",
+      accepted: false,
+      title: `${title} A result counts as accepted only when every setting that does not match differs and has a current exception.`,
+    };
+  const expired = exception.expiresOn < localDate(assessedAt);
+  return {
+    label: expired ? `Exception expired ${formatDay(exception.expiresOn)}` : "Exception recorded after this comparison",
+    tone: "warning",
+    accepted: false,
+    title,
+  };
+}
+
+// The badge of a result row: accepted until the earliest expiry of the
+// exceptions it used when the engine credited it, otherwise the first
+// exception in effect that the list knows, as it stands.
+export function rowExceptionBadge(
+  row: Pick<ReviewRow, "settings" | "credited" | "packLevel">,
+  byId: ReadonlyMap<string, BenchmarkException>,
+  assessedAt: string,
+): ExceptionBadgeView | null {
+  const used = row.settings
+    .map((setting) => (setting.exception ? { use: setting.exception, exception: byId.get(setting.exception.id) } : null))
+    .filter((entry): entry is { use: ExceptionUse; exception: BenchmarkException } => Boolean(entry?.exception));
+  if (!used.length) return null;
+  if (row.credited) {
+    const first = [...used].sort((a, b) => a.exception.expiresOn.localeCompare(b.exception.expiresOn))[0]!;
+    const view = exceptionBadgeView(first.exception, first.use, true, row.packLevel, assessedAt);
+    return used.length > 1 ? { ...view, title: `${used.length} exceptions. ${view.title}` } : view;
+  }
+  const shown = used.find((entry) => !entry.use.applies) ?? used[0]!;
+  return exceptionBadgeView(shown.exception, shown.use, false, row.packLevel, assessedAt);
 }
 
 // The label of an exception choice: the recommendation id and title

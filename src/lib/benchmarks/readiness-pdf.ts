@@ -69,6 +69,7 @@ import {
 import { addPdfOutline, type PdfOutlineEntry } from "../pdf-outline";
 import {
   assessmentResults,
+  exceptionLevels,
   isNotConfigured,
   type AssessmentResult,
   type BenchmarkAssessment,
@@ -88,6 +89,7 @@ import {
   SETTINGS_BASIS_NOTE,
   SHORT_REASON_LABELS,
   STATE_DESCRIPTIONS,
+  differsReasonText,
   UNREADABLE_CAUSE_LABELS,
   absentValueText,
   assignmentLabel,
@@ -108,6 +110,8 @@ import {
   reachText,
   resultSettingDetails,
   settingStatusText,
+  DIFFERS_BELOW_LABEL,
+  holderValueText,
   type HolderDetail,
   type ResultSettingDetail,
 } from "./display";
@@ -123,7 +127,13 @@ import {
   MANUAL_RECOMMENDATIONS_NOTICE,
   MANUAL_RECOMMENDATIONS_URL,
 } from "./manual";
-import { NOT_CONFIGURED, NOT_READABLE, valueText } from "./values";
+import {
+  NOT_CONFIGURED,
+  NOT_READABLE,
+  differenceStates,
+  settingName,
+  valueText,
+} from "./values";
 
 export { valueText };
 
@@ -256,6 +266,103 @@ export function headlineBasisText(
   return counts.pass + counts.fail
     ? headlineBaseText(counts)
     : NOTHING_ASSESSED;
+}
+
+/**
+ * The big value of a headline, the line under it and the fraction its ring
+ * shows, one measure for all three: the rate of the assessed results when it
+ * may lead (rateIsHero), the matches out of every result otherwise.
+ */
+export function headlineHero(
+  states: HeadlineStates,
+  rate: number | null,
+): { value: string; count: string; fraction: number } {
+  if (rateIsHero(states) && rate !== null)
+    return {
+      value: headlineValue(rate),
+      count: `of ${states.assessed.toLocaleString("en-US")} assessed`,
+      fraction: rate,
+    };
+  return {
+    value: states.matches.toLocaleString("en-US"),
+    count: states.total
+      ? `of ${states.total.toLocaleString("en-US")} match`
+      : "No results",
+    fraction: states.total ? states.matches / states.total : 0,
+  };
+}
+
+/**
+ * What the delivered packs cover. One Level keeps its coverage statement;
+ * with several, each pack is named with its count, so a Level 2 count is
+ * never read as the whole comparison.
+ */
+export function packCoverageText(levels: readonly LevelSummary[]): string {
+  if (!levels.length) return "Coverage of the full benchmark is not shown.";
+  if (levels.length === 1) return coverageStatement(levels[0]!);
+  const covers = levels.map((level) => {
+    const { total } = level.headline.states;
+    const noun =
+      level.headline.basis === "settings"
+        ? total === 1
+          ? "setting"
+          : "settings"
+        : total === 1
+          ? "recommendation"
+          : "recommendations";
+    return `the Level ${level.level} pack covers ${total.toLocaleString("en-US")} ${noun}`;
+  });
+  const listed = `${covers.slice(0, -1).join(", ")} and ${covers.at(-1)}`;
+  const withList = levels.filter((level) => level.coverage.source !== "none");
+  return [
+    `${listed.replace(/^./, (char) => char.toUpperCase())}.`,
+    ...withList.map(
+      (level) => `Level ${level.level}: ${coverageStatement(level)}`,
+    ),
+    ...(withList.length < levels.length
+      ? [
+          "The full benchmark also has manual and other recommendations; coverage of the full benchmark will be shown once its list is published.",
+        ]
+      : []),
+  ].join(" ");
+}
+
+/**
+ * Whether the next section starts on the current page instead of a new one:
+ * when the page was begun by a page break and holds only the end of the
+ * previous section, no more than half its height, so a spilled block never
+ * stands alone on a page and the section still gets half a page.
+ */
+export function continuesOnPage(
+  spilled: boolean,
+  used: number,
+  height: number,
+): boolean {
+  return spilled && used <= height / 2;
+}
+
+/**
+ * How many key findings the block shows and its height: all of them when
+ * they fit the room, otherwise as many as fit with the line naming the
+ * rest, at least two (the block then moves to the next page whole).
+ * heights are the rows' heights; the block adds its heading, the line for
+ * the rest of total and a gap.
+ */
+export function fittedFindings(
+  heights: readonly number[],
+  total: number,
+  room: number,
+): { count: number; height: number } {
+  const blockHeight = (count: number) =>
+    6.5 +
+    (count
+      ? heights.slice(0, count).reduce((sum, height) => sum + height, 0) +
+        (total > count ? 5 : 0)
+      : 8) +
+    3;
+  let count = heights.length;
+  while (count > 2 && blockHeight(count) > room) count -= 1;
+  return { count, height: blockHeight(count) };
 }
 
 // Helvetica, the standard PDF font, holds the WinAnsi characters only.
@@ -511,9 +618,20 @@ export function renderReadinessPdf(
   const detailPages = new Map<string, number>();
   const currentPage = () => doc.internal.getCurrentPageInfo().pageNumber;
 
+  // A page begun by a page break holds the rest of a section; a section
+  // start continues on it when that rest is short (continuesOnPage).
+  let spilled = false;
   const newPage = () => {
     doc.addPage();
     y = contentTop;
+    spilled = true;
+  };
+  /** Starts a section on a new page, or below the spilled end of the last one. */
+  const sectionPage = () => {
+    if (continuesOnPage(spilled, y - contentTop, contentBottom - contentTop))
+      y += 8;
+    else newPage();
+    spilled = false;
   };
   /** Starts a new page when height does not fit; true when it did. */
   const ensure = (height: number) => {
@@ -684,21 +802,8 @@ export function renderReadinessPdf(
       )
       .join(", ");
   /** The big value of a headline: the rate only when it may lead, the matches otherwise. */
-  const heroValue = (level: LevelSummary | undefined) => {
-    const states = statesOf(level);
-    const rate = level?.headline.rate ?? null;
-    return rateIsHero(states) && rate !== null
-      ? {
-          value: headlineValue(rate),
-          count: `of ${states.assessed.toLocaleString("en-US")} assessed`,
-        }
-      : {
-          value: states.matches.toLocaleString("en-US"),
-          count: states.total
-            ? `of ${states.total.toLocaleString("en-US")} match`
-            : "No results",
-        };
-  };
+  const heroValue = (level: LevelSummary | undefined) =>
+    headlineHero(statesOf(level), level?.headline.rate ?? null);
 
   // The results with a detail, in the order of the detail: Level, then
   // Differs before Needs review, then id.
@@ -768,12 +873,10 @@ export function renderReadinessPdf(
     action.results.find((item) => detailKeys.has(item.key))?.key;
 
   // ---------------------------------------------------------------- Cover
-  const coverStates = statesOf(coverLevel);
+  // The decorative ring shows the cover headline's measure; with several
+  // Levels no one measure stands for the comparison, so it stays empty.
   drawCoverBackground(doc, theme, frame, {
-    ringFraction:
-      rateIsHero(coverStates) && coverLevel?.headline.rate != null
-        ? coverLevel.headline.rate
-        : 0,
+    ringFraction: multiLevel ? 0 : heroValue(coverLevel).fraction,
   });
   drawCoverMasthead(doc, theme, frame, {
     productName: PRODUCT,
@@ -799,62 +902,156 @@ export function renderReadinessPdf(
     ],
   });
 
-  // Headline card: a donut of the matches over all results of the Level on
-  // a grey track, as its centre says, and the headline with its base.
+  // Headline card: a donut per Level whose arc is the measure its centre
+  // states (headlineHero), and each headline with its base. With several
+  // Levels every one is shown, so Level 2 never stands for the comparison.
   const midTop = 144;
   drawCard(doc, margin, midTop, 72, 70, { fill: PALETTE.panel });
-  const donutX = margin + 36;
-  const donutY = midTop + 28;
-  drawDonut(
-    doc,
-    donutX,
-    donutY,
-    18,
-    4.4,
-    [{ value: coverStates.matches, color: STATE_STYLE.matches.bar }],
-    coverStates.total,
-  );
-  const hero = heroValue(coverLevel);
-  setFont(doc, 22, "bold", theme.primary);
-  doc.text(hero.value, donutX, donutY + 2.2, { align: "center" });
-  setFont(doc, 6.6, "normal", PALETTE.muted);
-  doc.text(hero.count, donutX, donutY + 6.6, { align: "center" });
-  const captionLines = wrapText(
-    doc,
-    coverLevel
-      ? `${headlineLabel(coverLevel.headline.basis)}, Level ${coverLevel.level}`
-      : "No Level assessed",
-    64,
-    8.3,
-    "bold",
-    2,
-  );
-  const subLines = wrapText(
-    doc,
-    coverLevel
-      ? headlineWithBase(
-          coverLevel.headline.rate,
-          coverLevel.headline.counts,
-          NOTHING_ASSESSED,
-        )
-      : "The pack delivered no results.",
-    62,
-    7,
-    "normal",
-    2,
-  );
-  let captionY =
-    midTop + 70 - 4 - subLines.length * 3 - captionLines.length * 3.7;
-  setFont(doc, 8.3, "bold", theme.text);
-  for (const line of captionLines) {
-    captionY += 3.7;
-    doc.text(line, donutX, captionY, { align: "center" });
-  }
-  captionY += 0.8;
-  setFont(doc, 7, "normal", PALETTE.muted);
-  for (const line of subLines) {
-    captionY += 3;
-    doc.text(line, donutX, captionY, { align: "center" });
+  const cardX = margin + 36;
+  const donut = (
+    x: number,
+    centre: number,
+    radius: number,
+    thickness: number,
+    level: LevelSummary | undefined,
+    sizes: { value: number; count: number; gap: number },
+  ) => {
+    const hero = heroValue(level);
+    drawDonut(
+      doc,
+      x,
+      centre,
+      radius,
+      thickness,
+      [{ value: hero.fraction, color: STATE_STYLE.matches.bar }],
+      1,
+    );
+    setFont(doc, sizes.value, "bold", theme.primary);
+    doc.text(hero.value, x, centre + sizes.value * 0.1, { align: "center" });
+    setFont(doc, sizes.count, "normal", PALETTE.muted);
+    doc.text(
+      clampLine(doc, hero.count, (radius - thickness / 2) * 2 - 2, sizes.count),
+      x,
+      centre + sizes.gap,
+      { align: "center" },
+    );
+  };
+  const centred = (
+    lines: readonly string[],
+    x: number,
+    top: number,
+    size: number,
+    style: FontStyle,
+    color: RgbColor,
+    step: number,
+  ) => {
+    setFont(doc, size, style, color);
+    lines.forEach((line, index) =>
+      doc.text(line, x, top + capHeight(size) + index * step, {
+        align: "center",
+      }),
+    );
+  };
+  if (multiLevel) {
+    const shown = assessment.levels.slice(0, 2);
+    const bases = new Set(shown.map((level) => level.headline.basis));
+    const captionLines = wrapText(
+      doc,
+      `${headlineLabel(bases.size === 1 ? [...bases][0]! : "mixed")}, ${levelsLabel(assessment)}`,
+      64,
+      8.3,
+      "bold",
+      2,
+    );
+    shown.forEach((level, index) => {
+      const x = margin + 18 + index * 36;
+      donut(x, midTop + 23, 12.5, 3.4, level, {
+        value: 14,
+        count: 5.6,
+        gap: 5.2,
+      });
+      centred(
+        [`Level ${level.level}`],
+        x,
+        midTop + 38.6,
+        7.6,
+        "bold",
+        theme.text,
+        3.4,
+      );
+      centred(
+        wrapText(
+          doc,
+          headlineWithBase(
+            level.headline.rate,
+            level.headline.counts,
+            NOTHING_ASSESSED,
+          ),
+          32,
+          6.4,
+          "normal",
+          3,
+        ),
+        x,
+        midTop + 43.4,
+        6.4,
+        "normal",
+        PALETTE.muted,
+        2.8,
+      );
+    });
+    centred(
+      captionLines,
+      cardX,
+      midTop + 70 - 4.6 - captionLines.length * 3.7,
+      8.3,
+      "bold",
+      theme.text,
+      3.7,
+    );
+  } else {
+    donut(cardX, midTop + 28, 18, 4.4, coverLevel, {
+      value: 22,
+      count: 6.6,
+      gap: 6.6,
+    });
+    const captionLines = wrapText(
+      doc,
+      coverLevel
+        ? `${headlineLabel(coverLevel.headline.basis)}, Level ${coverLevel.level}`
+        : "No Level assessed",
+      64,
+      8.3,
+      "bold",
+      2,
+    );
+    const subLines = wrapText(
+      doc,
+      coverLevel
+        ? headlineWithBase(
+            coverLevel.headline.rate,
+            coverLevel.headline.counts,
+            NOTHING_ASSESSED,
+          )
+        : "The pack delivered no results.",
+      62,
+      7,
+      "normal",
+      2,
+    );
+    let captionY =
+      midTop + 70 - 4 - subLines.length * 3 - captionLines.length * 3.7;
+    setFont(doc, 8.3, "bold", theme.text);
+    for (const line of captionLines) {
+      captionY += 3.7;
+      doc.text(line, cardX, captionY, { align: "center" });
+    }
+    captionY += 0.8;
+    setFont(doc, 7, "normal", PALETTE.muted);
+    for (const line of subLines) {
+      captionY += 3;
+      doc.text(line, cardX, captionY, { align: "center" });
+    }
   }
 
   // At a glance: every state with its count, one column per Level.
@@ -904,7 +1101,7 @@ export function renderReadinessPdf(
     doc,
     wrapText(
       doc,
-      `Needs review and Not assessed are not counted in the headline. ${coverLevel ? coverageStatement(coverLevel) : "Coverage of the full benchmark is not shown."}`,
+      `Needs review and Not assessed are not counted in the headline. ${packCoverageText(assessment.levels)}`,
       glanceWidth,
       7.4,
       "normal",
@@ -979,6 +1176,7 @@ export function renderReadinessPdf(
 
   // ---------------------------------------------------- About and contents
   newPage();
+  spilled = false;
   drawEyebrow(doc, "About this report", margin, y + 2.4, {
     color: theme.secondary,
   });
@@ -1101,6 +1299,7 @@ export function renderReadinessPdf(
 
   // -------------------------------------------------------------- Summary
   newPage();
+  spilled = false;
   pageTitle("01 Summary", "Summary", multiLevel ? LEVEL_2_NOTE : undefined);
 
   // A hero card per Level: the counts lead; the rate leads only when
@@ -1395,15 +1594,14 @@ export function renderReadinessPdf(
       ),
     };
   });
-  const findingsHeight =
-    6.5 +
-    (keyFindings.length
-      ? keyFindings.reduce(
-          (sum, finding) => sum + (finding.lines.length > 1 ? 10.6 : 7.4),
-          0,
-        ) + (differing.length > keyFindings.length ? 5 : 0)
-      : 8) +
-    3;
+  const findingHeights = keyFindings.map((finding) =>
+    finding.lines.length > 1 ? 10.6 : 7.4,
+  );
+  const findingsHeight = fittedFindings(
+    findingHeights,
+    differing.length,
+    Number.POSITIVE_INFINITY,
+  ).height;
 
   // Results by section: the first id segment of the recommendations, with
   // a bar of their states and the matches out of all.
@@ -1514,7 +1712,14 @@ export function renderReadinessPdf(
     y += 4;
   }
 
-  ensure(findingsHeight);
+  // Fewer findings rather than a page holding only this block.
+  const fitted = fittedFindings(
+    findingHeights,
+    differing.length,
+    contentBottom - y,
+  );
+  const shownFindings = keyFindings.slice(0, fitted.count);
+  ensure(fitted.height);
   sectionHeading(
     "Key findings",
     keyFindings.length ? "results that differ, by Level and id" : undefined,
@@ -1532,7 +1737,7 @@ export function renderReadinessPdf(
     );
     y += 8;
   } else {
-    for (const finding of keyFindings) {
+    for (const finding of shownFindings) {
       const height = finding.lines.length > 1 ? 10.6 : 7.4;
       const top = y;
       const middle = top + 3.7;
@@ -1554,10 +1759,10 @@ export function renderReadinessPdf(
       drawRule(doc, margin, top + height, right);
       y += height;
     }
-    if (differing.length > keyFindings.length) {
+    if (differing.length > shownFindings.length) {
       setFont(doc, 7, "italic", PALETTE.muted);
       doc.text(
-        `${plural(differing.length - keyFindings.length, "further result differs", "further results differ")}; see the result detail.`,
+        `${plural(differing.length - shownFindings.length, "further result differs", "further results differ")}; see the result detail.`,
         margin,
         y + 3.4,
       );
@@ -1566,7 +1771,7 @@ export function renderReadinessPdf(
   }
 
   // ---------------------------------------------------------- What to do
-  newPage();
+  sectionPage();
   pageTitle(
     "02 What to do",
     "What to Do",
@@ -1581,10 +1786,26 @@ export function renderReadinessPdf(
   plan.actions.forEach((action, index) => {
     const width = contentWidth - 8 - 26;
     const textLines = wrapText(doc, prose(action.text), width, 9, "normal", 4);
+    // Settings are named by their display names, their ids beneath.
+    const levelTag = (text: string, level: number) =>
+      multiLevel ? `${text} (Level ${level})` : text;
     const ids = action.results.map((result) =>
-      multiLevel ? `${result.id} (Level ${result.level})` : result.id,
+      levelTag(
+        result.kind === "setting"
+          ? settingName(assessment.settingNames, result.id)
+          : result.id,
+        result.level,
+      ),
     );
     const shownIds = ids.slice(0, 6);
+    const namedIds = action.results
+      .slice(0, 6)
+      .filter(
+        (result) =>
+          result.kind === "setting" &&
+          settingName(assessment.settingNames, result.id) !== result.id,
+      )
+      .map((result) => result.id);
     // A step without a card of its own says where its results are listed.
     const under = groupOfAction.has(action.id)
       ? []
@@ -1604,11 +1825,26 @@ export function renderReadinessPdf(
         : ""
     }`;
     const subLines = wrapText(doc, helps, width, 7.2, "normal", 3);
-    // A setting compared at two Levels is one step.
-    const steps =
-      action.kind === "assignPolicy" || action.kind === "checkOtherProfiles"
-        ? []
-        : [...new Set(action.settings.map((setting) => prose(setting.text)))];
+    const idLines = namedIds.length
+      ? wrapText(
+          doc,
+          `${namedIds.length === 1 ? "Setting id" : "Setting ids"}: ${namedIds.join(", ")}`,
+          width,
+          5.8,
+          "normal",
+          2,
+        )
+      : [];
+    // A setting compared at two Levels is one step. Assigning a policy
+    // lists the steps to do first (its conditions), not the values it holds.
+    const steps = [
+      ...new Set(
+        [
+          ...(action.kind === "assignPolicy" || action.kind === "checkOtherProfiles" ? [] : action.settings),
+          ...(action.conditions ?? []),
+        ].map((setting) => prose(setting.text)),
+      ),
+    ];
     const listed = steps.slice(0, 3);
     const settingLines = listed.map((text) =>
       wrapText(doc, text, width - 4, 7.2, "normal", 2),
@@ -1619,6 +1855,7 @@ export function renderReadinessPdf(
       textLines.length * 4.1 +
       0.8 +
       subLines.length * 3.2 +
+      idLines.length * 2.5 +
       settingLines.reduce((sum, lines) => sum + lines.length * 3.2 + 0.6, 0) +
       (more > 0 ? 3.4 : 0) +
       2.8;
@@ -1649,6 +1886,17 @@ export function renderReadinessPdf(
       3.2,
     );
     lineTop += subLines.length * 3.2;
+    drawLines(
+      doc,
+      idLines,
+      margin + 8,
+      lineTop,
+      5.8,
+      "normal",
+      PALETTE.faint,
+      2.5,
+    );
+    lineTop += idLines.length * 2.5;
     for (const lines of settingLines) {
       doc.setFillColor(...PALETTE.muted);
       doc.circle(margin + 9, lineTop + 1.3, 0.45, "F");
@@ -1679,7 +1927,7 @@ export function renderReadinessPdf(
   });
 
   // ------------------------------------------------------------- Results
-  newPage();
+  sectionPage();
   pageTitle(
     "03 Results",
     "Results",
@@ -2006,7 +2254,7 @@ export function renderReadinessPdf(
   }
 
   // ----------------------------------------------------------- Data basis
-  newPage();
+  sectionPage();
   pageTitle("04 Data basis", "Data Basis");
   {
     const inner = contentWidth - 10;
@@ -2134,7 +2382,7 @@ export function renderReadinessPdf(
     });
 
   // -------------------------------------------------------- Result detail
-  newPage();
+  sectionPage();
   const detailEntry = pageTitle(
     "05 Result detail",
     "Differs and Needs Review",
@@ -2204,11 +2452,20 @@ export function renderReadinessPdf(
   /** The recommended value of a setting as every export shows it (values.ts recommendedValue). */
   const recommendedText = (detail: ResultSettingDetail) =>
     detail.recommended.join("; ") || NOT_READABLE;
-  /** A holder's value; below another parent option the setting does not apply. */
-  const shownValue = (holder: HolderDetail) =>
+  /**
+   * A holder's value; below another parent option the setting does not
+   * apply, and a value that reads like the recommended one while it differs
+   * says that a setting below it differs (holderValueText).
+   */
+  const shownValue = (holder: HolderDetail, recommended: readonly string[]) =>
     holder.label === "Parent setting differs"
       ? PARENT_DIFFERS
-      : holder.current.text;
+      : holderValueText(holder, recommended);
+  /** The differing settings below a holder's setting, as one sentence. */
+  const differencesLine = (holder: HolderDetail) => {
+    const text = differenceStates(holder, assessment.settingNames);
+    return text ? `${DIFFERS_BELOW_LABEL}: ${text}.` : "";
+  };
 
   /** The card of one result as blocks; table rows mark where a header repeats. */
   const cardBlocks = (item: AssessmentResult) => {
@@ -2466,7 +2723,7 @@ export function renderReadinessPdf(
           reach && !inline
             ? wrapText(doc, reach, tableWidths[1] - 2, 6, "normal", 3)
             : [];
-        const currentText = shownValue(holder);
+        const currentText = shownValue(holder, detail.recommended);
         const currentLines = wrapText(
           doc,
           currentText,
@@ -2493,6 +2750,11 @@ export function renderReadinessPdf(
               2,
             )
           : [];
+        const below = differencesLine(holder);
+        const differenceLines = below
+          ? wrapText(doc, below, innerWidth - 2, 6.4, "normal", 6)
+          : [];
+        const notesTop = causeLines.length ? causeLines.length * 2.8 + 0.4 : 0;
         const row = rowLabel(holder);
         const body = Math.max(
           policyLines.length * 3.1,
@@ -2502,7 +2764,10 @@ export function renderReadinessPdf(
           4,
         );
         const height =
-          body + 2.1 + (causeLines.length ? causeLines.length * 2.8 + 0.4 : 0);
+          body +
+          2.1 +
+          notesTop +
+          (differenceLines.length ? differenceLines.length * 2.8 + 0.4 : 0);
         const last = holderIndex === detail.holders.length - 1;
         rowIndexes.add(blocks.length);
         blocks.push({
@@ -2569,12 +2834,12 @@ export function renderReadinessPdf(
               tableX[2]!,
               cellTop,
               SMALL,
-              currentText === holder.current.text &&
-                currentText !== NOT_READABLE
+              currentText !== PARENT_DIFFERS &&
+                holder.current.text !== NOT_READABLE
                 ? "bold"
                 : "italic",
-              currentText === holder.current.text &&
-                currentText !== NOT_READABLE
+              currentText !== PARENT_DIFFERS &&
+                holder.current.text !== NOT_READABLE
                 ? theme.text
                 : PALETTE.muted,
               3.1,
@@ -2613,6 +2878,16 @@ export function renderReadinessPdf(
               PALETTE.muted,
               2.8,
             );
+            drawLines(
+              doc,
+              differenceLines,
+              innerX,
+              cellTop + body + 0.4 + notesTop,
+              6.4,
+              "normal",
+              theme.text,
+              2.8,
+            );
             if (!last) drawRule(doc, innerX, top + height, right - pad);
           },
         });
@@ -2624,13 +2899,12 @@ export function renderReadinessPdf(
             matchingPolicies(own, detail.settingId),
           )
         : RESULT_LABELS[detail.result];
-      const failState =
-        detail.status === "Missing" ? "notConfigured" : "differs";
-      // The rows carry the qualifier of each match, so the reason alone follows.
+      // The rows carry the qualifier of each match, so the reason alone
+      // follows; a difference says which policies hold the other value.
       const why = detail.reason
         ? REASON_LABELS[detail.reason]
         : detail.result === "Fail"
-          ? STATE_DESCRIPTIONS[failState]
+          ? differsReasonText(detail)
           : `${status}.`;
       if (single || item.kind === "setting") whyTexts.push(why);
       else {
@@ -2736,14 +3010,33 @@ export function renderReadinessPdf(
             result.level === group.level && reviewKeys.has(result.key),
         ).length
       : group.items.length;
-    // Assigning a policy lists the results that would match; those that
-    // would differ are counted in its text and listed elsewhere.
+    // Assigning a policy lists the results that would match and those its
+    // conditions change (each of which would differ as it is); the other
+    // results that would differ are counted in its text and listed
+    // elsewhere.
     const wouldDiffer =
-      action?.kind === "assignPolicy" ? (action.unlocks?.differs ?? 0) : 0;
+      action?.kind === "assignPolicy" && action.unlocks
+        ? Math.max(
+            0,
+            action.unlocks.differs -
+              (action.results.length - action.unlocks.matches),
+          )
+        : 0;
     const earlier = ofStep - group.items.length;
+    // A step for settings of several Levels counts all of them in its text;
+    // this card lists those of its Level, so the count names the whole.
+    const otherLevels = action
+      ? action.results.filter(
+          (result) =>
+            result.level !== group.level && reviewKeys.has(result.key),
+        )
+      : [];
+    const otherLevelNames = [
+      ...new Set(otherLevels.map((result) => result.level)),
+    ].sort((a, b) => a - b);
     const count =
-      earlier > 0
-        ? `${group.items.length.toLocaleString("en-US")} of ${plural(ofStep, "result", "results")}`
+      earlier > 0 || otherLevels.length
+        ? `${group.items.length.toLocaleString("en-US")} of ${plural(ofStep + otherLevels.length, "result", "results")}`
         : plural(group.items.length, "result", "results");
     const countWidth = textWidth(doc, count, 6.8);
     const textWidthHere = innerWidth - chipW - countWidth - 4;
@@ -2782,7 +3075,17 @@ export function renderReadinessPdf(
       ...(earlier > 0
         ? wrapText(
             doc,
-            `The other ${plural(earlier, "result is", "results are")} listed under an earlier step.`,
+            `${otherLevels.length ? "" : "The other "}${plural(earlier, "result is", "results are")} listed under an earlier step.`,
+            textWidthHere,
+            6.6,
+            "normal",
+            2,
+          )
+        : []),
+      ...(otherLevels.length
+        ? wrapText(
+            doc,
+            `${plural(otherLevels.length, "result of this step is", "results of this step are")} at Level ${otherLevelNames.join(" and ")}, listed with ${otherLevelNames.length > 1 ? "those Levels" : "that Level"}.`,
             textWidthHere,
             6.6,
             "normal",
@@ -2797,6 +3100,17 @@ export function renderReadinessPdf(
             6.6,
             "normal",
             2,
+          )
+        : []),
+      // The steps to do before assigning the policy, as the plan names them.
+      ...(action?.conditions?.length
+        ? wrapText(
+            doc,
+            `Before assigning it: ${[...new Set(action.conditions.map((setting) => prose(setting.text)))].join(" ")}`,
+            textWidthHere,
+            6.6,
+            "normal",
+            6,
           )
         : []),
     ];
@@ -2926,15 +3240,8 @@ export function renderReadinessPdf(
         for (const holder of detail.holders)
           if (holder.current.cause)
             causes.add(UNREADABLE_CAUSE_LABELS[holder.current.cause]);
-        // A value that reads like the recommended one while the setting
-        // differs differs in a setting below it.
-        const valueOf = (holder: HolderDetail) => {
-          const value = shownValue(holder);
-          return holder.label === "Differs" &&
-            detail.recommended.includes(value)
-            ? `${value} (a setting below differs)`
-            : value;
-        };
+        const valueOf = (holder: HolderDetail) =>
+          shownValue(holder, detail.recommended);
         const named_ = (holder: HolderDetail) =>
           `${holder.policyName} (${assignmentLabel(holder.assignment).toLowerCase()})`;
         const values = [...new Set(holders.map(valueOf))];
@@ -2961,8 +3268,18 @@ export function renderReadinessPdf(
                 )
                 .join("; ")}`
             : "";
-        const otherLines = listed
-          ? wrapText(doc, listed, nameWidth, 6, "italic", 12)
+        // The settings below that differ, per policy when several are shown.
+        const below = holders.flatMap((holder) => {
+          const line = differencesLine(holder);
+          return line
+            ? [holders.length > 1 ? `${holder.policyName}: ${line}` : line]
+            : [];
+        });
+        const note = below.length
+          ? [listed && `${listed}.`, ...below].filter(Boolean).join(" ")
+          : listed;
+        const otherLines = note
+          ? wrapText(doc, note, nameWidth, 6, "italic", 14)
           : [];
         const current = !holders.length
           ? detail.status === "Missing"
@@ -3304,7 +3621,7 @@ export function renderReadinessPdf(
   }
 
   // -------------------------------------------------------------- Appendix
-  newPage();
+  sectionPage();
   const appendix = pageTitle(
     "Appendix",
     "Manual Recommendations, Exceptions and Method",
@@ -3374,15 +3691,22 @@ export function renderReadinessPdf(
     }
   }
 
+  // The exceptions of the Levels the assessment applies, each with the
+  // headlines that counted it: a Level 2 exception the Level 1 part did not
+  // use (Level 1 has its own) is never attributed to Level 1.
+  const levelsApplied = exceptionLevels(assessment);
   const exceptions = (options.exceptions ?? []).filter(
     (exception) =>
       exception.benchmark === assessment.benchmark &&
       exception.version === assessment.version &&
-      assessment.levels.some((level) => level.level === exception.level),
+      levelsApplied.includes(exception.level),
   );
-  const inUse = new Set(
-    assessment.levels.flatMap((level) => level.headline.exceptionIds),
-  );
+  const appliedTo = (id: string) =>
+    assessment.levels
+      .filter((level) => level.headline.exceptionIds.includes(id))
+      .map((level) => level.level);
+  const severalLevels = assessment.levels.length > 1;
+  const levelWidth = levelsApplied.length > 1 ? 12 : 0;
   const assessedDay = localDate(assessment.assessedAt);
   y += 3;
   ensure(24);
@@ -3399,32 +3723,43 @@ export function renderReadinessPdf(
   else {
     const columns: Column[] = [
       { label: "Setting", width: 52 },
+      ...(levelWidth ? [{ label: "Level", width: levelWidth }] : []),
       { label: "Owner", width: 30 },
-      { label: "Reason", width: contentWidth - 52 - 30 - 22 - 32 },
+      { label: "Reason", width: contentWidth - 52 - levelWidth - 30 - 22 - 32 },
       { label: "Expires", width: 22 },
       { label: "Status", width: 32 },
     ];
+    const status = (exception: BenchmarkException) => {
+      const applied = appliedTo(exception.id);
+      if (applied.length)
+        return severalLevels
+          ? `Applied to Level ${applied.join(" and ")}`
+          : "Applied to the headline";
+      return appliesOn(exception, assessedDay) ? "In effect" : "Not in effect";
+    };
     drawTable(
       columns,
       [...exceptions]
         .sort(
           (a, b) =>
-            a.settingId.localeCompare(b.settingId) || a.id.localeCompare(b.id),
+            a.settingId.localeCompare(b.settingId) ||
+            a.level - b.level ||
+            a.id.localeCompare(b.id),
         )
         .map((exception) => [
           textCell(exception.settingId, 52, { size: 6.8 }),
+          ...(levelWidth
+            ? [textCell(String(exception.level), levelWidth, { size: 6.8 })]
+            : []),
           textCell(exception.owner, 30, { size: 6.8 }),
-          textCell(exception.reason, columns[2]!.width, { size: 6.8 }),
+          textCell(exception.reason, columns[levelWidth ? 3 : 2]!.width, {
+            size: 6.8,
+          }),
           textCell(exception.expiresOn, 22, { size: 6.8 }),
-          textCell(
-            inUse.has(exception.id)
-              ? "Applied to the headline"
-              : appliesOn(exception, assessedDay)
-                ? "In effect"
-                : "Not in effect",
-            32,
-            { size: 6.8, color: PALETTE.muted },
-          ),
+          textCell(status(exception), 32, {
+            size: 6.8,
+            color: PALETTE.muted,
+          }),
         ]),
       "Exceptions (continued)",
     );

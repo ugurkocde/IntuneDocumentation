@@ -19,6 +19,7 @@ import {
 import { compareDefinition } from "./policies";
 import {
   otherProfilesFor,
+  platformFamilies,
   type OtherProfileFamily,
   type OtherProfileFamilyKey,
 } from "./tenant-settings";
@@ -26,8 +27,10 @@ import {
   NOT_CONFIGURED,
   NOT_FOUND,
   recommendedValue,
+  settingDifferences,
   settingName,
   settingValue,
+  type SettingDifference,
   type UnreadableCause,
   type ValueText,
 } from "./values";
@@ -95,6 +98,29 @@ export const STATE_DESCRIPTIONS: Readonly<Record<HeadlineState, string>> = {
 };
 
 export const READINESS_DISCLAIMER = "Readiness comparison, not a certification";
+
+/**
+ * Why one setting of a result differs, as precisely as its holders show:
+ * the setting is missing, or another value is held by policies that are
+ * assigned, of unknown assignment, or both (the generic description).
+ */
+export function differsReasonText(detail: Pick<ResultSettingDetail, "status" | "holders">): string {
+  if (detail.status === "Missing") return STATE_DESCRIPTIONS.notConfigured;
+  const differing = detail.holders.filter(
+    (holder) =>
+      (holder.label === "Differs" || holder.label === "Parent setting differs") && holder.assignment !== "notAssigned",
+  );
+  const states = new Set(differing.map((holder) => holder.assignment));
+  if (states.size !== 1) return STATE_DESCRIPTIONS.differs;
+  const many = new Set(differing.map((holder) => holder.policyId)).size > 1;
+  return states.has("assigned")
+    ? many
+      ? "Policies that are assigned hold another value."
+      : "A policy that is assigned holds another value."
+    : many
+      ? "Policies whose assignment could not be read hold another value."
+      : "A policy whose assignment could not be read holds another value.";
+}
 
 /**
  * The label of a result for people: Differs, except Not configured for a
@@ -290,12 +316,18 @@ const PLATFORM_LABELS: Readonly<Record<string, string>> = {
   linux: "Linux",
 };
 
-/** One older profile family as text: its name and why it may hold the setting. */
-export function otherProfileText(family: OtherProfileFamily): string {
+/**
+ * One older profile family as text: its name and why it may hold the
+ * setting. With pack platforms, only the platforms of the family that are
+ * among them are named.
+ */
+export function otherProfileText(family: OtherProfileFamily, platforms?: string): string {
   const name = OTHER_PROFILE_LABELS[family.family];
   if (!family.complete) return `${name} (not collected completely)`;
   if (family.platforms === null) return `${name} (platform not collected)`;
-  return `${name} (${family.platforms.map((platform) => PLATFORM_LABELS[platform] ?? platform).join(", ")})`;
+  const wanted = platforms === undefined ? null : platformFamilies(platforms);
+  const shown = wanted ? family.platforms.filter((platform) => wanted.includes(platform)) : family.platforms;
+  return `${name} (${(shown.length ? shown : family.platforms).map((platform) => PLATFORM_LABELS[platform] ?? platform).join(", ")})`;
 }
 
 /** The older profile families that may set a setting on these pack platforms, as a list. */
@@ -307,7 +339,7 @@ export function otherProfilesText(
     (family) => !family.complete || family.count > 0,
   );
   return relevant.length
-    ? relevant.map(otherProfileText).join(", ")
+    ? relevant.map((family) => otherProfileText(family, platforms)).join(", ")
     : "profiles of other types";
 }
 
@@ -584,6 +616,36 @@ export interface HolderDetail {
   assignedTo: string;
   label: ObservationLabel;
   current: ValueText;
+  /**
+   * For a holder that Differs while its own value matches: the settings
+   * below it whose readable value differs (values.ts settingDifferences).
+   * Empty when none can be named.
+   */
+  differences: SettingDifference[];
+}
+
+/** What a holder's value says when it reads like the recommended one while it differs. */
+export const BELOW_DIFFERS = "a setting below differs";
+
+/** The label before the differing settings below a holder's setting. */
+export const DIFFERS_BELOW_LABEL = "Settings below that differ";
+
+/**
+ * A holder's current value as shown beside the recommended one. A setting
+ * that differs while its own value reads like the recommended one differs in
+ * a setting below it, and its value says so, so the same value never stands
+ * beside Differs: "Enabled (a setting below differs)".
+ */
+export function holderValueText(
+  holder: Pick<HolderDetail, "label" | "current" | "differences">,
+  recommended: readonly string[],
+): string {
+  return holder.label === "Differs" &&
+    (holder.differences.length > 0 ||
+      // The recommended text may carry a note on an unreadable part: "5 (parent not readable)".
+      recommended.some((text) => text === holder.current.text || text.startsWith(`${holder.current.text} (`)))
+    ? `${holder.current.text} (${BELOW_DIFFERS})`
+    : holder.current.text;
 }
 
 /** One setting of a result: its name, recommended value and the policies holding it. */
@@ -646,6 +708,11 @@ export function resultSettingDetails(
               setting.id === finding.settingId
                 ? observation.current
                 : settingValue(observation.value, setting.id, assessment.settingNames),
+            differences:
+              label === "Differs"
+                ? ((setting.id === finding.settingId ? observation.differences : undefined) ??
+                  settingDifferences(finding.recommended, observation.value, setting.id, assessment.settingNames))
+                : [],
           },
         ];
       }),

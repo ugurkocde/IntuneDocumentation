@@ -172,6 +172,35 @@ export function localDate(value: string | Date = new Date()): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+/**
+ * The exceptions one part of a comparison applies: those of its own Level,
+ * and, when Level 2 is compared together with Level 1, the exceptions
+ * recorded at the compared Level for settings of the Level 1 pack, unless
+ * the Level 1 pack has its own for that setting (expired or not). Copies
+ * keep their id, so a result names the stored exception it used.
+ */
+export function exceptionsForLevel(
+  all: readonly BenchmarkException[],
+  partLevel: number,
+  comparedLevel: number,
+): BenchmarkException[] {
+  const own = all.filter((entry) => entry.level === partLevel);
+  if (partLevel === comparedLevel) return own;
+  // An own exception covers its setting only within its benchmark and
+  // version: another version's exception never stands in for this one.
+  const setting = (entry: BenchmarkException) =>
+    JSON.stringify([entry.benchmark, entry.version, entry.settingId]);
+  const covered = new Set(own.map(setting));
+  return [
+    ...own,
+    ...all
+      .filter(
+        (entry) => entry.level === comparedLevel && !covered.has(setting(entry)),
+      )
+      .map((entry) => ({ ...entry, level: partLevel as ExceptionLevel })),
+  ];
+}
+
 /** An exception applies on a date when it was created on or before that date and has not expired by then. */
 export function appliesOn(
   exception: Pick<BenchmarkException, "createdAt" | "expiresOn">,

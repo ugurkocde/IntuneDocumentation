@@ -2,11 +2,13 @@ import type { IpcMainInvokeEvent } from "electron";
 import {
   assessBenchmark,
   combineLevelAssessments,
+  exceptionLevels,
   unnamedSettingIds,
   withSettingNames,
   type BenchmarkAssessment,
 } from "../../../../src/lib/benchmarks/assessment";
 import { generateBenchmarkDrafts } from "../../../../src/lib/benchmarks/drafts";
+import { exceptionsForLevel } from "../../../../src/lib/benchmarks/exceptions";
 import { exportBenchmark } from "../../../../src/lib/benchmarks/export";
 import { buildFixPlan } from "../../../../src/lib/benchmarks/fix-plan";
 import {
@@ -165,33 +167,19 @@ export interface BenchmarkWorkDeps {
   // Display names of setting definitions the collection does not name
   // (Graph definition lookup); ids it cannot name are left out.
   settingNames?(ids: readonly string[]): Promise<SettingNames>;
+  // Display names of the groups the collection names, the lookup and cache
+  // of the compliance view (compliance.ts); resolved is false when it failed.
+  groupNames?(
+    collection: BenchmarkCollection,
+  ): Promise<{ names: ReadonlyMap<string, string>; resolved: boolean }>;
   // Drops cached Graph answers on sign out and account change.
   resetGraph?(): void;
   log(level: "info" | "warn", message: string, detail?: LogDetail): void;
 }
 
-/**
- * The exceptions one part of a comparison applies: those of its own Level,
- * and, when Level 2 is compared together with Level 1, the exceptions
- * recorded at the compared Level for settings of the Level 1 pack, unless
- * the Level 1 pack has its own for that setting. An exception recorded while
- * comparing Level 2 so covers what that view shows.
- */
-export function exceptionsForLevel(
-  all: readonly BenchmarkException[],
-  partLevel: number,
-  comparedLevel: number,
-): BenchmarkException[] {
-  const own = all.filter((entry) => entry.level === partLevel);
-  if (partLevel === comparedLevel) return own;
-  const covered = new Set(own.map((entry) => entry.settingId));
-  return [
-    ...own,
-    ...all
-      .filter((entry) => entry.level === comparedLevel && !covered.has(entry.settingId))
-      .map((entry) => ({ ...entry, level: partLevel as BenchmarkException["level"] })),
-  ];
-}
+// The precedence of exceptions between the Levels of one comparison lives
+// with the engine (src/lib/benchmarks/exceptions.ts).
+export { exceptionsForLevel };
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : "unknown");
 
@@ -249,12 +237,17 @@ export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
       const collection = deps.collectionFor(owner);
       if (!collection) throw new Error("Collect tenant data first.");
       if (!packs.length) throw new Error(BENCHMARK_NO_PACK);
+      // Group names only label the reach, so a failed lookup leaves the
+      // group ids there; only the reason is logged.
+      const groups = deps.groupNames ? await deps.groupNames(collection).catch(() => null) : undefined;
+      if (groups === null || groups?.resolved === false) deps.log("warn", "benchmark group names not read");
+      const data = groups?.resolved ? { ...collection, groupNames: groups.names } : collection;
       const exceptions = await exceptionsOf(tenantId, "assess");
       const compared = Math.max(...packs.map((pack) => pack.level));
       const now = new Date();
       const parts = packs.map((pack) => ({
         pack,
-        assessment: assessBenchmark(collection, pack, {
+        assessment: assessBenchmark(data, pack, {
           ...(list ? { list } : {}),
           exceptions: exceptionsForLevel(exceptions, pack.level, compared),
           now,
@@ -289,13 +282,15 @@ export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
       };
     },
     // Exactly what was assessed: the same pack, and the stored exceptions of
-    // the assessed benchmark, version and level (the PDF lists them).
+    // the assessed benchmark, version and the Levels it applies (the PDF
+    // lists them).
     async exportBenchmark({ tenantId, assessment, packs, benchmarkName, format }) {
+      const levels = exceptionLevels(assessment);
       const exceptions = (await exceptionsOf(tenantId, "export")).filter(
         (entry) =>
           entry.benchmark === assessment.benchmark &&
           entry.version === assessment.version &&
-          assessment.levels.some((level) => level.level === entry.level),
+          levels.includes(entry.level),
       );
       // The tenant's display name when Graph returned it, else the short id.
       const tenantLabel = assessment.tenantName ?? deps.tenantLabel(tenantId);

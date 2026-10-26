@@ -212,7 +212,27 @@ export function referencedGroupIds(collection: Collection): string[] {
 
 // Resolved once per collection. A failed lookup keeps the identifiers, as on
 // the website, is not cached and is retried with the next request.
-const groupNameCache = new WeakMap<Collection, Promise<Map<string, string>>>();
+let groupNameCache = new WeakMap<Collection, Promise<Map<string, string>>>();
+
+// Sign out and account change drop the resolved names with the other cached
+// Graph answers.
+export function resetGroupNames(): void {
+  groupNameCache = new WeakMap();
+}
+
+// The same lookup and cache for the CIS Benchmarks view of the last
+// collection, so both views name the same groups. Any other collection is
+// not looked up and keeps its identifiers.
+export async function collectionGroupNames(
+  collection: object,
+  token: TokenProvider,
+): Promise<{ names: Map<string, string>; resolved: boolean }> {
+  const last = getLastCollection();
+  if (!last || last !== collection) {
+    return { names: new Map<string, string>(), resolved: false };
+  }
+  return groupNamesFor(last, token);
+}
 
 async function groupNamesFor(
   collection: Collection,

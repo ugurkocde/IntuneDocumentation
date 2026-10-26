@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { SYNTHETIC_CATALOG, syntheticAssessment } from "../__fixtures__/benchmarks";
+import { SYNTHETIC_CATALOG, syntheticAssessment, withExceptionUses } from "../__fixtures__/benchmarks";
 import {
   catalogChoices,
   exceptionChoiceLabel,
   exceptionChoiceSetting,
   exceptionChoices,
+  exceptionReaches,
   filterRows,
   formatDay,
   levelsLabel,
@@ -12,6 +13,7 @@ import {
   reasonCounts,
   resolveSelection,
   reviewRows,
+  rowExceptionBadge,
   sortRows,
   stateCountsOf,
   toAssessment,
@@ -216,5 +218,74 @@ describe("levelsLabel", () => {
     expect(levelsLabel(syntheticAssessment({ levels: [2] }))).toBe("Level 2");
     expect(levelsLabel(syntheticAssessment({ levels: [1, 2], level: 2 }))).toBe("Levels 1 and 2");
     expect(levelsLabel({ ...syntheticAssessment({ level: 2 }), levels: [] })).toBe("Level 2");
+  });
+});
+
+describe("exception badges", () => {
+  const setting = (n: number) => `device_vendor_msft_policy_config_synthetic_area_synthetic_setting_${n}`;
+  const stored = (id: string, n: number, extra: Record<string, unknown> = {}) => ({
+    id,
+    benchmark: "synthetic-bench",
+    version: "2.0.0",
+    level: 1 as const,
+    settingId: setting(n),
+    owner: "Synthetic Owner",
+    reason: "Synthetic reason",
+    expiresOn: "2999-12-31",
+    createdAt: "2026-10-01T09:00:00.000Z",
+    ...extra,
+  });
+  const rowOf = (view: ReturnType<typeof syntheticAssessment>, id: string) =>
+    reviewRows(view).find((row) => row.settings[0]!.id === setting(Number(id)))!;
+
+  it("says accepted only for a result the engine credited, and names the reason otherwise", () => {
+    const exceptions = [stored("e2", 2), stored("e8", 8, { expiresOn: "2026-10-01" }), stored("e4", 4)];
+    const byId = new Map(exceptions.map((item) => [item.id, item]));
+    const view = withExceptionUses(syntheticAssessment(), {
+      [setting(2)]: { id: "e2", applies: true },
+      [setting(8)]: { id: "e8", applies: false },
+      // Setting 4 needs review: an applying exception is not counted.
+      [setting(4)]: { id: "e4", applies: true },
+    });
+    const at = view.assessedAt;
+    expect(rowExceptionBadge(rowOf(view, "2"), byId, at)).toMatchObject({
+      label: `Accepted until ${formatDay("2999-12-31")}`,
+      tone: "info",
+      accepted: true,
+    });
+    expect(rowExceptionBadge(rowOf(view, "8"), byId, at)).toMatchObject({
+      label: `Exception expired ${formatDay("2026-10-01")}`,
+      accepted: false,
+    });
+    expect(rowExceptionBadge(rowOf(view, "4"), byId, at)).toMatchObject({
+      label: `Exception until ${formatDay("2999-12-31")}, not counted`,
+      tone: "warning",
+      accepted: false,
+    });
+    // Recorded after the comparison: not yet applied.
+    const later = withExceptionUses(syntheticAssessment(), { [setting(2)]: { id: "e2", applies: false } });
+    expect(rowExceptionBadge(rowOf(later, "2"), byId, at)!.label).toBe("Exception recorded after this comparison");
+    // Nothing while the list does not hold the exception yet.
+    expect(rowExceptionBadge(rowOf(view, "2"), new Map(), at)).toBeNull();
+    // Nothing without an exception in effect.
+    expect(rowExceptionBadge(rowOf(view, "3"), byId, at)).toBeNull();
+  });
+
+  it("says where an exception from another Level was recorded", () => {
+    const two = { ...stored("t", 2), level: 2 as const };
+    const view = withExceptionUses(syntheticAssessment(), { [setting(2)]: { id: "t", applies: true } });
+    expect(rowExceptionBadge(rowOf(view, "2"), new Map([["t", two]]), view.assessedAt)!.title).toContain(
+      "Recorded at Level 2.",
+    );
+  });
+
+  it("offers a setting at a Level only where the engine applies an exception of that Level", () => {
+    expect(exceptionReaches(1, 1, 2)).toBe(true);
+    expect(exceptionReaches(2, 1, 2)).toBe(true);
+    expect(exceptionReaches(1, 2, 2)).toBe(false);
+    expect(exceptionReaches(2, 2, 2)).toBe(true);
+    expect(exceptionReaches(1, 1, 1)).toBe(true);
+    const choices = exceptionChoices(syntheticAssessment({ count: 12, levels: [1, 2] }));
+    expect(new Set(choices.flatMap((choice) => choice.packLevels))).toEqual(new Set([1]));
   });
 });

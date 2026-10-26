@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   headlineBaseText,
   headlineWithBase,
+  differsReasonText,
   levelCheckSummary,
   matchingPolicies,
   settingStatusText,
@@ -143,5 +144,33 @@ describe("state counts", () => {
         (entry) => entry.count,
       ),
     ).toEqual([0, 1, 0, 87, 0]);
+  });
+});
+
+// Round 47 lab review: a difference says which policies hold the other value.
+describe("differsReasonText", () => {
+  const holder = (assignment: "assigned" | "unknown" | "notAssigned", policyId = "p1", label = "Differs" as const) => ({
+    policyId,
+    policyName: `Synthetic ${policyId}`,
+    assignment,
+    assignedTo: "",
+    label,
+    current: { text: "0", raw: null },
+    differences: [],
+  });
+  it("names the assignment state of the policies that differ", () => {
+    expect(differsReasonText({ status: "Different", holders: [holder("assigned"), holder("notAssigned", "p2")] })).toBe(
+      "A policy that is assigned holds another value.",
+    );
+    expect(differsReasonText({ status: "Different", holders: [holder("assigned"), holder("assigned", "p2")] })).toBe(
+      "Policies that are assigned hold another value.",
+    );
+    expect(differsReasonText({ status: "Different", holders: [holder("unknown")] })).toBe(
+      "A policy whose assignment could not be read holds another value.",
+    );
+    expect(differsReasonText({ status: "Different", holders: [holder("assigned"), holder("unknown", "p2")] })).toBe(
+      "A policy that is assigned, or whose assignment could not be read, holds another value.",
+    );
+    expect(differsReasonText({ status: "Missing", holders: [] })).toMatch(/^A complete collection shows the setting in no policy/);
   });
 });

@@ -10,7 +10,16 @@ import {
   MANUAL_RECOMMENDATIONS_NOTICE,
   MANUAL_RECOMMENDATIONS_URL,
 } from "../manual";
-import { renderReadinessPdf, valueText, wrapText } from "../readiness-pdf";
+import {
+  continuesOnPage,
+  fittedFindings,
+  headlineHero,
+  headlineValue,
+  packCoverageText,
+  renderReadinessPdf,
+  valueText,
+  wrapText,
+} from "../readiness-pdf";
 import jsPDF from "jspdf";
 import {
   EXCEPTIONS,
@@ -20,14 +29,17 @@ import {
   UNASSIGNED_MATCH,
   UNASSIGNED_OTHER,
   UNASSIGNED_UNREADABLE,
+  levelsAssessment,
   richAssessment,
   unassessedAssessment,
   unassignedAssessment,
 } from "./export-fixtures";
-import { assessBenchmark } from "../assessment";
+import { assessBenchmark, combineLevelAssessments } from "../assessment";
+import { exceptionsForLevel, type BenchmarkException } from "../exceptions";
 import {
   choice,
   collection,
+  deviceConfiguration,
   NOW,
   pack,
   simpleInteger,
@@ -136,7 +148,9 @@ describe("benchmark readiness PDF", () => {
         text.includes(MANUAL_RECOMMENDATIONS_NOTICE) ? index : -1,
       )
       .filter((index) => index >= 0);
-    const manualPage = rich.findIndex((text) => text.startsWith("APPENDIX"));
+    const manualPage = rich.findIndex((text) =>
+      text.includes("APPENDIX Manual Recommendations"),
+    );
     expect(withNotice).toEqual(
       [0, 1, manualPage].filter(
         (index, at, list) => list.indexOf(index) === at,
@@ -733,9 +747,7 @@ describe("readiness PDF: detail cards and page breaks", () => {
 
   it("continues a step card across pages with a caption and its table header, a row per result", () => {
     const pages = pageTexts(render(waiting(80), { exceptions: [] }));
-    const start = pages.findIndex((text) =>
-      text.startsWith("05 RESULT DETAIL"),
-    );
+    const start = pages.findIndex((text) => text.includes("05 RESULT DETAIL"));
     expect(pages[start]).toContain(
       "Needs review, by step 80 results Step 1 Assign policy Synthetic waiting policy, which would let 80 results be judged: 80 would match.",
     );
@@ -786,4 +798,334 @@ describe("readiness PDF: detail cards and page breaks", () => {
       "No step Pack value not comparable 1 result The delivered pack holds a value for this setting, or a platform list for its policy, that cannot be compared. The plan has no step for these results.",
     );
   });
+});
+
+describe("readiness PDF exceptions of a Level 1 with Level 2 comparison", () => {
+  const SHARED = "synthetic_bench_shared";
+  const levelPack = (level: 1 | 2) =>
+    pack(
+      [{ settings: [choice(SHARED, "1")] }],
+      [
+        {
+          id: `${level}.1`,
+          title: `Synthetic shared at Level ${level}`,
+          level,
+          settings: [SHARED],
+        },
+      ],
+      level,
+    );
+  const exception = (
+    id: string,
+    level: 1 | 2,
+    extra: Partial<BenchmarkException> = {},
+  ): BenchmarkException => ({
+    id,
+    benchmark: "synthetic-bench",
+    version: "1.0.0",
+    level,
+    settingId: SHARED,
+    owner: `Synthetic owner ${id}`,
+    reason: "Synthetic reason",
+    expiresOn: "2999-12-31",
+    createdAt: "2026-10-01T09:00:00.000Z",
+    ...extra,
+  });
+  const appendix = (exceptions: BenchmarkException[]) => {
+    const assessment = combineLevelAssessments(
+      ([1, 2] as const).map((level) =>
+        assessBenchmark(
+          collection({
+            policies: [tenantPolicy({ settings: [choice(SHARED, "0")] })],
+          }),
+          levelPack(level),
+          { now: NOW, exceptions: exceptionsForLevel(exceptions, level, 2) },
+        ),
+      ),
+    );
+    const pages = pageTexts(render(assessment, { exceptions }));
+    return pages[pages.length - 1]!;
+  };
+
+  it("names the Level of each exception and the headlines that counted it", () => {
+    // Level 1 has its own expired exception, so the Level 2 one is not used there.
+    const blocked = appendix([
+      exception("one", 1, {
+        expiresOn: "2026-10-01",
+        createdAt: "2026-09-01T09:00:00.000Z",
+      }),
+      exception("two", 2),
+    ]);
+    expect(blocked).toContain("Exceptions 2 recorded");
+    expect(blocked).toMatch(
+      /SETTING LEVEL OWNER REASON EXPIRES STATUS synthetic_bench_shared 1 Synthetic owner one .* Not in effect synthetic_bench_shared 2 Synthetic owner two .* Applied to Level 2 /,
+    );
+    expect(blocked).not.toContain("Applied to Level 1");
+    // Without its own, Level 1 uses the Level 2 exception too.
+    expect(appendix([exception("two", 2)])).toContain(
+      "Applied to Level 1 and 2",
+    );
+  });
+});
+
+// Round 47: Level 2 compares both Levels, so the cover leads with both.
+describe("readiness PDF: Level 1 and Level 2 compared together", () => {
+  const assessment = levelsAssessment();
+  const pages = pageTexts(render(assessment, { exceptions: [] }));
+  const cover = pages[0]!;
+
+  it("leads the cover with the headline of each Level and what each pack covers", () => {
+    expect(assessment.levels.map((level) => level.level)).toEqual([1, 2]);
+    expect(cover).toContain(
+      "91.7% of 12 assessed Level 1 91.7% of 12 assessed, 3 need review 0 of 3 match Level 2 Nothing was assessed as Matches or Differs",
+    );
+    expect(cover).toContain("Matching settings, Levels 1 and 2");
+    expect(cover).toContain(
+      "The Level 1 pack covers 15 settings and the Level 2 pack covers 3 settings.",
+    );
+    expect(cover).not.toContain("This pack covers");
+    expect(cover).not.toContain("Matching settings, Level 2");
+  });
+
+  it("names the settings a step helps with, their ids beneath", () => {
+    const steps = pageWith(pages, "02 WHAT TO DO");
+    expect(steps).toContain(
+      "Helps with: Synthetic level 1 setting 12 (Level 1) Setting id: synthetic_bench_level1_12",
+    );
+    expect(steps).toContain(
+      "Helps with: Synthetic level 1 setting 14 (Level 1), Synthetic level 1 setting 15 (Level 1), Synthetic level 2 setting 1 (Level 2)",
+    );
+    expect(steps).not.toMatch(/Helps with: synthetic_bench/);
+  });
+
+  it("counts a step of both Levels in each Level's card as the step's text does", () => {
+    const all = pages.join(" ");
+    expect(all).toContain(
+      "Check device configuration profiles (Windows) for 5 settings not found in the Settings Catalog. 2 of 5 results 3 results of this step are at Level 2, listed with that Level.",
+    );
+    expect(all).toContain(
+      "Check device configuration profiles (Windows) for 5 settings not found in the Settings Catalog. 3 of 5 results 2 results of this step are at Level 1, listed with that Level.",
+    );
+  });
+
+  it("states what each pack covers in words", () => {
+    expect(packCoverageText(assessment.levels)).toBe(
+      "The Level 1 pack covers 15 settings and the Level 2 pack covers 3 settings. The full benchmark also has manual and other recommendations; coverage of the full benchmark will be shown once its list is published.",
+    );
+    const [first] = richAssessment().levels;
+    expect(packCoverageText([first!])).toContain("Coverage: 77.8%");
+  });
+});
+
+describe("readiness PDF: the cover ring", () => {
+  it("draws the measure its centre states: the rate of the assessed results, or the matches of all", () => {
+    const [first, second] = levelsAssessment().levels;
+    const hero = headlineHero(first!.headline.states, first!.headline.rate);
+    expect(hero.value).toBe("91.7%");
+    expect(hero.fraction).toBe(first!.headline.rate);
+    expect(hero.value).toBe(headlineValue(hero.fraction));
+    expect(hero.count).toBe("of 12 assessed");
+    // Not enough assessed for the rate to lead: matches out of all results.
+    const rich = richAssessment().levels[0]!;
+    const counts = headlineHero(rich.headline.states, rich.headline.rate);
+    expect(counts).toEqual({
+      value: "1",
+      count: "of 8 match",
+      fraction: 1 / 8,
+    });
+    expect(
+      headlineHero(second!.headline.states, second!.headline.rate),
+    ).toEqual({ value: "0", count: "of 3 match", fraction: 0 });
+  });
+});
+
+describe("readiness PDF: no page holding only a spilled block", () => {
+  it("decides when a section continues below a spilled block", () => {
+    expect(continuesOnPage(true, 40, 255)).toBe(true);
+    expect(continuesOnPage(true, 127, 255)).toBe(true);
+    expect(continuesOnPage(true, 140, 255)).toBe(false);
+    expect(continuesOnPage(false, 10, 255)).toBe(false);
+  });
+
+  it("shows fewer key findings rather than move them alone to a page", () => {
+    const rows = [7.4, 7.4, 7.4, 7.4];
+    expect(fittedFindings(rows, 6, 100)).toEqual({ count: 4, height: 44.1 });
+    expect(fittedFindings(rows, 6, 40).count).toBe(3);
+    expect(fittedFindings(rows, 6, 10).count).toBe(2);
+    expect(fittedFindings([], 0, 100).height).toBe(17.5);
+  });
+
+  // differs results that differ and waiting results that need review, in
+  // many sections, so the summary and the results table end at every height.
+  const sized = (differs: number, waiting: number) => {
+    const diff = Array.from(
+      { length: differs },
+      (_, index) => `synthetic_bench_differs_${index + 1}`,
+    );
+    const wait = Array.from(
+      { length: waiting },
+      (_, index) => `synthetic_bench_waiting_${index + 1}`,
+    );
+    return assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({
+            name: "Synthetic assigned holder",
+            settings: diff.map((id) => choice(id, "0")),
+          }),
+          tenantPolicy({
+            name: "Synthetic waiting policy",
+            settings: wait.map((id) => choice(id, "1")),
+            assignments: [],
+          }),
+        ],
+      }),
+      pack(
+        [{ settings: [...diff, ...wait].map((id) => choice(id, "1")) }],
+        [...diff, ...wait].map((id, index) => ({
+          id: `${(index % 6) + 1}.${index + 1}`,
+          title: `Synthetic ${id.replace("synthetic_bench_", "").replace("_", " value ")}`,
+          level: 1 as const,
+          settings: [id],
+        })),
+      ),
+      { now: NOW },
+    );
+  };
+
+  it("never leaves the key findings or the boxes after the results table alone on a page", () => {
+    const spilled: string[] = [];
+    for (const differs of [4, 6])
+      for (let waiting = 10; waiting <= 36; waiting += 1) {
+        const pages = pageTexts(
+          render(sized(differs, waiting), { exceptions: [] }),
+        );
+        pages.forEach((text, index) => {
+          const alone =
+            (text.includes("Key findings") &&
+              !text.includes("01 SUMMARY") &&
+              !text.includes("02 WHAT TO DO")) ||
+            (text.includes("HOW TO READ THIS REPORT") &&
+              !text.includes("03 RESULTS") &&
+              !text.includes("(continued)") &&
+              !text.includes("04 DATA BASIS"));
+          if (alone) spilled.push(`${differs}/${waiting} page ${index + 1}`);
+        });
+      }
+    expect(spilled).toEqual([]);
+  }, 30_000);
+
+  // Two Levels judged by settings with every reason: a summary without a
+  // sections table that leaves little room for the key findings.
+  const fullSummary = (differs: number, nameLength: number) => {
+    const name = `Synthetic holder ${"n".repeat(nameLength)}`;
+    const diff = Array.from(
+      { length: differs },
+      (_, index) => `synthetic_bench_differs_${index + 1}`,
+    );
+    const tenant = collection({
+      policies: [
+        tenantPolicy({ name, settings: diff.map((id) => choice(id, "0")) }),
+        tenantPolicy({
+          name: `${name} waiting`,
+          settings: [choice("synthetic_bench_waiting_1", "1")],
+          assignments: [],
+        }),
+        tenantPolicy({
+          name: `${name} waiting two`,
+          settings: [
+            choice("synthetic_bench_waiting_2", "1"),
+            choice("synthetic_bench_differs_1", "5"),
+          ],
+          assignments: [],
+        }),
+        tenantPolicy({
+          name: `${name} unknown`,
+          settings: [choice("synthetic_bench_unknown", "1")],
+          assignmentsStatus: "incomplete",
+        }),
+        tenantPolicy({
+          name: `${name} secret`,
+          settings: [
+            simpleSecret("synthetic_bench_secret"),
+            choice("synthetic_bench_level2_2", "0"),
+          ],
+        }),
+        tenantPolicy({
+          name: `${name} other`,
+          settings: [choice("synthetic_bench_other", "0")],
+          assignments: [],
+        }),
+      ],
+      other: {
+        deviceConfigurations: [
+          deviceConfiguration("windows10GeneralConfiguration"),
+        ],
+      },
+    });
+    const level1 = [
+      ...diff,
+      "synthetic_bench_waiting_1",
+      "synthetic_bench_waiting_2",
+      "synthetic_bench_missing_1",
+      "synthetic_bench_unknown",
+      "synthetic_bench_other",
+      "synthetic_bench_missing_2",
+    ];
+    return combineLevelAssessments([
+      assessBenchmark(
+        tenant,
+        pack([
+          {
+            settings: [
+              ...level1.map((id) => choice(id, "1")),
+              simpleSecret("synthetic_bench_secret", "synthetic"),
+            ],
+          },
+        ]),
+        { now: NOW },
+      ),
+      assessBenchmark(
+        tenant,
+        pack(
+          [
+            {
+              settings: [
+                "synthetic_bench_level2_1",
+                "synthetic_bench_level2_2",
+              ].map((id) => choice(id, "1")),
+            },
+          ],
+          undefined,
+          2,
+        ),
+        { now: NOW },
+      ),
+    ]);
+  };
+
+  it("keeps the key findings on the summary, or the next section below them", () => {
+    const alone: string[] = [];
+    for (const differs of [4, 5, 6, 7])
+      for (const nameLength of [0, 30, 60, 90]) {
+        const pages = pageTexts(
+          render(fullSummary(differs, nameLength), { exceptions: [] }),
+        );
+        pages.forEach((text, index) => {
+          if (
+            text.includes("Key findings") &&
+            !text.includes("01 SUMMARY") &&
+            !text.includes("02 WHAT TO DO")
+          )
+            alone.push(`${differs}/${nameLength} page ${index + 1}`);
+        });
+        // The summary shows at least two findings and names the rest.
+        const summary = pageWith(pages, "01 SUMMARY");
+        if (summary.includes("Key findings"))
+          expect(summary).toMatch(
+            /Key findings results that differ, by Level and id Differs synthetic_bench_differs_\d+ Differs synthetic_bench_differs_\d+/,
+          );
+      }
+    expect(alone).toEqual([]);
+  }, 30_000);
 });

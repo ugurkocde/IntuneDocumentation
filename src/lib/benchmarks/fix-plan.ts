@@ -17,6 +17,14 @@
  *    results are those that would match.
  * 3. changeBeforeAssign: a policy that is not assigned and holds another
  *    value (notAssignedDiffers, notAssignedMixed).
+ *
+ * Wherever the plan says to assign a policy that is not assigned (the
+ * assignPolicy and changeBeforeAssign actions, and the advice of the
+ * notAssigned family), the same simulation names what assigning it as it is
+ * would break: its other values that would then differ or need review, as
+ * steps to do first (conditions), and the results that would differ or no
+ * longer match (caution). nextStepText and the advice carry both, so no
+ * output says "assign" without them.
  * 4. checkOtherProfiles: settings not in the Settings Catalog while older
  *    profile types may set them (otherProfiles), per pack platform, naming
  *    the families present there.
@@ -44,7 +52,7 @@ import {
 import { REASON_LABELS, UNREADABLE_CAUSE_LABELS, otherProfilesText, reachText } from "./display";
 import type { AssignmentReach, AssignmentState } from "./tenant-settings";
 import { comparable } from "./policies";
-import { NOT_CONFIGURED, settingName, type UnreadableCause } from "./values";
+import { NOT_CONFIGURED, differenceText, settingName, settingValue, type UnreadableCause } from "./values";
 
 export type FixActionKind =
   | "changeValue"
@@ -133,6 +141,24 @@ export interface FixAction {
   unlocks?: { judged: number; matches: number; differs: number; regressions: number };
   /** checkOtherProfiles, and addSetting without a candidate policy: the pack platforms of its settings. */
   platforms?: string;
+  /**
+   * assignPolicy and changeBeforeAssign: the other values of the policy
+   * that the simulation shows would differ or need review once it is
+   * assigned as it is, as the steps to do before assigning it.
+   */
+  conditions?: FixSetting[];
+  /**
+   * What every result of the action is told besides its own steps: for
+   * assignPolicy and changeBeforeAssign the results that assigning the
+   * policy as it is would make differ or no longer match, for
+   * checkAssignment why the assignments need checking.
+   */
+  caution?: string;
+  /**
+   * assignPolicy: the other assignPolicy actions that would let some of the
+   * same results match; assigning one of them is enough for those.
+   */
+  alternatives?: string[];
   /** The action in plain words. */
   text: string;
 }
@@ -280,28 +306,70 @@ const UNCERTAINTY_STEP: Readonly<Record<"incomplete" | "unresolved", string>> = 
 };
 
 /**
+ * What the advice says about assigning one policy that is not assigned, for
+ * one finding: "assign" when the advice assigns it as it is, "change" or
+ * "check" when the advice first changes or checks the finding's value in it
+ * (that step is not repeated). Empty when assigning it breaks nothing.
+ */
+type AssignmentNote = (
+  observation: Observation,
+  finding: SettingFinding,
+  context: "assign" | "change" | "check",
+) => string;
+
+const NO_ASSIGNMENT_NOTE: AssignmentNote = () => "";
+
+/**
  * The sentence for one finding that is not Pass. The notAssigned family keeps
  * the drafts README wording: a policy that matches is the one to assign, a
  * policy that differs needs its value changed before it is assigned, and a
- * policy whose value cannot be read is named to check, never to change.
+ * policy whose value cannot be read is named to check, never to change. Each
+ * policy the advice would have assigned carries its assignment note.
  */
 function findingAdvice(
   assessment: BenchmarkAssessment,
   finding: SettingFinding,
   draft: DraftState | undefined,
-  candidate: Candidate | null = null,
+  candidate: Candidate | null,
+  note: AssignmentNote,
 ): string {
-  const names = (comparison: Observation["comparison"], filter: (o: Observation) => boolean = () => true) =>
+  const list = (comparison: Observation["comparison"]) =>
     sorted(
       finding.observations
-        .filter((observation) => observation.comparison === comparison && filter(observation))
+        .filter((observation) => observation.comparison === comparison)
         .map((observation) => observation.policyName),
-    ).join(", ");
+    );
+  const joined = (items: readonly string[], word: "and" | "or") =>
+    items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} ${word} ${items.at(-1)}`;
+  // "policy A", or "policies A and B"; any one of several to assign: "one of the policies A or B".
+  const names = (comparison: Observation["comparison"]) => {
+    const items = list(comparison);
+    return items.length === 1 ? `policy ${items[0]}` : `policies ${joined(items, "and")}`;
+  };
+  const oneOf = (comparison: Observation["comparison"]) => {
+    const items = list(comparison);
+    return items.length === 1 ? `policy ${items[0]}` : `one of the policies ${joined(items, "or")}`;
+  };
+  // The notes of the unassigned policies holding the finding with one comparison, by policy name.
+  const notes = (comparison: Observation["comparison"], context: Parameters<AssignmentNote>[2]) => {
+    const seen = new Set<string>();
+    return finding.observations
+      .filter((observation) => observation.comparison === comparison && observation.assignment === "notAssigned")
+      .sort((a, b) => a.policyName.localeCompare(b.policyName) || a.policyId.localeCompare(b.policyId))
+      .flatMap((observation) => {
+        if (seen.has(observation.policyId)) return [];
+        seen.add(observation.policyId);
+        const text = note(observation, finding, context);
+        return text ? [` ${text}`] : [];
+      })
+      .join("");
+  };
   const name = settingName(assessment.settingNames, finding.settingId);
   const recommended = finding.recommendedValue.text;
-  const unreadable = names("unknown");
+  const unreadable = list("unknown").length ? names("unknown") : "";
+  const many = (comparison: Observation["comparison"]) => list(comparison).length > 1;
   const check = unreadable
-    ? ` The value in policy ${unreadable} could not be read; check it before assigning that policy.`
+    ? ` The value in ${unreadable} could not be read; check it before assigning ${many("unknown") ? "them" : "that policy"}.${notes("unknown", "check")}`
     : "";
   if (finding.status === "Different") {
     const policies = sorted(policiesToChange(finding).map((observation) => observation.policyName)).join(", ");
@@ -317,11 +385,11 @@ function findingAdvice(
   }
   switch (finding.reason) {
     case "notAssigned":
-      return `${REASON_LABELS.notAssigned} Assign policy ${names("match")} instead of importing a second one.`;
+      return `${REASON_LABELS.notAssigned} Assign ${oneOf("match")} instead of importing a second one.${notes("match", "assign")}`;
     case "notAssignedMixed":
-      return `${REASON_LABELS.notAssignedMixed} Assign policy ${names("match")} instead of importing a second one, and change the value in policy ${names("differ")} before assigning it.${check}`;
+      return `${REASON_LABELS.notAssignedMixed} Assign ${oneOf("match")} instead of importing a second one, and change the value in ${names("differ")} before assigning ${many("differ") ? "them" : "it"}.${notes("match", "assign")}${notes("differ", "change")}${check}`;
     case "notAssignedDiffers":
-      return `${REASON_LABELS.notAssignedDiffers} Change the value in policy ${names("differ")} before assigning it, or set the recommended value in a policy that is assigned.`;
+      return `${REASON_LABELS.notAssignedDiffers} Change the value in ${names("differ")} before assigning ${many("differ") ? "them" : "it"}, or set the recommended value in a policy that is assigned.${notes("differ", "change")}`;
     case "otherProfiles":
       return `${REASON_LABELS.otherProfiles} Check ${otherProfilesText(assessment.collection.otherProfiles, finding.platforms)} for it.`;
     case "unreadableValue": {
@@ -334,15 +402,21 @@ function findingAdvice(
           ? ` ${UNREADABLE_CAUSE_LABELS[causes[0]!]}`
           : "";
       return unknown.length
-        ? `${REASON_LABELS.unreadableValue}${why} Check ${name} in policy ${unreadable} in the Intune admin center.`
+        ? `${REASON_LABELS.unreadableValue}${why} Check ${name} in ${unreadable} in the Intune admin center.`
         : `${REASON_LABELS.unreadableValue} Check ${name} in the policies that hold it in the Intune admin center.`;
     }
     case "assignmentUnknown": {
       const unknown = finding.observations.filter((observation) => observation.assignment === "unknown");
-      const policies = sorted(unknown.map((observation) => observation.policyName)).join(", ");
+      const items = sorted(unknown.map((observation) => observation.policyName));
       const reasons = new Set(unknown.map((observation) => observation.reach.uncertainty ?? "incomplete"));
       const step = reasons.size === 1 ? ` ${UNCERTAINTY_STEP[[...reasons][0]!]}` : "";
-      return `${REASON_LABELS.assignmentUnknown} Check the assignments of policy ${policies || "holding this setting"}.${step}`;
+      return `${REASON_LABELS.assignmentUnknown} Check the assignments of ${
+        items.length === 0
+          ? "the policy holding this setting"
+          : items.length === 1
+            ? `policy ${items[0]}`
+            : `policies ${joined(items, "and")}`
+      }.${step}`;
     }
     case "collectionIncomplete":
       return `${REASON_LABELS.collectionIncomplete} Collect again once the collection gaps are resolved.`;
@@ -355,11 +429,15 @@ function findingAdvice(
   }
 }
 
-/** The recommended value, and the current value of one policy, of a finding as one step. */
+/**
+ * The recommended value, and the current value of one policy, of a finding
+ * as one step. checkBeforeAssign checks a value that could not be read
+ * before the policy holding it is assigned.
+ */
 function settingStep(
   assessment: BenchmarkAssessment,
   finding: SettingFinding,
-  kind: FixActionKind,
+  kind: FixActionKind | "checkBeforeAssign",
   observation: Observation | null,
   extra: Partial<FixSetting> = {},
   candidate: Candidate | null = null,
@@ -370,20 +448,27 @@ function settingStep(
   const policy = observation?.policyName ?? "";
   // From and to only where the setting's own value differs: a group of
   // settings shows entry counts, and the engine ignores extra tenant
-  // entries, so its entries are named instead.
+  // entries, so its entries are named instead, with the settings below it
+  // that the engine read as different (differenceText) where known.
   const type = finding.recommended["@odata.type"];
   const group = typeof type === "string" && GROUP_TYPES.test(type);
-  const change =
-    group || current === recommended
-      ? `Change the settings below ${name} in policy ${policy} to the recommended values`
-      : `Change ${name} in policy ${policy} from ${current} to ${recommended}`;
+  // The own values compare without the note on an unreadable part of the
+  // pack value ("5 (a setting below it is not readable)"); a difference
+  // the engine read below the setting makes it a change below too.
+  const own = settingValue(finding.recommended, finding.settingId, assessment.settingNames).text;
+  const below = group || current === own || current === recommended || (observation?.differences?.length ?? 0) > 0;
+  const differing = below && observation ? differenceText(observation, assessment.settingNames) : null;
+  const change = (when: string) =>
+    below
+      ? `Change the settings below ${name} in policy ${policy} to the recommended values${when}${differing ? `: ${differing}` : ""}.`
+      : `Change ${name} in policy ${policy} from ${current} to ${recommended}${when}.`;
   let text: string;
   switch (kind) {
     case "changeValue":
-      text = `${change}.`;
+      text = change("");
       break;
     case "changeBeforeAssign":
-      text = `${change} before assigning it.`;
+      text = change(" before assigning it");
       break;
     case "assignPolicy":
       text = `Policy ${policy} holds ${name} with the recommended value ${recommended}.`;
@@ -393,13 +478,18 @@ function settingStep(
         ? `Check ${name} in policy ${policy}. ${
             observation.current.cause ? UNREADABLE_CAUSE_LABELS[observation.current.cause] : "Its value could not be read."
           }`
-        : findingAdvice(assessment, finding, undefined);
+        : findingAdvice(assessment, finding, undefined, null, NO_ASSIGNMENT_NOTE);
+      break;
+    case "checkBeforeAssign":
+      text = `Check ${name} in policy ${policy} before assigning it. ${
+        observation?.current.cause ? UNREADABLE_CAUSE_LABELS[observation.current.cause] : "Its value could not be read."
+      }`;
       break;
     case "checkAssignment":
       text = `Check the assignments of policy ${policy}, which holds ${name} with the recommended value ${recommended}.`;
       break;
     default:
-      text = findingAdvice(assessment, finding, extra.draft, candidate);
+      text = findingAdvice(assessment, finding, extra.draft, candidate, NO_ASSIGNMENT_NOTE);
   }
   return {
     findingKey: finding.key,
@@ -409,10 +499,87 @@ function settingStep(
     platforms: finding.platforms,
     current,
     recommended,
-    ...(observation?.current.cause && kind === "checkValue" ? { cause: observation.current.cause } : {}),
+    ...(observation?.current.cause && (kind === "checkValue" || kind === "checkBeforeAssign")
+      ? { cause: observation.current.cause }
+      : {}),
     ...extra,
     text,
   };
+}
+
+/**
+ * What the engine decides when one policy that is not assigned is assigned
+ * as it is (reassess): the results needing review that would match or
+ * differ, the results matching now that would no longer match, and the
+ * policy's values that would then not match, each as the step to do before
+ * assigning it (a change for another value, a check for one that cannot be
+ * read), in pack order.
+ */
+interface AssignmentCheck {
+  matched: AssessmentResult[];
+  differs: number;
+  regressions: number;
+  conditions: Array<{ step: FixSetting; change: boolean }>;
+}
+
+/** The conditions of a check left after the steps an action or advice already names. */
+function conditionsBesides(
+  check: AssignmentCheck,
+  skip: { keys?: ReadonlySet<string>; texts?: ReadonlySet<string> } = {},
+): AssignmentCheck["conditions"] {
+  return check.conditions.filter(
+    ({ step }) => !skip.keys?.has(step.findingKey) && !skip.texts?.has(step.text),
+  );
+}
+
+/**
+ * The steps before assigning, counted by setting (one compared at two
+ * Levels is one setting): "changing 1 setting it holds to the recommended
+ * value and checking 1 setting whose value could not be read".
+ */
+function conditionsPhrase(
+  conditions: AssignmentCheck["conditions"],
+  form: "gerund" | "imperative",
+  other = false,
+): string {
+  const count = (change: boolean) =>
+    new Set(conditions.filter((item) => item.change === change).map((item) => item.step.settingId)).size;
+  const changes = count(true);
+  const checks = count(false);
+  const setting = (n: number) => plural(n, other ? "other setting" : "setting", other ? "other settings" : "settings");
+  return [
+    changes
+      ? `${form === "gerund" ? "changing" : "change"} ${setting(changes)} it holds to the recommended ${changes === 1 ? "value" : "values"}`
+      : "",
+    checks
+      ? `${form === "gerund" ? "checking" : "check"} ${setting(checks)} it holds whose ${checks === 1 ? "value" : "values"} could not be read`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" and ");
+}
+
+/**
+ * The warning of assigning a policy as it is: the results it would make
+ * differ (where the advice assigns it as it is) and those that match now and
+ * would no longer match. Empty when there are none.
+ */
+function assignmentWarning(
+  policyName: string,
+  check: AssignmentCheck,
+  differs: boolean,
+  conditions: AssignmentCheck["conditions"],
+): string {
+  const effects = [
+    ...(differs && check.differs ? [`${plural(check.differs, "result", "results")} differ`] : []),
+    ...(check.regressions
+      ? [`${plural(check.regressions, "result that matches now", "results that match now")} no longer match`]
+      : []),
+  ];
+  if (!effects.length) return "";
+  return `Assigned as it is, policy ${policyName} would make ${effects.join(" and ")}.${
+    conditions.length ? "" : " Check the values it holds before assigning it."
+  }`;
 }
 
 /** The fix plan of one assessment. */
@@ -428,6 +595,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     item: AssessmentResult;
     status: SettingFinding["status"] | "Unmapped";
     result: SettingFinding["result"];
+    reason?: ReasonCode;
     findingKeys: readonly string[];
   }
   const openSettings: OpenSetting[] = open
@@ -436,11 +604,30 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       item.kind === "recommendation"
         ? item.recommendation.settings
             .filter((setting) => setting.result !== "Pass")
-            .map((setting) => ({ item, status: setting.status, result: setting.result, findingKeys: setting.findingKeys }))
-        : [{ item, status: item.finding.status, result: item.finding.result, findingKeys: [item.finding.key] }],
+            .map((setting) => ({
+              item,
+              status: setting.status,
+              result: setting.result,
+              ...(setting.reason ? { reason: setting.reason } : {}),
+              findingKeys: setting.findingKeys,
+            }))
+        : [
+            {
+              item,
+              status: item.finding.status,
+              result: item.finding.result,
+              ...(item.finding.reason ? { reason: item.finding.reason } : {}),
+              findingKeys: [item.finding.key],
+            },
+          ],
     );
   const accepts: Partial<Record<FixActionKind, (setting: OpenSetting) => boolean>> = {
     changeValue: (setting) => setting.result === "Fail",
+    // Only a result whose own setting is held with another value is changed
+    // by changing it: a setting of a root whose own value matches there
+    // (notAssigned) waits for the assignment only.
+    changeBeforeAssign: (setting) =>
+      setting.result === "Review" && (setting.reason === "notAssignedDiffers" || setting.reason === "notAssignedMixed"),
     addSetting: (setting) => setting.status === "Missing",
   };
   const ref = (item: AssessmentResult): FixResult => ({ level: item.level, kind: item.kind, id: item.id, key: item.key });
@@ -465,6 +652,66 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     if (!bySetting.has(setting)) bySetting.set(setting, candidateOf(finding));
     additions.set(finding.key, bySetting.get(setting)!);
   }
+  // Assigning one policy that is not assigned: the engine judges again.
+  const review = open.filter((item) => item.result === "Review");
+  const matching = results.filter((item) => item.result === "Pass");
+  const findingByKey = new Map(assessment.settings.map((finding) => [finding.key, finding]));
+  const after = (item: AssessmentResult, simulated: ReturnType<typeof reassess>) =>
+    item.kind === "recommendation"
+      ? simulated.recommendations.get(`${item.level}:${item.id}`)
+      : simulated.settings.get(item.finding.key);
+  const checks = new Map<string, AssignmentCheck>();
+  const checkOf = (policyId: string): AssignmentCheck => {
+    const known = checks.get(policyId);
+    if (known) return known;
+    const simulated = reassess(assessment, (entry) => (entry.policyId === policyId ? "assigned" : entry.assignment));
+    let differs = 0;
+    const matched: AssessmentResult[] = [];
+    for (const item of review) {
+      const next = after(item, simulated);
+      if (next === "Pass") matched.push(item);
+      else if (next === "Fail") differs += 1;
+    }
+    // Results that match now and would not with this policy assigned (it
+    // holds another value they read), so the advice never hides them.
+    const regressions = matching.filter((item) => {
+      const next = after(item, simulated);
+      return next !== undefined && next !== "Pass";
+    }).length;
+    // The policy's values that would not match once it is assigned: every
+    // finding it holds is judged again (profile choices are not).
+    const conditions: AssignmentCheck["conditions"] = [];
+    for (const finding of assessment.settings) {
+      const next = simulated.settings.get(finding.key);
+      if (next === undefined || next === "Pass") continue;
+      for (const observation of finding.observations)
+        if (observation.policyId === policyId && observation.comparison !== "match") {
+          const change = observation.comparison === "differ";
+          const step = settingStep(assessment, finding, change ? "changeBeforeAssign" : "checkBeforeAssign", observation);
+          // A setting compared at two Levels with one value is one step.
+          if (!conditions.some((item) => item.step.text === step.text)) conditions.push({ change, step });
+        }
+    }
+    const check = { matched, differs, regressions, conditions };
+    checks.set(policyId, check);
+    return check;
+  };
+  // The note of assigning a policy, in the advice of a finding it holds:
+  // the warning and every step to do first, besides the one the advice names.
+  const note: AssignmentNote = (observation, finding, context) => {
+    const check = checkOf(observation.policyId);
+    const own =
+      context === "assign"
+        ? []
+        : [settingStep(assessment, finding, context === "change" ? "changeBeforeAssign" : "checkBeforeAssign", observation).text];
+    const conditions = conditionsBesides(check, { keys: new Set([finding.key]), texts: new Set(own) });
+    return [
+      assignmentWarning(observation.policyName, check, context === "assign", conditions),
+      ...new Set(conditions.map(({ step }) => step.text)),
+    ]
+      .filter(Boolean)
+      .join(" ");
+  };
   const advice: Record<string, string> = {};
   for (const finding of assessment.settings)
     if (finding.result !== "Pass")
@@ -473,6 +720,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
         finding,
         drafts.get(finding.key),
         additions.get(finding.key) ?? null,
+        note,
       );
 
   const actions: FixAction[] = [];
@@ -583,9 +831,11 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     }
   }
 
-  // Assigning one policy that is not assigned: the engine judges again.
-  const review = open.filter((item) => item.result === "Review");
-  const findingByKey = new Map(assessment.settings.map((finding) => [finding.key, finding]));
+  // A policy is advised for assignment only for results it would let match;
+  // one that would only add differences is never the one to assign
+  // (changeBeforeAssign names it). The results that would then differ or no
+  // longer match are counted, and its values that would not match are the
+  // steps to do first, so the advice does not hide them.
   const candidates = new Map<string, Observation>();
   for (const setting of openSettings)
     if (setting.result === "Review")
@@ -593,35 +843,13 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
         for (const observation of findingByKey.get(key)?.observations ?? [])
           if (observation.assignment === "notAssigned" && !candidates.has(observation.policyId))
             candidates.set(observation.policyId, observation);
-  const matching = results.filter((item) => item.result === "Pass");
-  const after = (item: AssessmentResult, simulated: ReturnType<typeof reassess>) =>
-    item.kind === "recommendation"
-      ? simulated.recommendations.get(`${item.level}:${item.id}`)
-      : simulated.settings.get(item.finding.key);
   for (const [policyId, observation] of candidates) {
-    const simulated = reassess(assessment, (entry) => (entry.policyId === policyId ? "assigned" : entry.assignment));
-    let differs = 0;
-    const matched: AssessmentResult[] = [];
-    for (const item of review) {
-      const next = after(item, simulated);
-      if (next === "Pass") matched.push(item);
-      else if (next === "Fail") differs += 1;
-    }
-    // Results that match now and would not with this policy assigned (it
-    // holds another value they read), so the advice never hides them.
-    const regressions = matching.filter((item) => {
-      const next = after(item, simulated);
-      return next !== undefined && next !== "Pass";
-    }).length;
-    // A policy is advised for assignment only for results it would let
-    // match; one that would only add differences is never the one to assign
-    // (changeBeforeAssign names it). The results that would then differ are
-    // counted so the advice does not hide them.
+    const check = checkOf(policyId);
+    const { matched, differs, regressions } = check;
     if (!matched.length) continue;
     const matches = matched.length;
-    const judged = matched;
     const keys = new Set(
-      judged.flatMap((item) => (item.kind === "recommendation" ? item.recommendation.findingKeys : [item.finding.key])),
+      matched.flatMap((item) => (item.kind === "recommendation" ? item.recommendation.findingKeys : [item.finding.key])),
     );
     const settings = [...keys]
       .map((key) => findingByKey.get(key)!)
@@ -633,20 +861,27 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
         return held ? [settingStep(assessment, finding, "assignPolicy", held)] : [];
       });
     const policy = policyRef(observation);
+    const caution = assignmentWarning(policy.name, check, true, check.conditions);
+    const first = conditionsPhrase(check.conditions, "gerund") || (caution ? "checking the values it holds" : "");
+    const judged = `${plural(matches + differs, "result", "results")} be judged: ${matches.toLocaleString(
+      "en-US",
+    )} would match${differs ? ` and ${differs.toLocaleString("en-US")} would differ` : ""}${
+      regressions
+        ? `, and ${plural(regressions, "result that matches now", "results that match now")} would no longer match`
+        : ""
+    }`;
     actions.push({
       id: `assignPolicy:${policyId}`,
       kind: "assignPolicy",
       policy,
       settings,
-      results: judged.map(ref),
+      results: matched.map(ref),
       unlocks: { judged: matches + differs, matches, differs, regressions },
-      text: `Assign policy ${policy.name}, which would let ${plural(matches + differs, "result", "results")} be judged: ${matches.toLocaleString(
-        "en-US",
-      )} would match${differs ? ` and ${differs.toLocaleString("en-US")} would differ` : ""}${
-        regressions
-          ? `, and ${plural(regressions, "result that matches now", "results that match now")} would no longer match`
-          : ""
-      }.${differs || regressions ? " Change the values it holds first." : ""} Assign it to a pilot group first.`,
+      ...(check.conditions.length ? { conditions: check.conditions.map(({ step }) => step) } : {}),
+      ...(caution ? { caution } : {}),
+      text: first
+        ? `Assign policy ${policy.name} after first ${first}. Assigned as it is, it would let ${judged}. Assign it to a pilot group first.`
+        : `Assign policy ${policy.name}, which would let ${judged}. Assign it to a pilot group first.`,
     });
   }
 
@@ -655,20 +890,49 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     const count = new Set(entry.settings.map((setting) => setting.settingId)).size;
     const settings = plural(count, "setting", "settings");
     const reach = reachText({ assignment: entry.policy.assignment, reach: entry.policy.reach });
+    // Changing these values is not all that assigning the policy needs: its
+    // other values that would not match are steps too, and the results it
+    // would make no longer match are said.
+    const check = entry.kind === "changeBeforeAssign" ? checkOf(entry.policy.id) : null;
+    const conditions = check
+      ? conditionsBesides(check, {
+          keys: new Set(entry.settings.map((setting) => setting.findingKey)),
+          texts: new Set(entry.settings.map((setting) => setting.text)),
+        })
+      : [];
+    const warning = check ? assignmentWarning(entry.policy.name, check, false, conditions) : "";
+    const also = conditionsPhrase(conditions, "imperative", true);
+    const uncertainty = UNCERTAINTY_STEP[entry.policy.reach.uncertainty ?? "incomplete"];
     const text =
       entry.kind === "changeValue"
         ? `Change ${settings} in policy ${entry.policy.name} (${reach}) to the recommended ${count === 1 ? "value" : "values"}.`
         : entry.kind === "changeBeforeAssign"
-          ? `Change ${settings} in policy ${entry.policy.name} to the recommended ${count === 1 ? "value" : "values"} before assigning it.`
+          ? `Change ${settings} in policy ${entry.policy.name} to the recommended ${count === 1 ? "value" : "values"} before assigning it.${
+              also
+                ? ` Before assigning it, also ${also}${
+                    check!.regressions
+                      ? `: assigned as it is, it would make ${plural(
+                          check!.regressions,
+                          "result that matches now",
+                          "results that match now",
+                        )} no longer match`
+                      : ""
+                  }.`
+                : warning
+                  ? ` ${warning}`
+                  : ""
+            }`
           : entry.kind === "checkValue"
             ? `Check ${settings} in policy ${entry.policy.name}: the ${count === 1 ? "value" : "values"} could not be read.`
-            : `Check the assignments of policy ${entry.policy.name}. ${UNCERTAINTY_STEP[entry.policy.reach.uncertainty ?? "incomplete"]}`;
+            : `Check the assignments of policy ${entry.policy.name}. ${uncertainty}`;
     actions.push({
       id,
       kind: entry.kind,
       policy: entry.policy,
       ...(entry.kind === "checkValue" ? { reason: "unreadableValue" as const } : {}),
-      ...(entry.kind === "checkAssignment" ? { reason: "assignmentUnknown" as const } : {}),
+      ...(entry.kind === "checkAssignment" ? { reason: "assignmentUnknown" as const, caution: uncertainty } : {}),
+      ...(conditions.length ? { conditions: conditions.map(({ step }) => step) } : {}),
+      ...(warning ? { caution: warning } : {}),
       settings: entry.settings,
       results: resultsOf(entry.kind, entry.settings.map((setting) => setting.findingKey)),
       text,
@@ -726,9 +990,24 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     });
   }
 
+  // Changing values of a policy and assigning it is one step: the change
+  // joins the assignment as its conditions, with the results it changes.
+  const assigning = new Map(
+    actions.filter((action) => action.kind === "assignPolicy").map((action) => [action.policy!.id, action]),
+  );
+  const merged = actions.filter((action) => {
+    const assign = action.kind === "changeBeforeAssign" ? assigning.get(action.policy!.id) : undefined;
+    if (!assign) return true;
+    const keys = new Set(assign.results.map((result) => result.key));
+    assign.results.push(...action.results.filter((result) => !keys.has(result.key)));
+    const conditions = assign.conditions ?? [];
+    const texts = new Set(conditions.map((setting) => setting.text));
+    assign.conditions = [...conditions, ...action.settings.filter((setting) => !texts.has(setting.text))];
+    return false;
+  });
   // An action no counted result asks for is left out (the drafts README
   // still names the policies to change, policiesToChange).
-  const asked = actions.filter((action) => action.results.length > 0);
+  const asked = merged.filter((action) => action.results.length > 0);
   actions.length = 0;
   actions.push(...asked);
   actions.sort(
@@ -738,6 +1017,30 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       (a.policy?.name ?? "").localeCompare(b.policy?.name ?? "") ||
       a.id.localeCompare(b.id),
   );
+  // Assigning policies that would let the same results match are
+  // alternatives for those results: one of them is enough. Each says so,
+  // by the step numbers the plan is shown with.
+  for (const action of actions) {
+    if (action.kind !== "assignPolicy") continue;
+    const own = new Set(action.results.map((result) => result.key));
+    const others = actions.flatMap((other, at) =>
+      other !== action && other.kind === "assignPolicy" && other.results.some((result) => own.has(result.key))
+        ? [{ other, step: at + 1 }]
+        : [],
+    );
+    if (!others.length) continue;
+    const shared = new Set(
+      others.flatMap(({ other }) => other.results.filter((result) => own.has(result.key)).map((result) => result.key)),
+    ).size;
+    const steps = others.map(({ step }) => step);
+    const list = steps.length === 1 ? `${steps[0]}` : `${steps.slice(0, -1).join(", ")} and ${steps.at(-1)}`;
+    action.alternatives = others.map(({ other }) => other.id);
+    action.text = `${action.text} ${steps.length === 1 ? `Step ${list} is an alternative` : `Steps ${list} are alternatives`} for ${plural(
+      shared,
+      "of these results",
+      "of these results",
+    )}: assigning one of the policies is enough for ${shared === 1 ? "it" : "them"}.`;
+  }
   const byResult: Record<string, string[]> = {};
   for (const action of actions)
     for (const result of action.results) (byResult[result.key] ??= []).push(action.id);
@@ -751,10 +1054,16 @@ export function actionsForResult(plan: FixPlan, resultKey: string): FixAction[] 
   return plan.actions.filter((action) => ids.includes(action.id));
 }
 
+/** What an action tells each of its results besides its own steps: its caution, then its conditions. */
+export function actionCautionLines(action: FixAction): string[] {
+  return [...(action.caution ? [action.caution] : []), ...(action.conditions ?? []).map((setting) => setting.text)];
+}
+
 /**
  * The next step of one result as one line: the steps of its findings in
  * its highest impact actions ("Change S in policy P from A to B."), or the
- * action text when none of its findings is listed.
+ * action text when none of its findings is listed, each followed by the
+ * action's caution and conditions (actionCautionLines).
  */
 export function nextStepText(plan: FixPlan, result: AssessmentResult): string {
   const actions = actionsForResult(plan, result.key);
@@ -763,14 +1072,19 @@ export function nextStepText(plan: FixPlan, result: AssessmentResult): string {
     result.kind === "recommendation" ? result.recommendation.findingKeys : [result.finding.key],
   );
   const lines: string[] = [];
-  // Assigning any one of the policies is enough, so they are one step.
-  const assign = actions.filter((action) => action.kind === "assignPolicy").map((action) => action.policy!.name);
-  if (assign.length) lines.push(`Assign policy ${assign.join(" or ")}.`);
+  // Assigning any one of the policies is enough, so they are one step;
+  // what assigning each would break follows it.
+  const assign = actions.filter((action) => action.kind === "assignPolicy");
+  if (assign.length) {
+    lines.push(`Assign policy ${assign.map((action) => action.policy!.name).join(" or ")}.`);
+    for (const action of assign) lines.push(...actionCautionLines(action));
+  }
   for (const action of actions) {
     if (action.kind === "assignPolicy") continue;
     const own = action.settings.filter((setting) => keys.has(setting.findingKey));
     if (own.length) lines.push(...own.map((setting) => setting.text));
     else lines.push(action.text);
+    lines.push(...actionCautionLines(action));
   }
   return [...new Set(lines)].join(" ");
 }

@@ -262,21 +262,37 @@ describe("benchmark exceptions store", () => {
 });
 
 describe("benchmarks:exceptions requests", () => {
-  it("answers list, set and remove with the exceptions of the requested benchmark, version and level", async () => {
+  // Comparing Level 2 applies the exceptions of Level 1 and Level 2, so the
+  // answer holds every level of the benchmark and version; set and remove
+  // change only the requested level.
+  it("answers list, set and remove with the exceptions of the requested benchmark and version at every level", async () => {
     const exceptions = store();
     await exceptions.set(TENANT, input({ level: 2 }), always);
     await exceptions.set(TENANT, input({ version: "9.9.8" }), always);
     const set = await answerExceptions(exceptions, TENANT, { action: "set", ...input() }, always);
-    expect(set.map((entry) => [entry.version, entry.level])).toEqual([["9.9.9", 1]]);
+    expect(set.map((entry) => [entry.version, entry.level])).toEqual([
+      ["9.9.9", 2],
+      ["9.9.9", 1],
+    ]);
     const list = await answerExceptions(exceptions, TENANT, { action: "list", ...IDENTITY, level: 2 }, always);
-    expect(list.map((entry) => [entry.version, entry.level])).toEqual([["9.9.9", 2]]);
+    expect(list.map((entry) => [entry.version, entry.level])).toEqual([
+      ["9.9.9", 2],
+      ["9.9.9", 1],
+    ]);
     const removed = await answerExceptions(
       exceptions,
       TENANT,
       { action: "remove", ...IDENTITY, settingId: SETTING },
       always,
     );
-    expect(removed).toEqual([]);
-    expect(await exceptions.list(TENANT)).toHaveLength(2);
+    expect(removed.map((entry) => [entry.version, entry.level])).toEqual([["9.9.9", 2]]);
+    const removedTwo = await answerExceptions(
+      exceptions,
+      TENANT,
+      { action: "remove", ...IDENTITY, level: 2, settingId: SETTING },
+      always,
+    );
+    expect(removedTwo).toEqual([]);
+    expect((await exceptions.list(TENANT)).map((entry) => entry.version)).toEqual(["9.9.8"]);
   });
 });

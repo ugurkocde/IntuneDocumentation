@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { exceptionLevels } from "../../../../../src/lib/benchmarks/assessment";
 import { benchmarkDisplayName, READINESS_DISCLAIMER } from "../../../../../src/lib/benchmarks/display";
 import { flowStage, flowSteps, type FlowStep } from "../../../../../src/lib/benchmarks/flow";
 import { settingName } from "../../../../../src/lib/benchmarks/values";
@@ -168,7 +169,7 @@ export function BenchmarksScreen() {
   const [running, setRunning] = useState(false);
   const [assessError, setAssessError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
-  const [prefill, setPrefill] = useState<{ settingId: string; nonce: number } | null>(null);
+  const [prefill, setPrefill] = useState<{ settingId: string; level: BenchmarkLevel; nonce: number } | null>(null);
   const [exceptions, setExceptions] = useState<readonly BenchmarkException[]>([]);
   const [listRequest, setListRequest] = useState<ListRequest | null>(null);
   const [step, setStep] = useState<string | null>(null);
@@ -637,13 +638,16 @@ export function BenchmarksScreen() {
               request={listRequest}
               step={stepFilter}
               onClearStep={() => setStep(null)}
-              onAddException={(settingId) => setPrefill((current) => ({ settingId, nonce: (current?.nonce ?? 0) + 1 }))}
+              onAddException={(settingId, level) =>
+                setPrefill((current) => ({ settingId, level, nonce: (current?.nonce ?? 0) + 1 }))
+              }
             />
           </ErrorBoundary>
 
           <ErrorBoundary name="The exceptions" hint={PANEL_HINT} resetKey={assessment.assessedAt}>
             <ExceptionsPanel
               identity={assessed!}
+              levels={exceptionLevels(assessment)}
               choices={review.choices}
               prefill={prefill}
               onChanged={() => run(assessed)}

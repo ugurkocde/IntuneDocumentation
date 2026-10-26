@@ -696,9 +696,11 @@ export interface BenchmarkExceptionInput {
 }
 
 // benchmarks:exceptions answers with the exceptions of the requested
-// benchmark, version and level, stored encrypted per tenant (BenchmarkException
-// adds id and createdAt). Set adds one, or changes the one with the same
-// setting id; remove drops it.
+// benchmark and version at every level, stored encrypted per tenant
+// (BenchmarkException adds id and createdAt): a comparison of Level 2 applies
+// those of both Levels. Set adds one at the requested level, or changes the
+// one with the same level and setting id; remove drops that one. The
+// assessment names the exception each result used by id (ExceptionUse).
 export type BenchmarkExceptionsRequest =
   | ({ action: "list" } & BenchmarkIdentity)
   | ({ action: "set" } & BenchmarkIdentity & BenchmarkExceptionInput)

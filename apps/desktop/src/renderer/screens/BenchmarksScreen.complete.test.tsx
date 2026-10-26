@@ -216,7 +216,8 @@ describe("BenchmarksScreen with the view main builds", () => {
   });
 
   // Round 49: a recommendation matched on two unassigned policies needs both
-  // assigned, so no single step covers it and the plan has none.
+  // assigned. Since round 50 the plan names both assignments; a plan without
+  // a step for a result is what the screen states.
   it("says no single step covers a result that needs review, with a filter to it", async () => {
     const A = "synthetic_bench_r49_together_a";
     const B = "synthetic_bench_r49_together_b";
@@ -233,8 +234,13 @@ describe("BenchmarksScreen with the view main builds", () => {
       ),
       { now: NOW },
     );
-    const view = withFixPlan(assessment);
-    expect(view.fixPlan).toMatchObject({ actions: [], withoutAction: 1 });
+    const planned = withFixPlan(assessment);
+    expect(planned.fixPlan.actions.map((action) => [action.kind, action.policy?.name])).toEqual([
+      ["assignPolicy", "Synthetic first half"],
+      ["assignPolicy", "Synthetic second half"],
+    ]);
+    expect(planned.fixPlan.withoutAction).toBe(0);
+    const view = { ...planned, fixPlan: { ...planned.fixPlan, actions: [], byResult: {}, withoutAction: 1 } };
     await showView(view);
     const plan = screen.getByRole("region", { name: "What to do next" });
     expect(plan.textContent).toContain("No single step covers this result; see each result for what to check.");

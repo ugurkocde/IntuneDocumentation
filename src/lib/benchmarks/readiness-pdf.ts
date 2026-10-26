@@ -3042,8 +3042,9 @@ export function renderReadinessPdf(
             result.level === group.level && reviewKeys.has(result.key),
         ).length
       : group.items.length;
-    // Assigning a policy lists the results that would match and those its
-    // conditions change (each of which would differ as it is); the other
+    // Assigning a policy lists the results that would match, those its
+    // conditions change (each of which would differ as it is) and those it
+    // settles in part (stillOpen, which need other steps too); the other
     // results that would differ are counted in its text and listed
     // elsewhere.
     const wouldDiffer =
@@ -3051,7 +3052,9 @@ export function renderReadinessPdf(
         ? Math.max(
             0,
             action.unlocks.differs -
-              (action.results.length - action.unlocks.matches),
+              (action.results.length -
+                action.unlocks.matches -
+                (action.unlocks.stillOpen ?? 0)),
           )
         : 0;
     const earlier = ofStep - group.items.length;

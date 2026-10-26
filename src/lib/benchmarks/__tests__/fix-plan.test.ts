@@ -719,8 +719,18 @@ describe("fix plan: steps per policy on real data shapes", () => {
     );
     expect(assessment.recommendations.map((item) => item.result)).toEqual(["Review", "Review"]);
     const plan = buildFixPlan(assessment);
-    const [change] = plan.actions.filter((action) => action.kind === "changeBeforeAssign");
-    expect(change!.results.map((result) => result.id)).toEqual(["1.2"]);
+    // Assigning the policy settles X of 1.1 only in part (ELSEWHERE needs a
+    // check too); the change of Y joins it as its condition and counts 1.2,
+    // whose own setting it changes.
+    expect(plan.actions.map((action) => action.kind)).toEqual(["assignPolicy", "checkOtherProfiles"]);
+    const [assign, other] = plan.actions;
+    expect(assign!.partial).toEqual({ "r:1:1.1": [{ settingId: LEAF_X, findingKey: assessment.settings[0]!.key }] });
+    expect(assign!.results.map((result) => result.id)).toEqual(["1.1", "1.2"]);
+    expect(assign!.conditions!.map((setting) => setting.text)).toEqual([
+      `Change the settings below ${ROOT} in policy Synthetic unassigned group to the recommended values before assigning it: ${LEAF_Y} from 2 to 1.`,
+    ]);
+    expect(other!.results.map((result) => result.id)).toEqual(["1.1"]);
+    expect(plan.advice[assessment.settings[0]!.key]).toContain("Assign policy Synthetic unassigned group instead of importing a second one.");
   });
 
   it("marks policies that would let the same results match as alternatives", () => {

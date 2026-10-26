@@ -476,6 +476,33 @@ function judgeFinding(
   );
 }
 
+/**
+ * How one pack root judges one setting declared within it (the root itself
+ * or a setting below it), as recommendationResults does for each root of a
+ * declared setting: the fix plan answers each declared setting by this
+ * verdict, also where the root's own verdict differs.
+ */
+export function judgeDeclared(
+  finding: Pick<
+    SettingFinding,
+    "recommended" | "observations" | "platforms" | "reason"
+  >,
+  settingId: string,
+  tenant: TenantProof,
+): { status: SettingStatus; result: ResultState; reason?: ReasonCode } {
+  if (finding.reason === "profileChoice")
+    return { status: "Review", result: "Review", reason: "profileChoice" };
+  const judgement = judgeOnPlatforms(
+    finding.recommended,
+    finding.observations,
+    settingId,
+    finding.platforms,
+    tenant,
+  );
+  const { result, reason } = resultOf(judgement);
+  return withReason({ status: judgement.status, result }, reason);
+}
+
 /** Where compareSettings' findings come from and how values are named. */
 export interface CompareContext {
   /** The Level of the delivered pack; the pack's own when compared alone. */
@@ -656,19 +683,12 @@ export function recommendationResults(
             };
           // Each pack root holding the definition is judged on its own: an
           // assigned match on one root does not stand in for another root.
-          const judged = mapped.map((finding) => {
-            const judgement = judgeOnPlatforms(
-              finding.recommended,
-              finding.observations,
-              id,
-              finding.platforms,
-              tenant,
-            );
-            return { judgement, ...resultOf(judgement) };
-          });
+          const judged = mapped.map((finding) =>
+            judgeDeclared(finding, id, tenant),
+          );
           const status =
             STATUS_ORDER.find((candidate) =>
-              judged.some(({ judgement }) => judgement.status === candidate),
+              judged.some((entry) => entry.status === candidate),
             ) ?? "Review";
           const result: ResultState = judged.some(
             (entry) => entry.result === "Fail",

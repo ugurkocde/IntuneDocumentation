@@ -234,10 +234,24 @@ describe("PDF without a step for a result that needs review (round 49)", () => {
 
   it("never says the steps above cover a result no step covers", () => {
     const assessment = twoPolicyAssessment();
+    // Each assignment settles one setting of the result (round 50), so the
+    // result has both steps; a plan without them is what the PDF states.
     const plan = buildFixPlan(assessment);
-    expect(plan.actions).toEqual([]);
-    expect(plan.withoutAction).toBe(1);
-    const text = render(assessment);
+    expect(plan.actions.map((action) => [action.kind, action.policy!.name, action.partial])).toEqual([
+      ["assignPolicy", "Synthetic r49 first half", { "r:1:1.1": [{ settingId: "synthetic_r49_together_a", findingKey: "0:0" }] }],
+      ["assignPolicy", "Synthetic r49 second half", { "r:1:1.1": [{ settingId: "synthetic_r49_together_b", findingKey: "0:1" }] }],
+    ]);
+    expect(plan.withoutAction).toBe(0);
+    expect(nextStepText(plan, assessmentResults(assessment)[0]!)).toBe(
+      "Assign policy Synthetic r49 first half. Assign policy Synthetic r49 second half.",
+    );
+    const text = pdfText(
+      renderReadinessPdf(assessment, {
+        renderDate: new Date("2026-10-22T12:00:00.000Z"),
+        tenantLabel: "Synthetic Tenant",
+        fixPlan: { ...plan, actions: [], byResult: {}, withoutAction: 1 },
+      }),
+    );
     expect(text).toContain("No result differs. 1 result needs review, and no single step covers it: see the result detail.");
     expect(text).not.toContain("the steps above say what to check");
     expect(text).toContain("No step could be derived from the collected data; the result detail says what each result needs.");

@@ -36,19 +36,32 @@
  *    draft policy is available, one action per candidate policy to add them
  *    to (candidatePolicies) or per platform when there is none.
  *
- * advice holds one sentence per finding that is not Pass, the same words the
- * drafts README uses (drafts.ts), so the plan and the README never disagree.
+ * Each step answers a verdict: a finding's own, and that of every setting a
+ * recommendation declares below its root, judged on that root as the
+ * engine judges it (judgeDeclared). A root that differs in one setting
+ * still gets the steps another setting below it needs, a setting missing
+ * below a root a policy holds is added by changing that root, and an
+ * action counts a result only through a declared setting whose verdict it
+ * answers. An assignment that settles part of a result no single
+ * assignment lets match is advised for it too (partial), beside its other
+ * steps.
+ *
+ * advice holds the sentences of every verdict of each finding that is not
+ * Pass, the same words the drafts README uses (drafts.ts), so the plan and
+ * the README never disagree.
  *
  * Level 2 is compared together with Level 1 and each Level is judged against
  * its own pack's value (combineLevelAssessments), so where the two packs
  * recommend different values for a setting no single value is the target:
  * every step that would set the value (a change, a condition before
- * assigning, the advice) states the conflict and asks for the value of the
- * target Level instead of naming two changes that undo each other
- * (levelConflicts), and counts it as a choice, not a change.
+ * assigning, an addition, also in a template policy, the advice) states the
+ * conflict and asks for the value of the target Level instead of naming two
+ * changes that undo each other (levelConflicts), counts it as a choice, not
+ * a change, and generates no draft.
  */
 import {
   assessmentResults,
+  judgeDeclared,
   reassess,
   type AssessmentResult,
   type BenchmarkAssessment,
@@ -59,6 +72,7 @@ import {
 } from "./assessment";
 import { FORM_DIFFERS, REASON_LABELS, UNREADABLE_CAUSE_LABELS, otherProfilesText, reachText } from "./display";
 import type { AssignmentReach, AssignmentState } from "./tenant-settings";
+import { canonicalPlatforms } from "../compliance/graph-rows";
 import { comparable, compareDefinition, differencePlace } from "./policies";
 import {
   NOT_CONFIGURED,
@@ -110,7 +124,8 @@ export type DraftState =
   | "incomplete"
   | "templated"
   | "duplicate"
-  | "levelConflict";
+  | "levelConflict"
+  | "unreadablePack";
 
 export interface FixSetting {
   findingKey: string;
@@ -159,9 +174,25 @@ export interface FixAction {
   /**
    * assignPolicy: results that would be judged with this policy assigned,
    * how many would match or differ, and how many that match now would no
-   * longer match.
+   * longer match; stillOpen counts the results of the action that assigning
+   * it as it is neither lets match nor makes differ (they need other steps
+   * too), when there are any.
    */
-  unlocks?: { judged: number; matches: number; differs: number; regressions: number };
+  unlocks?: { judged: number; matches: number; differs: number; regressions: number; stillOpen?: number };
+  /**
+   * assignPolicy: the results no single assignment lets match that this
+   * one settles in part, by result key, with the declared settings it
+   * settles and the finding (pack root) each is settled on; they need
+   * other steps too.
+   */
+  partial?: Record<string, Array<{ settingId: string; findingKey: string }>>;
+  /**
+   * assignPolicy: the keys of the results it settles, whole (it lets them
+   * match) or in part (partial). Its other results are those whose changes
+   * it takes as conditions; only settled results make two assignments
+   * alternatives.
+   */
+  settles?: string[];
   /** checkOtherProfiles, and addSetting without a candidate policy: the pack platforms of its settings. */
   platforms?: string;
   /**
@@ -200,9 +231,12 @@ export interface FixPlan {
 
 const INCOMPLETE =
   "The collection could not establish that the setting is missing. Refresh the policies with a complete collection and generate the drafts again.";
-const TEMPLATED =
-  "The pack delivers this setting in a policy created from a template, which drafts do not generate. Configure it in the matching template policy.";
+const TEMPLATED_REASON =
+  "The pack delivers this setting in a policy created from a template, which drafts do not generate.";
+const TEMPLATED = `${TEMPLATED_REASON} Configure it in the matching template policy.`;
 const DUPLICATE = "Another draft in this ZIP already holds this setting.";
+const UNREADABLE_PACK =
+  "Part of the delivered pack value of this setting cannot be compared, so no draft is generated.";
 const LEVEL_CONFLICT =
   "The packs compared recommend different values for this setting, so no draft is generated.";
 
@@ -211,6 +245,7 @@ export const DRAFT_STATE_TEXT: Readonly<Record<Exclude<DraftState, "available">,
   templated: TEMPLATED,
   duplicate: DUPLICATE,
   levelConflict: LEVEL_CONFLICT,
+  unreadablePack: UNREADABLE_PACK,
 };
 
 const sorted = (values: Iterable<string>) =>
@@ -225,6 +260,13 @@ const policyRef = (observation: Observation): FixPolicy => ({
   assignment: observation.assignment,
   reach: observation.reach,
 });
+
+/**
+ * One setting across pack policies and Levels: its platforms in canonical
+ * form (the same set in any order is the same) and its definition id.
+ */
+const sameSetting = (finding: Pick<SettingFinding, "platforms" | "settingId">) =>
+  `${canonicalPlatforms(finding.platforms) ?? finding.platforms}:${finding.settingId}`;
 
 /** The tenant policy a missing setting is best added to, if any. */
 interface Candidate {
@@ -286,27 +328,28 @@ const candidateText = (candidate: Candidate | null) =>
 /**
  * Draft states of the missing findings, as drafts.ts generates them: one
  * draft per platform and setting; a second finding with the same value is a
- * duplicate, and findings with different values (Level 1 and Level 2 packs
- * that disagree) get no draft at all, because two drafts would conflict.
+ * duplicate. A setting the Levels compared recommend differently
+ * (levelConflicts, over every finding of the setting, whatever its verdict
+ * or delivery) gets no draft at all, because no single value is the target;
+ * one the pack delivers in a template policy stays templated, and its advice
+ * states the choice too.
  */
 function draftStates(assessment: BenchmarkAssessment): Map<string, DraftState> {
   const states = new Map<string, DraftState>();
+  const conflicts = levelConflicts(assessment);
   const candidates = new Map<string, SettingFinding[]>();
   for (const finding of assessment.settings) {
     if (finding.result === "Pass" || finding.status !== "Missing") continue;
     if (!assessment.collection.complete || finding.observations.length) states.set(finding.key, "incomplete");
     else if (finding.templated) states.set(finding.key, "templated");
+    else if (conflicts.has(finding.key)) states.set(finding.key, "levelConflict");
     else {
-      const key = `${finding.platforms}:${finding.settingId}`;
+      const key = sameSetting(finding);
       candidates.set(key, [...(candidates.get(key) ?? []), finding]);
     }
   }
-  for (const findings of candidates.values()) {
-    const values = new Set(findings.map((finding) => JSON.stringify(comparable(finding.recommended))));
-    findings.forEach((finding, index) =>
-      states.set(finding.key, values.size > 1 ? "levelConflict" : index ? "duplicate" : "available"),
-    );
-  }
+  for (const findings of candidates.values())
+    findings.forEach((finding, index) => states.set(finding.key, index ? "duplicate" : "available"));
   return states;
 }
 
@@ -319,9 +362,10 @@ const conflictCache = new WeakMap<BenchmarkAssessment, Map<string, string>>();
  * The findings whose setting the packs of the Levels compared recommend
  * with different values, by finding key, with the values in words: "Level 1
  * recommends 5, Level 2 recommends 10". A setting is the same where its
- * platforms and id are (as draftStates groups them); the Levels conflict
- * when the values each recommends are not the same. Values that read alike
- * (a group of settings is shown by its entry count) are not repeated:
+ * platforms and id are (sameSetting, as draftStates groups them); the
+ * Levels conflict when the values each recommends are not the same. Values
+ * that read alike (a group of settings is shown by its entry count) are not
+ * repeated:
  * "Level 1 and Level 2 recommend different values".
  */
 export function levelConflicts(assessment: BenchmarkAssessment): ReadonlyMap<string, string> {
@@ -329,7 +373,7 @@ export function levelConflicts(assessment: BenchmarkAssessment): ReadonlyMap<str
   if (known) return known;
   const bySetting = new Map<string, SettingFinding[]>();
   for (const finding of assessment.settings) {
-    const key = `${finding.platforms}:${finding.settingId}`;
+    const key = sameSetting(finding);
     bySetting.set(key, [...(bySetting.get(key) ?? []), finding]);
   }
   const conflicts = new Map<string, string>();
@@ -399,15 +443,24 @@ const NO_ASSIGNMENT_NOTE: AssignmentNote = () => "";
  */
 function findingAdvice(
   assessment: BenchmarkAssessment,
-  finding: SettingFinding,
+  finding: SettingFinding & { declared?: string },
   draft: DraftState | undefined,
   candidate: Candidate | null,
   note: AssignmentNote,
 ): string {
+  // How each policy holds the setting the advice is about: the root, or a
+  // setting declared below it (judgeDeclared); null where it is not held.
+  const declared = finding.declared ?? finding.settingId;
+  const comparisonOf = (observation: Observation): Observation["comparison"] | null => {
+    if (declared === finding.settingId) return observation.comparison;
+    const state = compareDefinition(finding.recommended, observation.value, declared);
+    if (!state || state.holds === "no") return null;
+    return state.holds === "maybe" ? "unknown" : state.comparison;
+  };
   const list = (comparison: Observation["comparison"]) =>
     sorted(
       finding.observations
-        .filter((observation) => observation.comparison === comparison)
+        .filter((observation) => comparisonOf(observation) === comparison)
         .map((observation) => observation.policyName),
     );
   const joined = joinedWith;
@@ -424,7 +477,7 @@ function findingAdvice(
   const notes = (comparison: Observation["comparison"], context: Parameters<AssignmentNote>[2]) => {
     const seen = new Set<string>();
     return finding.observations
-      .filter((observation) => observation.comparison === comparison && observation.assignment === "notAssigned")
+      .filter((observation) => comparisonOf(observation) === comparison && observation.assignment === "notAssigned")
       .sort((a, b) => a.policyName.localeCompare(b.policyName) || a.policyId.localeCompare(b.policyId))
       .flatMap((observation) => {
         if (seen.has(observation.policyId)) return [];
@@ -447,7 +500,7 @@ function findingAdvice(
     const holders = sorted(policiesToChange(finding).map((observation) => observation.policyName));
     return conflict
       ? chooseText(name, conflict, holders.length === 1 ? `policy ${holders[0]}` : `policies ${joined(holders, "and")}`)
-      : `Change ${name} in policy ${holders.join(", ")} to the recommended value ${recommended}.`;
+      : `Change ${name} in ${holders.length === 1 ? `policy ${holders[0]}` : `policies ${joined(holders, "and")}`} to the recommended value ${recommended}.`;
   }
   if (finding.status === "Missing") {
     if (draft === "levelConflict")
@@ -456,6 +509,10 @@ function findingAdvice(
         : `${LEVEL_CONFLICT} Choose the value for your Level and set it in ${candidateText(candidate)}.`;
     if (draft === "duplicate")
       return `${DUPLICATE} Import that draft, or add the setting to ${candidateText(candidate)}.`;
+    if (draft === "unreadablePack")
+      return `${UNREADABLE_PACK} Add ${name} with the recommended value ${recommended} to ${candidateText(candidate)}.`;
+    if (draft === "templated" && conflict)
+      return `${chooseText(name, conflict, "the matching template policy")} ${TEMPLATED_REASON}`;
     if (draft && draft !== "available") return DRAFT_STATE_TEXT[draft];
     return `Add ${name} with the recommended value ${recommended} to ${candidateText(candidate)}. A draft policy is available.`;
   }
@@ -473,7 +530,7 @@ function findingAdvice(
     case "otherProfiles":
       return `${REASON_LABELS.otherProfiles} Check ${otherProfilesText(assessment.collection.otherProfiles, finding.platforms)} for it.`;
     case "unreadableValue": {
-      const unknown = finding.observations.filter((observation) => observation.comparison === "unknown");
+      const unknown = finding.observations.filter((observation) => comparisonOf(observation) === "unknown");
       const causes = sorted(
         unknown.flatMap((observation) => (observation.current.cause ? [observation.current.cause] : [])),
       ) as UnreadableCause[];
@@ -627,6 +684,8 @@ function settingStep(
  */
 interface AssignmentCheck {
   matched: AssessmentResult[];
+  /** Keys of the results needing review that would differ. */
+  failing: ReadonlySet<string>;
   differs: number;
   regressions: number;
   conditions: Array<{ step: FixSetting; change: boolean }>;
@@ -724,17 +783,13 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   const results = assessmentResults(assessment);
   const open = results.filter((item) => item.result !== "Pass");
   // The settings of the results that are neither Matches nor Not assessed
-  // and are themselves not Pass, with the findings they rest on: an action
-  // concerns a result only through such a setting, with a verdict the
-  // action answers (Differs for a change, Missing for an addition, Needs
-  // review for the rest).
+  // and are themselves not Pass, with the findings (pack roots) they rest
+  // on: an action concerns a result only through such a setting, with the
+  // verdict on one of its roots the action answers (judgedOn).
   interface OpenSetting {
     item: AssessmentResult;
     /** The declared setting id: a recommendation's setting, or the finding's own. */
     id: string;
-    status: SettingFinding["status"] | "Unmapped";
-    result: SettingFinding["result"];
-    reason?: ReasonCode;
     findingKeys: readonly string[];
   }
   const openSettings: OpenSetting[] = open
@@ -743,56 +798,60 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       item.kind === "recommendation"
         ? item.recommendation.settings
             .filter((setting) => setting.result !== "Pass")
-            .map((setting) => ({
-              item,
-              id: setting.id,
-              status: setting.status,
-              result: setting.result,
-              ...(setting.reason ? { reason: setting.reason } : {}),
-              findingKeys: setting.findingKeys,
-            }))
-        : [
-            {
-              item,
-              id: item.finding.settingId,
-              status: item.finding.status,
-              result: item.finding.result,
-              ...(item.finding.reason ? { reason: item.finding.reason } : {}),
-              findingKeys: [item.finding.key],
-            },
-          ],
+            .map((setting) => ({ item, id: setting.id, findingKeys: setting.findingKeys }))
+        : [{ item, id: item.finding.settingId, findingKeys: [item.finding.key] }],
     );
-  const accepts: Partial<Record<FixActionKind, (setting: OpenSetting) => boolean>> = {
-    changeValue: (setting) => setting.result === "Fail",
-    // Only a result whose own setting is held with another value is changed
-    // by changing it: a setting of a root whose own value matches there
-    // (notAssigned) waits for the assignment only.
-    changeBeforeAssign: (setting) =>
-      setting.result === "Review" && (setting.reason === "notAssignedDiffers" || setting.reason === "notAssignedMixed"),
-    addSetting: (setting) => setting.status === "Missing",
-  };
   const ref = (item: AssessmentResult): FixResult => ({ level: item.level, kind: item.kind, id: item.id, key: item.key });
   const findingByKey = new Map(assessment.settings.map((finding) => [finding.key, finding]));
+  // How one root judges one declared setting (judgeDeclared): an action
+  // concerns a result only through a declared setting whose verdict on that
+  // root is what the action answers, so a step for one setting below a root
+  // never counts a result for another setting below it.
+  type Judged = ReturnType<typeof judgeDeclared>;
+  const judgedCache = new Map<string, Judged>();
+  const judgedOn = (id: string, key: string): Judged | undefined => {
+    const finding = findingByKey.get(key);
+    if (!finding) return undefined;
+    if (finding.settingId === id) return finding;
+    const known = judgedCache.get(`${key}\n${id}`);
+    if (known) return known;
+    const judged = judgeDeclared(finding, id, assessment.collection);
+    judgedCache.set(`${key}\n${id}`, judged);
+    return judged;
+  };
+  const reviewFor = (reason: ReasonCode) => (verdict: Judged) => verdict.result === "Review" && verdict.reason === reason;
+  const accepts: Record<Exclude<FixActionKind, "assignPolicy">, (verdict: Judged) => boolean> = {
+    changeValue: (verdict) => verdict.result === "Fail",
+    // Only a result whose own setting is held with another value is changed
+    // by changing it, or one missing below the root the policy holds: a
+    // setting of a root whose own value matches there (notAssigned) waits
+    // for the assignment only.
+    changeBeforeAssign: (verdict) =>
+      (verdict.result === "Review" && (verdict.reason === "notAssignedDiffers" || verdict.reason === "notAssignedMixed")) ||
+      (verdict.result === "Fail" && verdict.status === "Missing"),
+    addSetting: (verdict) => verdict.status === "Missing",
+    checkOtherProfiles: reviewFor("otherProfiles"),
+    checkValue: (verdict) => reviewFor("unreadableValue")(verdict) || reviewFor("notAssignedMixed")(verdict),
+    checkAssignment: reviewFor("assignmentUnknown"),
+    collectAgain: reviewFor("collectionIncomplete"),
+    checkPackValue: reviewFor("packValueUnreadable"),
+    chooseValue: reviewFor("profileChoice"),
+  };
   // An action on one policy concerns a result only where that policy's own
   // value of the declared setting is what the action answers: a root's key
   // is shared by every setting below it, so policy X differing in child A
   // and policy Y in child B each concern only the result declaring theirs.
-  const policyHolds = (kind: FixActionKind, policyId: string, setting: OpenSetting, key: string) =>
+  const policyHolds = (kind: FixActionKind, policyId: string, setting: OpenSetting, key: string, verdict: Judged) =>
     (findingByKey.get(key)?.observations ?? []).some((observation) => {
       if (observation.policyId !== policyId) return false;
       const state = compareDefinition(findingByKey.get(key)!.recommended, observation.value, setting.id);
       if (!state) return false;
       switch (kind) {
-        // A setting missing below a root the policy holds with another
-        // value is added by the change too (its step names it, "from Not
-        // configured"), when nothing else holds it.
+        // A setting missing below a root the policy holds is added by the
+        // change of that root too (its step names it, "from Not configured").
         case "changeValue":
-          return (
-            (state.holds === "yes" && state.comparison === "differ") ||
-            (setting.status === "Missing" && state.holds === "no" && observation.comparison === "differ")
-          );
         case "changeBeforeAssign":
-          return state.holds === "yes" && state.comparison === "differ";
+          return (state.holds === "yes" && state.comparison === "differ") || state.holds === "no";
         case "checkValue":
           return state.holds === "maybe" || (state.holds === "yes" && state.comparison === "unknown");
         case "checkAssignment":
@@ -801,16 +860,21 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
           return true;
       }
     });
-  const resultsOf = (kind: FixActionKind, keys: Iterable<string>, policyId?: string): FixResult[] => {
+  type Counted = Exclude<FixActionKind, "assignPolicy">;
+  const resultsOf = (kind: Counted, keys: Iterable<string>, policyId?: string): FixResult[] => {
     const wanted = new Set(keys);
-    const accept = accepts[kind] ?? ((setting: OpenSetting) => setting.result === "Review");
     const seen = new Map<string, AssessmentResult>();
     for (const setting of openSettings)
       if (
-        accept(setting) &&
-        setting.findingKeys.some(
-          (key) => wanted.has(key) && (policyId === undefined || policyHolds(kind, policyId, setting, key)),
-        )
+        setting.findingKeys.some((key) => {
+          if (!wanted.has(key)) return false;
+          const verdict = judgedOn(setting.id, key);
+          return (
+            verdict !== undefined &&
+            accepts[kind](verdict) &&
+            (policyId === undefined || policyHolds(kind, policyId, setting, key, verdict))
+          );
+        })
       )
         seen.set(setting.item.key, setting.item);
     return [...seen.values()].map(ref);
@@ -824,10 +888,23 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   const bySetting = new Map<string, Candidate | null>();
   for (const finding of assessment.settings) {
     if (finding.result === "Pass" || finding.status !== "Missing" || drafts.get(finding.key) === "templated") continue;
-    const setting = `${finding.platforms}:${finding.settingId}`;
+    const setting = sameSetting(finding);
     if (!bySetting.has(setting)) bySetting.set(setting, candidateOf(finding));
     additions.set(finding.key, bySetting.get(setting)!);
   }
+  // A setting missing below a root no policy holds, while the root itself
+  // needs review (part of its pack value cannot be compared), is added like
+  // a missing root, without a draft.
+  const draftOf = (finding: SettingFinding): DraftState =>
+    drafts.get(finding.key) ??
+    (finding.templated ? "templated" : levelConflicts(assessment).has(finding.key) ? "levelConflict" : "unreadablePack");
+  const additionOf = (finding: SettingFinding): Candidate | null => {
+    if (additions.has(finding.key)) return additions.get(finding.key)!;
+    if (draftOf(finding) === "templated") return null;
+    const setting = sameSetting(finding);
+    if (!bySetting.has(setting)) bySetting.set(setting, candidateOf(finding));
+    return bySetting.get(setting)!;
+  };
   // Assigning one policy that is not assigned: the engine judges again.
   const review = open.filter((item) => item.result === "Review");
   const matching = results.filter((item) => item.result === "Pass");
@@ -840,13 +917,14 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     const known = checks.get(policyId);
     if (known) return known;
     const simulated = reassess(assessment, (entry) => (entry.policyId === policyId ? "assigned" : entry.assignment));
-    let differs = 0;
+    const failing = new Set<string>();
     const matched: AssessmentResult[] = [];
     for (const item of review) {
       const next = after(item, simulated);
       if (next === "Pass") matched.push(item);
-      else if (next === "Fail") differs += 1;
+      else if (next === "Fail") failing.add(item.key);
     }
+    const differs = failing.size;
     // Results that match now and would not with this policy assigned (it
     // holds another value they read), so the advice never hides them.
     const regressions = matching.filter((item) => {
@@ -867,7 +945,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
           if (!conditions.some((item) => item.step.text === step.text)) conditions.push({ change, step });
         }
     }
-    const check = { matched, differs, regressions, conditions };
+    const check = { matched, failing, differs, regressions, conditions };
     checks.set(policyId, check);
     return check;
   };
@@ -887,16 +965,70 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       .filter(Boolean)
       .join(" ");
   };
+  // Every verdict a step answers, per finding in pack order: the finding's
+  // own, then each setting a recommendation declares below its root, judged
+  // on that root as the engine judges it (judgeDeclared), so a root that
+  // differs in one setting still gets the steps another setting below it
+  // needs (collect again, check a value, check an assignment). Each is a
+  // view of the finding with that verdict, with the setting it is about. A
+  // setting missing below a root a policy holds is added by changing that
+  // root (missingBelow), never by a draft of its own.
+  type Verdict = SettingFinding & { declared: string };
+  const declaredBelow = new Map<string, Set<string>>();
+  for (const setting of openSettings)
+    if (setting.item.kind === "recommendation")
+      for (const key of setting.findingKeys)
+        if (findingByKey.get(key)?.settingId !== setting.id)
+          declaredBelow.set(key, (declaredBelow.get(key) ?? new Set()).add(setting.id));
+  const verdictsOf = (finding: SettingFinding): Verdict[] => {
+    const views: Verdict[] = finding.result === "Pass" ? [] : [{ ...finding, declared: finding.settingId }];
+    for (const id of declaredBelow.get(finding.key) ?? []) {
+      const judged = judgeDeclared(finding, id, assessment.collection);
+      if (judged.result === "Pass") continue;
+      const view: Verdict = { ...finding, status: judged.status, result: judged.result, declared: id };
+      delete view.reason;
+      views.push(judged.reason ? { ...view, reason: judged.reason } : view);
+    }
+    return views;
+  };
+  const verdicts = new Map(assessment.settings.map((finding) => [finding.key, verdictsOf(finding)]));
+  // How a policy holds the setting a verdict is about.
+  const stateOf = (finding: Verdict, observation: Observation) =>
+    compareDefinition(finding.recommended, observation.value, finding.declared) ?? {
+      holds: "no" as const,
+      comparison: "differ" as const,
+    };
+  const differs = (finding: Verdict, observation: Observation) => {
+    const state = stateOf(finding, observation);
+    return state.holds === "yes" && state.comparison === "differ";
+  };
+  const unreadable = (finding: Verdict, observation: Observation) => {
+    const state = stateOf(finding, observation);
+    return state.holds === "maybe" || (state.holds === "yes" && state.comparison === "unknown");
+  };
+  // A setting missing below a root that policies hold is added there: in
+  // those that apply, else before assigning one that does not.
+  const missingBelow = (finding: Verdict): Array<["changeValue" | "changeBeforeAssign", Observation]> => {
+    const holding = finding.observations.filter((observation) => stateOf(finding, observation).holds === "no");
+    const applying = holding.filter((observation) => observation.assignment !== "notAssigned");
+    return applying.length
+      ? applying.map((observation) => ["changeValue", observation])
+      : holding.map((observation) => ["changeBeforeAssign", observation]);
+  };
+  // The advice of a finding says what each of its verdicts needs.
   const advice: Record<string, string> = {};
-  for (const finding of assessment.settings)
-    if (finding.result !== "Pass")
-      advice[finding.key] = findingAdvice(
-        assessment,
-        finding,
-        drafts.get(finding.key),
-        additions.get(finding.key) ?? null,
-        note,
-      );
+  for (const finding of assessment.settings) {
+    const sentences = (verdicts.get(finding.key) ?? []).map((view) =>
+      view.status === "Missing" && view.observations.length
+        ? missingBelow(view)
+            .map(([kind, observation]) => settingStep(assessment, view, kind, observation).text)
+            .join(" ")
+        : view.status === "Missing"
+          ? findingAdvice(assessment, view, draftOf(view), additionOf(view), note)
+          : findingAdvice(assessment, view, drafts.get(finding.key), additions.get(finding.key) ?? null, note),
+    );
+    if (sentences.length) advice[finding.key] = [...new Set(sentences)].join(" ");
+  }
 
   const actions: FixAction[] = [];
   // Actions on one policy: one per kind and policy, settings in pack order.
@@ -937,23 +1069,28 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     // The action says "of the same benchmark area" only when that holds for every setting.
     if (entry.candidate && extra.candidate && !extra.candidate.sameArea)
       entry.candidate = { ...entry.candidate, sameArea: false };
-    entry.settings.push(
-      settingStep(assessment, finding, kind, null, extra.draft ? { draft: extra.draft } : {}, extra.candidate ?? null),
-    );
+    const step = settingStep(assessment, finding, kind, null, extra.draft ? { draft: extra.draft } : {}, extra.candidate ?? null);
+    if (!entry.settings.some((setting) => setting.findingKey === step.findingKey && setting.text === step.text))
+      entry.settings.push(step);
     grouped.set(id, entry);
   };
 
-  for (const finding of assessment.settings) {
-    if (finding.result === "Pass") continue;
+  for (const finding of assessment.settings.flatMap((item) => verdicts.get(item.key) ?? [])) {
     if (finding.status === "Different") {
-      for (const observation of policiesToChange(finding)) addPolicyStep("changeValue", finding, observation);
+      for (const observation of finding.observations)
+        if (observation.assignment !== "notAssigned" && differs(finding, observation))
+          addPolicyStep("changeValue", finding, observation);
+      continue;
+    }
+    if (finding.status === "Missing" && finding.observations.length) {
+      for (const [kind, observation] of missingBelow(finding)) addPolicyStep(kind, finding, observation);
       continue;
     }
     if (finding.status === "Missing") {
       // One action per candidate policy, or per platform without one; the
       // settings of template policies are one action of their own.
-      const candidate = additions.get(finding.key) ?? null;
-      const draft = drafts.get(finding.key)!;
+      const candidate = additionOf(finding);
+      const draft = draftOf(finding);
       addGroupStep(
         draft === "templated"
           ? `addSetting:templated:${finding.platforms}`
@@ -970,11 +1107,11 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       case "notAssignedMixed":
       case "notAssignedDiffers":
         for (const observation of finding.observations)
-          if (observation.comparison === "differ" && observation.assignment === "notAssigned")
+          if (observation.assignment === "notAssigned" && differs(finding, observation))
             addPolicyStep("changeBeforeAssign", finding, observation);
         if (finding.reason === "notAssignedMixed")
           for (const observation of finding.observations)
-            if (observation.comparison === "unknown") addPolicyStep("checkValue", finding, observation);
+            if (unreadable(finding, observation)) addPolicyStep("checkValue", finding, observation);
         break;
       case "otherProfiles":
         addGroupStep(`checkOtherProfiles:${finding.platforms}`, "checkOtherProfiles", finding, {
@@ -983,7 +1120,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
         });
         break;
       case "unreadableValue": {
-        const unknown = finding.observations.filter((observation) => observation.comparison === "unknown");
+        const unknown = finding.observations.filter((observation) => unreadable(finding, observation));
         if (unknown.length) for (const observation of unknown) addPolicyStep("checkValue", finding, observation);
         else addGroupStep("checkValue", "checkValue", finding, { reason: "unreadableValue" });
         break;
@@ -1011,17 +1148,71 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   // (changeBeforeAssign names it). The results that would then differ or no
   // longer match are counted, and its values that would not match are the
   // steps to do first, so the advice does not hide them.
+  // Candidates are the unassigned policies of every root on which a
+  // declared setting needs review, whatever its other roots show, so a
+  // root waiting for an assignment is never left out.
   const candidates = new Map<string, Observation>();
   for (const setting of openSettings)
-    if (setting.result === "Review")
-      for (const key of setting.findingKeys)
+    for (const key of setting.findingKeys)
+      if (judgedOn(setting.id, key)?.result === "Review")
         for (const observation of findingByKey.get(key)?.observations ?? [])
           if (observation.assignment === "notAssigned" && !candidates.has(observation.policyId))
             candidates.set(observation.policyId, observation);
+  // A result no single assignment lets match may still wait for one: an
+  // open setting of it matches only on unassigned policies, and assigning
+  // one of them settles that setting while the result needs other steps
+  // too (it holds another setting to check, change or collect). Such an
+  // assignment is advised for it as a part (partial), with the settings it
+  // settles, so no output leaves out the assignment it waits for.
+  const fullyMatched = new Set([...candidates.keys()].flatMap((policyId) => checkOf(policyId).matched.map((item) => item.key)));
+  const settles = (policyId: string, setting: OpenSetting) =>
+    setting.findingKeys.filter((key) => {
+      const verdict = judgedOn(setting.id, key);
+      const finding = findingByKey.get(key);
+      if (!verdict || !finding || !(reviewFor("notAssigned")(verdict) || reviewFor("notAssignedMixed")(verdict))) return false;
+      const assigned = {
+        ...finding,
+        observations: finding.observations.map((entry) =>
+          entry.policyId === policyId ? { ...entry, assignment: "assigned" as const } : entry,
+        ),
+      };
+      return judgeDeclared(assigned, setting.id, assessment.collection).result === "Pass";
+    });
+  const partialOf = (policyId: string) => {
+    const partial: NonNullable<FixAction["partial"]> = {};
+    for (const setting of openSettings) {
+      if (fullyMatched.has(setting.item.key)) continue;
+      for (const findingKey of settles(policyId, setting))
+        (partial[setting.item.key] ??= []).push({ settingId: setting.id, findingKey });
+    }
+    return partial;
+  };
+  // An assignment that settles only part of what another assignment
+  // settles for the same result is not needed for it; two that settle the
+  // same are alternatives (nextStepText joins them with "or").
+  const pairKey = (item: { settingId: string; findingKey: string }) => `${item.findingKey}\t${item.settingId}`;
+  const partials = new Map([...candidates.keys()].map((policyId) => [policyId, partialOf(policyId)]));
+  const settled = new Map(
+    [...partials].map(([policyId, partial]) => [
+      policyId,
+      new Map(Object.entries(partial).map(([key, items]) => [key, new Set(items.map(pairKey))])),
+    ]),
+  );
+  for (const [policyId, partial] of partials)
+    for (const key of Object.keys(partial)) {
+      const own = settled.get(policyId)!.get(key)!;
+      const covered = [...settled].some(([other, sets]) => {
+        const theirs = other === policyId ? undefined : sets.get(key);
+        return theirs !== undefined && theirs.size > own.size && [...own].every((item) => theirs.has(item));
+      });
+      if (covered) delete partial[key];
+    }
   for (const [policyId, observation] of candidates) {
     const check = checkOf(policyId);
     const { matched, differs, regressions } = check;
-    if (!matched.length) continue;
+    const partial = partials.get(policyId)!;
+    const helped = Object.keys(partial);
+    if (!matched.length && !helped.length) continue;
     const matches = matched.length;
     const keys = new Set(
       matched.flatMap((item) => (item.kind === "recommendation" ? item.recommendation.findingKeys : [item.finding.key])),
@@ -1045,18 +1236,29 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
         ? `, and ${plural(regressions, "result that matches now", "results that match now")} would no longer match`
         : ""
     }`;
+    const settledCount = new Set(Object.values(partial).flatMap((items) => items.map((item) => item.settingId))).size;
+    const part = helped.length
+      ? `${matches ? " It also holds" : first ? ". It holds" : ": it holds"} the matching value of ${plural(settledCount, "setting", "settings")} that ${plural(
+          helped.length,
+          "result needs",
+          "results need",
+        )} besides ${helped.length === 1 ? "its" : "their"} other steps.`
+      : "";
+    const head = first ? `Assign policy ${policy.name} after first ${first}` : `Assign policy ${policy.name}`;
     actions.push({
       id: `assignPolicy:${policyId}`,
       kind: "assignPolicy",
       policy,
       settings,
-      results: matched.map(ref),
+      results: [...matched.map(ref), ...open.filter((item) => helped.includes(item.key)).map(ref)],
+      settles: [...matched.map((item) => item.key), ...helped],
       unlocks: { judged: matches + differs, matches, differs, regressions },
+      ...(helped.length ? { partial } : {}),
       ...(check.conditions.length ? { conditions: check.conditions.map(({ step }) => step) } : {}),
       ...(caution ? { caution } : {}),
-      text: first
-        ? `Assign policy ${policy.name} after first ${first}. Assigned as it is, it would let ${judged}. Assign it to a pilot group first.`
-        : `Assign policy ${policy.name}, which would let ${judged}. Assign it to a pilot group first.`,
+      text: matches
+        ? `${first ? `${head}. Assigned as it is, it would let` : `${head}, which would let`} ${judged}.${part} Assign it to a pilot group first.`
+        : `${head}${part} Assign it to a pilot group first.`,
     });
   }
 
@@ -1110,7 +1312,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       ...(warning ? { caution: warning } : {}),
       settings: entry.settings,
       results: resultsOf(
-        entry.kind,
+        entry.kind as Counted,
         entry.settings.map((setting) => setting.findingKey),
         entry.policy.id,
       ),
@@ -1148,13 +1350,22 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
               entry.candidate.sameArea ? ", which already holds settings of the same benchmark area" : ""
             }`
           : ANY_POLICY;
+        // Settings the Levels recommend differently are a choice, never one value.
+        const chosen = new Set(
+          entry.settings.filter((setting) => setting.levelConflict).map((setting) => setting.settingId),
+        ).size;
+        const choice = chosen
+          ? ` The Levels compared recommend different values for ${
+              chosen === count ? (count === 1 ? "it" : "them") : plural(chosen, "of them", "of them")
+            }: choose the value for your target Level.`
+          : "";
         text = entry.templated
           ? `Configure ${settings} in the matching template ${count === 1 ? "policy" : "policies"}: the pack delivers ${
               count === 1 ? "it" : "them"
-            } in a policy created from a template, which drafts do not generate.`
+            } in a policy created from a template, which drafts do not generate.${choice}`
           : `Add ${settings} to ${target}${
               available ? `; draft policies are available for ${plural(available, "of them", "of them")}` : ""
-            }.`;
+            }.${choice}`;
       }
     }
     actions.push({
@@ -1164,7 +1375,7 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       ...(entry.reason ? { reason: entry.reason } : {}),
       ...(entry.platforms ? { platforms: entry.platforms } : {}),
       settings: entry.settings,
-      results: resultsOf(entry.kind, entry.settings.map((setting) => setting.findingKey)),
+      results: resultsOf(entry.kind as Counted, entry.settings.map((setting) => setting.findingKey)),
       text,
     });
   }
@@ -1184,6 +1395,16 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     assign.conditions = [...conditions, ...action.settings.filter((setting) => !texts.has(setting.text))];
     return false;
   });
+  // The results of an assignment that assigning it as it is neither lets
+  // match nor makes differ, so a view counting those that would differ
+  // never takes them for such.
+  for (const action of merged) {
+    if (action.kind !== "assignPolicy") continue;
+    const check = checkOf(action.policy!.id);
+    const matched = new Set(check.matched.map((item) => item.key));
+    const stillOpen = action.results.filter((result) => !matched.has(result.key) && !check.failing.has(result.key)).length;
+    if (stillOpen) action.unlocks = { ...action.unlocks!, stillOpen };
+  }
   // An action no counted result asks for is left out (the drafts README
   // still names the policies to change, policiesToChange).
   const asked = merged.filter((action) => action.results.length > 0);
@@ -1199,17 +1420,21 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   // Assigning policies that would let the same results match are
   // alternatives for those results: one of them is enough. Each says so,
   // by the step numbers the plan is shown with.
+  // Only results an assignment settles whole make alternatives: not one it
+  // settles in part, nor one whose change it only takes as a condition.
+  const whole = (action: FixAction) =>
+    action.results.filter((result) => action.settles?.includes(result.key) && !action.partial?.[result.key]);
   for (const action of actions) {
     if (action.kind !== "assignPolicy") continue;
-    const own = new Set(action.results.map((result) => result.key));
+    const own = new Set(whole(action).map((result) => result.key));
     const others = actions.flatMap((other, at) =>
-      other !== action && other.kind === "assignPolicy" && other.results.some((result) => own.has(result.key))
+      other !== action && other.kind === "assignPolicy" && whole(other).some((result) => own.has(result.key))
         ? [{ other, step: at + 1 }]
         : [],
     );
     if (!others.length) continue;
     const shared = new Set(
-      others.flatMap(({ other }) => other.results.filter((result) => own.has(result.key)).map((result) => result.key)),
+      others.flatMap(({ other }) => whole(other).filter((result) => own.has(result.key)).map((result) => result.key)),
     ).size;
     const steps = others.map(({ step }) => step);
     const list = steps.length === 1 ? `${steps[0]}` : `${steps.slice(0, -1).join(", ")} and ${steps.at(-1)}`;
@@ -1263,16 +1488,48 @@ export function nextStepText(
   );
   const lines: string[] = [];
   // Assigning any one of the policies is enough, so they are one step;
-  // what assigning each would break follows it.
+  // what assigning each would break follows it. Assignments that settle
+  // only part of the result are one step per set of settings they settle.
+  // An assignment that only takes this result's change as a condition is a
+  // step of its own, never an alternative.
   const assign = actions.filter((action) => action.kind === "assignPolicy");
-  if (assign.length) {
-    lines.push(`Assign policy ${assign.map((action) => action.policy!.name).join(" or ")}.`);
-    for (const action of assign) lines.push(...cautionLines(action));
+  const groups = new Map<string, FixAction[]>();
+  const afterChanges: FixAction[] = [];
+  for (const action of assign) {
+    if (!action.settles?.includes(result.key)) {
+      afterChanges.push(action);
+      continue;
+    }
+    const part = action.partial?.[result.key];
+    const group = part ? `part:${sorted(part.map((item) => `${item.findingKey}\t${item.settingId}`)).join("\n")}` : "whole";
+    groups.set(group, [...(groups.get(group) ?? []), action]);
   }
+  for (const group of groups.values()) {
+    lines.push(`Assign policy ${group.map((action) => action.policy!.name).join(" or ")}.`);
+    for (const action of group) lines.push(...cautionLines(action));
+  }
+  for (const action of afterChanges) {
+    lines.push(`Assign policy ${action.policy!.name} after the changes below.`);
+    lines.push(...cautionLines(action));
+  }
+  // A value check another step of this result already names as a
+  // condition of assigning the same policy, for the same setting (one step
+  // for a setting compared at two Levels), is not repeated.
+  const where = (policyId: string, setting: FixSetting) => `${policyId}\n${sameSetting(setting)}`;
+  const conditioned = new Set(
+    actions.flatMap((action) =>
+      action.policy ? (action.conditions ?? []).map((setting) => where(action.policy!.id, setting)) : [],
+    ),
+  );
   for (const action of actions) {
     if (action.kind === "assignPolicy") continue;
     const own = action.settings.filter((setting) => keys.has(setting.findingKey));
-    if (own.length) lines.push(...own.map((setting) => setting.text));
+    const shown =
+      action.kind === "checkValue" && action.policy
+        ? own.filter((setting) => !conditioned.has(where(action.policy!.id, setting)))
+        : own;
+    if (own.length && !shown.length) continue;
+    if (shown.length) lines.push(...shown.map((setting) => setting.text));
     else lines.push(action.text);
     lines.push(...cautionLines(action));
   }

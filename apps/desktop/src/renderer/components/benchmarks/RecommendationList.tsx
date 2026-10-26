@@ -4,6 +4,7 @@ import type { SettingFinding } from "../../../../../../src/lib/benchmarks/assess
 import {
   REASON_LABELS,
   SETTING_STATUS_LABELS,
+  STATE_LABELS,
   absentValueText,
   matchingPolicies,
   resultSettingDetails,
@@ -29,7 +30,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { DisclosureSummary } from "../ui/DisclosureSummary";
 import { EmptyState } from "../ui/EmptyState";
-import { ResultChip, STATE_LABELS } from "./LevelHeadlines";
+import { ResultChip } from "./LevelHeadlines";
 
 // Rows rendered at once; large packs show more on request.
 export const PAGE_SIZE = 100;

@@ -252,11 +252,13 @@ describe("BenchmarksScreen compare step", () => {
 
   it("shows the main refusal with its cause and next step, marks the step and keeps one retry action", async () => {
     await renderScreen();
-    mocks.assess.mockRejectedValueOnce(new Error("Error invoking remote method 'benchmarks:assess': Error: Not available yet."));
+    const cause =
+      "No benchmark pack was delivered for this Level, so nothing could be compared. Load the benchmark again or choose another Level.";
+    mocks.assess.mockRejectedValueOnce(new Error(`Error invoking remote method 'benchmarks:assess': Error: ${cause}`));
     await click(screen.getByRole("button", { name: "Compare with tenant" }));
     const alert = screen.getByRole("alert");
     expect(within(alert).getByText("The comparison could not run")).toBeTruthy();
-    expect(within(alert).getByText("Not available yet.")).toBeTruthy();
+    expect(within(alert).getByText(cause)).toBeTruthy();
     expect(within(alert).getByText(/then compare again/)).toBeTruthy();
     // The Compare button below retries; the alert has no second action.
     expect(within(alert).queryByRole("button")).toBeNull();

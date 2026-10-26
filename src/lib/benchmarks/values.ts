@@ -8,7 +8,13 @@
  */
 import { MAX_SETTING_DEPTH, childLists } from "../compliance/graph-rows";
 import { isRedactedValue } from "../intune-policy-registry";
-import { readableOwnValue, record, type Json, type RecordJson } from "./policies";
+import {
+  readableOwnValue,
+  record,
+  unreadableRecommendationPart,
+  type Json,
+  type RecordJson,
+} from "./policies";
 import type { SettingNames } from "./tenant-settings";
 
 /** Why a value cannot be read, where the engine can tell. */
@@ -201,6 +207,29 @@ export function settingValue(
   const text = valueText(instance, names);
   const cause = text === NOT_READABLE ? unreadableCause(instance) : null;
   return cause ? { text, raw: instance, cause } : { text, raw: instance };
+}
+
+/**
+ * The recommended value of one setting inside a delivered pack root, as every
+ * view shows it. A readable value with an unreadable parent above it or an
+ * unreadable setting below it is not readable as a whole
+ * (readableRecommendation), so it says which part is not: "5 (parent not
+ * readable)". A value that cannot be read itself is Not readable.
+ */
+export function recommendedValue(
+  root: RecordJson,
+  settingId: string,
+  names?: SettingNames,
+): ValueText {
+  const value = settingValue(root, settingId, names);
+  if (value.text === NOT_READABLE) return value;
+  const part = unreadableRecommendationPart(root, settingId);
+  if (!part) return value;
+  if (part === "value") return { text: NOT_READABLE, raw: value.raw };
+  return {
+    ...value,
+    text: `${value.text} (${part === "parent" ? "parent not readable" : "a setting below it is not readable"})`,
+  };
 }
 
 /** The display name of a setting, or its id when no definition names it. */

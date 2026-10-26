@@ -101,7 +101,7 @@ const STATE_OF: Readonly<Record<ResultState, RowState>> = {
   "Not assessed": "notAssessed",
 };
 
-// The order of the result filters and headline counts, as stateCounts lists the headline states.
+// The order of the result filters, as stateCounts lists the headline states (display.ts).
 export const ROW_STATES: readonly RowState[] = ["matches", "differs", "notConfigured", "needsReview", "notAssessed"];
 
 // The engine's severity order (bySeverity), with Differs before Not

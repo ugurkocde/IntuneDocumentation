@@ -25,7 +25,8 @@
  *    policy), collectAgain (collectionIncomplete), checkPackValue
  *    (packValueUnreadable) and chooseValue (profileChoice).
  * 6. addSetting: settings the collection proves missing, with whether a
- *    draft policy is available.
+ *    draft policy is available, one action per candidate policy to add them
+ *    to (candidatePolicies) or per platform when there is none.
  *
  * advice holds one sentence per finding that is not Pass, the same words the
  * drafts README uses (drafts.ts), so the plan and the README never disagree.
@@ -117,7 +118,7 @@ export interface FixAction {
   /** Stable within one plan. */
   id: string;
   kind: FixActionKind;
-  /** The tenant policy the action is about, when it is about one. */
+  /** The tenant policy the action is about, when it is about one; for addSetting the candidate to add to. */
   policy?: FixPolicy;
   /** The engine reason the action answers, for the checks. */
   reason?: ReasonCode;
@@ -130,7 +131,7 @@ export interface FixAction {
    * longer match.
    */
   unlocks?: { judged: number; matches: number; differs: number; regressions: number };
-  /** checkOtherProfiles: the pack platforms of its settings. */
+  /** checkOtherProfiles, and addSetting without a candidate policy: the pack platforms of its settings. */
   platforms?: string;
   /** The action in plain words. */
   text: string;
@@ -152,7 +153,7 @@ const TEMPLATED =
   "The pack delivers this setting in a policy created from a template, which drafts do not generate. Configure it in the matching template policy.";
 const DUPLICATE = "Another draft in this ZIP already holds this setting.";
 const LEVEL_CONFLICT =
-  "The packs compared recommend different values for this setting, so no draft is generated. Choose the value for your Level and set it in a Settings Catalog policy that is assigned.";
+  "The packs compared recommend different values for this setting, so no draft is generated.";
 
 export const DRAFT_STATE_TEXT: Readonly<Record<Exclude<DraftState, "available">, string>> = {
   incomplete: INCOMPLETE,
@@ -173,6 +174,63 @@ const policyRef = (observation: Observation): FixPolicy => ({
   assignment: observation.assignment,
   reach: observation.reach,
 });
+
+/** The tenant policy a missing setting is best added to, if any. */
+interface Candidate {
+  policy: FixPolicy;
+  /** It already holds settings of the same benchmark area. */
+  sameArea: boolean;
+}
+
+/** Where a missing setting goes when no candidate policy exists. */
+const ANY_POLICY =
+  "any assigned Settings Catalog policy for this platform (none holds these settings today)";
+
+/**
+ * The candidate policy of each missing setting: an assigned Settings Catalog
+ * policy of the same platform that is not created from a template (those
+ * take only their template's settings), preferring the one holding the most
+ * settings of the same benchmark area, the pack policy the setting is
+ * delivered in, then the most settings of the pack, then by name. Only
+ * policies holding a pack setting are known to the assessment.
+ */
+function candidatePolicies(assessment: BenchmarkAssessment): (finding: SettingFinding) => Candidate | null {
+  const area = (finding: SettingFinding) => `${finding.packLevel}:${finding.policyIndex}`;
+  const byPlatform = new Map<
+    string,
+    Map<string, { observation: Observation; areas: Map<string, Set<string>>; settings: Set<string> }>
+  >();
+  for (const finding of assessment.settings)
+    for (const observation of finding.observations) {
+      if (observation.assignment !== "assigned" || observation.templated) continue;
+      const policies = byPlatform.get(finding.platforms) ?? new Map();
+      byPlatform.set(finding.platforms, policies);
+      const entry = policies.get(observation.policyId) ?? { observation, areas: new Map(), settings: new Set() };
+      policies.set(observation.policyId, entry);
+      entry.areas.set(area(finding), (entry.areas.get(area(finding)) ?? new Set()).add(finding.key));
+      entry.settings.add(finding.key);
+    }
+  return (finding) => {
+    const own = area(finding);
+    const held = (entry: { areas: Map<string, Set<string>> }) => entry.areas.get(own)?.size ?? 0;
+    const [best] = [...(byPlatform.get(finding.platforms)?.values() ?? [])].sort(
+      (a, b) =>
+        held(b) - held(a) ||
+        b.settings.size - a.settings.size ||
+        a.observation.policyName.localeCompare(b.observation.policyName) ||
+        a.observation.policyId.localeCompare(b.observation.policyId),
+    );
+    return best ? { policy: policyRef(best.observation), sameArea: held(best) > 0 } : null;
+  };
+}
+
+/** The policy to add a missing setting to, in words, for one setting's step. */
+const candidateText = (candidate: Candidate | null) =>
+  candidate
+    ? `policy ${candidate.policy.name}, which is assigned${
+        candidate.sameArea ? " and already holds settings of the same benchmark area" : ""
+      }`
+    : ANY_POLICY;
 
 /**
  * Draft states of the missing findings, as drafts.ts generates them: one
@@ -231,6 +289,7 @@ function findingAdvice(
   assessment: BenchmarkAssessment,
   finding: SettingFinding,
   draft: DraftState | undefined,
+  candidate: Candidate | null = null,
 ): string {
   const names = (comparison: Observation["comparison"], filter: (o: Observation) => boolean = () => true) =>
     sorted(
@@ -249,8 +308,12 @@ function findingAdvice(
     return `Change ${name} in policy ${policies} to the recommended value ${recommended}.`;
   }
   if (finding.status === "Missing") {
+    if (draft === "levelConflict")
+      return `${LEVEL_CONFLICT} Choose the value for your Level and set it in ${candidateText(candidate)}.`;
+    if (draft === "duplicate")
+      return `${DUPLICATE} Import that draft, or add the setting to ${candidateText(candidate)}.`;
     if (draft && draft !== "available") return DRAFT_STATE_TEXT[draft];
-    return `Add ${name} with the recommended value ${recommended} to a Settings Catalog policy that is assigned. A draft policy is available.`;
+    return `Add ${name} with the recommended value ${recommended} to ${candidateText(candidate)}. A draft policy is available.`;
   }
   switch (finding.reason) {
     case "notAssigned":
@@ -299,6 +362,7 @@ function settingStep(
   kind: FixActionKind,
   observation: Observation | null,
   extra: Partial<FixSetting> = {},
+  candidate: Candidate | null = null,
 ): FixSetting {
   const name = settingName(assessment.settingNames, finding.settingId);
   const recommended = finding.recommendedValue.text;
@@ -335,7 +399,7 @@ function settingStep(
       text = `Check the assignments of policy ${policy}, which holds ${name} with the recommended value ${recommended}.`;
       break;
     default:
-      text = findingAdvice(assessment, finding, extra.draft);
+      text = findingAdvice(assessment, finding, extra.draft, candidate);
   }
   return {
     findingKey: finding.key,
@@ -389,9 +453,27 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     return [...seen.values()].map(ref);
   };
   const drafts = draftStates(assessment);
+  const candidateOf = candidatePolicies(assessment);
+  // A setting the pack delivers in a template policy goes there, not into a
+  // candidate. A setting missing at two Levels is one setting: it gets the
+  // candidate of its first finding.
+  const additions = new Map<string, Candidate | null>();
+  const bySetting = new Map<string, Candidate | null>();
+  for (const finding of assessment.settings) {
+    if (finding.result === "Pass" || finding.status !== "Missing" || drafts.get(finding.key) === "templated") continue;
+    const setting = `${finding.platforms}:${finding.settingId}`;
+    if (!bySetting.has(setting)) bySetting.set(setting, candidateOf(finding));
+    additions.set(finding.key, bySetting.get(setting)!);
+  }
   const advice: Record<string, string> = {};
   for (const finding of assessment.settings)
-    if (finding.result !== "Pass") advice[finding.key] = findingAdvice(assessment, finding, drafts.get(finding.key));
+    if (finding.result !== "Pass")
+      advice[finding.key] = findingAdvice(
+        assessment,
+        finding,
+        drafts.get(finding.key),
+        additions.get(finding.key) ?? null,
+      );
 
   const actions: FixAction[] = [];
   // Actions on one policy: one per kind and policy, settings in pack order.
@@ -404,20 +486,37 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
     perPolicy.set(id, entry);
   };
   // Actions by reason or platform, without a policy.
-  const grouped = new Map<string, { kind: FixActionKind; reason?: ReasonCode; platforms?: string; settings: FixSetting[] }>();
+  const grouped = new Map<
+    string,
+    {
+      kind: FixActionKind;
+      reason?: ReasonCode;
+      platforms?: string;
+      candidate?: Candidate;
+      templated?: boolean;
+      settings: FixSetting[];
+    }
+  >();
   const addGroupStep = (
     id: string,
     kind: FixActionKind,
     finding: SettingFinding,
-    extra: { reason?: ReasonCode; platforms?: string; draft?: DraftState } = {},
+    extra: { reason?: ReasonCode; platforms?: string; draft?: DraftState; candidate?: Candidate | null } = {},
   ) => {
     const entry = grouped.get(id) ?? {
       kind,
       ...(extra.reason ? { reason: extra.reason } : {}),
       ...(extra.platforms ? { platforms: extra.platforms } : {}),
+      ...(extra.candidate ? { candidate: extra.candidate } : {}),
+      ...(extra.draft === "templated" ? { templated: true } : {}),
       settings: [],
     };
-    entry.settings.push(settingStep(assessment, finding, kind, null, extra.draft ? { draft: extra.draft } : {}));
+    // The action says "of the same benchmark area" only when that holds for every setting.
+    if (entry.candidate && extra.candidate && !extra.candidate.sameArea)
+      entry.candidate = { ...entry.candidate, sameArea: false };
+    entry.settings.push(
+      settingStep(assessment, finding, kind, null, extra.draft ? { draft: extra.draft } : {}, extra.candidate ?? null),
+    );
     grouped.set(id, entry);
   };
 
@@ -428,7 +527,20 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
       continue;
     }
     if (finding.status === "Missing") {
-      addGroupStep("addSetting", "addSetting", finding, { draft: drafts.get(finding.key)! });
+      // One action per candidate policy, or per platform without one; the
+      // settings of template policies are one action of their own.
+      const candidate = additions.get(finding.key) ?? null;
+      const draft = drafts.get(finding.key)!;
+      addGroupStep(
+        draft === "templated"
+          ? `addSetting:templated:${finding.platforms}`
+          : candidate
+            ? `addSetting:${candidate.policy.id}`
+            : `addSetting:${finding.platforms}`,
+        "addSetting",
+        finding,
+        { draft, candidate, ...(candidate ? {} : { platforms: finding.platforms }) },
+      );
       continue;
     }
     switch (finding.reason) {
@@ -564,7 +676,8 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
   }
 
   for (const [id, entry] of grouped) {
-    const count = entry.settings.length;
+    // A setting compared at two Levels is one setting.
+    const count = new Set(entry.settings.map((setting) => setting.settingId)).size;
     const settings = plural(count, "setting", "settings");
     let text: string;
     switch (entry.kind) {
@@ -584,15 +697,27 @@ export function buildFixPlan(assessment: BenchmarkAssessment): FixPlan {
         text = `Check ${settings} in the policies that hold them: the values could not be read.`;
         break;
       default: {
-        const available = entry.settings.filter((setting) => setting.draft === "available").length;
-        text = `Add ${settings} to a Settings Catalog policy that is assigned${
-          available ? `; draft policies are available for ${plural(available, "of them", "of them")}` : ""
-        }.`;
+        const available = new Set(
+          entry.settings.filter((setting) => setting.draft === "available").map((setting) => setting.settingId),
+        ).size;
+        const target = entry.candidate
+          ? `policy ${entry.candidate.policy.name} (${reachText(entry.candidate.policy)})${
+              entry.candidate.sameArea ? ", which already holds settings of the same benchmark area" : ""
+            }`
+          : ANY_POLICY;
+        text = entry.templated
+          ? `Configure ${settings} in the matching template ${count === 1 ? "policy" : "policies"}: the pack delivers ${
+              count === 1 ? "it" : "them"
+            } in a policy created from a template, which drafts do not generate.`
+          : `Add ${settings} to ${target}${
+              available ? `; draft policies are available for ${plural(available, "of them", "of them")}` : ""
+            }.`;
       }
     }
     actions.push({
       id,
       kind: entry.kind,
+      ...(entry.candidate ? { policy: entry.candidate.policy } : {}),
       ...(entry.reason ? { reason: entry.reason } : {}),
       ...(entry.platforms ? { platforms: entry.platforms } : {}),
       settings: entry.settings,

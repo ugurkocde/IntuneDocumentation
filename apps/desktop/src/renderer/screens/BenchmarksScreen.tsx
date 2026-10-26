@@ -288,7 +288,7 @@ export function BenchmarksScreen() {
     <Header
       eyebrow="CIS Benchmarks"
       title="Benchmark readiness"
-      description="Compare the Settings Catalog policies of your last collection with a benchmark, then review what matches, what differs and what needs a manual check."
+      description="Compare the Settings Catalog policies of your last collection with a benchmark, then review what matches, what differs and what needs review. Manual recommendations are listed separately."
     />
   );
 

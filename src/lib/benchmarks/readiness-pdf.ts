@@ -74,6 +74,7 @@ import {
   type BenchmarkAssessment,
   type HeadlineStates,
   type LevelSummary,
+  type ReasonCode,
   type SettingFinding,
 } from "./assessment";
 import {
@@ -104,9 +105,11 @@ import {
   ratePercent,
   rateIsHero,
   resultLabel,
+  reachText,
   resultSettingDetails,
   settingStatusText,
   type HolderDetail,
+  type ResultSettingDetail,
 } from "./display";
 import { appliesOn, localDate, type BenchmarkException } from "./exceptions";
 import {
@@ -120,13 +123,7 @@ import {
   MANUAL_RECOMMENDATIONS_NOTICE,
   MANUAL_RECOMMENDATIONS_URL,
 } from "./manual";
-import { readableRecommendation } from "./policies";
-import {
-  NOT_CONFIGURED,
-  NOT_READABLE,
-  settingValue,
-  valueText,
-} from "./values";
+import { NOT_CONFIGURED, NOT_READABLE, valueText } from "./values";
 
 export { valueText };
 
@@ -213,6 +210,8 @@ const STATE_STYLE: Readonly<
 };
 
 const PARENT_DIFFERS = "Parent has another option";
+/** The current value of a setting no collected policy holds, while absence is not proven. */
+const NOT_FOUND = "Not found";
 
 const PLATFORM_NAMES: Readonly<Record<string, string>> = {
   windows: "Windows",
@@ -411,11 +410,24 @@ type Cell =
 interface Block {
   height: number;
   draw: (top: number) => void;
+  /** Starts a new page with the next block rather than leave it alone there. */
+  keepNext?: boolean;
 }
 
 interface TocEntry extends TocItem {
   /** A section the bookmarks nest under; level 0 entries only. */
   children?: TocEntry[];
+}
+
+/** Needs review results under one step of the plan, or one reason without a step. */
+interface ReviewGroup {
+  key: string;
+  level: number;
+  action?: FixAction;
+  /** The action's number on the What to Do page. */
+  step?: number;
+  reason?: ReasonCode;
+  items: AssessmentResult[];
 }
 
 interface PageRef {
@@ -688,7 +700,7 @@ export function renderReadinessPdf(
         };
   };
 
-  // The results with a detail card, in the order of the cards: Level, then
+  // The results with a detail, in the order of the detail: Level, then
   // Differs before Needs review, then id.
   const SEVERITY: Readonly<Record<string, number>> = { Fail: 0, Review: 1 };
   const detailResults = results
@@ -705,8 +717,54 @@ export function renderReadinessPdf(
       ? item.recommendation.title
       : (assessment.settingNames[item.finding.settingId]?.name ??
         item.finding.settingId);
-  /** The first result of an action that has a detail card. */
+  // Differs and Not configured get a card per result. Needs review results
+  // are grouped per Level by their first step in the plan, the one of the
+  // highest impact, and without a step by their reason: one card per group,
+  // a row per result, the other steps named in the row.
+  const stepOf = new Map(
+    plan.actions.map((action, index) => [action.id, index + 1]),
+  );
+  const reviewKeys = new Set(
+    detailResults
+      .filter((item) => item.result === "Review")
+      .map((item) => item.key),
+  );
+  /** The step a Needs review result is listed under, its first. */
+  const firstStep = (key: string) => {
+    const first = (plan.byResult[key] ?? []).find((id) => stepOf.has(id));
+    return first ? stepOf.get(first) : undefined;
+  };
+  const reviewGroups = (() => {
+    const groups = new Map<string, ReviewGroup>();
+    for (const item of detailResults) {
+      if (item.result !== "Review") continue;
+      const step = firstStep(item.key);
+      const key = `group:${item.level}:${step ? `step:${step}` : `reason:${item.reason ?? ""}`}`;
+      const group = groups.get(key) ?? {
+        key,
+        level: item.level,
+        ...(step ? { action: plan.actions[step - 1]!, step } : {}),
+        ...(!step && item.reason ? { reason: item.reason } : {}),
+        items: [],
+      };
+      group.items.push(item);
+      groups.set(key, group);
+    }
+    return [...groups.values()].sort(
+      (a, b) =>
+        a.level - b.level ||
+        (a.step ?? Number.MAX_SAFE_INTEGER) -
+          (b.step ?? Number.MAX_SAFE_INTEGER) ||
+        (a.reason ?? "").localeCompare(b.reason ?? ""),
+    );
+  })();
+  const groupOfAction = new Map<string, string>();
+  for (const group of reviewGroups)
+    if (group.action && !groupOfAction.has(group.action.id))
+      groupOfAction.set(group.action.id, group.key);
+  /** The card of an action, or the detail of its first result. */
   const actionTarget = (action: FixAction) =>
+    groupOfAction.get(action.id) ??
     action.results.find((item) => detailKeys.has(item.key))?.key;
 
   // ---------------------------------------------------------------- Cover
@@ -1527,8 +1585,25 @@ export function renderReadinessPdf(
       multiLevel ? `${result.id} (Level ${result.level})` : result.id,
     );
     const shownIds = ids.slice(0, 6);
-    const helps = `Helps with: ${shownIds.join(", ")}${ids.length > shownIds.length ? ` and ${ids.length - shownIds.length} more` : ""}`;
-    const subLines = wrapText(doc, helps, width, 7.2, "normal", 2);
+    // A step without a card of its own says where its results are listed.
+    const under = groupOfAction.has(action.id)
+      ? []
+      : [
+          ...new Set(
+            action.results.flatMap((result) => {
+              const step = reviewKeys.has(result.key)
+                ? firstStep(result.key)
+                : undefined;
+              return step && step !== index + 1 ? [step] : [];
+            }),
+          ),
+        ].sort((a, b) => a - b);
+    const helps = `Helps with: ${shownIds.join(", ")}${ids.length > shownIds.length ? ` and ${ids.length - shownIds.length} more` : ""}${
+      under.length
+        ? `; listed under step${under.length > 1 ? "s" : ""} ${under.join(", ")}`
+        : ""
+    }`;
+    const subLines = wrapText(doc, helps, width, 7.2, "normal", 3);
     // A setting compared at two Levels is one step.
     const steps =
       action.kind === "assignPolicy" || action.kind === "checkOtherProfiles"
@@ -2063,7 +2138,7 @@ export function renderReadinessPdf(
   const detailEntry = pageTitle(
     "05 Result detail",
     "Differs and Needs Review",
-    "One card per result that differs or needs review: the tenant policies holding its settings, their assignment, the current and the recommended value, why the result is what it is and the next step.",
+    "One card per result that differs or is not configured: the tenant policies holding its settings, their assignment, the current and the recommended value, why the result is what it is and the next step. Results that need review are grouped by the step that resolves them: one card per step with its policy and assignment, and a row per result.",
     "Result Detail",
   );
   detailEntry.children = [];
@@ -2101,27 +2176,39 @@ export function renderReadinessPdf(
         return { state: "notAssessed", label: NOT_READABLE };
     }
   };
-  const tableHeaderBlock: Block = {
+  /** The column labels of a table inside a card, the last right aligned when asked. */
+  const headerBlock = (
+    labels: readonly string[],
+    xs: readonly number[],
+    lastRight: boolean,
+  ): Block => ({
     height: 4.9,
     draw: (top) => {
-      ["Policy", "Assignment", "Current", "Recommended", "Result"].forEach(
-        (label, index) =>
-          drawEyebrow(
-            doc,
-            label,
-            index === 4 ? right - pad : tableX[index]!,
-            top + 2.8,
-            {
-              color: PALETTE.muted,
-              size: 5.6,
-              charSpace: 0.2,
-              align: index === 4 ? "right" : "left",
-            },
-          ),
-      );
+      labels.forEach((label, index) => {
+        const last = lastRight && index === labels.length - 1;
+        drawEyebrow(doc, label, last ? right - pad : xs[index]!, top + 2.8, {
+          color: PALETTE.muted,
+          size: 5.6,
+          charSpace: 0.2,
+          align: last ? "right" : "left",
+        });
+      });
       drawRule(doc, innerX, top + 4.1, right - pad, PALETTE.border, 0.25);
     },
-  };
+  });
+  const tableHeaderBlock = headerBlock(
+    ["Policy", "Assignment", "Current", "Recommended", "Result"],
+    tableX,
+    true,
+  );
+  /** The recommended value of a setting as every export shows it (values.ts recommendedValue). */
+  const recommendedText = (detail: ResultSettingDetail) =>
+    detail.recommended.join("; ") || NOT_READABLE;
+  /** A holder's value; below another parent option the setting does not apply. */
+  const shownValue = (holder: HolderDetail) =>
+    holder.label === "Parent setting differs"
+      ? PARENT_DIFFERS
+      : holder.current.text;
 
   /** The card of one result as blocks; table rows mark where a header repeats. */
   const cardBlocks = (item: AssessmentResult) => {
@@ -2240,22 +2327,7 @@ export function renderReadinessPdf(
       const own = (settingResult?.findingKeys ?? [])
         .map((key) => findings.get(key))
         .filter((finding): finding is SettingFinding => Boolean(finding));
-      // A recommended value on, below or above an unreadable pack value is
-      // not readable either (policies.ts readableRecommendation).
-      const recommended =
-        [
-          ...new Set(
-            own.map((finding) =>
-              readableRecommendation(finding.recommended, detail.settingId)
-                ? settingValue(
-                    finding.recommended,
-                    detail.settingId,
-                    assessment.settingNames,
-                  ).text
-                : NOT_READABLE,
-            ),
-          ),
-        ].join("; ") || NOT_READABLE;
+      const recommended = recommendedText(detail);
       if (item.kind === "recommendation" && !single) {
         const nameLine = wrapText(doc, detail.name, innerWidth, 7.4, "bold", 2);
         const idLine =
@@ -2295,7 +2367,7 @@ export function renderReadinessPdf(
           doc,
           detail.status === "Missing"
             ? absentValueText(detail.status)
-            : "Not found",
+            : NOT_FOUND,
           tableWidths[2] - 3,
           SMALL,
           "italic",
@@ -2348,7 +2420,7 @@ export function renderReadinessPdf(
             const absent =
               detail.status === "Missing"
                 ? ({ state: "notConfigured", label: NOT_CONFIGURED } as const)
-                : ({ state: "needsReview", label: "Not found" } as const);
+                : ({ state: "needsReview", label: NOT_FOUND } as const);
             const pill = {
               tone: STATE_STYLE[absent.state].tone,
               marker: STATE_STYLE[absent.state].marker,
@@ -2394,11 +2466,7 @@ export function renderReadinessPdf(
           reach && !inline
             ? wrapText(doc, reach, tableWidths[1] - 2, 6, "normal", 3)
             : [];
-        // Below another parent option the setting does not apply, so its own value is not shown.
-        const currentText =
-          holder.label === "Parent setting differs"
-            ? PARENT_DIFFERS
-            : holder.current.text;
+        const currentText = shownValue(holder);
         const currentLines = wrapText(
           doc,
           currentText,
@@ -2639,28 +2707,504 @@ export function renderReadinessPdf(
     return { blocks, rowIndexes };
   };
 
+  /** The card of a group of Needs review results: the step, its policy and a row per result. */
+  const groupBlocks = (group: ReviewGroup) => {
+    const blocks: Block[] = [];
+    const rowIndexes = new Set<number>();
+    const { action } = group;
+    const policy = action?.policy;
+    const byRecommendation = group.items.some(
+      (item) => item.kind === "recommendation",
+    );
+    const widths = byRecommendation
+      ? [18, 60, 28, 28, innerWidth - 134]
+      : [0, 78, 28, 28, innerWidth - 134];
+    const xs = widths.map(
+      (_, index) =>
+        innerX + widths.slice(0, index).reduce((sum, width) => sum + width, 0),
+    );
+
+    // The head: the step chip, the action or the reason, the count, and the
+    // policy with where it is assigned.
+    const chipLabel = action ? `Step ${group.step}` : "No step";
+    const chipW = Math.max(chipWidth(doc, chipLabel, 6.6), 9.6) + 2.5;
+    // The step's results of this Level that need review; those not here are
+    // listed under an earlier step.
+    const ofStep = action
+      ? action.results.filter(
+          (result) =>
+            result.level === group.level && reviewKeys.has(result.key),
+        ).length
+      : group.items.length;
+    // Assigning a policy lists the results that would match; those that
+    // would differ are counted in its text and listed elsewhere.
+    const wouldDiffer =
+      action?.kind === "assignPolicy" ? (action.unlocks?.differs ?? 0) : 0;
+    const earlier = ofStep - group.items.length;
+    const count =
+      earlier > 0
+        ? `${group.items.length.toLocaleString("en-US")} of ${plural(ofStep, "result", "results")}`
+        : plural(group.items.length, "result", "results");
+    const countWidth = textWidth(doc, count, 6.8);
+    const textWidthHere = innerWidth - chipW - countWidth - 4;
+    const titleLines = wrapText(
+      doc,
+      action
+        ? prose(action.text)
+        : group.reason
+          ? SHORT_REASON_LABELS[group.reason]
+          : "Needs review",
+      textWidthHere,
+      8.2,
+      "bold",
+      5,
+    );
+    const subText = policy
+      ? `Policy ${policy.name}`
+      : !action && group.reason
+        ? `${REASON_LABELS[group.reason]} The plan has no step for these results.`
+        : "";
+    const subLines = subText
+      ? wrapText(
+          doc,
+          subText,
+          textWidthHere,
+          7,
+          policy ? "bold" : "normal",
+          policy ? 2 : 4,
+        )
+      : [];
+    const reach = policy
+      ? reachText(policy).replace(/^./, (char) => char.toUpperCase())
+      : "";
+    const reachLines = [
+      ...(reach ? wrapText(doc, reach, textWidthHere, 6.6, "normal", 3) : []),
+      ...(earlier > 0
+        ? wrapText(
+            doc,
+            `The other ${plural(earlier, "result is", "results are")} listed under an earlier step.`,
+            textWidthHere,
+            6.6,
+            "normal",
+            2,
+          )
+        : []),
+      ...(wouldDiffer > 0
+        ? wrapText(
+            doc,
+            `The ${plural(wouldDiffer, "result that would differ is", "results that would differ are")} not listed in this card.`,
+            textWidthHere,
+            6.6,
+            "normal",
+            2,
+          )
+        : []),
+    ];
+    const textHeight =
+      titleLines.length * 3.7 +
+      (subLines.length ? 0.8 + subLines.length * 3.1 : 0) +
+      reachLines.length * 2.9;
+    const headHeight = Math.max(9, textHeight + 4);
+    blocks.push({
+      height: headHeight + 1,
+      draw: (top) => {
+        detailPages.set(group.key, currentPage());
+        doc.setFillColor(...PALETTE.panel);
+        doc.roundedRect(margin, top, contentWidth, headHeight, 2, 2, "F");
+        doc.rect(margin, top + headHeight - 2, contentWidth, 2, "F");
+        let textTop = top + (headHeight - textHeight) / 2 + 0.2;
+        drawChip(
+          doc,
+          innerX,
+          textTop + capHeight(8.2) / 2 - 2.2,
+          chipLabel,
+          "id",
+          {
+            size: 6.6,
+            height: 4.4,
+            minWidth: 9.6,
+            fill: primaryTint,
+            color: theme.primary,
+          },
+        );
+        const textX = innerX + chipW;
+        drawLines(
+          doc,
+          titleLines,
+          textX,
+          textTop,
+          8.2,
+          "bold",
+          theme.text,
+          3.7,
+        );
+        setFont(doc, 6.8, "normal", PALETTE.muted);
+        doc.text(count, right - pad, textTop + capHeight(8.2), {
+          align: "right",
+        });
+        textTop += titleLines.length * 3.7 + (subLines.length ? 0.8 : 0);
+        drawLines(
+          doc,
+          subLines,
+          textX,
+          textTop,
+          7,
+          policy ? "bold" : "normal",
+          policy ? theme.text : PALETTE.muted,
+          3.1,
+        );
+        textTop += subLines.length * 3.1;
+        drawLines(
+          doc,
+          reachLines,
+          textX,
+          textTop,
+          6.6,
+          "normal",
+          PALETTE.muted,
+          2.9,
+        );
+      },
+    });
+    const header = headerBlock(
+      byRecommendation
+        ? ["ID", "Recommendation", "Current", "Recommended", "Reason"]
+        : ["Setting", "Current", "Recommended", "Reason"],
+      byRecommendation ? xs : xs.slice(1),
+      false,
+    );
+    blocks.push(header);
+
+    // A row per result: its open settings, each with the value in the step's
+    // policy (in every holding policy for a step without one) and the
+    // recommended value, the reason and the other steps of the result.
+    const causes = new Set<string>();
+    const reasons = new Set<ReasonCode>();
+    const valueStyle = (text: string) =>
+      text === NOT_READABLE ||
+      text === PARENT_DIFFERS ||
+      text === NOT_CONFIGURED ||
+      text === NOT_FOUND
+        ? { style: "italic" as FontStyle, color: PALETTE.muted }
+        : { style: "bold" as FontStyle, color: theme.text };
+    group.items.forEach((item, rowIndex) => {
+      if (item.reason) reasons.add(item.reason);
+      const title = titleOf(item);
+      const nameWidth = widths[1]! - 3;
+      const titleLines = wrapText(doc, title, nameWidth, 7, "normal", 5);
+      const details = resultSettingDetails(assessment, item).filter(
+        (detail) => detail.result !== "Pass",
+      );
+      const parts = details.map((detail) => {
+        const named =
+          item.kind === "recommendation" &&
+          (details.length > 1 || detail.name !== title);
+        // A setting of several with its own reason says so.
+        const ownReason =
+          details.length > 1 && detail.reason && detail.reason !== item.reason
+            ? ` (${SHORT_REASON_LABELS[detail.reason]})`
+            : "";
+        const nameLines = named
+          ? wrapText(
+              doc,
+              `${detail.name}${ownReason}`,
+              nameWidth,
+              6.4,
+              "normal",
+              3,
+            )
+          : [];
+        const rawLines =
+          detail.name !== detail.settingId
+            ? [middleClamp(detail.settingId, nameWidth, 5.6)]
+            : [];
+        // The step's policy when it holds the setting, otherwise every holder.
+        const own = policy
+          ? detail.holders.filter((holder) => holder.policyId === policy.id)
+          : [];
+        const holders = own.length ? own : detail.holders;
+        for (const holder of detail.holders)
+          if (holder.current.cause)
+            causes.add(UNREADABLE_CAUSE_LABELS[holder.current.cause]);
+        // A value that reads like the recommended one while the setting
+        // differs differs in a setting below it.
+        const valueOf = (holder: HolderDetail) => {
+          const value = shownValue(holder);
+          return holder.label === "Differs" &&
+            detail.recommended.includes(value)
+            ? `${value} (a setting below differs)`
+            : value;
+        };
+        const named_ = (holder: HolderDetail) =>
+          `${holder.policyName} (${assignmentLabel(holder.assignment).toLowerCase()})`;
+        const values = [...new Set(holders.map(valueOf))];
+        // The other policies holding the setting are named with their
+        // assignment: those with another value beside the step's policy, all
+        // of them for a step without one. Their steps are in the reason
+        // column, so the card loses nothing a result's own card showed.
+        const others = own.length
+          ? detail.holders.filter(
+              (holder) =>
+                !own.includes(holder) && !values.includes(valueOf(holder)),
+            )
+          : [];
+        const listed = own.length
+          ? others.length
+            ? `In other policies: ${others.map((holder) => `${named_(holder)}: ${valueOf(holder)}`).join("; ")}`
+            : ""
+          : holders.length
+            ? `Held by: ${holders
+                .map((holder) =>
+                  values.length > 1
+                    ? `${named_(holder)}: ${valueOf(holder)}`
+                    : named_(holder),
+                )
+                .join("; ")}`
+            : "";
+        const otherLines = listed
+          ? wrapText(doc, listed, nameWidth, 6, "italic", 12)
+          : [];
+        const current = !holders.length
+          ? detail.status === "Missing"
+            ? NOT_CONFIGURED
+            : NOT_FOUND
+          : values.join("; ");
+        const recommended =
+          detail.status === "Unmapped" ? "" : recommendedText(detail);
+        const currentStyle = valueStyle(current);
+        const currentLines = wrapText(
+          doc,
+          current,
+          widths[2]! - 3,
+          6.8,
+          currentStyle.style,
+          8,
+        );
+        const recLines = wrapText(
+          doc,
+          recommended,
+          widths[3]! - 3,
+          6.8,
+          "normal",
+          6,
+        );
+        return {
+          nameLines,
+          rawLines,
+          otherLines,
+          currentLines,
+          currentStyle,
+          recLines,
+          labelHeight:
+            nameLines.length * 2.9 +
+            rawLines.length * 2.4 +
+            otherLines.length * 2.6,
+          valueHeight: Math.max(currentLines.length, recLines.length) * 3,
+        };
+      });
+      const single = parts.length === 1;
+      const reason = shortReason(item);
+      const reasonLines = reason
+        ? wrapText(doc, reason, widths[4]! - 3, 6.4, "normal", 3)
+        : [];
+      const others = (plan.byResult[item.key] ?? [])
+        .slice(1)
+        .flatMap((id) => (stepOf.has(id) ? [stepOf.get(id)!] : []));
+      const alsoLines = others.length
+        ? wrapText(
+            doc,
+            `Also step${others.length > 1 ? "s" : ""} ${others.join(", ")}`,
+            widths[4]! - 3,
+            6,
+            "italic",
+            3,
+          )
+        : [];
+      const titleHeight = titleLines.length * 3.1;
+      // One setting sits beside the title; several get a line each below it.
+      const partsHeight = single
+        ? parts[0]!.labelHeight
+        : parts.reduce(
+            (sum, part) =>
+              sum + Math.max(part.labelHeight, part.valueHeight) + 0.6,
+            0,
+          );
+      const height =
+        Math.max(
+          titleHeight + partsHeight,
+          single ? parts[0]!.valueHeight : titleHeight + partsHeight,
+          reasonLines.length * 2.8 + alsoLines.length * 2.6,
+          4,
+        ) + 2.4;
+      const last = rowIndex === group.items.length - 1;
+      rowIndexes.add(blocks.length);
+      blocks.push({
+        height,
+        draw: (top) => {
+          detailPages.set(item.key, currentPage());
+          if (rowIndex % 2 === 1) {
+            doc.setFillColor(...PALETTE.zebra);
+            doc.rect(innerX, top, innerWidth, height, "F");
+          }
+          const cellTop = top + 1.2;
+          if (item.kind === "recommendation")
+            idChip(xs[0]!, cellTop - 0.5, item.id, widths[0]! - 2);
+          drawLines(
+            doc,
+            titleLines,
+            xs[1]!,
+            cellTop,
+            7,
+            "normal",
+            theme.text,
+            3.1,
+          );
+          let partTop = cellTop + titleHeight;
+          parts.forEach((part) => {
+            const valueTop = single ? cellTop : partTop;
+            drawLines(
+              doc,
+              part.nameLines,
+              xs[1]!,
+              partTop,
+              6.4,
+              "normal",
+              PALETTE.muted,
+              2.9,
+            );
+            drawLines(
+              doc,
+              part.rawLines,
+              xs[1]!,
+              partTop + part.nameLines.length * 2.9,
+              5.6,
+              "normal",
+              PALETTE.faint,
+              2.4,
+            );
+            drawLines(
+              doc,
+              part.otherLines,
+              xs[1]!,
+              partTop +
+                part.nameLines.length * 2.9 +
+                part.rawLines.length * 2.4,
+              6,
+              "italic",
+              PALETTE.muted,
+              2.6,
+            );
+            drawLines(
+              doc,
+              part.currentLines,
+              xs[2]!,
+              valueTop,
+              6.8,
+              part.currentStyle.style,
+              part.currentStyle.color,
+              3,
+            );
+            drawLines(
+              doc,
+              part.recLines,
+              xs[3]!,
+              valueTop,
+              6.8,
+              "normal",
+              PALETTE.muted,
+              3,
+            );
+            partTop += single
+              ? part.labelHeight
+              : Math.max(part.labelHeight, part.valueHeight) + 0.6;
+          });
+          drawLines(
+            doc,
+            reasonLines,
+            xs[4]!,
+            cellTop,
+            6.4,
+            "normal",
+            PALETTE.muted,
+            2.8,
+          );
+          drawLines(
+            doc,
+            alsoLines,
+            xs[4]!,
+            cellTop + reasonLines.length * 2.8,
+            6,
+            "italic",
+            PALETTE.muted,
+            2.6,
+          );
+          if (!last) drawRule(doc, innerX, top + height, right - pad);
+        },
+      });
+    });
+
+    // Why, once per card: the reasons of a step's results and the causes of
+    // values that cannot be read.
+    const notes = [
+      ...(action ? [...reasons].map((reason) => REASON_LABELS[reason]) : []),
+      ...causes,
+    ];
+    if (notes.length) {
+      const lines = notes.flatMap((note) =>
+        wrapText(doc, note, innerWidth, 6.6, "normal", 4),
+      );
+      // The notes never open a page on their own.
+      blocks[blocks.length - 1]!.keepNext = true;
+      blocks.push({
+        height: 1.6 + lines.length * 2.9 + 0.6,
+        draw: (top) => {
+          drawRule(doc, innerX, top + 0.4, right - pad, PALETTE.border, 0.25);
+          drawLines(
+            doc,
+            lines,
+            innerX,
+            top + 1.6,
+            6.6,
+            "normal",
+            PALETTE.muted,
+            2.9,
+          );
+        },
+      });
+    }
+    return { blocks, rowIndexes, header };
+  };
+
   /**
-   * Draws a card from blocks: whole on the next page when it does not fit
-   * here but fits a page, or when less than 40 mm remain; otherwise it
-   * continues on the next page with its own border and a caption.
+   * Draws a card from blocks. A card that fits a page starts on the next
+   * page when it does not fit here (whole), or when less than 40 mm remain;
+   * a taller one, and a grouped card (whole: false) once 40 mm remain,
+   * continues on the next page with its own border, a caption and the table
+   * header again.
    */
   let groupHeading = "";
-  const flowCard = (
-    item: AssessmentResult,
-    blocks: readonly Block[],
-    rowIndexes: ReadonlySet<number>,
-  ) => {
+  const flowCard = (card: {
+    /** The key whose page the card's first page is, for page numbers. */
+    pageKey?: string;
+    blocks: readonly Block[];
+    rowIndexes: ReadonlySet<number>;
+    header: Block;
+    continued: string;
+    whole: boolean;
+  }) => {
+    const { blocks, rowIndexes, header } = card;
     const bottomPad = 2.2;
     const total =
       blocks.reduce((sum, block) => sum + block.height, 0) + bottomPad;
     if (
       y + total > contentBottom &&
-      (total <= contentBottom - contentTop - 8 || contentBottom - y < 40)
+      ((card.whole && total <= contentBottom - contentTop - 8) ||
+        contentBottom - y < 40)
     ) {
       newPage();
       caption(`${groupHeading} (continued)`);
     }
-    detailPages.set(item.key, currentPage());
+    if (card.pageKey) detailPages.set(card.pageKey, currentPage());
     let segmentTop = y;
     const close = () => {
       drawCard(
@@ -2674,17 +3218,17 @@ export function renderReadinessPdf(
       y += bottomPad;
     };
     blocks.forEach((block, index) => {
-      if (y + block.height + bottomPad > contentBottom && y > segmentTop) {
+      const needed =
+        block.height + (block.keepNext ? (blocks[index + 1]?.height ?? 0) : 0);
+      if (y + needed + bottomPad > contentBottom && y > segmentTop) {
         close();
         newPage();
-        caption(
-          `${item.kind === "recommendation" ? item.id : titleOf(item)} (continued)`,
-        );
+        caption(card.continued);
         segmentTop = y;
         y += 1.5;
         if (rowIndexes.has(index)) {
-          tableHeaderBlock.draw(y);
-          y += tableHeaderBlock.height;
+          header.draw(y);
+          y += header.height;
         }
       }
       block.draw(y);
@@ -2694,31 +3238,69 @@ export function renderReadinessPdf(
     y += 2.6;
   };
 
-  let group = "";
-  for (const item of detailResults) {
-    const key = `${item.level}:${item.result}`;
-    const { blocks, rowIndexes } = cardBlocks(item);
-    if (key !== group) {
-      group = key;
-      const heading = `${multiLevel ? `Level ${item.level}, ` : ""}${item.result === "Fail" ? RESULT_LABELS.Fail : RESULT_LABELS.Review}`;
-      const count = detailResults.filter(
-        (other) => `${other.level}:${other.result}` === key,
-      ).length;
-      const lead = Math.min(
-        blocks.reduce((sum, block) => sum + block.height, 0) + 3,
-        60,
-      );
-      if (y > contentTop) y += 2;
-      ensure(6.5 + lead);
-      detailEntry.children.push({
-        title: heading,
-        page: currentPage(),
-        level: 1,
+  // Per Level: a card per result that differs, then the grouped cards of
+  // the results that need review.
+  const levelsShown = [...new Set(detailResults.map((item) => item.level))];
+  const section = (heading: string, count: number, first: readonly Block[]) => {
+    const lead = Math.min(
+      first.reduce((sum, block) => sum + block.height, 0) + 3,
+      60,
+    );
+    if (y > contentTop) y += 2;
+    ensure(6.5 + lead);
+    detailEntry.children!.push({
+      title: heading,
+      page: currentPage(),
+      level: 1,
+    });
+    sectionHeading(heading, plural(count, "result", "results"));
+    groupHeading = heading;
+  };
+  for (const level of levelsShown) {
+    const prefix = multiLevel ? `Level ${level}, ` : "";
+    const differing = detailResults.filter(
+      (item) => item.level === level && item.result === "Fail",
+    );
+    // Not configured is a kind of Differs; the heading names what is there.
+    const kinds = new Set(differing.map(stateOf));
+    const differsHeading =
+      kinds.has("differs") && kinds.has("notConfigured")
+        ? `${RESULT_LABELS.Fail} and ${NOT_CONFIGURED}`
+        : kinds.has("notConfigured")
+          ? NOT_CONFIGURED
+          : RESULT_LABELS.Fail;
+    differing.forEach((item, index) => {
+      const { blocks, rowIndexes } = cardBlocks(item);
+      if (!index)
+        section(`${prefix}${differsHeading}`, differing.length, blocks);
+      flowCard({
+        pageKey: item.key,
+        blocks,
+        rowIndexes,
+        header: tableHeaderBlock,
+        continued: `${prefix}${item.kind === "recommendation" ? item.id : titleOf(item)} (continued)`,
+        whole: true,
       });
-      sectionHeading(heading, plural(count, "result", "results"));
-      groupHeading = heading;
-    }
-    flowCard(item, blocks, rowIndexes);
+    });
+    const groups = reviewGroups.filter((group) => group.level === level);
+    groups.forEach((group, index) => {
+      const card = groupBlocks(group);
+      if (!index)
+        section(
+          `${prefix}${RESULT_LABELS.Review}, by step`,
+          groups.reduce((sum, item) => sum + item.items.length, 0),
+          card.blocks.slice(0, 4),
+        );
+      flowCard({
+        ...card,
+        continued: `${prefix}${group.step ? `Step ${group.step}` : "Results without a step"}${
+          group.action?.policy
+            ? `, policy ${group.action.policy.name.trim()}`
+            : ""
+        } (continued)`,
+        whole: false,
+      });
+    });
   }
 
   // -------------------------------------------------------------- Appendix

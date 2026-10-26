@@ -25,6 +25,7 @@ import {
 import {
   NOT_CONFIGURED,
   NOT_FOUND,
+  recommendedValue,
   settingName,
   settingValue,
   type UnreadableCause,
@@ -85,7 +86,7 @@ export const SHORT_REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
 };
 
 /** What each displayed state means, for legends. */
-export const STATE_DESCRIPTIONS: Readonly<Record<keyof Omit<HeadlineStates, "assessed" | "total">, string>> = {
+export const STATE_DESCRIPTIONS: Readonly<Record<HeadlineState, string>> = {
   matches: "The recommended value is set on at least one assigned policy.",
   differs: "A policy that is assigned, or whose assignment could not be read, holds another value.",
   notConfigured: "A complete collection shows the setting in no policy, and no profile of another type exists for its platform.",
@@ -158,17 +159,30 @@ export function rateIsHero(
   );
 }
 
-/** The per state counts in display order, with their labels. */
+/** A displayed state of a headline. */
+export type HeadlineState = keyof Omit<HeadlineStates, "assessed" | "total">;
+
+/** The displayed states with their labels, in display order. */
+export const STATE_LABELS: Readonly<Record<HeadlineState, string>> = {
+  matches: RESULT_LABELS.Pass,
+  differs: RESULT_LABELS.Fail,
+  notConfigured: NOT_CONFIGURED,
+  needsReview: RESULT_LABELS.Review,
+  notAssessed: RESULT_LABELS["Not assessed"],
+};
+
+/**
+ * The per state counts in display order, with their labels. A zero Not
+ * configured is left out unless all is set, for views that show every
+ * state, such as two Levels side by side.
+ */
 export function stateCounts(
   states: HeadlineStates,
-): Array<{ state: keyof HeadlineStates; label: string; count: number }> {
-  return [
-    { state: "matches" as const, label: RESULT_LABELS.Pass, count: states.matches },
-    { state: "differs" as const, label: RESULT_LABELS.Fail, count: states.differs },
-    { state: "notConfigured" as const, label: NOT_CONFIGURED, count: states.notConfigured },
-    { state: "needsReview" as const, label: RESULT_LABELS.Review, count: states.needsReview },
-    { state: "notAssessed" as const, label: RESULT_LABELS["Not assessed"], count: states.notAssessed },
-  ].filter((entry) => entry.state !== "notConfigured" || entry.count > 0);
+  options: { all?: boolean } = {},
+): Array<{ state: HeadlineState; label: string; count: number }> {
+  return (Object.keys(STATE_LABELS) as HeadlineState[])
+    .map((state) => ({ state, label: STATE_LABELS[state], count: states[state] }))
+    .filter((entry) => options.all || entry.state !== "notConfigured" || entry.count > 0);
 }
 
 /** "3 matches, 1 differs, 87 need review": the counts as one line. */
@@ -614,7 +628,7 @@ export function resultSettingDetails(
       .filter((finding): finding is SettingFinding => Boolean(finding));
     const recommended = [
       ...new Set(
-        own.map((finding) => settingValue(finding.recommended, setting.id, assessment.settingNames).text),
+        own.map((finding) => recommendedValue(finding.recommended, setting.id, assessment.settingNames).text),
       ),
     ];
     const holders = own.flatMap((finding) =>

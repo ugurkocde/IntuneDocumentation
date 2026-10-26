@@ -19,6 +19,7 @@ import {
   UNASSIGNED_POLICY,
   UNASSIGNED_MATCH,
   UNASSIGNED_OTHER,
+  UNASSIGNED_UNREADABLE,
   richAssessment,
   unassessedAssessment,
   unassignedAssessment,
@@ -34,6 +35,8 @@ import {
   tenantPolicy,
 } from "./fixtures";
 import type { RecordJson } from "../policies";
+import { benchmarkCsv, benchmarkSummary } from "../export";
+import { buildFixPlan } from "../fix-plan";
 
 const RENDER_DATE = new Date("2026-10-22T12:00:00.000Z");
 
@@ -73,6 +76,35 @@ function render(
     exceptions: EXCEPTIONS,
     ...options,
   });
+}
+
+/** The rows of a CSV, with quoted fields read as one. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  const body = text.replace(/^\uFEFF/, "");
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index]!;
+    if (quoted) {
+      if (char === '"' && body[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else if (char === '"') quoted = false;
+      else field += char;
+    } else if (char === '"') quoted = true;
+    else if (char === ",") {
+      row.push(field);
+      field = "";
+    } else if (char === "\n") {
+      rows.push([...row, field.replace(/\r$/, "")]);
+      row = [];
+      field = "";
+    } else field += char;
+  }
+  if (field || row.length) rows.push([...row, field]);
+  return rows;
 }
 
 const FOOTER = `Generated with Intune Documentation (intunedocumentation.com). ${READINESS_DISCLAIMER}.`;
@@ -118,11 +150,18 @@ describe("benchmark readiness PDF", () => {
   it("puts the about page and the contents after the cover, with bookmarks", () => {
     expect(rich[1]).toContain("ABOUT THIS REPORT");
     expect(rich[1]).toMatch(
-      /Table of Contents Summary 3 What to Do 4 Results 5 Data Basis 6 Result Detail 7 Differs 7 Needs review \d+ Appendix: Manual Recommendations, Exceptions and Method \d+/,
+      /Table of Contents Summary 3 What to Do 4 Results 5 Data Basis 6 Result Detail 7 Differs and Not configured 7 Needs review, by step \d+ Appendix: Manual Recommendations, Exceptions and Method \d+/,
     );
     const pdf = Buffer.from(render()).toString("latin1");
     expect(pdf).toContain("/Outlines");
     expect(pdf).toMatch(/\/Title \(Result Detail\)/);
+    // The bookmarks hold what the contents page lists.
+    for (const title of [
+      "Differs and Not configured",
+      "Needs review, by step",
+      "Method",
+    ])
+      expect(pdf).toContain(`/Title (${title})`);
   });
 
   it("writes fixed document metadata", () => {
@@ -221,7 +260,7 @@ describe("benchmark readiness PDF", () => {
     );
     expect(summary).toContain("NOT CONFIGURED 3 Counted in the headline");
     expect(summary).toContain(
-      "What to do first 4 steps in total 1. Change 1 setting in policy",
+      "What to do first 6 steps in total 1. Change 1 setting in policy",
     );
     expect(summary).toContain("Key findings");
     expect(summary).toContain("Differs 1.2 Synthetic beta is on");
@@ -234,11 +273,13 @@ describe("benchmark readiness PDF", () => {
       "1. Change 1 setting in policy",
       "2. Assign policy Synthetic unassigned profile",
       "3. Check 1 setting by hand",
-      "4. Add 3 settings",
+      "4. Add 1 setting to any assigned Settings Catalog policy for this platform (none holds these settings today)",
+      "5. Configure 1 setting in the matching template policy",
+      `6. Add 1 setting to policy ${TENANT_POLICY} (assigned to All Users), which already holds settings of the same benchmark area`,
     ].map((text) => steps.indexOf(text));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    expect(steps).toContain("Helps with: 1.3, 1.4, 1.5");
+    expect(steps).toContain("Helps with: 1.5");
     expect(steps).toContain("See page 7");
   });
 
@@ -272,18 +313,31 @@ describe("benchmark readiness PDF", () => {
     expect(table).toContain("HOW TO READ THIS REPORT");
   });
 
-  it("details each result that differs or needs review as a card", () => {
+  it("details each result that differs as a card and groups those that need review by step", () => {
     expect(detail).toContain(
       `1.2 Synthetic beta is on synthetic_bench_beta Differs POLICY ASSIGNMENT CURRENT RECOMMENDED RESULT ${TENANT_POLICY} Assigned All Users false true Differs`,
-    );
-    expect(detail).toContain(
-      `${UNASSIGNED_POLICY} Not assigned 1 1 Matches, unassigned The matching value is only on policies that are not assigned.`,
     );
     expect(detail).toContain(
       "No collected policy holds this setting. Not configured 14 Not configured",
     );
     expect(detail).toContain(
       "NEXT STEP Change synthetic_bench_beta in policy Synthetic tenant baseline from false to true.",
+    );
+    // Not configured names the candidate policy to add the setting to.
+    expect(detail).toContain(
+      `NEXT STEP Add synthetic_bench_length with the recommended value 14 to policy ${TENANT_POLICY}, which is assigned and already holds settings of the same benchmark area.`,
+    );
+    // Needs review: one card per step with its policy, its assignment and a
+    // row per result (id, name, current, recommended, short reason).
+    expect(detail).toContain(
+      `Needs review, by step 2 results Step 2 Assign policy ${UNASSIGNED_POLICY}, which would let 1 result be judged: 1 would match. Assign it to a pilot group first. 1 result Policy ${UNASSIGNED_POLICY} Not assigned ID RECOMMENDATION CURRENT RECOMMENDED REASON 2.1 Synthetic gamma is on synthetic_bench_gamma 1 1 Only on unassigned policies The matching value is only on policies that are not assigned.`,
+    );
+    expect(all).toContain(
+      `Step 3 Check 1 setting by hand: the delivered pack holds values that cannot be compared. 1 result ID RECOMMENDATION CURRENT RECOMMENDED REASON 2.2 Synthetic secret value synthetic_bench_secret Held by: ${TENANT_POLICY} (assigned) Not readable Not readable Pack value not comparable`,
+    );
+    // A result needing review has no card of its own.
+    expect(detail).not.toMatch(
+      /2\.1 Synthetic gamma is on synthetic_bench_gamma Needs review POLICY/,
     );
     expect(detail).not.toContain("Synthetic alpha is on");
     // The secret's cause is named under its row.
@@ -338,26 +392,30 @@ describe("readiness PDF: values only on unassigned policies", () => {
 
   it("names a matching, a differing and a mixed holding with their own reason", () => {
     const detail = pageWith(pages, "05 RESULT DETAIL");
-    // The setting's own status says why a match needs review.
+    // Both results the matching policy would let match are under its step,
+    // each with its short reason; the other policies of the mixed result
+    // are named with their values and their steps.
     expect(detail).toContain(
-      "Matches, unassigned The matching value is only on policies that are not assigned.",
-    );
-    expect(detail).not.toContain("Matches. The matching value");
-    expect(detail).toContain(
-      "Differs, unassigned Only policies that are not assigned hold this setting, and none of them matches the recommended value.",
+      `Step 1 Assign policy ${UNASSIGNED_MATCH}, which would let 2 results be judged: 2 would match. Assign it to a pilot group first. 2 results Policy ${UNASSIGNED_MATCH} Not assigned`,
     );
     expect(detail).toContain(
-      "Not readable The value is a secret, which Microsoft Graph never returns in a readable form. Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.",
+      "1.1 Synthetic alpha is on synthetic_bench_alpha 1 1 Only on unassigned policies",
     );
     expect(detail).toContain(
-      `${UNASSIGNED_OTHER} Not assigned 9 14 Differs, unassigned`,
+      `1.3 Synthetic gamma is on synthetic_bench_gamma In other policies: ${UNASSIGNED_OTHER} (not assigned): 2; ${UNASSIGNED_UNREADABLE} (not assigned): Not readable 1 1 Mixed values, unassigned only Also steps 2, 3`,
+    );
+    // The full reasons and the unreadable cause close the card once each.
+    expect(detail).toContain(
+      "The matching value is only on policies that are not assigned. Only policies that are not assigned hold this setting: some match the recommended value and some hold another value. The value is a secret, which Microsoft Graph never returns in a readable form.",
+    );
+    // A step whose other results sit under an earlier step says so.
+    expect(detail).toContain(
+      `Step 2 Change 2 settings in policy ${UNASSIGNED_OTHER} to the recommended values before assigning it. 1 of 2 results Policy ${UNASSIGNED_OTHER} Not assigned The other 1 result is listed under an earlier step.`,
     );
     expect(detail).toContain(
-      `${UNASSIGNED_MATCH} Not assigned 1 1 Matches, unassigned`,
+      "1.2 Synthetic length is 14 synthetic_bench_length 9 14 Other value, unassigned only Only policies that are not assigned hold this setting, and none of them matches the recommended value.",
     );
-    // A match beside a Needs review result always carries its qualifier.
-    expect(detail).not.toMatch(/ Matches (?!, )(?!out)/);
-    // Once in the reason key and once in the detail: only for 1.1.
+    // Once in the reason key and once in the card.
     expect(
       count("The matching value is only on policies that are not assigned."),
     ).toBe(2);
@@ -415,14 +473,11 @@ describe("readiness PDF: a pack without recommendations", () => {
     expect(pageWith(pages, "01 SUMMARY")).toContain(SETTINGS_BASIS_NOTE);
   });
 
-  it("names each setting once in its detail card", () => {
+  it("names each setting once in its detail card or row", () => {
     expect(detail.split(`${SPACED} Not configured POLICY`).length - 1).toBe(1);
     expect(detail.split("synthetic_bench_gamma").length - 1).toBe(1);
     expect(detail).toContain(
-      "synthetic_bench_gamma Needs review POLICY ASSIGNMENT CURRENT RECOMMENDED RESULT",
-    );
-    expect(detail).toContain(
-      "Matches, unassigned The matching value is only on policies that are not assigned.",
+      "SETTING CURRENT RECOMMENDED REASON synthetic_bench_gamma 1 1 Only on unassigned policies The matching value is only on policies that are not assigned.",
     );
   });
 
@@ -538,34 +593,85 @@ describe("readiness PDF: a nested setting and its parents", () => {
     );
   });
 
-  it("shows a recommended value below an unreadable pack parent as not readable", () => {
-    const child = simpleInteger(LIMIT, 5);
-    const text = detail(
+  it("shows a recommended value next to an unreadable pack value the same way in the PDF, CSV, JSON and fix plan", () => {
+    const cases = [
       {
-        ...choice(ENABLED, "0", [child]),
-        choiceSettingValue: { children: [child] },
+        // A readable child below a parent whose own value cannot be read.
+        packRoot: {
+          ...choice(ENABLED, "0", [simpleInteger(LIMIT, 5)]),
+          choiceSettingValue: { children: [simpleInteger(LIMIT, 5)] },
+        },
+        target: LIMIT,
+        shown: "5 (parent not readable)",
+        row: "1.1 Synthetic limit synthetic_bench_pdf_limit Held by: Synthetic tenant lock (assigned) 9 5 (parent not readable) Pack value not comparable",
       },
-      choice(ENABLED, "1", [simpleInteger(LIMIT, 9)]),
-    );
-    expect(text).toContain(
-      "Synthetic tenant lock Assigned All Users 9 Not readable Not readable",
-    );
-    expect(text).not.toMatch(/All Users 9 5 /);
+      {
+        // A readable parent above a child that cannot be read.
+        packRoot: choice(ENABLED, "0", [simpleSecret(LIMIT)]),
+        target: ENABLED,
+        shown: "0 (a setting below it is not readable)",
+        row: "Synthetic tenant lock Assigned All Users 1 0 (a setting below it is not readable) Differs",
+      },
+    ];
+    for (const { packRoot, target, shown, row } of cases) {
+      const assessment = assessBenchmark(
+        collection({
+          policies: [
+            tenantPolicy({
+              name: "Synthetic tenant lock",
+              settings: [choice(ENABLED, "1", [simpleInteger(LIMIT, 9)])],
+            }),
+          ],
+        }),
+        pack(
+          [{ settings: [packRoot] }],
+          [
+            {
+              id: "1.1",
+              title: "Synthetic limit",
+              level: 1,
+              settings: [target],
+            },
+          ],
+        ),
+        { now: NOW },
+      );
+      const plan = buildFixPlan(assessment);
+      const pdf = pageTexts(render(assessment, { exceptions: [] })).join(" ");
+      expect(pdf).toContain(row);
+      const csv = parseCsv(benchmarkCsv(assessment, plan));
+      expect(csv[1]![csv[0]!.indexOf("Recommended value")]).toBe(shown);
+      const [result] = benchmarkSummary(assessment, { plan }).results;
+      expect(
+        result!.settings.map((setting) => setting.recommendedValue),
+      ).toEqual([[shown]]);
+      // The plan's step is about the pack root: the same words for the
+      // same setting, Not readable for a parent that cannot be read.
+      const steps = plan.actions.flatMap((action) => action.settings);
+      expect(steps.length).toBeGreaterThan(0);
+      for (const step of steps)
+        expect(step.recommended).toBe(
+          step.settingId === target ? shown : "Not readable",
+        );
+      // No output shows the value without saying what cannot be read.
+      expect(pdf).not.toMatch(/ 9 5 (?!\()/);
+      expect(JSON.stringify(plan)).not.toMatch(/"recommended":"[05]"/);
+    }
   });
 });
 
 describe("readiness PDF: detail cards and page breaks", () => {
-  const holders = (count: number) =>
-    Array.from({ length: count }, (_, index) =>
-      tenantPolicy({
-        name: `Synthetic unassigned holder ${index + 1}`,
-        settings: [choice("synthetic_bench_alpha", "1")],
-        assignments: [],
-      }),
-    );
+  // count assigned policies hold another value of one setting: one Differs card.
   const assessmentWith = (count: number) =>
     assessBenchmark(
-      collection({ policies: holders(count) }),
+      collection({
+        policies: Array.from({ length: count }, (_, index) =>
+          tenantPolicy({
+            name: `Synthetic assigned holder ${index + 1}`,
+            settings: [choice("synthetic_bench_alpha", "0")],
+          }),
+        ),
+      }),
       pack(
         [{ settings: [choice("synthetic_bench_alpha", "1")] }],
         [
@@ -579,27 +685,105 @@ describe("readiness PDF: detail cards and page breaks", () => {
       ),
       { now: NOW },
     );
+  // One unassigned policy holds the value of count recommendations: one step.
+  const waiting = (count: number) => {
+    const ids = Array.from(
+      { length: count },
+      (_, index) => `synthetic_bench_waiting_${index + 1}`,
+    );
+    return assessBenchmark(
+      collection({
+        policies: [
+          tenantPolicy({
+            name: "Synthetic waiting policy",
+            settings: ids.map((id) => choice(id, "1")),
+            assignments: [],
+          }),
+        ],
+      }),
+      pack(
+        [{ settings: ids.map((id) => choice(id, "1")) }],
+        ids.map((id, index) => ({
+          id: `1.${index + 1}`,
+          title: `Synthetic waiting value ${index + 1}`,
+          level: 1 as const,
+          settings: [id],
+        })),
+      ),
+      { now: NOW },
+    );
+  };
 
   it("continues a card taller than a page with a caption and its table header", () => {
     const pages = pageTexts(render(assessmentWith(60), { exceptions: [] }));
     const start = pages.findIndex((text) =>
       text.startsWith("05 RESULT DETAIL"),
     );
-    const next = pages[start + 1]!;
     expect(
-      next.startsWith(
+      pages[start + 1]!.startsWith(
         "1.1 (continued) POLICY ASSIGNMENT CURRENT RECOMMENDED RESULT",
       ),
     ).toBe(true);
     const all = pages.join(" ");
     for (const index of [1, 30, 60])
       expect(all).toContain(
-        `Synthetic unassigned holder ${index} Not assigned`,
+        `Synthetic assigned holder ${index} Assigned All Users 0 1 Differs`,
       );
+  });
+
+  it("continues a step card across pages with a caption and its table header, a row per result", () => {
+    const pages = pageTexts(render(waiting(80), { exceptions: [] }));
+    const start = pages.findIndex((text) =>
+      text.startsWith("05 RESULT DETAIL"),
+    );
+    expect(pages[start]).toContain(
+      "Needs review, by step 80 results Step 1 Assign policy Synthetic waiting policy, which would let 80 results be judged: 80 would match.",
+    );
+    expect(
+      pages[start + 1]!.startsWith(
+        "Step 1, policy Synthetic waiting policy (continued) ID RECOMMENDATION CURRENT RECOMMENDED REASON",
+      ),
+    ).toBe(true);
+    const all = pages.join(" ");
+    for (const index of [1, 40, 80])
+      expect(all).toContain(
+        `1.${index} Synthetic waiting value ${index} synthetic_bench_waiting_${index} 1 1 Only on unassigned policies`,
+      );
+    // Every row is one result: the step is named once per page, not per row.
+    expect(
+      all.split("Assign policy Synthetic waiting policy,").length - 1,
+    ).toBe(3);
+    // The results table points to the page of each row: the last row's page
+    // is the last number written on its results page.
+    const row = pages.findIndex((entry) =>
+      entry.includes(
+        "1.80 Synthetic waiting value 80 synthetic_bench_waiting_80",
+      ),
+    );
+    expect(row).toBeGreaterThan(start + 1);
+    expect(
+      pageWith(pages, "1.80 Synthetic waiting value 80 Needs review"),
+    ).toContain(` ${row + 1} Synthetic Bench 1.0.0, Level 1`);
   });
 
   it("keeps a card that fits a page in one piece", () => {
     const pages = pageTexts(render(assessmentWith(6), { exceptions: [] }));
     expect(pages.join(" ")).not.toContain("(continued)");
+  });
+
+  it("puts results without a step into one card per reason", () => {
+    const assessment = richAssessment();
+    const pages = pageTexts(
+      render(assessment, {
+        fixPlan: { actions: [], byResult: {}, advice: {}, withoutAction: 2 },
+      }),
+    );
+    const all = pages.join(" ");
+    expect(all).toContain(
+      "No step Only on unassigned policies 1 result The matching value is only on policies that are not assigned. The plan has no step for these results. ID RECOMMENDATION CURRENT RECOMMENDED REASON 2.1 Synthetic gamma is on",
+    );
+    expect(all).toContain(
+      "No step Pack value not comparable 1 result The delivered pack holds a value for this setting, or a platform list for its policy, that cannot be compared. The plan has no step for these results.",
+    );
   });
 });

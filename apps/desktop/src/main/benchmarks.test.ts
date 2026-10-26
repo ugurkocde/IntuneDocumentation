@@ -53,7 +53,8 @@ const {
   BENCHMARK_ASSESS_FIRST,
   BENCHMARK_CONFIRM_DRAFTS,
   BENCHMARK_ENTITLEMENT_REQUIRED,
-  BENCHMARKS_NOT_AVAILABLE,
+  BENCHMARK_NO_PACK,
+  notAvailableMessage,
   MAX_CACHED_CONTENT,
   benchmarkWork,
   contentBaseUrl,
@@ -252,16 +253,20 @@ describe("benchmarks gate", () => {
     expect(h.fetch).not.toHaveBeenCalled();
   });
 
-  it("answers Not available yet for parts that are not there, without fetching content", async () => {
+  it("answers a full sentence with the next step for parts that are not there, without fetching content", async () => {
     const h = harness({ work: false });
-    await expect(h.call("benchmarks:assess", IDENTITY)).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
-    await expect(h.call("benchmarks:previewDrafts")).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
-    await expect(h.call("benchmarks:export", { format: "pdf" })).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
-    await expect(h.call("benchmarks:exceptions", { action: "list", ...IDENTITY })).rejects.toThrow(
-      BENCHMARKS_NOT_AVAILABLE,
+    await expect(h.call("benchmarks:assess", IDENTITY)).rejects.toThrow(
+      "Comparing with a benchmark is not available in this version of the app. Update the app, then try again.",
     );
-    await expect(h.call("benchmarks:history")).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
-    await expect(h.call("benchmarks:portfolio")).rejects.toThrow(BENCHMARKS_NOT_AVAILABLE);
+    await expect(h.call("benchmarks:previewDrafts")).rejects.toThrow(notAvailableMessage("Draft policies are"));
+    await expect(h.call("benchmarks:export", { format: "pdf" })).rejects.toThrow(
+      notAvailableMessage("Exporting a benchmark comparison is"),
+    );
+    await expect(h.call("benchmarks:exceptions", { action: "list", ...IDENTITY })).rejects.toThrow(
+      notAvailableMessage("Benchmark exceptions are"),
+    );
+    await expect(h.call("benchmarks:history")).rejects.toThrow(notAvailableMessage("Benchmark history is"));
+    await expect(h.call("benchmarks:portfolio")).rejects.toThrow(notAvailableMessage("The benchmark portfolio is"));
     expect(h.fetch).not.toHaveBeenCalled();
     expect(h.requireLicense).toHaveBeenCalledTimes(6);
   });
@@ -807,6 +812,15 @@ describe("benchmark work wiring", () => {
     await expect(work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [delivered()], list: null })).rejects.toThrow(
       "Collect tenant data first.",
     );
+    expect(deps.recordRuns).not.toHaveBeenCalled();
+  });
+
+  it("says why nothing was compared without a pack, and what to do", async () => {
+    const { deps, work } = workHarness();
+    await expect(work.assessBenchmark({ owner: OWNER, tenantId: TENANT, packs: [], list: null })).rejects.toThrow(
+      BENCHMARK_NO_PACK,
+    );
+    expect(BENCHMARK_NO_PACK).toMatch(/^[A-Z].*\. .*\.$/);
     expect(deps.recordRuns).not.toHaveBeenCalled();
   });
 

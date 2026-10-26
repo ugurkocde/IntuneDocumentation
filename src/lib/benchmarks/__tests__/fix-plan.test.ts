@@ -375,3 +375,159 @@ describe("fix plan against the engine's verdicts (review findings)", () => {
     expect(row("1.6")).toContain(",Not configured,");
   });
 });
+
+describe("fix plan: the policy to add a missing setting to", () => {
+  const AREA_HELD = "synthetic_plan_area_held";
+  const AREA_MISSING = "synthetic_plan_area_missing";
+  const OTHER_HELD_A = "synthetic_plan_other_held_a";
+  const OTHER_HELD_B = "synthetic_plan_other_held_b";
+  const LONE_MISSING = "synthetic_plan_lone_missing";
+  const MAC_MISSING = "synthetic_plan_mac_missing";
+  const AREA_POLICY = "Synthetic area policy";
+  const BUSY_POLICY = "Synthetic busy policy";
+  const assessment = assessBenchmark(
+    collection({
+      policies: [
+        tenantPolicy({ name: AREA_POLICY, settings: [choice(AREA_HELD, "1")] }),
+        tenantPolicy({ name: BUSY_POLICY, settings: [choice(OTHER_HELD_A, "1"), choice(OTHER_HELD_B, "1")] }),
+        // Never a candidate: not assigned, or created from a template.
+        tenantPolicy({
+          name: "Synthetic unassigned holder",
+          settings: [choice(AREA_HELD, "1"), choice(OTHER_HELD_A, "1"), choice(OTHER_HELD_B, "1")],
+          assignments: [],
+        }),
+        tenantPolicy({
+          name: "Synthetic template holder",
+          settings: [choice(AREA_HELD, "1"), choice(OTHER_HELD_A, "1"), choice(OTHER_HELD_B, "1")],
+          templateId: "00000000-0000-0000-0000-00000000c0de_1",
+        }),
+      ],
+    }),
+    pack(
+      [
+        { settings: [choice(AREA_HELD, "1"), choice(AREA_MISSING, "1")] },
+        { settings: [choice(OTHER_HELD_A, "1"), choice(OTHER_HELD_B, "1")] },
+        { settings: [choice(LONE_MISSING, "1")] },
+        { platforms: "macOS", settings: [choice(MAC_MISSING, "1")] },
+      ],
+      [
+        { id: "1.1", title: "Synthetic area held", level: 1, settings: [AREA_HELD] },
+        { id: "1.2", title: "Synthetic area missing", level: 1, settings: [AREA_MISSING] },
+        { id: "2.1", title: "Synthetic other held", level: 1, settings: [OTHER_HELD_A, OTHER_HELD_B] },
+        { id: "3.1", title: "Synthetic lone missing", level: 1, settings: [LONE_MISSING] },
+        { id: "4.1", title: "Synthetic macOS missing", level: 1, settings: [MAC_MISSING] },
+      ],
+    ),
+    { now: NOW },
+  );
+  const plan = buildFixPlan(assessment);
+  const add = plan.actions.filter((action) => action.kind === "addSetting");
+  const finding = (id: string) => assessment.settings.find((item) => item.settingId === id)!;
+
+  it("prefers an assigned policy holding settings of the same benchmark area", () => {
+    const action = add.find((item) => item.results.some((result) => result.id === "1.2"))!;
+    expect(action.policy?.name).toBe(AREA_POLICY);
+    expect(action.text).toBe(
+      `Add 1 setting to policy ${AREA_POLICY} (assigned to All Users), which already holds settings of the same benchmark area; draft policies are available for 1 of them.`,
+    );
+    expect(plan.advice[finding(AREA_MISSING).key]).toBe(
+      `Add ${AREA_MISSING} with the recommended value 1 to policy ${AREA_POLICY}, which is assigned and already holds settings of the same benchmark area. A draft policy is available.`,
+    );
+  });
+
+  it("otherwise names the assigned policy holding the most settings of the platform, never an unassigned or template policy", () => {
+    const action = add.find((item) => item.results.some((result) => result.id === "3.1"))!;
+    expect(action.policy?.name).toBe(BUSY_POLICY);
+    expect(action.text).toBe(
+      `Add 1 setting to policy ${BUSY_POLICY} (assigned to All Users); draft policies are available for 1 of them.`,
+    );
+    const text = JSON.stringify(add);
+    expect(text).not.toContain("Synthetic unassigned holder");
+    expect(text).not.toContain("Synthetic template holder");
+  });
+
+  it("says any assigned policy of the platform when none holds a setting of it", () => {
+    const action = add.find((item) => item.results.some((result) => result.id === "4.1"))!;
+    expect(action.policy).toBeUndefined();
+    expect(action.platforms).toBe("macOS");
+    expect(action.text).toBe(
+      "Add 1 setting to any assigned Settings Catalog policy for this platform (none holds these settings today); draft policies are available for 1 of them.",
+    );
+    expect(nextStepText(plan, assessmentResults(assessment).find((result) => result.id === "4.1")!)).toBe(
+      `Add ${MAC_MISSING} with the recommended value 1 to any assigned Settings Catalog policy for this platform (none holds these settings today). A draft policy is available.`,
+    );
+  });
+
+  it("names the same policy in the drafts README", () => {
+    const packs = pack(
+      [
+        { settings: [choice(AREA_HELD, "1"), choice(AREA_MISSING, "1")] },
+        { settings: [choice(OTHER_HELD_A, "1"), choice(OTHER_HELD_B, "1")] },
+        { settings: [choice(LONE_MISSING, "1")] },
+        { platforms: "macOS", settings: [choice(MAC_MISSING, "1")] },
+      ],
+      assessment.recommendations.map(({ id, title, settings }) => ({
+        id,
+        title,
+        level: 1 as const,
+        settings: settings.map((setting) => setting.id),
+      })),
+    );
+    const drafts = generateBenchmarkDrafts(assessment, packs, plan);
+    expect(drafts.drafts.map((draft) => [draft.settingIds, draft.addTo])).toEqual([
+      [[AREA_MISSING], [AREA_POLICY]],
+      [[LONE_MISSING], [BUSY_POLICY]],
+      [[MAC_MISSING], []],
+    ]);
+    const readme = benchmarkDraftsReadme(drafts, assessment);
+    expect(readme).toContain(
+      `Instead of importing it, you can add its settings to policy ${AREA_POLICY}, which is assigned (as the fix plan says).`,
+    );
+    expect(readme).toContain(`you can add its settings to policy ${BUSY_POLICY}, which is assigned`);
+  });
+
+  it("counts a setting missing at both Levels once and names the same candidate for both", () => {
+    const level = (packLevel: 1 | 2) =>
+      assessBenchmark(
+        collection({ policies: [tenantPolicy({ name: AREA_POLICY, settings: [choice(AREA_HELD, "1")] })] }),
+        pack(
+          packLevel === 1
+            ? [{ settings: [choice(AREA_HELD, "1"), choice(AREA_MISSING, "1")] }]
+            : // At Level 2 the setting sits in another pack policy, where no tenant policy holds anything.
+              [{ settings: [choice(AREA_HELD, "1")] }, { settings: [choice(AREA_MISSING, "1")] }],
+          undefined,
+          packLevel,
+        ),
+        { now: NOW },
+      );
+    const both = combineLevelAssessments([level(1), level(2)]);
+    const plan = buildFixPlan(both);
+    const [action] = plan.actions.filter((item) => item.kind === "addSetting");
+    expect(plan.actions.filter((item) => item.kind === "addSetting")).toHaveLength(1);
+    expect(action!.text).toBe(
+      `Add 1 setting to policy ${AREA_POLICY} (assigned to All Users), which already holds settings of the same benchmark area; draft policies are available for 1 of them.`,
+    );
+    const [first, second] = both.settings.filter((item) => item.settingId === AREA_MISSING);
+    expect(plan.advice[second!.key]).toBe(
+      `Another draft in this ZIP already holds this setting. Import that draft, or add the setting to policy ${AREA_POLICY}, which is assigned and already holds settings of the same benchmark area.`,
+    );
+    expect(plan.advice[first!.key]).toContain(`to policy ${AREA_POLICY}, which is assigned`);
+  });
+
+  it("names the candidate where the packs of two Levels disagree", () => {
+    const level = (value: string, packLevel: 1 | 2) =>
+      assessBenchmark(
+        collection({ policies: [tenantPolicy({ name: AREA_POLICY, settings: [choice(AREA_HELD, "1")] })] }),
+        pack([{ settings: [choice(AREA_HELD, "1"), choice(AREA_MISSING, value)] }], undefined, packLevel),
+        { now: NOW },
+      );
+    const both = combineLevelAssessments([level("1", 1), level("2", 2)]);
+    const advice = buildFixPlan(both).advice;
+    const missing = both.settings.filter((item) => item.settingId === AREA_MISSING);
+    expect(missing).toHaveLength(2);
+    for (const item of missing)
+      expect(advice[item.key]).toBe(
+        `The packs compared recommend different values for this setting, so no draft is generated. Choose the value for your Level and set it in policy ${AREA_POLICY}, which is assigned and already holds settings of the same benchmark area.`,
+      );
+  });
+});

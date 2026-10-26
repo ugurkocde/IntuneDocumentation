@@ -519,20 +519,34 @@ export function readableRecommendation(
   recommended: Json,
   definitionId: string,
 ): boolean {
+  return unreadableRecommendationPart(recommended, definitionId) === null;
+}
+
+/**
+ * Which part of a recommended value makes it unreadable (readableRecommendation):
+ * the value itself, a parent above it or a setting below it; null when all
+ * of it is readable. The value itself decides first, then a parent.
+ */
+export function unreadableRecommendationPart(
+  recommended: Json,
+  definitionId: string,
+): "value" | "parent" | "child" | null {
   const want = clean(recommended);
-  if (!isInstance(want)) return false;
+  if (!isInstance(want)) return "value";
   const leaves = [...leafValues(want, "", new Map())];
   const anchors = leaves
     .map(([path]) => path)
     .filter((path) => path.endsWith(`/${definitionId}`));
-  if (!anchors.length) return false;
-  return !leaves.some(
-    ([path, value]) =>
-      value === UNREADABLE &&
-      anchors.some(
-        (anchor) => inSubtree(path, anchor) || inSubtree(anchor, path),
-      ),
-  );
+  if (!anchors.length) return "value";
+  const unreadable = leaves
+    .filter(([, value]) => value === UNREADABLE)
+    .map(([path]) => path);
+  const any = (test: (path: string, anchor: string) => boolean) =>
+    unreadable.some((path) => anchors.some((anchor) => test(path, anchor)));
+  if (any((path, anchor) => path === anchor)) return "value";
+  if (any((path, anchor) => inSubtree(anchor, path))) return "parent";
+  if (any((path, anchor) => inSubtree(path, anchor))) return "child";
+  return null;
 }
 
 /**

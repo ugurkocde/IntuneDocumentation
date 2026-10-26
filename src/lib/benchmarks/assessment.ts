@@ -77,7 +77,7 @@ import {
   type SettingNames,
   type TenantSettings,
 } from "./tenant-settings";
-import { settingValue, type ValueText } from "./values";
+import { recommendedValue, settingValue, type ValueText } from "./values";
 import type {
   BenchmarkLevel,
   BenchmarkPack,
@@ -533,7 +533,7 @@ export function compareSettings(
         platforms: policy.platforms,
         settingId,
         recommended: settingInstance,
-        recommendedValue: settingValue(settingInstance, settingId, names),
+        recommendedValue: recommendedValue(settingInstance, settingId, names),
         observations: observed,
       };
       // Several recommended values for one definition need a profile choice first.
@@ -988,7 +988,7 @@ export function withSettingNames(
     settingNames,
     settings: assessment.settings.map((finding) => ({
       ...finding,
-      recommendedValue: settingValue(
+      recommendedValue: recommendedValue(
         finding.recommended,
         finding.settingId,
         settingNames,

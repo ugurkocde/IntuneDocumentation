@@ -55,7 +55,12 @@ import type { LicenseService } from "./license";
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 type LogDetail = Record<string, string | number | boolean | null | undefined>;
 
-export const BENCHMARKS_NOT_AVAILABLE = "Not available yet.";
+// A part of the work this build does not have, as a full sentence with
+// the next step; the handlers run only after the gate.
+export const notAvailableMessage = (part: string) =>
+  `${part} not available in this version of the app. Update the app, then try again.`;
+export const BENCHMARK_NO_PACK =
+  "No benchmark pack was delivered for this Level, so nothing could be compared. Load the benchmark again or choose another Level.";
 export const BENCHMARK_ENTITLEMENT_REQUIRED =
   "CIS benchmark delivery requires a current license entitlement for this tenant.";
 export const BENCHMARK_ACCOUNT_CHANGED = "The signed in account changed while this was running. Try again.";
@@ -86,7 +91,7 @@ export class BenchmarkContentError extends Error {
 type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 
 // The engine (src/lib/benchmarks/index.ts), the exports and the exceptions
-// store. A handler whose part is missing answers BENCHMARKS_NOT_AVAILABLE.
+// store. A handler whose part is missing answers notAvailableMessage.
 export interface BenchmarkWork {
   // Compares the owner's last collection with the packs, one per Level in
   // Level order (Level 1 and Level 2 when Level 2 is compared), as one view.
@@ -243,7 +248,7 @@ export function benchmarkWork(deps: BenchmarkWorkDeps): BenchmarkWork {
     async assessBenchmark({ owner, tenantId, packs, list }) {
       const collection = deps.collectionFor(owner);
       if (!collection) throw new Error("Collect tenant data first.");
-      if (!packs.length) throw new Error(BENCHMARKS_NOT_AVAILABLE);
+      if (!packs.length) throw new Error(BENCHMARK_NO_PACK);
       const exceptions = await exceptionsOf(tenantId, "assess");
       const compared = Math.max(...packs.map((pack) => pack.level));
       const now = new Date();
@@ -512,8 +517,8 @@ export function parseExceptionsRequest(input: unknown): BenchmarkExceptionsReque
   };
 }
 
-const notAvailable = (): never => {
-  throw new Error(BENCHMARKS_NOT_AVAILABLE);
+const notAvailable = (part: string): never => {
+  throw new Error(notAvailableMessage(part));
 };
 
 export function registerBenchmarksIpc(deps: BenchmarksDeps) {
@@ -660,7 +665,7 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const tenant = await requireBenchmarks();
     const identity = parseBenchmarkIdentity(input);
     const owner = await licensed(tenant);
-    const assessBenchmark = deps.work?.assessBenchmark ?? notAvailable();
+    const assessBenchmark = deps.work?.assessBenchmark ?? notAvailable("Comparing with a benchmark is");
     return deps.track(async () => {
       const packs = await packsFor(tenant, identity);
       const view = await current(tenant, async () =>
@@ -680,7 +685,7 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
   deps.handle("benchmarks:previewDrafts", async (): Promise<BenchmarkDraftsPreview> => {
     const tenant = await requireBenchmarks();
     const owner = await licensed(tenant);
-    const draftsPreview = deps.work?.draftsPreview ?? notAvailable();
+    const draftsPreview = deps.work?.draftsPreview ?? notAvailable("Draft policies are");
     const { view: assessment, packs } = held(tenant, owner);
     return current(tenant, () => draftsPreview({ assessment, packs }));
   });
@@ -689,7 +694,7 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const tenant = await requireBenchmarks();
     const { format, confirmed } = parseExport(input);
     const owner = await licensed(tenant);
-    const exportBenchmark = deps.work?.exportBenchmark ?? notAvailable();
+    const exportBenchmark = deps.work?.exportBenchmark ?? notAvailable("Exporting a benchmark comparison is");
     const { view: assessment, packs } = held(tenant, owner);
     if (format === "drafts" && !confirmed) throw new Error(BENCHMARK_CONFIRM_DRAFTS);
     const file = await deps.track(() =>
@@ -712,7 +717,7 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const tenant = await requireBenchmarks();
     const request = parseExceptionsRequest(input);
     const owner = await licensed(tenant);
-    const benchmarkExceptions = deps.work?.benchmarkExceptions ?? notAvailable();
+    const benchmarkExceptions = deps.work?.benchmarkExceptions ?? notAvailable("Benchmark exceptions are");
     return current(tenant, () => benchmarkExceptions({ owner, tenantId: tenant, request }));
   });
 
@@ -720,7 +725,7 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const tenant = await requireBenchmarks();
     const request = parseHistoryRequest(input);
     const owner = await licensed(tenant);
-    const benchmarkHistory = deps.work?.benchmarkHistory ?? notAvailable();
+    const benchmarkHistory = deps.work?.benchmarkHistory ?? notAvailable("Benchmark history is");
     return deps.track(() => current(tenant, () => benchmarkHistory({ owner, tenantId: tenant, request })));
   });
 
@@ -728,7 +733,7 @@ export function registerBenchmarksIpc(deps: BenchmarksDeps) {
     const tenant = await requireBenchmarks();
     const request = parsePortfolioRequest(input);
     const owner = await licensed(tenant);
-    const benchmarkPortfolio = deps.work?.benchmarkPortfolio ?? notAvailable();
+    const benchmarkPortfolio = deps.work?.benchmarkPortfolio ?? notAvailable("The benchmark portfolio is");
     return deps.track(() => current(tenant, () => benchmarkPortfolio({ owner, tenantId: tenant, request })));
   });
 

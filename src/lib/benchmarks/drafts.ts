@@ -59,6 +59,11 @@ export interface BenchmarkDraft {
   /** Recommendation ids the settings of this draft implement. */
   recommendationIds: string[];
   settingIds: string[];
+  /**
+   * The assigned tenant policies the fix plan names to add these settings
+   * to instead (fix-plan.ts candidatePolicies); empty when there is none.
+   */
+  addTo: string[];
   json: BenchmarkDraftDocument;
 }
 
@@ -167,6 +172,12 @@ export function generateBenchmarkDrafts(
       .filter((setting) => setting.draft === "available")
       .map((setting) => setting.findingKey),
   );
+  // The policy the plan names for each missing setting, so the README says the same.
+  const addTo = new Map(
+    plan.actions
+      .filter((action) => action.kind === "addSetting" && action.policy)
+      .flatMap((action) => action.settings.map((setting) => [setting.findingKey, action.policy!.name] as const)),
+  );
   const grouped = new Map<string, { level: number; policyIndex: number; findings: SettingFinding[] }>();
   const changes: BenchmarkDraftChange[] = [];
   const notGenerated: BenchmarkDraftGap[] = [];
@@ -223,6 +234,7 @@ export function generateBenchmarkDrafts(
         fileName: `${String(number).padStart(2, "0")}-${benchmark}-${version}-L${packLevel}-draft-${number}.json`,
         recommendationIds: ids,
         settingIds: findings.map((finding) => finding.settingId),
+        addTo: sorted(findings.flatMap((finding) => addTo.get(finding.key) ?? [])),
         json: {
           name: `${benchmark} ${version} L${packLevel} draft ${number}`,
           description: draftDescription(
@@ -245,6 +257,14 @@ export function generateBenchmarkDrafts(
     });
   return { benchmark, version, level, drafts, changes, notGenerated };
 }
+
+/** The fix plan's alternative to importing a draft, as the README says it. */
+const addToText = (policies: readonly string[]) =>
+  !policies.length
+    ? ""
+    : policies.length === 1
+      ? ` Instead of importing it, you can add its settings to policy ${policies[0]}, which is assigned (as the fix plan says).`
+      : ` Instead of importing it, you can add its settings to the assigned policies the fix plan names for them: ${policies.join(", ")}.`;
 
 const idsText = (ids: readonly string[]) =>
   ids.length
@@ -290,7 +310,7 @@ export function benchmarkDraftsReadme(
     ...list(
       result.drafts.map(
         (draft) =>
-          `${draft.fileName}: ${draft.json.name}, ${draft.settingIds.length} ${draft.settingIds.length === 1 ? "setting" : "settings"}. ${idsText(draft.recommendationIds)}`,
+          `${draft.fileName}: ${draft.json.name}, ${draft.settingIds.length} ${draft.settingIds.length === 1 ? "setting" : "settings"}. ${idsText(draft.recommendationIds)}${addToText(draft.addTo)}`,
       ),
       missing
         ? "No draft policies were generated; see Not generated."

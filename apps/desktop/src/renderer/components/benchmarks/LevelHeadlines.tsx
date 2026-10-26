@@ -12,25 +12,15 @@ import {
   headlineBaseText,
   headlineLabel,
   rateIsHero,
+  stateCounts,
 } from "../../../../../../src/lib/benchmarks/display";
-import { NOT_CONFIGURED } from "../../../../../../src/lib/benchmarks/values";
-import { ROW_STATES, reasonCounts, type ReviewRow, type RowState } from "../../lib/benchmarks-view";
+import { reasonCounts, type ReviewRow, type RowState } from "../../lib/benchmarks-view";
 
 const RESULT_STYLES: Record<ResultState, { chip: string; dot: string }> = {
   Pass: { chip: "bg-emerald-50 text-emerald-800", dot: "bg-emerald-600" },
   Fail: { chip: "bg-red-50 text-red-800", dot: "bg-red-600" },
   Review: { chip: "bg-amber-50 text-amber-800", dot: "bg-amber-600" },
   "Not assessed": { chip: "bg-mint-100 text-petrol-700", dot: "bg-petrol-600" },
-};
-
-// The five states with their labels, always all of them so the cards of two
-// Levels line up (stateCounts leaves out a zero Not configured).
-export const STATE_LABELS: Readonly<Record<RowState, string>> = {
-  matches: RESULT_LABELS.Pass,
-  differs: RESULT_LABELS.Fail,
-  notConfigured: NOT_CONFIGURED,
-  needsReview: RESULT_LABELS.Review,
-  notAssessed: RESULT_LABELS["Not assessed"],
 };
 
 const STATE_RESULT: Record<RowState, ResultState> = {
@@ -140,9 +130,8 @@ export function LevelHeadlines({
               )}
               {exclusions && <p className="text-petrol-700 mt-1 text-xs tabular-nums">{exclusions}</p>}
               <ul className="mt-4 flex flex-wrap gap-2" aria-label={`Results of Level ${level.level}`}>
-                {ROW_STATES.map((state) => {
-                  const count = headline.states[state];
-                  const label = STATE_LABELS[state];
+                {/* Every state, zeros too, so the cards of two Levels line up. */}
+                {stateCounts(headline.states, { all: true }).map(({ state, label, count }) => {
                   const style = RESULT_STYLES[STATE_RESULT[state]];
                   const body = (
                     <>

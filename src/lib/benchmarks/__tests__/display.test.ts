@@ -5,6 +5,8 @@ import {
   levelCheckSummary,
   matchingPolicies,
   settingStatusText,
+  stateCounts,
+  stateCountsText,
 } from "../display";
 import { unassessedAssessment, unassignedAssessment } from "./export-fixtures";
 
@@ -101,5 +103,45 @@ describe("automatic check summary", () => {
     expect(levelCheckSummary(on("recommendations"), 12)).toContain(
       "checks 12 recommendations of this pack automatically.",
     );
+  });
+});
+
+describe("state counts", () => {
+  const states = {
+    matches: 3,
+    differs: 1,
+    notConfigured: 0,
+    needsReview: 87,
+    notAssessed: 2,
+    assessed: 4,
+    total: 93,
+  };
+
+  it("leaves out a zero Not configured by default", () => {
+    expect(stateCounts(states).map((entry) => entry.state)).toEqual([
+      "matches",
+      "differs",
+      "needsReview",
+      "notAssessed",
+    ]);
+    expect(stateCountsText(states)).not.toContain("not configured");
+    expect(
+      stateCounts({ ...states, notConfigured: 2 }).map((entry) => entry.label),
+    ).toContain("Not configured");
+  });
+
+  it("keeps every state, zeros too, with all", () => {
+    expect(stateCounts(states, { all: true })).toEqual([
+      { state: "matches", label: "Matches", count: 3 },
+      { state: "differs", label: "Differs", count: 1 },
+      { state: "notConfigured", label: "Not configured", count: 0 },
+      { state: "needsReview", label: "Needs review", count: 87 },
+      { state: "notAssessed", label: "Not assessed", count: 2 },
+    ]);
+    expect(
+      stateCounts({ ...states, matches: 0, notAssessed: 0 }, { all: true }).map(
+        (entry) => entry.count,
+      ),
+    ).toEqual([0, 1, 0, 87, 0]);
   });
 });

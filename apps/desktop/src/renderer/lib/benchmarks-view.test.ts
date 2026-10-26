@@ -2,14 +2,20 @@ import { describe, expect, it } from "vitest";
 import { SYNTHETIC_CATALOG, syntheticAssessment } from "../__fixtures__/benchmarks";
 import {
   catalogChoices,
-  differingSettingIds,
+  exceptionChoiceLabel,
+  exceptionChoiceSetting,
+  exceptionChoices,
   filterRows,
+  formatDay,
   levelsLabel,
   missingSettings,
   reasonCounts,
   resolveSelection,
   reviewRows,
+  sortRows,
+  stateCountsOf,
   toAssessment,
+  withMinusSign,
 } from "./benchmarks-view";
 
 describe("toAssessment", () => {
@@ -20,6 +26,14 @@ describe("toAssessment", () => {
     expect(() => toAssessment(partial)).toThrow("could not be read");
     expect(() => toAssessment({ ...assessment, level: 3 })).toThrow("could not be read");
     expect(() => toAssessment(null)).toThrow("could not be read");
+  });
+
+  it("refuses a view without its fix plan", () => {
+    const { fixPlan: _plan, ...withoutPlan } = syntheticAssessment();
+    expect(() => toAssessment(withoutPlan)).toThrow("could not be read");
+    expect(() => toAssessment({ ...syntheticAssessment(), fixPlan: { actions: "none", byResult: {} } })).toThrow(
+      "could not be read",
+    );
   });
 });
 
@@ -55,8 +69,8 @@ describe("catalog selection", () => {
 describe("review rows", () => {
   it("lists recommendations most severe first, in id order within a result, with their findings", () => {
     const rows = reviewRows(syntheticAssessment({ count: 12 }));
-    // Differs and Not configured first, then Needs review, Not assessed and Matches.
-    expect(rows.slice(0, 3).map((row) => row.id)).toEqual(["2.1.2", "3.1.3", "8.1.8"]);
+    // Differs, then Not configured, Needs review, Not assessed and Matches.
+    expect(rows.slice(0, 4).map((row) => row.id)).toEqual(["2.1.2", "8.1.8", "3.1.3", "9.1.9"]);
     expect([...new Set(rows.map((row) => row.result))]).toEqual(["Fail", "Review", "Not assessed", "Pass"]);
     const differs = rows.find((row) => row.id === "2.1.2")!;
     expect(differs.result).toBe("Fail");
@@ -65,25 +79,64 @@ describe("review rows", () => {
     ]);
   });
 
-  it("lists settings when the pack carries no recommendations", () => {
-    const rows = reviewRows(syntheticAssessment({ count: 6, basis: "settings" }));
-    // The Not assessed recommendation has no finding, so five settings remain.
-    expect(rows).toHaveLength(5);
+  it("lists settings by their display name when the pack carries no recommendations", () => {
+    const rows = reviewRows(syntheticAssessment({ count: 7, basis: "settings" }));
+    // The Not assessed recommendation has no finding, so six settings remain.
+    expect(rows).toHaveLength(6);
+    const named = rows.find((row) => row.id.endsWith("_setting_2"))!;
+    expect(named.title).toBe("Synthetic setting 2");
+    expect(named.context).toBe("Synthetic pack policy");
     // Without a delivered or collected name, the title is the setting id.
-    expect(rows[0]!.title).toBe(rows[0]!.id);
-    expect(rows[0]!.context).toBe("Synthetic pack policy");
+    const unnamed = rows.find((row) => row.id.endsWith("_setting_7"))!;
+    expect(unnamed.title).toBe(unnamed.id);
   });
 
-  it("filters by result, Level and search over ids, titles and setting ids", () => {
+  it("labels each row with its headline state, Not configured for missing settings", () => {
+    const rows = reviewRows(syntheticAssessment({ count: 12 }));
+    const byId = (id: string) => rows.find((row) => row.id === id)!;
+    expect([byId("2.1.2").state, byId("2.1.2").label]).toEqual(["differs", "Differs"]);
+    expect([byId("3.1.3").state, byId("3.1.3").label]).toEqual(["notConfigured", "Not configured"]);
+    expect([byId("4.1.4").state, byId("4.1.4").label]).toEqual(["needsReview", "Needs review"]);
+    expect([byId("5.1.5").state, byId("5.1.5").label]).toEqual(["notAssessed", "Not assessed"]);
+    expect([byId("1.1.1").state, byId("1.1.1").label]).toEqual(["matches", "Matches"]);
+    // The counts agree with the engine's headline states.
+    const { states } = syntheticAssessment({ count: 12 }).levels[0]!.headline;
+    expect(stateCountsOf(rows)).toEqual({
+      matches: states.matches,
+      differs: states.differs,
+      notConfigured: states.notConfigured,
+      needsReview: states.needsReview,
+      notAssessed: states.notAssessed,
+    });
+  });
+
+  it("filters by state, Level, fix plan step and search over names, ids and setting ids", () => {
     const rows = reviewRows(syntheticAssessment({ count: 12, levels: [1, 2] }));
-    expect(filterRows(rows, { result: "Fail", level: "all", query: "" })).toHaveLength(4);
-    expect(filterRows(rows, { result: "Fail", level: 2, query: "" })).toHaveLength(2);
-    expect(filterRows(rows, { result: "all", level: "all", query: "SETTING_11" }).map((row) => row.id)).toEqual([
-      "2.2.11",
+    const all = { state: "all", level: "all", query: "" } as const;
+    expect(filterRows(rows, { ...all, state: "differs" })).toHaveLength(2);
+    expect(filterRows(rows, { ...all, state: "notConfigured" })).toHaveLength(2);
+    // Settings 2 and 8 differ, both on Level 2.
+    expect(filterRows(rows, { ...all, state: "differs", level: 2 })).toHaveLength(2);
+    expect(filterRows(rows, { ...all, state: "differs", level: 1 })).toHaveLength(0);
+    expect(filterRows(rows, { ...all, query: "SETTING_11" }).map((row) => row.id)).toEqual(["2.2.11"]);
+    expect(filterRows(rows, { ...all, query: "recommendation 3" }).map((row) => row.id)).toEqual(["3.1.3"]);
+    // Setting display names are searched too.
+    expect(filterRows(rows, { ...all, query: "synthetic setting 5" }).map((row) => row.id)).toEqual(["5.1.5"]);
+    const keys = new Set(rows.filter((row) => row.state === "notConfigured").map((row) => row.key));
+    expect(filterRows(rows, { ...all, keys }).map((row) => row.id)).toEqual(["3.1.3", "9.1.9"]);
+  });
+
+  it("sorts by severity by default and by id on request", () => {
+    const rows = reviewRows(syntheticAssessment({ count: 12 }));
+    expect(sortRows(rows, "id").map((row) => row.id).slice(0, 4)).toEqual(["1.1.1", "1.2.10", "2.1.2", "2.2.11"]);
+    // Differs and Not configured stay grouped inside the Differs result.
+    expect(sortRows(rows, "severity").map((row) => row.state).slice(0, 4)).toEqual([
+      "differs",
+      "differs",
+      "notConfigured",
+      "notConfigured",
     ]);
-    expect(filterRows(rows, { result: "all", level: "all", query: "recommendation 3" }).map((row) => row.id)).toEqual([
-      "3.1.3",
-    ]);
+    expect(sortRows(sortRows(rows, "id"), "severity").map((row) => row.key)).toEqual(rows.map((row) => row.key));
   });
 
   it("counts the reasons of results outside the headline", () => {
@@ -105,16 +158,30 @@ describe("drafts and exceptions", () => {
     expect(missingSettings(stale)).toBe(0);
   });
 
-  it("offers exceptions for settings whose result is Differs", () => {
-    expect(differingSettingIds(syntheticAssessment({ count: 12 })).map((id) => id.split("_").pop())).toEqual([
-      "2",
-      "3",
-      "8",
-      "9",
+  it("offers exceptions for settings whose result is Differs, by recommendation id and name", () => {
+    const choices = exceptionChoices(syntheticAssessment({ count: 12 }));
+    expect(choices.map((choice) => choice.settingId.split("_").pop())).toEqual(["2", "3", "8", "9"]);
+    // Labelled by recommendation id and title, the setting on the second line.
+    expect(choices.map(exceptionChoiceLabel)).toEqual([
+      "2.1.2 Synthetic recommendation 2",
+      "3.1.3 Synthetic recommendation 3",
+      "8.1.8 Synthetic recommendation 8",
+      "9.1.9 Synthetic recommendation 9",
     ]);
+    expect(exceptionChoiceSetting(choices[0]!)).toBe(
+      "Synthetic setting 2 (device_vendor_msft_policy_config_synthetic_area_synthetic_setting_2)",
+    );
+    // A setting without a name is shown by its id once.
+    const unnamed = exceptionChoices(syntheticAssessment({ count: 24 })).find((choice) => choice.settingId.endsWith("_21"))!;
+    expect(exceptionChoiceSetting(unnamed)).toBe(unnamed.settingId);
+    // Several recommendations checking one setting.
     expect(
-      differingSettingIds(syntheticAssessment({ count: 12, basis: "settings" })).map((id) => id.split("_").pop()),
-    ).toEqual(["2", "3", "8", "9"]);
+      exceptionChoiceLabel({ ...choices[0]!, recommendationIds: ["1.1", "1.2"], recommendationTitles: ["Synthetic A", "Synthetic B"] }),
+    ).toBe("1.1 Synthetic A and 1 more");
+    const bySettings = exceptionChoices(syntheticAssessment({ count: 12, basis: "settings" }));
+    expect(bySettings.map((choice) => choice.settingId.split("_").pop())).toEqual(["2", "3", "8", "9"]);
+    // Without recommendation ids the name alone labels the setting.
+    expect(exceptionChoiceLabel(bySettings[0]!)).toBe("Synthetic setting 2");
   });
 
   it("offers the nested child a recommendation checks, not its root, in recommendation mode", () => {
@@ -123,13 +190,23 @@ describe("drafts and exceptions", () => {
     const root = assessment.settings.find((finding) => finding.key === differs.findingKeys[0])!.settingId;
     const child = `${root}_synthetic_child`;
     differs.settings = differs.settings.map((setting) => ({ ...setting, id: child }));
-    expect(differingSettingIds(assessment)).toEqual([child]);
+    expect(exceptionChoices(assessment).map((choice) => choice.settingId)).toEqual([child]);
     const bySettings = {
       ...assessment,
       basis: "settings" as const,
       levels: assessment.levels.map((level) => ({ ...level, headline: { ...level.headline, basis: "settings" as const } })),
     };
-    expect(differingSettingIds(bySettings)).toEqual([root]);
+    expect(exceptionChoices(bySettings).map((choice) => choice.settingId)).toEqual([root]);
+  });
+});
+
+describe("display text", () => {
+  it("formats exception dates and writes true minus signs", () => {
+    expect(formatDay("2027-03-31")).toBe(new Date(2027, 2, 31).toLocaleDateString(undefined, { dateStyle: "medium" }));
+    expect(formatDay("not a date")).toBe("not a date");
+    expect(withMinusSign("-43.0 pp")).toBe("\u221243.0 pp");
+    expect(withMinusSign("+2.0 pp")).toBe("+2.0 pp");
+    expect(withMinusSign("First comparison")).toBe("First comparison");
   });
 });
 

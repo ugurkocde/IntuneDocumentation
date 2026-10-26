@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import { CollectionStatusToast } from "./components/collection/CollectionStatusToast";
 import { SnapshotNotSavedNotice } from "./components/collection/SnapshotNotSavedNotice";
+import { Header } from "./components/layout/Header";
 import { Sidebar } from "./components/layout/Sidebar";
+import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { isMac } from "./lib/ipc";
 import { BenchmarksScreen } from "./screens/BenchmarksScreen";
 import { CompareScreen } from "./screens/CompareScreen";
@@ -15,6 +17,22 @@ import { SearchSettingsScreen } from "./screens/SearchSettingsScreen";
 import { SectionDetailScreen } from "./screens/SectionDetailScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useApp } from "./state/context";
+import type { Screen } from "./state/types";
+
+// Titles of the screens, kept above the fallback when one cannot be shown.
+const SCREEN_TITLES: Record<Screen, string> = {
+  overview: "Overview",
+  searchSettings: "Search settings",
+  history: "History",
+  compare: "Compare",
+  portfolio: "Portfolio",
+  section: "Configurations",
+  compliance: "Compliance Evidence",
+  benchmarks: "Benchmark readiness",
+  export: "Export",
+  license: "License and account",
+  settings: "Settings",
+};
 
 export function DashboardShell() {
   const { state, actions } = useApp();
@@ -35,17 +53,24 @@ export function DashboardShell() {
         {isMac && <div className="drag-region absolute inset-x-0 top-0 h-8" aria-hidden="true" />}
         <div className="@container mx-auto max-w-[1400px] px-8 pt-10 pb-12">
           <div key={`${screen}-${activeFamilyKey ?? ""}`} className="animate-fade-in-up">
-            {screen === "overview" && <OverviewScreen />}
-            {screen === "searchSettings" && <SearchSettingsScreen />}
-            {screen === "history" && <HistoryScreen />}
-            {screen === "compare" && <CompareScreen />}
-            {screen === "portfolio" && <PortfolioScreen />}
-            {screen === "section" && <SectionDetailScreen />}
-            {screen === "compliance" && <ComplianceScreen />}
-            {screen === "benchmarks" && <BenchmarksScreen />}
-            {screen === "export" && <ExportScreen />}
-            {screen === "license" && <LicenseScreen />}
-            {screen === "settings" && <SettingsScreen />}
+            <ErrorBoundary
+              name="This screen"
+              header={<Header title={SCREEN_TITLES[screen]} />}
+              detail="Part of its data could not be displayed."
+              hint="Try again, or open another screen from the sidebar."
+            >
+              {screen === "overview" && <OverviewScreen />}
+              {screen === "searchSettings" && <SearchSettingsScreen />}
+              {screen === "history" && <HistoryScreen />}
+              {screen === "compare" && <CompareScreen />}
+              {screen === "portfolio" && <PortfolioScreen />}
+              {screen === "section" && <SectionDetailScreen />}
+              {screen === "compliance" && <ComplianceScreen />}
+              {screen === "benchmarks" && <BenchmarksScreen />}
+              {screen === "export" && <ExportScreen />}
+              {screen === "license" && <LicenseScreen />}
+              {screen === "settings" && <SettingsScreen />}
+            </ErrorBoundary>
           </div>
         </div>
       </main>

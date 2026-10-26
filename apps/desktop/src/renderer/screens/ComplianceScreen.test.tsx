@@ -80,4 +80,20 @@ describe("Compliance framework picker, CIS Benchmarks card", () => {
     await act(async () => fireEvent.click(card));
     expect(mocks.navigate).toHaveBeenCalledWith("benchmarks");
   });
+
+  it("follows the framework cards: wordmark badge, name, teal line, description and teal footnote", async () => {
+    mocks.state.current = appState("internal");
+    await renderScreen();
+    const card = screen.getByRole("button", { name: "CIS Benchmarks" });
+    const framework = screen.getByRole("button", { name: "ISO/IEC 27001" });
+    // The same 40 unit wordmark tile as FrameworkBadge.
+    const badge = card.querySelector("svg")!;
+    expect(badge.getAttribute("viewBox")).toBe(framework.querySelector("svg")!.getAttribute("viewBox"));
+    expect(badge.textContent).toBe("CISBENCHMARKS");
+    const parts = [...card.children].map((child) => child.className);
+    expect(parts.slice(1, 4)).toEqual([...framework.children].map((child) => child.className).slice(1, 4));
+    // The footnote in the style of the mapped requirements line of the framework cards.
+    expect(parts[4]).toBe("mt-auto block pt-3 text-xs font-semibold text-teal-700");
+    expect(card.lastElementChild!.textContent).toBe("Readiness comparison, not a certification.");
+  });
 });

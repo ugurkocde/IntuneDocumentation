@@ -1,23 +1,30 @@
 /**
  * The benchmark readiness PDF in the evidence report design, built only on
  * the shared kit (src/lib/compliance/pdf-kit.ts) and chrome
- * (src/lib/compliance/pdf-chrome.ts). It shows one assessment: the headline
- * per Level (Matches out of Matches plus Differs, n/a when nothing was
- * assessed), the counts outside it with their reasons, coverage of the full
- * benchmark only with a delivered list, every result, the settings behind
- * Differs and Needs review, the manual items with the manual notice, and the
- * exceptions. "Readiness comparison, not a certification" is on the cover and
- * in the footer of every page. Titles come from the delivered pack and only
- * exist in the rendered bytes.
+ * (src/lib/compliance/pdf-chrome.ts). Pages: the cover, an about page with
+ * the notices and the contents, the summary (headline per Level with its
+ * base, counts of every state, reasons, sections, first steps and key
+ * findings), what to do (the fix plan in order), the results table, the data
+ * basis, one card per result that differs or needs review, and an appendix
+ * with the manual recommendations, the exceptions and the method.
+ * "Readiness comparison, not a certification" is on the cover, in the about
+ * callout and in the footer of every page; the manual notice is on the
+ * cover, the about page and in the manual section. Titles come from the
+ * delivered pack and only exist in the rendered bytes; pack policy names are
+ * never shown.
  */
 import jsPDF from "jspdf";
 import type { BrandingOptions } from "~/types/branding";
 import {
   PALETTE,
+  TONES,
   capHeight,
+  centredBaseline,
+  chipWidth,
   clampLine,
   dateParts,
   drawCard,
+  drawChip,
   drawDonut,
   drawEyebrow,
   drawKpiTile,
@@ -25,6 +32,8 @@ import {
   drawMarker,
   drawPill,
   drawRule,
+  drawStackedBar,
+  mixColor,
   pillMetrics,
   pinPdfMetadata,
   setFont,
@@ -39,36 +48,48 @@ import {
   brandingTheme,
   documentControlGridHeight,
   drawCoverBackground,
-  drawFooterNotice,
+  drawCoverFooter,
   drawCoverHeadline,
   drawCoverMasthead,
   drawCoverTenantBlock,
   drawDocumentControlGrid,
+  drawNoticeCallout,
   drawPageTitle,
   drawRunningChrome,
   drawSectionHeading,
   drawTableHeader,
+  drawToc,
   drawZebraRow,
-  layoutRunningFooter,
+  layoutToc,
   pageFrame,
-  type DocumentControlCell,
   tableHeaderLines,
+  type DocumentControlCell,
+  type TocItem,
 } from "../compliance/pdf-chrome";
-import type {
-  BenchmarkAssessment,
-  LevelSummary,
-  Observation,
-  ReasonCode,
-  ResultState,
-  SettingFinding,
+import { addPdfOutline, type PdfOutlineEntry } from "../pdf-outline";
+import {
+  assessmentResults,
+  isNotConfigured,
+  type AssessmentResult,
+  type BenchmarkAssessment,
+  type HeadlineStates,
+  type LevelSummary,
+  type SettingFinding,
 } from "./assessment";
-import { assessmentResults } from "./assessment";
 import {
   COVER_LEAD,
   KPI_CAPTIONS,
+  LEVEL_2_NOTE,
+  NEEDS_REVIEW_NOTE,
   READINESS_DISCLAIMER,
   REASON_LABELS,
   RESULT_LABELS,
+  SETTINGS_BASIS_NOTE,
+  SHORT_REASON_LABELS,
+  STATE_DESCRIPTIONS,
+  UNREADABLE_CAUSE_LABELS,
+  absentValueText,
+  assignmentLabel,
   benchmarkDisplayName,
   benchmarkName,
   coverageStatement,
@@ -79,56 +100,133 @@ import {
   levelCheckSummary,
   levelsLabel,
   matchingPolicies,
-  observationLabel,
+  OTHER_PROFILE_LABELS,
   ratePercent,
+  rateIsHero,
+  resultLabel,
+  resultSettingDetails,
   settingStatusText,
+  type HolderDetail,
 } from "./display";
 import { appliesOn, localDate, type BenchmarkException } from "./exceptions";
+import {
+  buildFixPlan,
+  nextStepText,
+  type FixAction,
+  type FixPlan,
+} from "./fix-plan";
 import {
   MANUAL_NOT_ASSESSED_NOTE,
   MANUAL_RECOMMENDATIONS_NOTICE,
   MANUAL_RECOMMENDATIONS_URL,
 } from "./manual";
 import { readableRecommendation } from "./policies";
-import { findInstance, valueText } from "./values";
+import {
+  NOT_CONFIGURED,
+  NOT_READABLE,
+  settingValue,
+  valueText,
+} from "./values";
 
 export { valueText };
 
 export interface ReadinessPdfOptions {
   /** Benchmark name from the delivered catalog; the id in words otherwise. */
   benchmarkName?: string;
-  /** Shortened tenant label, as the documentation export shows it. */
+  /** The tenant's display name when known, otherwise its shortened id. */
   tenantLabel?: string;
   /** Fixed render time: same input, same bytes. */
   renderDate?: Date;
   branding?: BrandingOptions;
   /** Stored exceptions; those of this benchmark, version and Level are listed. */
   exceptions?: readonly BenchmarkException[];
+  /** The fix plan of the assessment; built from it when absent. */
+  fixPlan?: FixPlan;
 }
 
 const PRODUCT = "Intune Documentation";
+const GENERATED_WITH =
+  "Generated with Intune Documentation (intunedocumentation.com)";
+const DOCUMENT_TITLE = "CIS Benchmark readiness comparison";
 
-const RESULT_STYLE: Readonly<
-  Record<ResultState, { tone: Tone; marker: MarkerKind; color: RgbColor }>
-> = {
-  Pass: { tone: "found", marker: "filled", color: [31, 133, 83] },
-  Fail: { tone: "conflict", marker: "triangle", color: [185, 28, 28] },
-  Review: { tone: "partial", marker: "half", color: [196, 113, 31] },
-  "Not assessed": { tone: "none", marker: "outline", color: [100, 116, 139] },
-};
-
-const RESULT_ORDER: readonly ResultState[] = [
-  "Pass",
-  "Fail",
-  "Review",
-  "Not assessed",
+/** The displayed states, in display order. */
+type State = keyof Omit<HeadlineStates, "assessed" | "total">;
+const STATES: readonly State[] = [
+  "matches",
+  "differs",
+  "notConfigured",
+  "needsReview",
+  "notAssessed",
 ];
 
-const ASSIGNMENT_LABELS: Readonly<Record<Observation["assignment"], string>> = {
-  assigned: "Assigned",
-  notAssigned: "Not assigned",
-  unknown: "Assignment unknown",
+const RED: RgbColor = [185, 28, 28];
+const AMBER: RgbColor = [196, 113, 31];
+
+/** Pills, markers and bar colours of the states, as the evidence report uses them. */
+const STATE_STYLE: Readonly<
+  Record<
+    State,
+    {
+      label: string;
+      tone: Tone;
+      marker: MarkerKind;
+      color: RgbColor;
+      bar: RgbColor;
+    }
+  >
+> = {
+  matches: {
+    label: RESULT_LABELS.Pass,
+    tone: "found",
+    marker: "filled",
+    color: [31, 133, 83],
+    bar: [31, 133, 83],
+  },
+  differs: {
+    label: RESULT_LABELS.Fail,
+    tone: "conflict",
+    marker: "triangle",
+    color: RED,
+    bar: RED,
+  },
+  notConfigured: {
+    label: NOT_CONFIGURED,
+    tone: "conflict",
+    marker: "outline",
+    color: RED,
+    bar: mixColor(RED, PALETTE.white, 0.45),
+  },
+  needsReview: {
+    label: RESULT_LABELS.Review,
+    tone: "partial",
+    marker: "half",
+    color: AMBER,
+    bar: AMBER,
+  },
+  notAssessed: {
+    label: RESULT_LABELS["Not assessed"],
+    tone: "na",
+    marker: "triangle",
+    color: AMBER,
+    bar: [226, 200, 170],
+  },
 };
+
+const PARENT_DIFFERS = "Parent has another option";
+
+const PLATFORM_NAMES: Readonly<Record<string, string>> = {
+  windows: "Windows",
+  macos: "macOS",
+  ios: "iOS",
+  android: "Android",
+  linux: "Linux",
+};
+
+/** Short reasons of the results that carry no reason code. */
+const FAIL_REASONS = {
+  differs: "Another value is set",
+  notConfigured: "Set in no collected policy",
+} as const;
 
 const METHOD_LINES = [
   "Each setting of the delivered pack is compared with the Settings Catalog policies of the last collection only. Device configurations, administrative templates, security baselines and endpoint security intents are not read. Nothing is written to the tenant.",
@@ -136,6 +234,12 @@ const METHOD_LINES = [
   "Differs needs a readable tenant value that differs on a policy that is assigned or whose assignment could not be read, or a complete collection that shows the setting missing from every policy while no profile of another type exists for its platform. When such profiles exist, a setting missing from the Settings Catalog needs review, because it may be set outside it.",
   "Absent, unreadable or incomplete data is Needs review or Not assessed, never Differs.",
   "A recommendation that names a setting outside the pack is Not assessed.",
+];
+
+const HOW_TO_READ_NOTES = [
+  "The headline is Matches out of Matches plus Differs, Not configured counted as Differs. Needs review and Not assessed are counted beside it and never lower it.",
+  "Only assigned policies count as Matches. A match on a policy that is not assigned applies to nobody.",
+  "Page numbers point to the result detail of every result that differs or needs review.",
 ];
 
 /** The headline as text: a percentage, or n/a when nothing was assessed. */
@@ -201,6 +305,11 @@ function formatDate(value: Date, utc: boolean): string {
   return `${year}-${month}-${day} ${hours}:${minutes}${utc ? " UTC" : ""}`;
 }
 
+function formatDay(value: Date, utc: boolean): string {
+  const { year, month, day } = dateParts(value, utc);
+  return `${year}-${month}-${day}`;
+}
+
 /**
  * Wraps text to the width, breaking at spaces and, for identifiers without
  * spaces, after an underscore, dot, slash, hyphen or tilde, or anywhere.
@@ -251,10 +360,42 @@ export function wrapText(
   return lines;
 }
 
+/** Plan text with tenant names trimmed: no space before punctuation. */
+const prose = (text: string) => text.replace(/\s+([,.;:)])/g, "$1");
+
+/** The displayed state of one result. */
+function stateOf(item: AssessmentResult): State {
+  if (item.result === "Pass") return "matches";
+  if (item.result === "Review") return "needsReview";
+  if (item.result === "Not assessed") return "notAssessed";
+  return isNotConfigured(
+    item.kind === "recommendation" ? item.recommendation : item.finding,
+  )
+    ? "notConfigured"
+    : "differs";
+}
+
+/** The reason of one result as a short label, or null for Matches. */
+function shortReason(item: AssessmentResult): string | null {
+  if (item.reason) return SHORT_REASON_LABELS[item.reason];
+  const state = stateOf(item);
+  return state === "differs" || state === "notConfigured"
+    ? FAIL_REASONS[state]
+    : null;
+}
+
+const plural = (count: number, one: string, many: string) =>
+  `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
+
+const numeric = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true });
+
 /** One table column: label and width in mm. */
 interface Column {
   label: string;
   width: number;
+  /** Numbers are right aligned, with their header. */
+  align?: "right";
 }
 
 type Cell =
@@ -264,10 +405,31 @@ type Cell =
       style?: FontStyle;
       color?: RgbColor;
     }
-  | { result: ResultState };
+  | { state: State };
 
-const BODY = 7.4;
-const SMALL = 6.8;
+/** One piece of a card, drawn at its top; cards break between blocks. */
+interface Block {
+  height: number;
+  draw: (top: number) => void;
+}
+
+interface TocEntry extends TocItem {
+  /** A section the bookmarks nest under; level 0 entries only. */
+  children?: TocEntry[];
+}
+
+interface PageRef {
+  page: number;
+  x: number;
+  y: number;
+  /** Result key whose detail page is written, or a fixed page index. */
+  key: string;
+  size: number;
+  label: (page: number) => string;
+}
+
+const BODY = 8.8;
+const SMALL = 7.2;
 const lineHeight = (size: number) => size * 0.45;
 
 /** Renders the readiness PDF of one assessment. */
@@ -277,6 +439,7 @@ export function renderReadinessPdf(
 ): Uint8Array {
   const { branding } = options;
   const theme = brandingTheme(branding);
+  const primaryTint = mixColor(theme.primary, PALETTE.white, 0.92);
   const fixed = options.renderDate !== undefined;
   const generatedAt = options.renderDate
     ? new Date(options.renderDate.getTime())
@@ -293,6 +456,10 @@ export function renderReadinessPdf(
   const collectedAt = assessment.collection.collectedAt
     ? new Date(assessment.collection.collectedAt)
     : null;
+  const plan = options.fixPlan ?? buildFixPlan(assessment);
+  const results = assessmentResults(assessment);
+  const multiLevel = assessment.levels.length > 1;
+  const findings = new Map(assessment.settings.map((item) => [item.key, item]));
 
   const doc = new jsPDF({
     orientation: "portrait",
@@ -302,8 +469,8 @@ export function renderReadinessPdf(
   });
   applyTheme(doc, theme);
   doc.setProperties({
-    title: `${title} readiness comparison`,
-    author: branding?.companyName ?? PRODUCT,
+    title: DOCUMENT_TITLE,
+    author: GENERATED_WITH,
     subject: READINESS_DISCLAIMER,
   });
   if (fixed)
@@ -325,14 +492,12 @@ export function renderReadinessPdf(
     contentTop: 21,
     contentBottom: 276,
   });
-  // The disclaimer and the manual notice are in the footer of every page.
-  const footer = layoutRunningFooter(doc, frame, {
-    text: `${PRODUCT}. ${READINESS_DISCLAIMER}.`,
-    notice: `${MANUAL_RECOMMENDATIONS_NOTICE} ${MANUAL_RECOMMENDATIONS_URL}`,
-  });
-  const { margin, right, contentWidth, contentTop } = frame;
-  const contentBottom = footer.contentBottom;
+  const { margin, right, contentWidth, contentTop, contentBottom } = frame;
   let y = contentTop;
+  const toc: TocEntry[] = [];
+  const pageRefs: PageRef[] = [];
+  const detailPages = new Map<string, number>();
+  const currentPage = () => doc.internal.getCurrentPageInfo().pageNumber;
 
   const newPage = () => {
     doc.addPage();
@@ -344,27 +509,33 @@ export function renderReadinessPdf(
     newPage();
     return true;
   };
+  const caption = (text: string) => {
+    setFont(doc, 7.2, "italic", PALETTE.muted);
+    doc.text(pdfText(text), margin, y + 2.6);
+    y += 6;
+  };
   const paragraph = (
     text: string,
-    options: {
+    extra: {
       size?: number;
       style?: FontStyle;
       color?: RgbColor;
       indent?: number;
       width?: number;
+      after?: number;
     } = {},
   ) => {
-    const size = options.size ?? 8.4;
-    const style = options.style ?? "normal";
-    const indent = options.indent ?? 0;
+    const size = extra.size ?? BODY;
+    const style = extra.style ?? "normal";
+    const indent = extra.indent ?? 0;
     const lines = wrapText(
       doc,
       text,
-      options.width ?? contentWidth - indent,
+      extra.width ?? contentWidth - indent,
       size,
       style,
     );
-    const step = lineHeight(size) + 0.6;
+    const step = size * 0.44;
     for (const line of lines) {
       ensure(step);
       drawLines(
@@ -374,23 +545,178 @@ export function renderReadinessPdf(
         y,
         size,
         style,
-        options.color ?? theme.text,
+        extra.color ?? theme.text,
         step,
       );
       y += step;
     }
-    y += 1.6;
+    y += extra.after ?? 1.8;
   };
+  const sectionHeading = (text: string, small?: string) => {
+    y = drawSectionHeading(doc, theme, frame, y, pdfText(text), small);
+  };
+  const pageTitle = (
+    eyebrow: string,
+    heading: string,
+    lead?: string,
+    tocTitle = heading,
+  ): TocEntry => {
+    const entry: TocEntry = { title: tocTitle, page: currentPage(), level: 0 };
+    toc.push(entry);
+    y = drawPageTitle(doc, theme, frame, y, {
+      eyebrow,
+      title: heading,
+      ...(lead ? { lead } : {}),
+    });
+    return entry;
+  };
+  const statePill = (
+    x: number,
+    top: number,
+    state: State,
+    maxWidth?: number,
+    label = STATE_STYLE[state].label,
+  ) =>
+    drawPill(doc, x, top, label, {
+      tone: STATE_STYLE[state].tone,
+      marker: STATE_STYLE[state].marker,
+      markerColor: STATE_STYLE[state].color,
+      small: true,
+      ...(maxWidth !== undefined ? { maxWidth } : {}),
+    });
+  const idChip = (x: number, top: number, id: string, maxWidth = 30) => {
+    const label = pdfText(id);
+    const size = chipWidth(doc, label, 6.6) > maxWidth ? 5.8 : 6.6;
+    return drawChip(doc, x, top, label, "id", {
+      size,
+      height: 4.4,
+      minWidth: 9.6,
+      fill: primaryTint,
+      color: theme.primary,
+    });
+  };
+  /** One line with the middle cut out, so both ends of a long id stay. */
+  const middleClamp = (text: string, width: number, size: number) => {
+    const value = pdfText(text);
+    if (textWidth(doc, value, size) <= width) return value;
+    let keep = Math.floor(value.length / 2);
+    while (
+      keep > 4 &&
+      textWidth(doc, `${value.slice(0, keep)}...${value.slice(-keep)}`, size) >
+        width
+    )
+      keep -= 1;
+    return `${value.slice(0, keep)}...${value.slice(-keep)}`;
+  };
+  /** A dashed card with one muted line, the evidence report's empty state. */
+  const emptyCard = (text: string) => {
+    const lines = wrapText(doc, text, contentWidth - 10, 8.2);
+    const height = lines.length * 3.8 + 8;
+    ensure(height + 4);
+    drawCard(doc, margin, y, contentWidth, height, {
+      stroke: PALETTE.dashed,
+      dashed: true,
+    });
+    drawLines(doc, lines, margin + 5, y + 4, 8.2, "normal", PALETTE.muted, 3.8);
+    y += height + 5;
+  };
+  const pageRef = (key: string, x: number, baseline: number, size = 6.6) =>
+    pageRefs.push({
+      page: currentPage(),
+      x,
+      y: baseline,
+      key,
+      size,
+      label: (page) => `See page ${page}`,
+    });
 
   const levelOf = (level: number) =>
     assessment.levels.find((item) => item.level === level);
   const coverLevel = levelOf(assessment.level) ?? assessment.levels[0];
-  const emptyCounts = { pass: 0, fail: 0, review: 0, notAssessed: 0 };
-  const coverCounts = coverLevel?.headline.counts ?? emptyCounts;
-  const coverRate = coverLevel?.headline.rate ?? null;
+  const emptyStates: HeadlineStates = {
+    matches: 0,
+    differs: 0,
+    notConfigured: 0,
+    needsReview: 0,
+    notAssessed: 0,
+    assessed: 0,
+    total: 0,
+  };
+  const statesOf = (level: LevelSummary | undefined) =>
+    level?.headline.states ?? emptyStates;
+  const nounOf = (level: LevelSummary | undefined, count: number) =>
+    level?.headline.basis === "settings"
+      ? count === 1
+        ? "setting"
+        : "settings"
+      : count === 1
+        ? "recommendation"
+        : "recommendations";
+  const shownStates = (list: readonly HeadlineStates[]) =>
+    STATES.filter(
+      (state) =>
+        state !== "notConfigured" ||
+        list.some((item) => item.notConfigured > 0),
+    );
+  const segmentsOf = (states: HeadlineStates) =>
+    STATES.map((state) => ({
+      value: states[state],
+      color: STATE_STYLE[state].bar,
+    }));
+  /** "Matches 1, Differs 0, Needs review 87": the counts with their labels. */
+  const countsLine = (states: HeadlineStates) =>
+    shownStates([states])
+      .map(
+        (state) =>
+          `${STATE_STYLE[state].label} ${states[state].toLocaleString("en-US")}`,
+      )
+      .join(", ");
+  /** The big value of a headline: the rate only when it may lead, the matches otherwise. */
+  const heroValue = (level: LevelSummary | undefined) => {
+    const states = statesOf(level);
+    const rate = level?.headline.rate ?? null;
+    return rateIsHero(states) && rate !== null
+      ? {
+          value: headlineValue(rate),
+          count: `of ${states.assessed.toLocaleString("en-US")} assessed`,
+        }
+      : {
+          value: states.matches.toLocaleString("en-US"),
+          count: states.total
+            ? `of ${states.total.toLocaleString("en-US")} match`
+            : "No results",
+        };
+  };
+
+  // The results with a detail card, in the order of the cards: Level, then
+  // Differs before Needs review, then id.
+  const SEVERITY: Readonly<Record<string, number>> = { Fail: 0, Review: 1 };
+  const detailResults = results
+    .filter((item) => item.result === "Fail" || item.result === "Review")
+    .sort(
+      (a, b) =>
+        a.level - b.level ||
+        SEVERITY[a.result]! - SEVERITY[b.result]! ||
+        numeric(a.id, b.id),
+    );
+  const detailKeys = new Set(detailResults.map((item) => item.key));
+  const titleOf = (item: AssessmentResult) =>
+    item.kind === "recommendation"
+      ? item.recommendation.title
+      : (assessment.settingNames[item.finding.settingId]?.name ??
+        item.finding.settingId);
+  /** The first result of an action that has a detail card. */
+  const actionTarget = (action: FixAction) =>
+    action.results.find((item) => detailKeys.has(item.key))?.key;
 
   // ---------------------------------------------------------------- Cover
-  drawCoverBackground(doc, theme, frame, { ringFraction: coverRate ?? 0 });
+  const coverStates = statesOf(coverLevel);
+  drawCoverBackground(doc, theme, frame, {
+    ringFraction:
+      rateIsHero(coverStates) && coverLevel?.headline.rate != null
+        ? coverLevel.headline.rate
+        : 0,
+  });
   drawCoverMasthead(doc, theme, frame, {
     productName: PRODUCT,
     logo: branding?.logo,
@@ -400,23 +726,23 @@ export function renderReadinessPdf(
     eyebrow: "CIS Benchmark readiness",
     title,
     subtitle: levelsLabel(assessment),
-    lead: `${READINESS_DISCLAIMER}. ${COVER_LEAD}`,
+    lead: COVER_LEAD,
   });
+  const reportDay = formatDay(generatedAt, fixed);
+  const collectedDay = collectedAt ? formatDay(collectedAt, fixed) : null;
   drawCoverTenantBlock(doc, theme, frame, {
     tenantEyebrow: "Tenant",
     tenant,
     facts: [
-      ["Levels", levelsLabel(assessment).replace(/^Levels? /, "")],
-      ["Assessed", formatDate(assessedAt, fixed)],
-      [
-        "Data collected",
-        collectedAt ? formatDate(collectedAt, fixed) : "Not recorded",
-      ],
-      ["Generated", formatDate(generatedAt, fixed)],
+      ["Report date", reportDay],
+      ...(collectedDay && collectedDay !== reportDay
+        ? [["Data collected", collectedDay] as const]
+        : []),
     ],
   });
 
-  // Headline card: donut of Matches over Matches plus Differs.
+  // Headline card: a donut of the matches over all results of the Level on
+  // a grey track, as its centre says, and the headline with its base.
   const midTop = 144;
   drawCard(doc, margin, midTop, 72, 70, { fill: PALETTE.panel });
   const donutX = margin + 36;
@@ -427,17 +753,19 @@ export function renderReadinessPdf(
     donutY,
     18,
     4.4,
-    [
-      { value: coverCounts.pass, color: RESULT_STYLE.Pass.color },
-      { value: coverCounts.fail, color: RESULT_STYLE.Fail.color },
-    ],
-    coverCounts.pass + coverCounts.fail,
+    [{ value: coverStates.matches, color: STATE_STYLE.matches.bar }],
+    coverStates.total,
   );
+  const hero = heroValue(coverLevel);
   setFont(doc, 22, "bold", theme.primary);
-  doc.text(headlineValue(coverRate), donutX, donutY + 2.2, { align: "center" });
+  doc.text(hero.value, donutX, donutY + 2.2, { align: "center" });
+  setFont(doc, 6.6, "normal", PALETTE.muted);
+  doc.text(hero.count, donutX, donutY + 6.6, { align: "center" });
   const captionLines = wrapText(
     doc,
-    `${headlineLabel(assessment.basis)}, Level ${coverLevel?.level ?? assessment.level}`,
+    coverLevel
+      ? `${headlineLabel(coverLevel.headline.basis)}, Level ${coverLevel.level}`
+      : "No Level assessed",
     64,
     8.3,
     "bold",
@@ -445,7 +773,13 @@ export function renderReadinessPdf(
   );
   const subLines = wrapText(
     doc,
-    headlineWithBase(coverRate, coverCounts, NOTHING_ASSESSED),
+    coverLevel
+      ? headlineWithBase(
+          coverLevel.headline.rate,
+          coverLevel.headline.counts,
+          NOTHING_ASSESSED,
+        )
+      : "The pack delivered no results.",
     62,
     7,
     "normal",
@@ -465,44 +799,59 @@ export function renderReadinessPdf(
     doc.text(line, donutX, captionY, { align: "center" });
   }
 
-  // At a glance: every result with its count, then coverage.
+  // At a glance: every state with its count, one column per Level.
   const glanceX = margin + 80;
   const glanceWidth = contentWidth - 80;
+  const glanceLevels = assessment.levels.length ? assessment.levels : [];
   drawEyebrow(doc, "At a glance", glanceX, midTop + 2.4, {
     color: theme.secondary,
   });
+  if (multiLevel)
+    glanceLevels.forEach((level, index) =>
+      drawEyebrow(
+        doc,
+        `Level ${level.level}`,
+        right - (glanceLevels.length - 1 - index) * 18,
+        midTop + 2.4,
+        { color: PALETTE.muted, size: 5.8, align: "right" },
+      ),
+    );
   drawRule(doc, glanceX, midTop + 5, right, theme.primary, 0.4);
-  const glanceCounts: Record<ResultState, number> = {
-    Pass: coverCounts.pass,
-    Fail: coverCounts.fail,
-    Review: coverCounts.review,
-    "Not assessed": coverCounts.notAssessed,
-  };
-  RESULT_ORDER.forEach((state, index) => {
-    const rowTop = midTop + 5 + index * 8.6;
-    const middle = rowTop + 4.3;
-    const style = RESULT_STYLE[state];
+  const glanceStates = shownStates(
+    glanceLevels.map((level) => level.headline.states),
+  );
+  const glanceRow = glanceStates.length > 4 ? 7.4 : 8.6;
+  glanceStates.forEach((state, index) => {
+    const rowTop = midTop + 5 + index * glanceRow;
+    const middle = rowTop + glanceRow / 2;
+    const style = STATE_STYLE[state];
     drawMarker(doc, glanceX + 1.4, middle, style.marker, style.color);
     setFont(doc, 8.5, "normal", theme.text);
-    doc.text(RESULT_LABELS[state], glanceX + 5, middle + capHeight(8.5) / 2);
-    setFont(doc, 11, "bold", theme.primary);
-    doc.text(String(glanceCounts[state]), right, middle + capHeight(11) / 2, {
-      align: "right",
-    });
-    drawRule(doc, glanceX, rowTop + 8.6, right);
+    doc.text(style.label, glanceX + 5, middle + capHeight(8.5) / 2);
+    (glanceLevels.length ? glanceLevels : [undefined]).forEach(
+      (level, column, all) => {
+        setFont(doc, 11, "bold", theme.primary);
+        doc.text(
+          statesOf(level)[state].toLocaleString("en-US"),
+          right - (all.length - 1 - column) * 18,
+          middle + capHeight(11) / 2,
+          { align: "right" },
+        );
+      },
+    );
+    drawRule(doc, glanceX, rowTop + glanceRow, right);
   });
-  const noteTop = midTop + 5 + 4 * 8.6 + 4;
-  const noteLines = wrapText(
-    doc,
-    `Needs review and Not assessed are not counted in the headline. ${coverLevel ? coverageStatement(coverLevel) : "Coverage of the full benchmark is not shown."}`,
-    glanceWidth,
-    7.4,
-    "normal",
-    Math.floor((midTop + 70 - noteTop) / 3.4),
-  );
+  const noteTop = midTop + 5 + glanceStates.length * glanceRow + 4;
   drawLines(
     doc,
-    noteLines,
+    wrapText(
+      doc,
+      `Needs review and Not assessed are not counted in the headline. ${coverLevel ? coverageStatement(coverLevel) : "Coverage of the full benchmark is not shown."}`,
+      glanceWidth,
+      7.4,
+      "normal",
+      Math.max(1, Math.floor((midTop + 72 - noteTop) / 3.4)),
+    ),
     glanceX,
     noteTop,
     7.4,
@@ -511,6 +860,13 @@ export function renderReadinessPdf(
     3.4,
   );
 
+  const basisLabel = (() => {
+    const parts = assessment.levels.map(
+      (level) =>
+        `${level.headline.basis === "settings" ? "Settings" : "Recommendations"}${multiLevel ? ` (Level ${level.level})` : ""}`,
+    );
+    return parts.length ? parts.join(", ") : "Recommendations";
+  })();
   const controlCells: DocumentControlCell[] = [
     { label: "Benchmark", value: name, span: 2 },
     { label: "Version", value: assessment.version },
@@ -521,21 +877,20 @@ export function renderReadinessPdf(
       label: "Data collected",
       value: collectedAt ? formatDate(collectedAt, fixed) : "Not recorded",
     },
-    {
-      label: "Basis",
-      value:
-        assessment.basis === "recommendations"
-          ? "Recommendations"
-          : assessment.basis === "settings"
-            ? "Settings"
-            : "Recommendations and settings",
-    },
+    { label: "Basis", value: basisLabel },
     { label: "Prepared by", value: company },
   ];
-  // Long values move the grid up so it stays clear of the footer notice.
+  // The manual notice sits at the foot of the cover, above the footer line.
+  const coverNotice = wrapText(
+    doc,
+    MANUAL_RECOMMENDATIONS_NOTICE,
+    contentWidth,
+    6.8,
+  );
+  const coverNoticeTop = 281 - (coverNotice.length + 1) * 3;
   const controlTop = Math.min(
     222,
-    contentBottom - documentControlGridHeight(doc, frame, controlCells),
+    coverNoticeTop - 4 - documentControlGridHeight(doc, frame, controlCells),
   );
   drawDocumentControlGrid(
     doc,
@@ -545,11 +900,47 @@ export function renderReadinessPdf(
     "Document control",
     controlCells,
   );
-  drawRule(doc, margin, footer.ruleY, right);
-  drawFooterNotice(doc, frame, footer);
-  footer.lines.forEach((line, index) =>
-    doc.text(line, margin, footer.ruleY + 3.9 + index * 2.8),
+  drawLines(
+    doc,
+    coverNotice,
+    margin,
+    coverNoticeTop,
+    6.8,
+    "normal",
+    PALETTE.muted,
+    3,
   );
+  setFont(doc, 6.8, "bold", theme.secondary);
+  doc.textWithLink(
+    MANUAL_RECOMMENDATIONS_URL,
+    margin,
+    coverNoticeTop + coverNotice.length * 3 + capHeight(6.8),
+    { url: MANUAL_RECOMMENDATIONS_URL },
+  );
+  drawCoverFooter(doc, frame, GENERATED_WITH, READINESS_DISCLAIMER);
+
+  // ---------------------------------------------------- About and contents
+  newPage();
+  drawEyebrow(doc, "About this report", margin, y + 2.4, {
+    color: theme.secondary,
+  });
+  y += 6;
+  y =
+    drawNoticeCallout(doc, theme, frame, y, {
+      heading: "Read this first",
+      paragraphs: [
+        `${READINESS_DISCLAIMER}.`,
+        "This report compares the delivered benchmark pack with the Settings Catalog policies of the last collection. It shows where the tenant holds the recommended values and does not replace an audit.",
+        NEEDS_REVIEW_NOTE,
+        MANUAL_RECOMMENDATIONS_NOTICE,
+      ],
+      link: {
+        text: MANUAL_RECOMMENDATIONS_URL,
+        url: MANUAL_RECOMMENDATIONS_URL,
+      },
+    }) + 10;
+  const tocPage = currentPage();
+  const tocStartY = y;
 
   // ---------------------------------------------------------------- Tables
   const drawTable = (
@@ -572,7 +963,13 @@ export function renderReadinessPdf(
           frame,
           y,
           columns.map((column, index) => ({
-            x: xs[index]!,
+            x:
+              column.align === "right"
+                ? xs[index]! +
+                  column.width -
+                  3 -
+                  textWidth(doc, column.label.toUpperCase(), 5.6, "bold", 0.2)
+                : xs[index]!,
             lines: tableHeaderLines(doc, column.label, column.width),
           })),
         ) + 0.6;
@@ -581,42 +978,44 @@ export function renderReadinessPdf(
     header();
     rows.forEach((cells, index) => {
       const height = Math.max(
-        7,
+        6.6,
         ...cells.map((cell) =>
           "lines" in cell
-            ? cell.lines.length * lineHeight(cell.size ?? BODY) + 3.4
-            : 7,
+            ? cell.lines.length * lineHeight(cell.size ?? SMALL) + 3.2
+            : 6.6,
         ),
       );
       if (ensure(height)) {
-        y = drawSectionHeading(doc, theme, frame, y, continued);
+        caption(continued);
         header();
       }
       drawZebraRow(doc, frame, y, height, index);
       cells.forEach((cell, cellIndex) => {
         const x = xs[cellIndex]! + 1.5;
-        if ("lines" in cell) {
-          const size = cell.size ?? BODY;
+        if ("lines" in cell && columns[cellIndex]!.align === "right") {
+          const size = cell.size ?? SMALL;
+          setFont(doc, size, cell.style ?? "normal", cell.color ?? theme.text);
+          cell.lines.forEach((line, lineIndex) =>
+            doc.text(
+              line,
+              xs[cellIndex]! + columns[cellIndex]!.width - 1.5,
+              y + 1.7 + capHeight(size) + lineIndex * lineHeight(size),
+              { align: "right" },
+            ),
+          );
+        } else if ("lines" in cell) {
+          const size = cell.size ?? SMALL;
           drawLines(
             doc,
             cell.lines,
             x,
-            y + 1.9,
+            y + 1.7,
             size,
             cell.style ?? "normal",
             cell.color ?? theme.text,
             lineHeight(size),
           );
-        } else {
-          const style = RESULT_STYLE[cell.result];
-          drawPill(doc, x, y + 1.2, RESULT_LABELS[cell.result], {
-            tone: style.tone,
-            marker: style.marker,
-            markerColor: style.color,
-            small: true,
-            maxWidth: columns[cellIndex]!.width - 3,
-          });
-        }
+        } else statePill(x, y + 1.2, cell.state, columns[cellIndex]!.width - 3);
       });
       y += height;
     });
@@ -632,7 +1031,7 @@ export function renderReadinessPdf(
       max?: number;
     } = {},
   ): Cell => {
-    const size = extra.size ?? BODY;
+    const size = extra.size ?? SMALL;
     const style = extra.style ?? "normal";
     return {
       lines: wrapText(doc, text, width - 3, size, style, extra.max ?? 6),
@@ -642,140 +1041,949 @@ export function renderReadinessPdf(
     };
   };
 
-  const manualNotice = () => {
-    const width = contentWidth - 12;
-    const lines = wrapText(doc, MANUAL_RECOMMENDATIONS_NOTICE, width, 8.2);
-    const height = 8 + lines.length * 3.9 + 10;
-    ensure(height + 4);
-    drawCard(doc, margin, y, contentWidth, height, {
-      fill: PALETTE.navyTint,
-    });
-    drawEyebrow(doc, "Manual recommendations", margin + 6, y + 5.4, {
-      color: theme.secondary,
-    });
-    drawLines(doc, lines, margin + 6, y + 8, 8.2, "normal", theme.text, 3.9);
-    const urlY = y + 8 + lines.length * 3.9 + 4.2;
-    setFont(doc, 8.2, "bold", theme.secondary);
-    doc.textWithLink(MANUAL_RECOMMENDATIONS_URL, margin + 6, urlY, {
-      url: MANUAL_RECOMMENDATIONS_URL,
-    });
-    y += height + 5;
-  };
-
-  // ---------------------------------------------------------------- Summary
+  // -------------------------------------------------------------- Summary
   newPage();
-  y = drawPageTitle(doc, theme, frame, y, {
-    eyebrow: "Readiness summary",
-    title: "Results by Level",
-    lead: "The headline is Matches out of Matches plus Differs. Needs review and Not assessed are counted next to it and never lower it.",
-  });
+  pageTitle("01 Summary", "Summary", multiLevel ? LEVEL_2_NOTE : undefined);
 
-  const allResults = assessmentResults(assessment);
-  const itemsOf = (level: number) =>
-    allResults.filter((item) => item.level === level);
-  const reasonRows = (
-    items: ReadonlyArray<{ result: ResultState; reason?: ReasonCode }>,
-    state: ResultState,
-  ) => {
-    const counts = new Map<string, number>();
-    for (const item of items)
-      if (item.result === state) {
-        const label = item.reason
-          ? REASON_LABELS[item.reason]
-          : "No reason recorded.";
-        counts.set(label, (counts.get(label) ?? 0) + 1);
-      }
-    return [...counts.entries()].sort(
-      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-    );
-  };
-
+  // A hero card per Level: the counts lead; the rate leads only when
+  // rateIsHero allows it and is always shown with its base. The bar is the
+  // matches out of every result of the Level.
   for (const level of assessment.levels) {
     const { headline } = level;
-    const items = itemsOf(level.level);
-    ensure(70);
-    y = drawSectionHeading(
+    const states = headline.states;
+    const big = heroValue(level);
+    const textX = margin + 58;
+    const heroWidth = contentWidth - 58 - 6;
+    const leadLines = wrapText(
       doc,
-      theme,
-      frame,
-      y,
-      `Level ${level.level}`,
-      headlineLabel(level.headline.basis),
-    );
-    // Headline band.
-    drawCard(doc, margin, y, contentWidth, 15, { fill: PALETTE.panel });
-    drawEyebrow(doc, "Headline", margin + 5, y + 5.2, {
-      color: PALETTE.muted,
-    });
-    setFont(doc, 16, "bold", theme.primary);
-    doc.text(headlineValue(headline.rate), margin + 5, y + 12);
-    const valueWidth = textWidth(doc, headlineValue(headline.rate), 16, "bold");
-    setFont(doc, 8.2, "normal", theme.text);
-    doc.text(
-      headlineBasisText(headline.counts),
-      margin + 9 + valueWidth,
-      y + 12,
+      `Level ${level.level}: ${states.matches.toLocaleString("en-US")} of ${plural(states.total, nounOf(level, 1), nounOf(level, 2))} ${states.matches === 1 ? "matches" : "match"} on assigned policies.`,
+      heroWidth,
+      9.4,
+      "bold",
     );
     const exclusions = exclusionsText(headline);
-    if (exclusions) {
-      setFont(doc, 7.4, "bold", theme.secondary);
-      doc.text(exclusions, right - 5, y + 12, { align: "right" });
-    }
-    y += 19;
-    // Count tiles.
-    const gap = 3;
-    const tileWidth = (contentWidth - gap * 3) / 4;
-    const counts: Record<ResultState, number> = {
-      Pass: headline.counts.pass,
-      Fail: headline.counts.fail,
-      Review: headline.counts.review,
-      "Not assessed": headline.counts.notAssessed,
-    };
-    RESULT_ORDER.forEach((state, index) => {
-      const style = RESULT_STYLE[state];
-      drawKpiTile(doc, margin + index * (tileWidth + gap), y, tileWidth, 27, {
-        label: RESULT_LABELS[state],
-        value: String(counts[state]),
-        caption:
-          state === "Pass" || state === "Fail"
-            ? KPI_CAPTIONS.counted
-            : KPI_CAPTIONS.notCounted,
-        marker: style.marker,
-        markerColor: style.color,
-        valueColor: theme.primary,
-      });
-    });
-    y += 32;
-    for (const state of ["Review", "Not assessed"] as const) {
-      const rows = reasonRows(items, state);
-      if (!rows.length) continue;
-      ensure(10);
-      drawEyebrow(doc, `${RESULT_LABELS[state]} by reason`, margin, y + 2.4, {
-        color: theme.secondary,
-      });
-      y += 5.5;
-      for (const [label, count] of rows)
-        paragraph(`${count}: ${label}`, { size: 8, indent: 3 });
-    }
-    ensure(10);
-    drawEyebrow(doc, "Coverage", margin, y + 2.4, { color: theme.secondary });
-    y += 5.5;
-    paragraph(coverageStatement(level), { size: 8, indent: 3 });
-    paragraph(
-      levelCheckSummary(
-        level,
-        items.filter((item) => item.result !== "Not assessed").length,
-        PRODUCT,
-      ),
-      { size: 8, indent: 3 },
+    const baseLines = wrapText(
+      doc,
+      `${headlineWithBase(headline.rate, headline.counts, NOTHING_ASSESSED)}${exclusions ? `; ${exclusions}` : ""}.`,
+      heroWidth,
+      8.4,
     );
-    y += 3;
+    const mutedLines = [
+      ...wrapText(doc, `${countsLine(states)}.`, heroWidth, 7.6),
+      ...(headline.basis === "settings"
+        ? wrapText(doc, SETTINGS_BASIS_NOTE, heroWidth, 7.6)
+        : []),
+    ];
+    const textHeight =
+      leadLines.length * 4.3 +
+      1.2 +
+      baseLines.length * 3.8 +
+      1.2 +
+      mutedLines.length * 3.4 +
+      3 +
+      3 +
+      4;
+    const height = Math.max(multiLevel ? 30 : 34, textHeight + 8);
+    ensure(height + 4);
+    const top = y;
+    drawCard(doc, margin, top, contentWidth, height, { fill: PALETTE.panel });
+    setFont(doc, multiLevel ? 32 : 40, "bold", theme.primary);
+    doc.text(big.value, margin + 6, top + height / 2 + 4);
+    drawEyebrow(
+      doc,
+      clampLine(
+        doc,
+        `Matching, Level ${level.level}`.toUpperCase(),
+        46,
+        5.8,
+        "bold",
+      ),
+      margin + 6.3,
+      top + height / 2 + 9.5,
+      { color: PALETTE.muted, size: 5.8, charSpace: 0.2 },
+    );
+    let textY = top + (height - textHeight) / 2;
+    drawLines(doc, leadLines, textX, textY, 9.4, "bold", theme.text, 4.3);
+    textY += leadLines.length * 4.3 + 1.2;
+    drawLines(doc, baseLines, textX, textY, 8.4, "normal", theme.text, 3.8);
+    textY += baseLines.length * 3.8 + 1.2;
+    drawLines(doc, mutedLines, textX, textY, 7.6, "normal", PALETTE.muted, 3.4);
+    textY += mutedLines.length * 3.4 + 3;
+    drawStackedBar(
+      doc,
+      textX,
+      textY,
+      heroWidth,
+      3,
+      [{ value: states.matches, color: STATE_STYLE.matches.bar }],
+      Math.max(states.total, 1),
+      { track: PALETTE.track },
+    );
+    setFont(doc, 6.2, "normal", PALETTE.muted);
+    doc.text("0", textX, textY + 6.6);
+    doc.text(
+      plural(states.total, nounOf(level, 1), nounOf(level, 2)),
+      textX + heroWidth,
+      textY + 6.6,
+      {
+        align: "right",
+      },
+    );
+    y = top + height + 4;
   }
   if (!assessment.levels.length)
-    paragraph("No Level was assessed: the pack delivered no results.");
+    emptyCard("No Level was assessed: the pack delivered no results.");
 
-  ensure(24);
-  y = drawSectionHeading(doc, theme, frame, y, "Collection");
+  // Count tiles for one Level, one per state shown on the cover.
+  if (assessment.levels.length === 1) {
+    const states = statesOf(coverLevel);
+    const shown = shownStates([states]);
+    const gap = 4;
+    const tileWidth = (contentWidth - gap * (shown.length - 1)) / shown.length;
+    shown.forEach((state, index) => {
+      const style = STATE_STYLE[state];
+      drawKpiTile(doc, margin + index * (tileWidth + gap), y, tileWidth, 26, {
+        label: style.label,
+        value: states[state].toLocaleString("en-US"),
+        caption:
+          state === "needsReview" || state === "notAssessed"
+            ? KPI_CAPTIONS.notCounted
+            : KPI_CAPTIONS.counted,
+        marker: style.marker,
+        markerColor: style.color,
+        valueColor: states[state] > 0 ? TONES[style.tone].text : PALETTE.faint,
+      });
+    });
+    y += 26 + 5;
+  }
+
+  // Status distribution: every state of each Level, with a legend.
+  if (assessment.levels.length) {
+    const totalAll = assessment.levels.reduce(
+      (sum, level) => sum + level.headline.states.total,
+      0,
+    );
+    ensure(8 + assessment.levels.length * 12);
+    sectionHeading(
+      "Status distribution",
+      plural(totalAll, "result", "results"),
+    );
+    for (const level of assessment.levels) {
+      const states = level.headline.states;
+      const barX = multiLevel ? margin + 16 : margin;
+      if (multiLevel) {
+        setFont(doc, 7, "bold", theme.primary);
+        doc.text(`Level ${level.level}`, margin, y + 3.4);
+      }
+      drawStackedBar(
+        doc,
+        barX,
+        y,
+        right - barX,
+        4,
+        segmentsOf(states),
+        Math.max(states.total, 1),
+        { gap: 0.6 },
+      );
+      y += 4 + 3.4;
+      let legendX = barX;
+      let legendY = y;
+      for (const state of shownStates([states]).filter(
+        (item) => states[item] > 0,
+      )) {
+        const count = states[state].toLocaleString("en-US");
+        const label = `${STATE_STYLE[state].label}, ${Math.round((states[state] / Math.max(states.total, 1)) * 100)}%`;
+        const countWidth = textWidth(doc, count, 7, "bold");
+        const itemWidth = 3.4 + countWidth + 1.2 + textWidth(doc, label, 7) + 6;
+        if (legendX + itemWidth > right + 6 && legendX > barX) {
+          legendX = barX;
+          legendY += 4.2;
+        }
+        drawMarker(
+          doc,
+          legendX + 1.1,
+          legendY + 1.3,
+          STATE_STYLE[state].marker,
+          STATE_STYLE[state].color,
+          1,
+        );
+        setFont(doc, 7, "bold", theme.text);
+        doc.text(count, legendX + 3.4, legendY + 2.3);
+        setFont(doc, 7, "normal", PALETTE.muted);
+        doc.text(label, legendX + 3.4 + countWidth + 1.2, legendY + 2.3);
+        legendX += itemWidth;
+      }
+      y = legendY + 4.2 + 2;
+    }
+    y += 3;
+  }
+
+  // Open results by reason: zebra rows with a small bar and the count.
+  const reasonRows = (() => {
+    const rows = new Map<
+      string,
+      { state: State; label: string; count: number }
+    >();
+    for (const item of results) {
+      const label = shortReason(item);
+      if (!label) continue;
+      const state = stateOf(item);
+      const key = `${STATES.indexOf(state)}:${label}`;
+      const row = rows.get(key) ?? { state, label, count: 0 };
+      row.count += 1;
+      rows.set(key, row);
+    }
+    return [...rows.values()].sort(
+      (a, b) =>
+        STATES.indexOf(a.state) - STATES.indexOf(b.state) ||
+        b.count - a.count ||
+        a.label.localeCompare(b.label),
+    );
+  })();
+  const totalResults = results.length;
+  const openCount = reasonRows.reduce((sum, row) => sum + row.count, 0);
+  if (reasonRows.length) {
+    const shown = reasonRows.slice(0, 7);
+    ensure(8 + shown.length * 6.2);
+    sectionHeading(
+      "Open results by reason",
+      `${openCount.toLocaleString("en-US")} of ${plural(totalResults, "result", "results")}`,
+    );
+    drawRule(doc, margin, y - 1.5, right, theme.primary, 0.4);
+    y -= 1.5;
+    shown.forEach((row, index) => {
+      const middle = y + 3.1;
+      drawZebraRow(doc, frame, y, 6.2, index);
+      const style = STATE_STYLE[row.state];
+      drawMarker(doc, margin + 2.6, middle, style.marker, style.color, 1);
+      setFont(doc, 7.8, "normal", theme.text);
+      doc.text(
+        clampLine(doc, `${style.label}: ${row.label}`, 112, 7.8),
+        margin + 6,
+        middle + capHeight(7.8) / 2,
+      );
+      drawStackedBar(
+        doc,
+        right - 58,
+        middle - 0.9,
+        44,
+        1.8,
+        [{ value: row.count, color: style.bar }],
+        Math.max(totalResults, 1),
+      );
+      setFont(doc, 7.8, "bold", theme.primary);
+      doc.text(
+        row.count.toLocaleString("en-US"),
+        right - 1.5,
+        middle + capHeight(7.8) / 2,
+        { align: "right" },
+      );
+      y += 6.2;
+    });
+    if (reasonRows.length > shown.length) {
+      setFont(doc, 7, "italic", PALETTE.muted);
+      doc.text(
+        `${reasonRows.length - shown.length} more reasons are in the results table.`,
+        margin,
+        y + 3.4,
+      );
+      y += 5;
+    }
+    y += 5;
+  }
+
+  // The first steps and the key findings, measured before the sections so
+  // the sections take the room that is left.
+  const firstSteps = plan.actions.slice(0, 3).map((action) => ({
+    action,
+    lines: wrapText(
+      doc,
+      prose(action.text),
+      contentWidth - 8 - 24,
+      7.8,
+      "normal",
+      2,
+    ),
+  }));
+  const stepsHeight = firstSteps.length
+    ? 6.5 +
+      firstSteps.reduce((sum, step) => sum + step.lines.length * 3.4 + 3, 0) +
+      4
+    : 0;
+  const differing = detailResults.filter((item) => item.result === "Fail");
+  const keyFindings = differing.slice(0, 4).map((item) => {
+    const state = stateOf(item);
+    const pillWidth = pillMetrics(doc, STATE_STYLE[state].label, {
+      tone: STATE_STYLE[state].tone,
+      marker: STATE_STYLE[state].marker,
+      small: true,
+    }).width;
+    const chip =
+      item.kind === "recommendation"
+        ? Math.max(chipWidth(doc, pdfText(item.id), 6.6), 9.6) + 1.6
+        : 0;
+    const textX = 3.4 + pillWidth + 1.6 + chip;
+    return {
+      item,
+      state,
+      textX,
+      lines: wrapText(
+        doc,
+        titleOf(item),
+        contentWidth - textX - 26,
+        7.6,
+        "bold",
+        2,
+      ),
+    };
+  });
+  const findingsHeight =
+    6.5 +
+    (keyFindings.length
+      ? keyFindings.reduce(
+          (sum, finding) => sum + (finding.lines.length > 1 ? 10.6 : 7.4),
+          0,
+        ) + (differing.length > keyFindings.length ? 5 : 0)
+      : 8) +
+    3;
+
+  // Results by section: the first id segment of the recommendations, with
+  // a bar of their states and the matches out of all.
+  const sections = (() => {
+    const map = new Map<string, Record<State, number> & { total: number }>();
+    for (const item of results) {
+      if (item.kind !== "recommendation") continue;
+      const key = item.id.split(".")[0] || item.id;
+      const entry = map.get(key) ?? {
+        matches: 0,
+        differs: 0,
+        notConfigured: 0,
+        needsReview: 0,
+        notAssessed: 0,
+        total: 0,
+      };
+      entry[stateOf(item)] += 1;
+      entry.total += 1;
+      map.set(key, entry);
+    }
+    return [...map.entries()].sort((a, b) => numeric(a[0], b[0]));
+  })();
+  if (sections.length > 1) {
+    const columns = sections.length > 8 ? 2 : 1;
+    const rowHeight = 6.4;
+    const room = contentBottom - y - stepsHeight - findingsHeight - 6.5 - 10;
+    const rows = Math.min(
+      Math.ceil(sections.length / columns),
+      Math.floor(room / rowHeight),
+    );
+    if (rows >= 2) {
+      sectionHeading("Results by section", "matches of all results");
+      drawRule(doc, margin, y - 1.5, right, theme.primary, 0.4);
+      const top = y - 1.5;
+      const gap = 8;
+      const columnWidth = (contentWidth - gap * (columns - 1)) / columns;
+      const shown = sections.slice(0, rows * columns);
+      shown.forEach(([key, counts], index) => {
+        const column = Math.floor(index / rows);
+        const row = index % rows;
+        const x = margin + column * (columnWidth + gap);
+        const rowTop = top + row * rowHeight;
+        const middle = rowTop + rowHeight / 2;
+        drawChip(doc, x, middle - 2, pdfText(key), "id", {
+          size: 6.4,
+          height: 4,
+          minWidth: 9,
+          fill: primaryTint,
+          color: theme.primary,
+        });
+        drawStackedBar(
+          doc,
+          x + 13,
+          middle - 1.3,
+          columnWidth - 13 - 22,
+          2.6,
+          [{ value: counts.matches, color: STATE_STYLE.matches.bar }],
+          counts.total,
+          { track: PALETTE.track },
+        );
+        const total = ` of ${counts.total}`;
+        setFont(doc, 7.8, "normal", PALETTE.muted);
+        const totalWidth = doc.getTextWidth(total);
+        doc.text(total, x + columnWidth, middle + capHeight(7.8) / 2, {
+          align: "right",
+        });
+        setFont(doc, 7.8, "bold", theme.primary);
+        doc.text(
+          String(counts.matches),
+          x + columnWidth - totalWidth,
+          middle + capHeight(7.8) / 2,
+          {
+            align: "right",
+          },
+        );
+        drawRule(doc, x, rowTop + rowHeight, x + columnWidth);
+      });
+      y = top + rows * rowHeight;
+      if (sections.length > shown.length) {
+        setFont(doc, 7, "italic", PALETTE.muted);
+        doc.text(
+          `${sections.length - shown.length} more sections are in the results table.`,
+          margin,
+          y + 3.6,
+        );
+        y += 5;
+      }
+      y += 5;
+    }
+  }
+
+  if (firstSteps.length) {
+    ensure(stepsHeight);
+    sectionHeading(
+      "What to do first",
+      `${plural(plan.actions.length, "step", "steps")} in total`,
+    );
+    firstSteps.forEach(({ action, lines }, index) => {
+      const top = y;
+      setFont(doc, 8, "bold", theme.primary);
+      doc.text(`${index + 1}.`, margin, top + capHeight(8));
+      drawLines(doc, lines, margin + 6, top, 7.8, "normal", theme.text, 3.4);
+      const target = actionTarget(action);
+      if (target) pageRef(target, right, top + capHeight(7.8));
+      y += lines.length * 3.4 + 3;
+      drawRule(doc, margin, y - 1.4, right);
+    });
+    y += 4;
+  }
+
+  ensure(findingsHeight);
+  sectionHeading(
+    "Key findings",
+    keyFindings.length ? "results that differ, by Level and id" : undefined,
+  );
+  if (!keyFindings.length) {
+    setFont(doc, 8.2, "normal", PALETTE.muted);
+    doc.text(
+      pdfText(
+        detailResults.length
+          ? `No result differs. ${plural(detailResults.length, "result needs", "results need")} review; the steps above say what to check.`
+          : "No result differs or needs review.",
+      ),
+      margin,
+      y + 3,
+    );
+    y += 8;
+  } else {
+    for (const finding of keyFindings) {
+      const height = finding.lines.length > 1 ? 10.6 : 7.4;
+      const top = y;
+      const middle = top + 3.7;
+      doc.setFillColor(...STATE_STYLE[finding.state].color);
+      doc.roundedRect(margin, top + 1.4, 0.9, height - 2.8, 0.45, 0.45, "F");
+      let x = margin + 3.4;
+      x += statePill(x, middle - 2.1, finding.state) + 1.6;
+      if (finding.item.kind === "recommendation")
+        x += idChip(x, middle - 2.2, finding.item.id) + 1.6;
+      setFont(doc, 7.6, "bold", theme.text);
+      finding.lines.forEach((line, index) =>
+        doc.text(
+          line,
+          margin + finding.textX,
+          middle + capHeight(7.6) / 2 + index * 3.3,
+        ),
+      );
+      pageRef(finding.item.key, right - 1, middle + capHeight(6.6) / 2);
+      drawRule(doc, margin, top + height, right);
+      y += height;
+    }
+    if (differing.length > keyFindings.length) {
+      setFont(doc, 7, "italic", PALETTE.muted);
+      doc.text(
+        `${plural(differing.length - keyFindings.length, "further result differs", "further results differ")}; see the result detail.`,
+        margin,
+        y + 3.4,
+      );
+      y += 5;
+    }
+  }
+
+  // ---------------------------------------------------------- What to do
+  newPage();
+  pageTitle(
+    "02 What to do",
+    "What to Do",
+    "The steps from the comparison, in order of impact. Each names the policy and the results it concerns, with the page of their detail. This report changes nothing in the tenant.",
+  );
+  if (!plan.actions.length)
+    emptyCard(
+      detailResults.length
+        ? "No step could be derived from the collected data; the result detail says what each result needs."
+        : "Nothing to do: no result differs or needs review.",
+    );
+  plan.actions.forEach((action, index) => {
+    const width = contentWidth - 8 - 26;
+    const textLines = wrapText(doc, prose(action.text), width, 9, "normal", 4);
+    const ids = action.results.map((result) =>
+      multiLevel ? `${result.id} (Level ${result.level})` : result.id,
+    );
+    const shownIds = ids.slice(0, 6);
+    const helps = `Helps with: ${shownIds.join(", ")}${ids.length > shownIds.length ? ` and ${ids.length - shownIds.length} more` : ""}`;
+    const subLines = wrapText(doc, helps, width, 7.2, "normal", 2);
+    // A setting compared at two Levels is one step.
+    const steps =
+      action.kind === "assignPolicy" || action.kind === "checkOtherProfiles"
+        ? []
+        : [...new Set(action.settings.map((setting) => prose(setting.text)))];
+    const listed = steps.slice(0, 3);
+    const settingLines = listed.map((text) =>
+      wrapText(doc, text, width - 4, 7.2, "normal", 2),
+    );
+    const more = steps.length - listed.length;
+    const height =
+      2.4 +
+      textLines.length * 4.1 +
+      0.8 +
+      subLines.length * 3.2 +
+      settingLines.reduce((sum, lines) => sum + lines.length * 3.2 + 0.6, 0) +
+      (more > 0 ? 3.4 : 0) +
+      2.8;
+    if (ensure(height) && index > 0) caption("What to do (continued)");
+    const top = y;
+    setFont(doc, 9, "bold", theme.primary);
+    doc.text(`${index + 1}.`, margin + 1.5, top + 2.4 + capHeight(9));
+    let lineTop = top + 2.4;
+    drawLines(
+      doc,
+      textLines,
+      margin + 8,
+      lineTop,
+      9,
+      "normal",
+      theme.text,
+      4.1,
+    );
+    lineTop += textLines.length * 4.1 + 0.8;
+    drawLines(
+      doc,
+      subLines,
+      margin + 8,
+      lineTop,
+      7.2,
+      "normal",
+      PALETTE.muted,
+      3.2,
+    );
+    lineTop += subLines.length * 3.2;
+    for (const lines of settingLines) {
+      doc.setFillColor(...PALETTE.muted);
+      doc.circle(margin + 9, lineTop + 1.3, 0.45, "F");
+      drawLines(
+        doc,
+        lines,
+        margin + 12,
+        lineTop,
+        7.2,
+        "normal",
+        theme.text,
+        3.2,
+      );
+      lineTop += lines.length * 3.2 + 0.6;
+    }
+    if (more > 0) {
+      setFont(doc, 7.2, "italic", PALETTE.muted);
+      doc.text(
+        `and ${plural(more, "more setting", "more settings")}`,
+        margin + 12,
+        lineTop + capHeight(7.2),
+      );
+    }
+    const target = actionTarget(action);
+    if (target) pageRef(target, right - 1.5, top + 2.4 + capHeight(9), 7);
+    drawRule(doc, margin, top + height, right);
+    y += height;
+  });
+
+  // ------------------------------------------------------------- Results
+  newPage();
+  pageTitle(
+    "03 Results",
+    "Results",
+    `${plural(results.length, "result", "results")}${
+      assessment.levels.some(
+        (level) => level.headline.basis === "recommendations",
+      )
+        ? ", grouped by section,"
+        : ""
+    } with the reason for every result that is not Matches and the page of its detail.`,
+  );
+  const reasonsUsed = new Map<string, string>();
+  const drawResultsTable = (
+    items: readonly AssessmentResult[],
+    byRecommendation: boolean,
+  ) => {
+    const widths = byRecommendation ? [19, 95, 25, 34, 7] : [114, 25, 34, 7];
+    const labels = byRecommendation
+      ? ["ID", "Recommendation", "Result", "Reason", "Page"]
+      : ["Setting", "Result", "Reason", "Page"];
+    const xs = widths.map(
+      (_, index) =>
+        margin + widths.slice(0, index).reduce((sum, width) => sum + width, 0),
+    );
+    const header = () => {
+      y =
+        drawTableHeader(
+          doc,
+          theme,
+          frame,
+          y,
+          labels.map((label, index) => ({
+            // The page column is right aligned, as its numbers are.
+            x:
+              index === labels.length - 1
+                ? right -
+                  3 -
+                  textWidth(doc, label.toUpperCase(), 5.6, "bold", 0.2)
+                : xs[index]!,
+            lines: [label],
+          })),
+        ) + 0.6;
+    };
+    const groups = new Map<string, AssessmentResult[]>();
+    for (const item of [...items].sort((a, b) => numeric(a.id, b.id))) {
+      const key = byRecommendation ? item.id.split(".")[0] || item.id : "";
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    }
+    const nameColumn = byRecommendation ? 1 : 0;
+    const layouts = [...groups.entries()].map(([key, group]) => ({
+      key,
+      rows: group.map((item) => {
+        const nameWidth = widths[nameColumn]! - 3;
+        const nameLines = wrapText(
+          doc,
+          titleOf(item),
+          nameWidth,
+          7,
+          "normal",
+          3,
+        );
+        const rawLines =
+          item.kind === "setting" && titleOf(item) !== item.id
+            ? [middleClamp(item.id, nameWidth - 2, 5.8)]
+            : [];
+        const reason = shortReason(item);
+        if (item.reason)
+          reasonsUsed.set(
+            SHORT_REASON_LABELS[item.reason],
+            REASON_LABELS[item.reason],
+          );
+        const reasonLines = reason
+          ? wrapText(doc, reason, widths[nameColumn + 2]! - 3, 6.6, "normal", 2)
+          : [];
+        return {
+          item,
+          nameLines,
+          rawLines,
+          reasonLines,
+          height: Math.max(
+            5.8,
+            nameLines.length * 3 + rawLines.length * 2.4 + 2.2,
+            reasonLines.length * 2.8 + 2.2,
+          ),
+        };
+      }),
+    }));
+    ensure(18);
+    header();
+    layouts.forEach((group, groupIndex) => {
+      const bandHeight = 6.4;
+      if (y + bandHeight + (group.rows[0]?.height ?? 0) > contentBottom) {
+        newPage();
+        caption("Results (continued)");
+        header();
+      } else if (groupIndex > 0) y += 1.5;
+      const matches = group.rows.filter(
+        (row) => row.item.result === "Pass",
+      ).length;
+      doc.setFillColor(...primaryTint);
+      doc.rect(margin, y, contentWidth, bandHeight, "F");
+      setFont(doc, 7.4, "bold", theme.primary);
+      doc.text(
+        byRecommendation
+          ? `Section ${pdfText(group.key)}`
+          : multiLevel
+            ? `Level ${group.rows[0]?.item.level ?? ""} settings`
+            : "Settings",
+        margin + 1.5,
+        centredBaseline(y, bandHeight, 7.4),
+      );
+      setFont(doc, 6.8, "normal", PALETTE.muted);
+      doc.text(
+        `${matches} of ${group.rows.length} match`,
+        right - 1.5,
+        centredBaseline(y, bandHeight, 6.8),
+        { align: "right" },
+      );
+      y += bandHeight;
+      group.rows.forEach((row, rowIndex) => {
+        if (y + row.height > contentBottom) {
+          newPage();
+          caption(
+            byRecommendation
+              ? `Section ${group.key} (continued)`
+              : "Results (continued)",
+          );
+          header();
+        }
+        const top = y;
+        const middle = top + row.height / 2;
+        drawZebraRow(doc, frame, top, row.height, rowIndex);
+        if (byRecommendation)
+          idChip(margin + 1.5, middle - 2.2, row.item.id, widths[0]! - 3);
+        const nameX = xs[nameColumn]! + 1.5;
+        const blockHeight =
+          row.nameLines.length * 3 + row.rawLines.length * 2.4;
+        drawLines(
+          doc,
+          row.nameLines,
+          nameX,
+          middle - blockHeight / 2 + 0.2,
+          7,
+          "normal",
+          theme.text,
+          3,
+        );
+        drawLines(
+          doc,
+          row.rawLines,
+          nameX,
+          middle - blockHeight / 2 + 0.2 + row.nameLines.length * 3,
+          5.8,
+          "normal",
+          PALETTE.faint,
+          2.4,
+        );
+        const state = stateOf(row.item);
+        statePill(
+          xs[nameColumn + 1]!,
+          middle - 2.1,
+          state,
+          widths[nameColumn + 1]! - 2,
+          resultLabel(
+            row.item.kind === "recommendation"
+              ? row.item.recommendation
+              : row.item.finding,
+          ),
+        );
+        drawLines(
+          doc,
+          row.reasonLines,
+          xs[nameColumn + 2]! + 1.5,
+          middle - (row.reasonLines.length * 2.8) / 2 + 0.2,
+          6.6,
+          "normal",
+          PALETTE.muted,
+          2.8,
+        );
+        if (detailKeys.has(row.item.key))
+          pageRefs.push({
+            page: currentPage(),
+            x: right - 1.5,
+            y: middle + capHeight(7.4) / 2,
+            key: row.item.key,
+            size: 7.4,
+            label: (page) => String(page),
+          });
+        y += row.height;
+      });
+    });
+    y += 6;
+  };
+  if (!results.length) emptyCard("The pack delivered no results.");
+  for (const level of assessment.levels) {
+    const items = results.filter((item) => item.level === level.level);
+    if (!items.length) continue;
+    if (multiLevel) {
+      ensure(30);
+      sectionHeading(
+        `Level ${level.level}`,
+        `${headlineLabel(level.headline.basis)}, ${plural(items.length, "result", "results")}`,
+      );
+    }
+    drawResultsTable(items, level.headline.basis === "recommendations");
+  }
+
+  // Reason key: each short label once with its full sentence.
+  for (const item of results)
+    if (!item.reason) {
+      const state = stateOf(item);
+      if (state === "differs" || state === "notConfigured")
+        reasonsUsed.set(FAIL_REASONS[state], STATE_DESCRIPTIONS[state]);
+    }
+  if (reasonsUsed.size) {
+    const entries = [...reasonsUsed.entries()].map(([label, text]) => ({
+      label: wrapText(doc, label, 50, 7.2, "bold"),
+      text: wrapText(doc, text, contentWidth - 11 - 54, 7.2),
+    }));
+    const rowHeight = (entry: (typeof entries)[number]) =>
+      Math.max(entry.label.length, entry.text.length) * 3.3 + 1.6;
+    const height =
+      6 + 5 + entries.reduce((sum, entry) => sum + rowHeight(entry), 0) + 4;
+    ensure(height);
+    const top = y;
+    drawCard(doc, margin, top, contentWidth, height, { fill: PALETTE.panel });
+    drawEyebrow(doc, "Reason key", margin + 5.5, top + 7.3, {
+      color: theme.secondary,
+    });
+    let rowTop = top + 11.5;
+    for (const entry of entries) {
+      drawLines(
+        doc,
+        entry.label,
+        margin + 5.5,
+        rowTop,
+        7.2,
+        "bold",
+        theme.text,
+        3.3,
+      );
+      drawLines(
+        doc,
+        entry.text,
+        margin + 5.5 + 54,
+        rowTop,
+        7.2,
+        "normal",
+        PALETTE.muted,
+        3.3,
+      );
+      rowTop += rowHeight(entry);
+    }
+    y = top + height + 4;
+  }
+
+  // How to read this report: the states with their pills, then notes.
+  {
+    const pad = 5.5;
+    const legendWidth = 98;
+    const notesX = margin + pad + legendWidth + 6;
+    const notesWidth = right - pad - notesX;
+    const pillColumn = 30;
+    const legendStates = shownStates(
+      assessment.levels.map((level) => level.headline.states),
+    );
+    const legendRows = legendStates.map((state) => {
+      const lines = wrapText(
+        doc,
+        STATE_DESCRIPTIONS[state],
+        legendWidth - pillColumn - 2,
+        6.8,
+      );
+      return { state, lines, height: Math.max(5, lines.length * 2.9 + 1.6) };
+    });
+    const notes = HOW_TO_READ_NOTES.map((note) =>
+      wrapText(doc, note, notesWidth - 4, 7.2),
+    );
+    const legendHeight = legendRows.reduce((sum, row) => sum + row.height, 0);
+    const notesHeight = notes.reduce(
+      (sum, lines) => sum + lines.length * 3.4 + 1.6,
+      0,
+    );
+    const height = 6 + 5 + Math.max(legendHeight, notesHeight) + pad;
+    ensure(height);
+    const top = y;
+    drawCard(doc, margin, top, contentWidth, height, { fill: PALETTE.panel });
+    drawEyebrow(doc, "How to read this report", margin + pad, top + pad + 1.8, {
+      color: theme.secondary,
+    });
+    let rowTop = top + pad + 6;
+    for (const row of legendRows) {
+      const middle = rowTop + row.height / 2;
+      statePill(margin + pad, middle - 2.1, row.state, pillColumn - 2);
+      drawLines(
+        doc,
+        row.lines,
+        margin + pad + pillColumn,
+        middle - (row.lines.length * 3) / 2 + 0.2,
+        6.8,
+        "normal",
+        PALETTE.muted,
+        3,
+      );
+      rowTop += row.height;
+    }
+    let noteTop = top + pad + 6.6;
+    notes.forEach((lines, index) => {
+      setFont(doc, 7.2, "bold", theme.primary);
+      doc.text(`${index + 1}.`, notesX, noteTop + capHeight(7.2));
+      drawLines(
+        doc,
+        lines,
+        notesX + 4,
+        noteTop,
+        7.2,
+        "normal",
+        theme.text,
+        3.4,
+      );
+      noteTop += lines.length * 3.4 + 1.6;
+    });
+    y = top + height + 4;
+  }
+
+  // ----------------------------------------------------------- Data basis
+  newPage();
+  pageTitle("04 Data basis", "Data Basis");
+  {
+    const inner = contentWidth - 10;
+    const facts = [
+      {
+        text: `Report date: ${formatDate(generatedAt, fixed)}`,
+        style: "bold" as FontStyle,
+        color: theme.text,
+      },
+      {
+        text: `${
+          formatDate(assessedAt, fixed) === formatDate(generatedAt, fixed)
+            ? ""
+            : `Assessed: ${formatDate(assessedAt, fixed)}. `
+        }Data collected: ${collectedAt ? formatDate(collectedAt, fixed) : "Not recorded"}.`,
+        style: "normal" as FontStyle,
+        color: theme.text,
+      },
+      { text: COVER_LEAD, style: "normal" as FontStyle, color: theme.text },
+      {
+        text: `${title}, ${levelsLabel(assessment)}. Results are counted by ${basisLabel.toLowerCase().replace(/\(level/g, "(Level")}.`,
+        style: "bold" as FontStyle,
+        color: theme.primary,
+      },
+    ].map((fact) => ({
+      ...fact,
+      lines: wrapText(doc, fact.text, inner, 8.4, fact.style),
+    }));
+    const height =
+      facts.reduce((sum, fact) => sum + fact.lines.length * 3.9 + 1.5, 0) + 7.5;
+    const top = y;
+    drawCard(doc, margin, top, contentWidth, height, { fill: PALETTE.panel });
+    let panelY = top + 4.5;
+    for (const fact of facts) {
+      drawLines(
+        doc,
+        fact.lines,
+        margin + 5,
+        panelY,
+        8.4,
+        fact.style,
+        fact.color,
+        3.9,
+      );
+      panelY += fact.lines.length * 3.9 + 1.5;
+    }
+    y = top + height + 7;
+  }
+  sectionHeading(
+    "Collection",
+    assessment.collection.complete ? "Complete" : "Not complete",
+  );
   if (assessment.collection.complete)
     paragraph(
       "The Settings Catalog collection is complete, so a setting missing from every policy is reported as Differs, unless profiles of another type for its platform may set it (Needs review).",
@@ -785,365 +1993,805 @@ export function renderReadinessPdf(
       "The Settings Catalog collection is not complete. Settings it cannot show to match or to be missing are Needs review, never Differs.",
     );
     for (const gap of assessment.collection.gaps)
-      paragraph(gap, { size: 8, indent: 3, color: PALETTE.muted });
+      paragraph(gap, { size: SMALL, indent: 3, color: PALETTE.muted });
   }
-  y += 2;
-  ensure(40);
-  y = drawSectionHeading(doc, theme, frame, y, "Method");
-  for (const line of METHOD_LINES) paragraph(line, { size: 8 });
-  y += 2;
-  manualNotice();
-  paragraph(assessment.manualNote || MANUAL_NOT_ASSESSED_NOTE, {
-    size: 8,
-    color: PALETTE.muted,
-  });
-
-  // ---------------------------------------------------------- Recommendations
-  newPage();
-  const recommendationRows = allResults.flatMap((item) =>
-    item.kind === "recommendation" ? [item.recommendation] : [],
-  );
-  const settingRows = allResults.flatMap((item) =>
-    item.kind === "setting" ? [item.finding] : [],
-  );
-  const byRecommendation = recommendationRows.length > 0;
-  const totals = assessment.levels.reduce(
-    (sum, level) =>
-      sum + Object.values(level.headline.counts).reduce((a, b) => a + b, 0),
-    0,
-  );
-  y = drawPageTitle(doc, theme, frame, y, {
-    eyebrow: byRecommendation ? "Recommendations" : "Settings",
-    title: byRecommendation ? "Recommendation results" : "Setting results",
-    lead: `${allResults.length} results with the reason for every result that is not Matches.${totals ? "" : " Nothing was assessed."}`,
-  });
-  const multiLevel =
-    new Set(recommendationRows.map((item) => item.level)).size > 1;
-  if (byRecommendation) {
+  y += 3;
+  const families = assessment.collection.otherProfiles ?? [];
+  if (families.length) {
+    ensure(30);
+    sectionHeading(
+      "Profile types outside the Settings Catalog",
+      "not compared",
+    );
+    paragraph(
+      "These profile types are not read by the comparison. Where they exist for a platform, a setting missing from the Settings Catalog needs review, because one of them may set it.",
+    );
     const columns: Column[] = [
-      { label: "ID", width: 20 },
-      { label: "Title", width: contentWidth - 20 - 28 - 58 },
-      { label: "Result", width: 28 },
-      { label: "Reason", width: 58 },
+      { label: "Profile type", width: 84 },
+      { label: "Collection", width: 30 },
+      { label: "Platforms", width: contentWidth - 134 },
+      { label: "Profiles", width: 20, align: "right" },
     ];
     drawTable(
       columns,
-      recommendationRows.map((item) => [
-        {
-          lines: [
-            ...wrapText(doc, item.id, 17, BODY, "bold", 2),
-            ...(multiLevel ? [`Level ${item.level}`] : []),
-          ],
-          style: "bold",
-          color: theme.primary,
-        },
-        textCell(item.title, columns[1]!.width),
-        { result: item.result },
-        textCell(item.reason ? REASON_LABELS[item.reason] : "", 58, {
-          size: SMALL,
-          color: PALETTE.muted,
-        }),
+      families.map((family) => [
+        textCell(
+          OTHER_PROFILE_LABELS[family.family].replace(/^./, (char) =>
+            char.toUpperCase(),
+          ),
+          84,
+        ),
+        textCell(family.complete ? "Complete" : "Not complete", 30),
+        textCell(
+          family.platforms === null
+            ? "Not collected"
+            : family.platforms.length
+              ? family.platforms
+                  .map((platform) => PLATFORM_NAMES[platform] ?? platform)
+                  .join(", ")
+              : "None",
+          columns[2]!.width,
+        ),
+        textCell(String(family.count), 20),
       ]),
-      "Recommendation results, continued",
+      "Profile types (continued)",
     );
   }
-  if (settingRows.length || !byRecommendation) {
-    if (byRecommendation) ensure(30);
-    const columns: Column[] = [
-      { label: "Setting", width: contentWidth - 28 - 58 },
-      { label: "Result", width: 28 },
-      { label: "Reason", width: 58 },
-    ];
-    drawTable(
-      columns,
-      settingRows.map((finding) => [
-        textCell(finding.settingId, columns[0]!.width, { size: SMALL }),
-        { result: finding.result },
-        textCell(finding.reason ? REASON_LABELS[finding.reason] : "", 58, {
-          size: SMALL,
-          color: PALETTE.muted,
-        }),
-      ]),
-      "Setting results, continued",
+  ensure(24);
+  sectionHeading("Coverage of the full benchmark");
+  for (const level of assessment.levels) {
+    paragraph(coverageStatement(level), { size: 8.4 });
+    paragraph(
+      levelCheckSummary(
+        level,
+        results.filter(
+          (item) =>
+            item.level === level.level && item.result !== "Not assessed",
+        ).length,
+        PRODUCT,
+      ),
+      { size: 8.4 },
     );
   }
-
-  // ------------------------------------------------------------ Setting detail
-  const findings = new Map(assessment.settings.map((item) => [item.key, item]));
-  interface DetailSetting {
-    id: string;
-    status: string;
-    result: ResultState;
-    reason?: ReasonCode;
-    findings: SettingFinding[];
-  }
-  const details: Array<{
-    id: string;
-    title?: string;
-    result: ResultState;
-    settings: DetailSetting[];
-  }> = [
-    ...recommendationRows
-        .filter((item) => item.result === "Fail" || item.result === "Review")
-        .map((item) => ({
-          id: item.id,
-          title: item.title,
-          result: item.result,
-          settings: item.settings
-            .filter((setting) => setting.result !== "Pass")
-            .map((setting) => {
-              const held = setting.findingKeys
-                .map((key) => findings.get(key))
-                .filter((entry): entry is SettingFinding => Boolean(entry));
-              return {
-                id: setting.id,
-                status: settingStatusText(
-                  setting,
-                  matchingPolicies(held, setting.id),
-                ),
-                result: setting.result,
-                ...(setting.reason ? { reason: setting.reason } : {}),
-                findings: held,
-              };
-            }),
-        })),
-    ...settingRows
-        .filter((item) => item.result === "Fail" || item.result === "Review")
-        .map((item) => ({
-          id: item.settingId,
-          result: item.result,
-          settings: [
-            {
-              id: item.settingId,
-              status: settingStatusText(
-                item,
-                matchingPolicies([item], item.settingId),
-              ),
-              result: item.result,
-              ...(item.reason ? { reason: item.reason } : {}),
-              findings: [item],
-            },
-          ],
-        })),
-  ];
-
-  newPage();
-  y = drawPageTitle(doc, theme, frame, y, {
-    eyebrow: "Setting detail",
-    title: "Differs and Needs review",
-    lead: "The settings behind every result that differs or needs review, with the tenant policies that hold them.",
-  });
-  if (!details.length)
-    paragraph("No result differs or needs review.", { color: PALETTE.muted });
-  for (const detail of details) {
-    // Heading row: id, title and the result pill.
-    const pillWidth = pillMetrics(doc, RESULT_LABELS[detail.result], {
-      tone: RESULT_STYLE[detail.result].tone,
-      marker: RESULT_STYLE[detail.result].marker,
-      small: true,
-    }).width;
-    const headingText = detail.title
-      ? `${detail.id}  ${detail.title}`
-      : detail.id;
-    const headingLines = wrapText(
-      doc,
-      headingText,
-      contentWidth - pillWidth - 6,
-      8.6,
-      "bold",
-      3,
-    );
-    const headingHeight = headingLines.length * 3.9 + 3;
-    ensure(headingHeight + 16);
-    drawRule(doc, margin, y, right, theme.primary, 0.4);
-    drawLines(
-      doc,
-      headingLines,
-      margin,
-      y + 2.4,
-      8.6,
-      "bold",
-      theme.primary,
-      3.9,
-    );
-    const style = RESULT_STYLE[detail.result];
-    drawPill(doc, right - pillWidth, y + 1.6, RESULT_LABELS[detail.result], {
-      tone: style.tone,
-      marker: style.marker,
-      markerColor: style.color,
-      small: true,
+  if (!assessment.levels.length)
+    paragraph("No Level was assessed: the pack delivered no results.", {
+      color: PALETTE.muted,
     });
-    y += headingHeight + 1;
-    for (const setting of detail.settings) {
-      const lines: Array<{
-        text: string;
-        style: FontStyle;
-        color: RgbColor;
-        indent: number;
-      }> = [];
-      const reason = setting.reason ? ` ${REASON_LABELS[setting.reason]}` : "";
-      // A settings based entry is headed by its setting id already.
-      if (setting.id !== detail.id || detail.title)
-        for (const line of wrapText(
-          doc,
-          setting.id,
-          contentWidth - 3,
-          SMALL,
-          "bold",
-        ))
-          lines.push({
-            text: line,
-            style: "bold",
-            color: theme.text,
-            indent: 3,
-          });
-      for (const line of wrapText(
-        doc,
-        `${setting.status}.${reason}`,
-        contentWidth - 3,
-        SMALL,
-      ))
-        lines.push({
-          text: line,
-          style: "normal",
-          color: PALETTE.muted,
-          indent: 3,
-        });
-      // A recommended value on, below or above an unreadable pack value is
-      // not readable either (policies.ts readableRecommendation).
-      const recommended = setting.findings
-        .map((finding) =>
-          readableRecommendation(finding.recommended, setting.id)
-            ? valueText(findInstance(finding.recommended, setting.id))
-            : "Not readable",
-        )
-        .filter((value, index, all) => all.indexOf(value) === index);
-      if (recommended.length)
-        for (const line of wrapText(
-          doc,
-          `Recommended value: ${recommended.join("; ")}`,
-          contentWidth - 3,
-          SMALL,
-        ))
-          lines.push({
-            text: line,
-            style: "normal",
-            color: theme.text,
-            indent: 3,
-          });
-      const observations = setting.findings.flatMap((finding) =>
-        finding.observations.map((observation) => ({ finding, observation })),
-      );
-      if (!observations.length)
-        lines.push({
-          text: "No collected policy holds this setting.",
-          style: "normal",
-          color: theme.text,
-          indent: 6,
-        });
-      for (const { finding, observation } of observations) {
-        const comparison = observationLabel(finding, observation, setting.id);
-        const value =
-          comparison === "Matches" || comparison === "Differs"
-            ? `, value ${valueText(findInstance(observation.value, setting.id))}`
-            : "";
-        for (const line of wrapText(
-          doc,
-          `Policy ${observation.policyName}: ${ASSIGNMENT_LABELS[observation.assignment]}, ${comparison}${value}.`,
-          contentWidth - 6,
-          SMALL,
-        ))
-          lines.push({
-            text: line,
-            style: "normal",
-            color: theme.text,
-            indent: 6,
-          });
-      }
-      const step = lineHeight(SMALL) + 0.5;
-      ensure(Math.min(lines.length, 3) * step + 2);
-      for (const line of lines) {
-        if (ensure(step)) {
-          y = drawSectionHeading(
+
+  // -------------------------------------------------------- Result detail
+  newPage();
+  const detailEntry = pageTitle(
+    "05 Result detail",
+    "Differs and Needs Review",
+    "One card per result that differs or needs review: the tenant policies holding its settings, their assignment, the current and the recommended value, why the result is what it is and the next step.",
+    "Result Detail",
+  );
+  detailEntry.children = [];
+  if (!detailResults.length) emptyCard("No result differs or needs review.");
+
+  const pad = 4;
+  const innerX = margin + pad;
+  const innerWidth = contentWidth - pad * 2;
+  const tableWidths = [64, 22, 28, 28, innerWidth - 142] as const;
+  const tableX = tableWidths.map(
+    (_, index) =>
+      innerX +
+      tableWidths.slice(0, index).reduce((sum, width) => sum + width, 0),
+  );
+  const rowLabel = (holder: HolderDetail): { state: State; label: string } => {
+    const unassigned = holder.assignment === "notAssigned";
+    const unknown = holder.assignment === "unknown";
+    switch (holder.label) {
+      case "Matches":
+        return unassigned
+          ? { state: "needsReview", label: "Matches, unassigned" }
+          : unknown
+            ? { state: "needsReview", label: "Matches, unconfirmed" }
+            : { state: "matches", label: "Matches" };
+      case "Differs":
+        return unassigned
+          ? { state: "needsReview", label: "Differs, unassigned" }
+          : { state: "differs", label: "Differs" };
+      case "Parent setting differs":
+        return {
+          state: unassigned ? "needsReview" : "differs",
+          label: "Parent differs",
+        };
+      default:
+        return { state: "notAssessed", label: NOT_READABLE };
+    }
+  };
+  const tableHeaderBlock: Block = {
+    height: 4.9,
+    draw: (top) => {
+      ["Policy", "Assignment", "Current", "Recommended", "Result"].forEach(
+        (label, index) =>
+          drawEyebrow(
             doc,
-            theme,
-            frame,
-            y,
-            `${detail.id}, continued`,
-          );
-        }
+            label,
+            index === 4 ? right - pad : tableX[index]!,
+            top + 2.8,
+            {
+              color: PALETTE.muted,
+              size: 5.6,
+              charSpace: 0.2,
+              align: index === 4 ? "right" : "left",
+            },
+          ),
+      );
+      drawRule(doc, innerX, top + 4.1, right - pad, PALETTE.border, 0.25);
+    },
+  };
+
+  /** The card of one result as blocks; table rows mark where a header repeats. */
+  const cardBlocks = (item: AssessmentResult) => {
+    const blocks: Block[] = [];
+    const rowIndexes = new Set<number>();
+    const state = stateOf(item);
+    const label = resultLabel(
+      item.kind === "recommendation" ? item.recommendation : item.finding,
+    );
+    const pillWidth = pillMetrics(doc, label, {
+      tone: STATE_STYLE[state].tone,
+      marker: STATE_STYLE[state].marker,
+    }).width;
+    const settings = resultSettingDetails(assessment, item).filter(
+      (setting) => setting.result !== "Pass",
+    );
+    // One open setting of a recommendation is named in the header, its id
+    // beneath it; several get a line each above their table.
+    const single =
+      item.kind === "recommendation" && settings.length === 1
+        ? settings[0]
+        : undefined;
+    const chipW =
+      item.kind === "recommendation"
+        ? Math.max(chipWidth(doc, pdfText(item.id), 6.6), 9.6) + 2.5
+        : 0;
+    const nameWidth = innerWidth - chipW - pillWidth - 4;
+    const nameLines = wrapText(doc, titleOf(item), nameWidth, 8.8, "bold", 4);
+    const level = multiLevel ? `Level ${item.level}` : "";
+    const settingLine =
+      item.kind === "setting"
+        ? level
+        : single
+          ? [level, single.name].filter(Boolean).join(", ")
+          : level;
+    const rawId =
+      item.kind === "setting"
+        ? titleOf(item) !== item.id
+          ? item.id
+          : ""
+        : single && single.name !== single.settingId
+          ? single.settingId
+          : "";
+    const settingLines = settingLine
+      ? wrapText(doc, settingLine, nameWidth, 6.8, "normal", 2)
+      : [];
+    const rawLines = rawId
+      ? wrapText(doc, rawId, nameWidth, 5.8, "normal", 2)
+      : [];
+    const textHeight =
+      nameLines.length * 3.9 + settingLines.length * 3 + rawLines.length * 2.5;
+    const headHeight = Math.max(8.6, textHeight + 3.8);
+    blocks.push({
+      height: headHeight + 1,
+      draw: (top) => {
+        doc.setFillColor(...PALETTE.panel);
+        doc.roundedRect(margin, top, contentWidth, headHeight, 2, 2, "F");
+        doc.rect(margin, top + headHeight - 2, contentWidth, 2, "F");
+        let textTop = top + (headHeight - textHeight) / 2 + 0.2;
+        // The badge sits on the first title line, as in the evidence report.
+        const badgeTop =
+          nameLines.length > 1
+            ? textTop + capHeight(8.8) / 2 - 2.4
+            : top + (headHeight - 4.8) / 2;
+        const textX = innerX + chipW;
+        if (item.kind === "recommendation")
+          idChip(innerX, textTop + capHeight(8.8) / 2 - 2.2, item.id);
+        drawLines(doc, nameLines, textX, textTop, 8.8, "bold", theme.text, 3.9);
+        textTop += nameLines.length * 3.9;
         drawLines(
           doc,
-          [line.text],
-          margin + line.indent,
-          y,
-          SMALL,
-          line.style,
-          line.color,
-          step,
+          settingLines,
+          textX,
+          textTop,
+          6.8,
+          "normal",
+          PALETTE.muted,
+          3,
         );
-        y += step;
+        textTop += settingLines.length * 3;
+        drawLines(
+          doc,
+          rawLines,
+          textX,
+          textTop,
+          5.8,
+          "normal",
+          PALETTE.faint,
+          2.5,
+        );
+        drawPill(doc, right - pad - pillWidth, badgeTop, label, {
+          tone: STATE_STYLE[state].tone,
+          marker: STATE_STYLE[state].marker,
+          markerColor: STATE_STYLE[state].color,
+        });
+      },
+    });
+
+    const settingResults =
+      item.kind === "recommendation"
+        ? item.recommendation.settings
+        : [
+            {
+              id: item.finding.settingId,
+              status: item.finding.status,
+              result: item.finding.result,
+              ...(item.finding.reason ? { reason: item.finding.reason } : {}),
+              findingKeys: [item.finding.key],
+            },
+          ];
+    const whyTexts: string[] = [];
+    settings.forEach((detail, settingIndex) => {
+      const settingResult = settingResults.find(
+        (setting) => setting.id === detail.settingId,
+      );
+      const own = (settingResult?.findingKeys ?? [])
+        .map((key) => findings.get(key))
+        .filter((finding): finding is SettingFinding => Boolean(finding));
+      // A recommended value on, below or above an unreadable pack value is
+      // not readable either (policies.ts readableRecommendation).
+      const recommended =
+        [
+          ...new Set(
+            own.map((finding) =>
+              readableRecommendation(finding.recommended, detail.settingId)
+                ? settingValue(
+                    finding.recommended,
+                    detail.settingId,
+                    assessment.settingNames,
+                  ).text
+                : NOT_READABLE,
+            ),
+          ),
+        ].join("; ") || NOT_READABLE;
+      if (item.kind === "recommendation" && !single) {
+        const nameLine = wrapText(doc, detail.name, innerWidth, 7.4, "bold", 2);
+        const idLine =
+          detail.name !== detail.settingId
+            ? wrapText(doc, detail.settingId, innerWidth, 5.8, "normal", 2)
+            : [];
+        const gap = settingIndex ? 2.4 : 0.6;
+        blocks.push({
+          height: gap + nameLine.length * 3.3 + idLine.length * 2.5 + 0.6,
+          draw: (top) => {
+            drawLines(
+              doc,
+              nameLine,
+              innerX,
+              top + gap,
+              7.4,
+              "bold",
+              theme.primary,
+              3.3,
+            );
+            drawLines(
+              doc,
+              idLine,
+              innerX,
+              top + gap + nameLine.length * 3.3,
+              5.8,
+              "normal",
+              PALETTE.faint,
+              2.5,
+            );
+          },
+        });
       }
-      y += 2;
+      blocks.push(tableHeaderBlock);
+      if (!detail.holders.length) {
+        const currentLines = wrapText(
+          doc,
+          detail.status === "Missing"
+            ? absentValueText(detail.status)
+            : "Not found",
+          tableWidths[2] - 3,
+          SMALL,
+          "italic",
+          4,
+        );
+        const recLines = wrapText(
+          doc,
+          recommended,
+          tableWidths[3] - 3,
+          SMALL,
+          "normal",
+          6,
+        );
+        const height =
+          Math.max(currentLines.length, recLines.length, 1) * 3.1 + 2.4;
+        rowIndexes.add(blocks.length);
+        blocks.push({
+          height,
+          draw: (top) => {
+            drawLines(
+              doc,
+              ["No collected policy holds this setting."],
+              innerX,
+              top + 1.2,
+              SMALL,
+              "italic",
+              PALETTE.muted,
+              3.1,
+            );
+            drawLines(
+              doc,
+              currentLines,
+              tableX[2]!,
+              top + 1.2,
+              SMALL,
+              "italic",
+              PALETTE.muted,
+              3.1,
+            );
+            drawLines(
+              doc,
+              recLines,
+              tableX[3]!,
+              top + 1.2,
+              SMALL,
+              "normal",
+              PALETTE.muted,
+              3.1,
+            );
+            const absent =
+              detail.status === "Missing"
+                ? ({ state: "notConfigured", label: NOT_CONFIGURED } as const)
+                : ({ state: "needsReview", label: "Not found" } as const);
+            const pill = {
+              tone: STATE_STYLE[absent.state].tone,
+              marker: STATE_STYLE[absent.state].marker,
+              markerColor: STATE_STYLE[absent.state].color,
+              small: true,
+              maxWidth: tableWidths[4] - 1,
+            } as const;
+            drawPill(
+              doc,
+              right - pad - pillMetrics(doc, absent.label, pill).width,
+              top + 0.3,
+              absent.label,
+              pill,
+            );
+          },
+        });
+      }
+      detail.holders.forEach((holder, holderIndex) => {
+        const policyLines = wrapText(
+          doc,
+          holder.policyName,
+          tableWidths[0] - 3,
+          SMALL,
+          "bold",
+          3,
+        );
+        const reach =
+          holder.assignment === "assigned"
+            ? holder.assignedTo.replace(/^assigned to /, "")
+            : holder.assignment === "unknown"
+              ? holder.assignedTo.replace(/^assignment unknown: /, "")
+              : "";
+        // The assignment chip names its targets when they fit beside it.
+        const assignment = assignmentLabel(holder.assignment);
+        const inline =
+          holder.assignment === "assigned" &&
+          textWidth(doc, pdfText(`${assignment}: ${reach}`), 6) + 3.4 <=
+            tableWidths[1] - 1;
+        const chipLabel = inline
+          ? pdfText(`${assignment}: ${reach}`)
+          : assignment;
+        const reachLines =
+          reach && !inline
+            ? wrapText(doc, reach, tableWidths[1] - 2, 6, "normal", 3)
+            : [];
+        // Below another parent option the setting does not apply, so its own value is not shown.
+        const currentText =
+          holder.label === "Parent setting differs"
+            ? PARENT_DIFFERS
+            : holder.current.text;
+        const currentLines = wrapText(
+          doc,
+          currentText,
+          tableWidths[2] - 3,
+          SMALL,
+          "bold",
+          6,
+        );
+        const recLines = wrapText(
+          doc,
+          recommended,
+          tableWidths[3] - 3,
+          SMALL,
+          "normal",
+          6,
+        );
+        const causeLines = holder.current.cause
+          ? wrapText(
+              doc,
+              UNREADABLE_CAUSE_LABELS[holder.current.cause],
+              innerWidth - 2,
+              6.4,
+              "italic",
+              2,
+            )
+          : [];
+        const row = rowLabel(holder);
+        const body = Math.max(
+          policyLines.length * 3.1,
+          4 + reachLines.length * 2.6,
+          currentLines.length * 3.1,
+          recLines.length * 3.1,
+          4,
+        );
+        const height =
+          body + 2.1 + (causeLines.length ? causeLines.length * 2.8 + 0.4 : 0);
+        const last = holderIndex === detail.holders.length - 1;
+        rowIndexes.add(blocks.length);
+        blocks.push({
+          height,
+          draw: (top) => {
+            if (row.state === "differs") {
+              doc.setFillColor(255, 247, 247);
+              doc.rect(innerX, top, innerWidth, height, "F");
+            }
+            const cellTop = top + 1.15;
+            drawLines(
+              doc,
+              policyLines,
+              tableX[0]!,
+              cellTop,
+              SMALL,
+              "bold",
+              theme.text,
+              3.1,
+            );
+            const tone =
+              holder.assignment === "assigned"
+                ? "info"
+                : holder.assignment === "notAssigned"
+                  ? "none"
+                  : "partial";
+            const chipW = textWidth(doc, chipLabel, 6) + 3.4;
+            doc.setFillColor(
+              ...(tone === "info" ? primaryTint : TONES[tone].fill),
+            );
+            doc.roundedRect(
+              tableX[1]!,
+              cellTop - 0.7,
+              chipW,
+              3.9,
+              1.95,
+              1.95,
+              "F",
+            );
+            setFont(
+              doc,
+              6,
+              "normal",
+              tone === "info" ? theme.primary : TONES[tone].text,
+            );
+            doc.text(
+              chipLabel,
+              tableX[1]! + 1.7,
+              centredBaseline(cellTop - 0.7, 3.9, 6),
+            );
+            drawLines(
+              doc,
+              reachLines,
+              tableX[1]!,
+              cellTop + 4,
+              6,
+              "normal",
+              PALETTE.muted,
+              2.6,
+            );
+            drawLines(
+              doc,
+              currentLines,
+              tableX[2]!,
+              cellTop,
+              SMALL,
+              currentText === holder.current.text &&
+                currentText !== NOT_READABLE
+                ? "bold"
+                : "italic",
+              currentText === holder.current.text &&
+                currentText !== NOT_READABLE
+                ? theme.text
+                : PALETTE.muted,
+              3.1,
+            );
+            drawLines(
+              doc,
+              recLines,
+              tableX[3]!,
+              cellTop,
+              SMALL,
+              "normal",
+              PALETTE.muted,
+              3.1,
+            );
+            const pill = {
+              tone: STATE_STYLE[row.state].tone,
+              marker: STATE_STYLE[row.state].marker,
+              markerColor: STATE_STYLE[row.state].color,
+              small: true,
+              maxWidth: tableWidths[4] - 1,
+            } as const;
+            drawPill(
+              doc,
+              right - pad - pillMetrics(doc, row.label, pill).width,
+              cellTop - 0.9,
+              row.label,
+              pill,
+            );
+            drawLines(
+              doc,
+              causeLines,
+              innerX,
+              cellTop + body + 0.4,
+              6.4,
+              "italic",
+              PALETTE.muted,
+              2.8,
+            );
+            if (!last) drawRule(doc, innerX, top + height, right - pad);
+          },
+        });
+      });
+      // Why the setting has its result, with its own qualifier.
+      const status = settingResult
+        ? settingStatusText(
+            settingResult,
+            matchingPolicies(own, detail.settingId),
+          )
+        : RESULT_LABELS[detail.result];
+      const failState =
+        detail.status === "Missing" ? "notConfigured" : "differs";
+      // The rows carry the qualifier of each match, so the reason alone follows.
+      const why = detail.reason
+        ? REASON_LABELS[detail.reason]
+        : detail.result === "Fail"
+          ? STATE_DESCRIPTIONS[failState]
+          : `${status}.`;
+      if (single || item.kind === "setting") whyTexts.push(why);
+      else {
+        const lines = wrapText(doc, why, innerWidth, 6.8, "normal", 4);
+        blocks.push({
+          height: lines.length * 3 + 2,
+          draw: (top) => {
+            drawRule(doc, innerX, top + 0.4, right - pad, PALETTE.border, 0.25);
+            drawLines(
+              doc,
+              lines,
+              innerX,
+              top + 1.4,
+              6.8,
+              "normal",
+              PALETTE.muted,
+              3,
+            );
+          },
+        });
+      }
+    });
+    // The reason and the next step close the card as short muted lines.
+    const next = prose(nextStepText(plan, item));
+    // A reason the next step already states is not repeated.
+    const whyLines = whyTexts
+      .filter((text) => !next.includes(text))
+      .flatMap((text) => wrapText(doc, text, innerWidth, 6.8, "normal", 4));
+    const nextLines = next
+      ? wrapText(doc, next, innerWidth - 18, 7, "normal", 6)
+      : [];
+    if (whyLines.length || nextLines.length)
+      blocks.push({
+        height:
+          1.6 +
+          whyLines.length * 3 +
+          (nextLines.length
+            ? (whyLines.length ? 1 : 0) + nextLines.length * 3.1
+            : 0) +
+          0.6,
+        draw: (top) => {
+          drawRule(doc, innerX, top + 0.4, right - pad, PALETTE.border, 0.25);
+          let lineTop = top + 1.6;
+          drawLines(
+            doc,
+            whyLines,
+            innerX,
+            lineTop,
+            6.8,
+            "normal",
+            PALETTE.muted,
+            3,
+          );
+          lineTop += whyLines.length * 3 + (whyLines.length ? 1 : 0);
+          if (nextLines.length) {
+            drawEyebrow(doc, "Next step", innerX, lineTop + capHeight(7), {
+              color: PALETTE.muted,
+              size: 5.4,
+              charSpace: 0.2,
+            });
+            drawLines(
+              doc,
+              nextLines,
+              innerX + 18,
+              lineTop,
+              7,
+              "normal",
+              theme.text,
+              3.1,
+            );
+          }
+        },
+      });
+    return { blocks, rowIndexes };
+  };
+
+  /**
+   * Draws a card from blocks: whole on the next page when it does not fit
+   * here but fits a page, or when less than 40 mm remain; otherwise it
+   * continues on the next page with its own border and a caption.
+   */
+  let groupHeading = "";
+  const flowCard = (
+    item: AssessmentResult,
+    blocks: readonly Block[],
+    rowIndexes: ReadonlySet<number>,
+  ) => {
+    const bottomPad = 2.2;
+    const total =
+      blocks.reduce((sum, block) => sum + block.height, 0) + bottomPad;
+    if (
+      y + total > contentBottom &&
+      (total <= contentBottom - contentTop - 8 || contentBottom - y < 40)
+    ) {
+      newPage();
+      caption(`${groupHeading} (continued)`);
     }
-    y += 3;
+    detailPages.set(item.key, currentPage());
+    let segmentTop = y;
+    const close = () => {
+      drawCard(
+        doc,
+        margin,
+        segmentTop,
+        contentWidth,
+        y + bottomPad - segmentTop,
+        { stroke: PALETTE.border },
+      );
+      y += bottomPad;
+    };
+    blocks.forEach((block, index) => {
+      if (y + block.height + bottomPad > contentBottom && y > segmentTop) {
+        close();
+        newPage();
+        caption(
+          `${item.kind === "recommendation" ? item.id : titleOf(item)} (continued)`,
+        );
+        segmentTop = y;
+        y += 1.5;
+        if (rowIndexes.has(index)) {
+          tableHeaderBlock.draw(y);
+          y += tableHeaderBlock.height;
+        }
+      }
+      block.draw(y);
+      y += block.height;
+    });
+    close();
+    y += 2.6;
+  };
+
+  let group = "";
+  for (const item of detailResults) {
+    const key = `${item.level}:${item.result}`;
+    const { blocks, rowIndexes } = cardBlocks(item);
+    if (key !== group) {
+      group = key;
+      const heading = `${multiLevel ? `Level ${item.level}, ` : ""}${item.result === "Fail" ? RESULT_LABELS.Fail : RESULT_LABELS.Review}`;
+      const count = detailResults.filter(
+        (other) => `${other.level}:${other.result}` === key,
+      ).length;
+      const lead = Math.min(
+        blocks.reduce((sum, block) => sum + block.height, 0) + 3,
+        60,
+      );
+      if (y > contentTop) y += 2;
+      ensure(6.5 + lead);
+      detailEntry.children.push({
+        title: heading,
+        page: currentPage(),
+        level: 1,
+      });
+      sectionHeading(heading, plural(count, "result", "results"));
+      groupHeading = heading;
+    }
+    flowCard(item, blocks, rowIndexes);
   }
 
-  // ---------------------------------------------------------- Manual items
+  // -------------------------------------------------------------- Appendix
   newPage();
-  y = drawPageTitle(doc, theme, frame, y, {
-    eyebrow: "Manual recommendations",
-    title: "Recommendations to check manually",
-    lead: assessment.manualNote || MANUAL_NOT_ASSESSED_NOTE,
+  const appendix = pageTitle(
+    "Appendix",
+    "Manual Recommendations, Exceptions and Method",
+    undefined,
+    "Appendix: Manual Recommendations, Exceptions and Method",
+  );
+  appendix.children = [];
+  appendix.children.push({
+    title: "Manual recommendations",
+    page: currentPage(),
+    level: 1,
   });
-  manualNotice();
+  const manualCount = assessment.levels.reduce(
+    (sum, level) => sum + level.manual.length,
+    0,
+  );
+  sectionHeading("Manual recommendations", `${manualCount} listed`);
+  y =
+    drawNoticeCallout(doc, theme, frame, y, {
+      heading: "Check these by hand",
+      paragraphs: [MANUAL_RECOMMENDATIONS_NOTICE],
+      link: {
+        text: MANUAL_RECOMMENDATIONS_URL,
+        url: MANUAL_RECOMMENDATIONS_URL,
+      },
+    }) + 4;
   const packTitles = new Map(
     assessment.recommendations.map((item) => [item.id, item.title]),
   );
-  for (const level of assessment.levels) {
-    ensure(20);
-    y = drawSectionHeading(
-      doc,
-      theme,
-      frame,
-      y,
-      `Level ${level.level}`,
-      `${level.manual.length} listed`,
+  if (!manualCount)
+    paragraph(
+      assessment.listUsed
+        ? `The delivered list names no manual recommendation. ${assessment.manualNote || MANUAL_NOT_ASSESSED_NOTE}`
+        : `No recommendation list was delivered, so no manual recommendation is listed. ${assessment.manualNote || MANUAL_NOT_ASSESSED_NOTE}`,
+      { size: 8.4, color: PALETTE.muted },
     );
-    if (!level.manual.length) {
-      paragraph(
-        assessment.listUsed
-          ? `The delivered list names no manual item for Level ${level.level}.`
-          : `No manual item is listed for Level ${level.level} because no recommendation list was delivered. Recommendations outside the pack need a manual check.`,
-        { size: 8, color: PALETTE.muted },
+  else {
+    paragraph(assessment.manualNote || MANUAL_NOT_ASSESSED_NOTE, {
+      size: 8.4,
+      color: PALETTE.muted,
+    });
+    for (const level of assessment.levels) {
+      if (!level.manual.length) continue;
+      if (multiLevel) caption(`Level ${level.level}`);
+      drawTable(
+        [
+          { label: "ID", width: 22 },
+          { label: "Title", width: contentWidth - 22 },
+        ],
+        level.manual.map((manual) => [
+          {
+            lines: wrapText(doc, manual.identifier, 19, SMALL, "bold", 2),
+            style: "bold",
+            color: theme.primary,
+          },
+          (manual.title ?? packTitles.get(manual.identifier))
+            ? textCell(
+                manual.title ?? packTitles.get(manual.identifier) ?? "",
+                contentWidth - 22,
+              )
+            : textCell("No title delivered", contentWidth - 22, {
+                color: PALETTE.muted,
+              }),
+        ]),
+        "Manual recommendations (continued)",
       );
-      continue;
     }
-    drawTable(
-      [
-        { label: "ID", width: 22 },
-        { label: "Title", width: contentWidth - 22 },
-      ],
-      level.manual.map((item) => [
-        {
-          lines: wrapText(doc, item.identifier, 19, BODY, "bold", 2),
-          style: "bold",
-          color: theme.primary,
-        },
-        (item.title ?? packTitles.get(item.identifier))
-          ? textCell(
-              item.title ?? packTitles.get(item.identifier) ?? "",
-              contentWidth - 22,
-            )
-          : textCell("No title delivered", contentWidth - 22, {
-              color: PALETTE.muted,
-            }),
-      ]),
-      `Level ${level.level} manual recommendations, continued`,
-    );
   }
 
-  // ------------------------------------------------------------ Exceptions
   const exceptions = (options.exceptions ?? []).filter(
     (exception) =>
       exception.benchmark === assessment.benchmark &&
@@ -1154,31 +2802,25 @@ export function renderReadinessPdf(
     assessment.levels.flatMap((level) => level.headline.exceptionIds),
   );
   const assessedDay = localDate(assessment.assessedAt);
-  ensure(40);
-  y += 2;
-  y = drawSectionHeading(
-    doc,
-    theme,
-    frame,
-    y,
-    "Exceptions",
-    `${exceptions.length} recorded`,
-  );
+  y += 3;
+  ensure(24);
+  appendix.children.push({
+    title: "Exceptions",
+    page: currentPage(),
+    level: 1,
+  });
+  sectionHeading("Exceptions", `${exceptions.length} recorded`);
   if (!exceptions.length)
-    paragraph(
+    emptyCard(
       "No exceptions are recorded for this benchmark, version and Level.",
-      {
-        size: 8,
-        color: PALETTE.muted,
-      },
     );
   else {
     const columns: Column[] = [
       { label: "Setting", width: 52 },
       { label: "Owner", width: 30 },
-      { label: "Reason", width: contentWidth - 52 - 30 - 22 - 26 },
+      { label: "Reason", width: contentWidth - 52 - 30 - 22 - 32 },
       { label: "Expires", width: 22 },
-      { label: "Status", width: 26 },
+      { label: "Status", width: 32 },
     ];
     drawTable(
       columns,
@@ -1188,29 +2830,76 @@ export function renderReadinessPdf(
             a.settingId.localeCompare(b.settingId) || a.id.localeCompare(b.id),
         )
         .map((exception) => [
-          textCell(exception.settingId, 52, { size: SMALL }),
-          textCell(exception.owner, 30, { size: SMALL }),
-          textCell(exception.reason, columns[2]!.width, { size: SMALL }),
-          textCell(exception.expiresOn, 22, { size: SMALL }),
+          textCell(exception.settingId, 52, { size: 6.8 }),
+          textCell(exception.owner, 30, { size: 6.8 }),
+          textCell(exception.reason, columns[2]!.width, { size: 6.8 }),
+          textCell(exception.expiresOn, 22, { size: 6.8 }),
           textCell(
             inUse.has(exception.id)
               ? "Applied to the headline"
               : appliesOn(exception, assessedDay)
                 ? "In effect"
                 : "Not in effect",
-            26,
-            { size: SMALL, color: PALETTE.muted },
+            32,
+            { size: 6.8, color: PALETTE.muted },
           ),
         ]),
-      "Exceptions, continued",
+      "Exceptions (continued)",
     );
   }
 
+  y += 2;
+  ensure(36);
+  appendix.children.push({ title: "Method", page: currentPage(), level: 1 });
+  sectionHeading("Method");
+  for (const line of METHOD_LINES) paragraph(line, { size: 8.6 });
+
+  // A section with a single group needs no sub-entry.
+  if (detailEntry.children.length < 2) detailEntry.children = [];
+
+  // ------------------------------------------------------------- Contents
+  const flat: TocItem[] = toc.flatMap((entry) => [
+    entry,
+    ...(entry.children ?? []),
+  ]);
+  const { rows: tocRows, extraPages } = layoutToc(doc, frame, flat, tocStartY);
+  // Every recorded page after the contents moves by the inserted pages.
+  for (const entry of flat) entry.page += extraPages;
+  drawToc(doc, theme, frame, {
+    heading: "Table of Contents",
+    tocPage,
+    startY: tocStartY,
+    rows: tocRows,
+    extraPages,
+  });
+  for (const reference of pageRefs) {
+    const target = detailPages.get(reference.key);
+    if (target === undefined) continue;
+    doc.setPage(reference.page + extraPages);
+    setFont(
+      doc,
+      reference.size,
+      "bold",
+      reference.size >= 7.4 ? theme.primary : theme.secondary,
+    );
+    doc.text(reference.label(target + extraPages), reference.x, reference.y, {
+      align: "right",
+    });
+  }
+  const outline = (entry: TocEntry): PdfOutlineEntry => ({
+    title: entry.title,
+    pageNumber: entry.page,
+    ...(entry.children?.length
+      ? { children: entry.children.map(outline) }
+      : {}),
+  });
+  addPdfOutline(doc, toc.map(outline));
+
   drawRunningChrome(doc, theme, frame, {
-    title,
+    title: `${title}, ${levelsLabel(assessment)}`,
     titleMaxWidth: 90,
     ...(tenant || company ? { headerRight: tenant ?? company } : {}),
-    footer,
+    footer: `${GENERATED_WITH}. ${READINESS_DISCLAIMER}.`,
     pageLabel: (page, count) => `Page ${page} of ${count}`,
   });
 

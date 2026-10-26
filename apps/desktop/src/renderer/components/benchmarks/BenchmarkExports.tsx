@@ -32,6 +32,63 @@ function plural(count: number, one: string, many: string): string {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
 
+// Saves one export of the last comparison held in main and remembers where.
+export function useBenchmarkExport() {
+  const action = useAsyncAction();
+  const [saved, setSaved] = useState<{ format: BenchmarkExportFormat; path: string } | null>(null);
+  const run = (format: BenchmarkExportFormat, before?: () => void) =>
+    void action.run(format, async () => {
+      setSaved(null);
+      before?.();
+      const path = await ipc.benchmarksExport(format === "drafts" ? { format, confirmed: true } : { format });
+      if (path) setSaved({ format, path });
+      else action.setMessage("Save cancelled. Nothing was saved.");
+    });
+  return { ...action, saved, setSaved, run };
+}
+
+// Where an export was saved, with Open file and Show in folder.
+export function SavedFile({ saved }: { saved: { format: BenchmarkExportFormat; path: string } }) {
+  const fileAction = useAsyncAction();
+  return (
+    <div className="animate-fade-in mt-4" role="status" aria-live="polite">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-teal-600/20 bg-teal-50 p-3">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+        <div className="min-w-0 flex-1 basis-48">
+          <p className="text-petrol-950 truncate text-xs font-semibold">
+            {FORMAT_LABELS[saved.format]} saved: {fileName(saved.path)}
+          </p>
+          <p className="text-petrol-600 selectable truncate text-[11px]" title={saved.path}>
+            {saved.path}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={FileText}
+          loading={fileAction.busy === "open"}
+          onClick={() => void fileAction.run("open", () => ipc.openLastFile(saved.path))}
+        >
+          Open file
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={FolderOpen}
+          onClick={() => void fileAction.run("show", () => ipc.showLastFileInFolder(saved.path))}
+        >
+          {isMac ? "Show in Finder" : "Show in folder"}
+        </Button>
+      </div>
+      {fileAction.error && (
+        <p className="mt-2 text-xs text-red-700" role="alert">
+          {fileAction.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Readiness PDF, CSV and JSON of ids and statuses, and draft policies for
 // missing settings, all from the last comparison held in main.
 export function BenchmarkExports({
@@ -46,10 +103,9 @@ export function BenchmarkExports({
   // Whether the compared collection was complete.
   complete: boolean;
 }) {
-  const action = useAsyncAction();
-  const fileAction = useAsyncAction();
+  const action = useBenchmarkExport();
+  const { saved, setSaved } = action;
   const previewAction = useAsyncAction();
-  const [saved, setSaved] = useState<{ format: BenchmarkExportFormat; path: string } | null>(null);
   // The drafts the ZIP would hold, read from main when Drafts is chosen.
   const [preview, setPreview] = useState<BenchmarkDraftsPreview | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -94,14 +150,7 @@ export function BenchmarkExports({
     </details>
   );
 
-  const run = (format: BenchmarkExportFormat) =>
-    void action.run(format, async () => {
-      setSaved(null);
-      previewAction.reset();
-      const path = await ipc.benchmarksExport(format === "drafts" ? { format, confirmed: true } : { format });
-      if (path) setSaved({ format, path });
-      else action.setMessage("Save cancelled. Nothing was saved.");
-    });
+  const run = (format: BenchmarkExportFormat) => action.run(format, previewAction.reset);
 
   const button = (
     format: Exclude<BenchmarkExportFormat, "drafts">,
@@ -127,12 +176,12 @@ export function BenchmarkExports({
       aria-labelledby="benchmark-exports-title"
       className="border-petrol-950/6 shadow-card rounded-2xl border bg-white p-5 @xl:p-6"
     >
-      <p className="text-petrol-600 text-[10px] font-bold tracking-[0.14em] uppercase">Exports</p>
+      <p className="text-petrol-600 text-[11px] font-bold tracking-[0.14em] uppercase">Exports</p>
       <h2 id="benchmark-exports-title" className="text-petrol-950 mt-1 text-base font-semibold tracking-[-0.01em]">
         Readiness files and draft policies
       </h2>
       <p className="text-petrol-600 mt-0.5 text-xs">Uses the last comparison shown above.</p>
-      {blocker && <p className="mt-3 text-xs text-amber-800">{blocker}</p>}
+      {blocker && <p className="text-petrol-700 mt-3 text-xs">{blocker}</p>}
 
       <div className="divide-petrol-950/6 mt-4 divide-y">
         <div className="flex flex-wrap items-start gap-4 pb-4">
@@ -170,6 +219,7 @@ export function BenchmarkExports({
           </div>
           <Button
             size="sm"
+            variant="secondary"
             icon={FileArchive}
             loading={busy === "drafts" || busy === "preview"}
             disabled={Boolean(draftsBlocker)}
@@ -181,42 +231,10 @@ export function BenchmarkExports({
         </div>
       </div>
 
-      {saved && (
-        <div
-          className="animate-fade-in mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-teal-600/20 bg-teal-50 p-3"
-          role="status"
-          aria-live="polite"
-        >
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
-          <div className="min-w-0 flex-1 basis-48">
-            <p className="text-petrol-950 truncate text-xs font-semibold">
-              {FORMAT_LABELS[saved.format]} saved: {fileName(saved.path)}
-            </p>
-            <p className="text-petrol-600 selectable truncate text-[11px]" title={saved.path}>
-              {saved.path}
-            </p>
-          </div>
-          <Button
-            size="sm"
-            icon={FileText}
-            loading={fileAction.busy === "open"}
-            onClick={() => void fileAction.run("open", () => ipc.openLastFile(saved.path))}
-          >
-            Open file
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={FolderOpen}
-            onClick={() => void fileAction.run("show", () => ipc.showLastFileInFolder(saved.path))}
-          >
-            {isMac ? "Show in Finder" : "Show in folder"}
-          </Button>
-        </div>
-      )}
-      {(action.error || fileAction.error) && (
-        <Alert tone="danger" title={action.error ? "The export could not be saved" : undefined} className="mt-4">
-          {[action.error, fileAction.error].filter(Boolean).join(" ")}
+      {saved && <SavedFile saved={saved} />}
+      {action.error && (
+        <Alert tone="danger" title="The export could not be saved" className="mt-4">
+          {action.error}
         </Alert>
       )}
       {action.message && (

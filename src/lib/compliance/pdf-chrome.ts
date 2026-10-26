@@ -3,8 +3,10 @@ import type { BrandingOptions } from "~/types/branding";
 import {
   COVER_LOGO_BOX,
   PALETTE,
+  TONES,
   capHeight,
   clampLine,
+  drawCard,
   drawDonut,
   drawEyebrow,
   drawLines,
@@ -587,6 +589,52 @@ export function drawZebraRow(
   }
   if (options.rule !== false)
     drawRule(doc, frame.margin, top + height, frame.right);
+}
+
+/**
+ * Amber "read this first" card: a warning disc, a bold heading and the
+ * paragraphs, each wrapped on its own lines, with an optional link line
+ * below them. Returns the bottom of the card.
+ */
+export function drawNoticeCallout(
+  doc: jsPDF,
+  theme: PdfTheme,
+  frame: PdfFrame,
+  top: number,
+  options: {
+    heading: string;
+    paragraphs: readonly string[];
+    link?: { text: string; url: string };
+  },
+): number {
+  const { margin, contentWidth } = frame;
+  const lines = options.paragraphs.flatMap((paragraph) =>
+    wrapLines(doc, paragraph, contentWidth - 20, 8.8),
+  );
+  const height = lines.length * 4.1 + 14 + (options.link ? 4.6 : 0);
+  drawCard(doc, margin, top, contentWidth, height, {
+    fill: [255, 250, 243],
+    stroke: TONES.na.border,
+  });
+  doc.setFillColor(...TONES.partial.text);
+  doc.circle(margin + 7.5, top + 7.5, 3, "F");
+  setFont(doc, 9, "bold", PALETTE.white);
+  doc.text("!", margin + 7.5, top + 7.5 + capHeight(9) / 2, {
+    align: "center",
+  });
+  setFont(doc, 8.6, "bold", TONES.partial.text);
+  doc.text(options.heading, margin + 14, top + 6.6);
+  drawLines(doc, lines, margin + 14, top + 9.2, 8.8, "normal", theme.text, 4.1);
+  if (options.link) {
+    setFont(doc, 8.8, "bold", theme.secondary);
+    doc.textWithLink(
+      options.link.text,
+      margin + 14,
+      top + 9.2 + lines.length * 4.1 + 1 + capHeight(8.8),
+      { url: options.link.url },
+    );
+  }
+  return top + height;
 }
 
 // ---------------------------------------------------------------- Contents

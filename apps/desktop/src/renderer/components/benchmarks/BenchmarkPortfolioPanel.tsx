@@ -1,6 +1,11 @@
 import { Building2, RefreshCw } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { benchmarkDisplayName, formatRate, headlineBaseText } from "../../../../../../src/lib/benchmarks/display";
+import {
+  READINESS_DISCLAIMER,
+  benchmarkDisplayName,
+  formatRate,
+  headlineBaseText,
+} from "../../../../../../src/lib/benchmarks/display";
 import type { BenchmarkPortfolioRequest, BenchmarkPortfolioView } from "../../../shared/ipc-types";
 import { errorMessage, ipc } from "../../lib/ipc";
 import { Alert } from "../ui/Alert";
@@ -19,7 +24,14 @@ function formatDate(value: string | null): string {
 // MSP plan only: the newest stored headline per Level of every tenant on this
 // computer for one benchmark and version. Built from stored runs, so it holds
 // ids and results only; names come from the catalog when it is loaded.
-export function BenchmarkPortfolioPanel({ nameOf }: { nameOf: (benchmark: string) => string | undefined }) {
+export function BenchmarkPortfolioPanel({
+  nameOf,
+  showNotice,
+}: {
+  nameOf: (benchmark: string) => string | undefined;
+  // The readiness line, when no comparison summary on this screen shows it.
+  showNotice: boolean;
+}) {
   const [view, setView] = useState<BenchmarkPortfolioView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<BenchmarkPortfolioRequest | null>(null);
@@ -62,7 +74,7 @@ export function BenchmarkPortfolioPanel({ nameOf }: { nameOf: (benchmark: string
             <Building2 className="h-[18px] w-[18px]" strokeWidth={1.8} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-petrol-600 text-[10px] font-bold tracking-[0.14em] uppercase">Portfolio</p>
+            <p className="text-petrol-600 text-[11px] font-bold tracking-[0.14em] uppercase">Portfolio</p>
             <h2
               id="benchmark-portfolio-title"
               className="text-petrol-950 mt-1 text-base font-semibold tracking-[-0.01em]"
@@ -70,7 +82,7 @@ export function BenchmarkPortfolioPanel({ nameOf }: { nameOf: (benchmark: string
               Tenants on this computer
             </h2>
             <p className="text-petrol-600 mt-1 text-xs leading-5">
-              The newest stored headline per Level of each tenant. Readiness comparison, not a certification.
+              The newest stored headline per Level of each tenant.{showNotice ? ` ${READINESS_DISCLAIMER}.` : ""}
             </p>
           </div>
         </div>
@@ -130,14 +142,23 @@ export function BenchmarkPortfolioPanel({ nameOf }: { nameOf: (benchmark: string
             {view.rows.map((row) => (
               <li
                 key={row.tenantId}
-                aria-label={row.tenantName ?? row.tenantId}
-                className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3 @xl:px-6"
+                aria-label={row.tenantName ?? "Name unknown"}
+                className="grid grid-cols-1 items-center gap-x-5 gap-y-2 px-5 py-3 @xl:px-6 @2xl:grid-cols-[minmax(0,1fr)_auto]"
               >
-                <div className="min-w-0 flex-1 basis-48">
+                <div className="min-w-0">
                   <p className="text-petrol-950 flex flex-wrap items-center gap-2 text-[13px] font-semibold">
-                    <span className="min-w-0 break-words">{row.tenantName ?? row.tenantId}</span>
-                    {row.current && <Badge variant="info">Signed in</Badge>}
+                    <span className={`min-w-0 break-words ${row.tenantName ? "" : "text-petrol-700"}`}>
+                      {row.tenantName ?? "Name unknown"}
+                    </span>
+                    {row.current && (
+                      <Badge variant="info" className="text-[11px]">
+                        Signed in
+                      </Badge>
+                    )}
                   </p>
+                  {!row.tenantName && (
+                    <p className="text-petrol-600 selectable mt-0.5 font-mono text-[11px] break-all">{row.tenantId}</p>
+                  )}
                   <p className="text-petrol-600 mt-0.5 text-[11px]">
                     {row.error
                       ? row.error
@@ -146,27 +167,27 @@ export function BenchmarkPortfolioPanel({ nameOf }: { nameOf: (benchmark: string
                         : formatDate(row.assessedAt)}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-4">
+                <div className="flex gap-3">
                   {levels.map((level) => {
                     const entry = row.levels.find((item) => item.level === level);
                     return (
-                      <div key={level} className="min-w-24 text-right tabular-nums">
-                        <p className="text-petrol-600 text-[10px] font-bold tracking-[0.1em] uppercase">
+                      <div key={level} className="w-40 shrink-0 text-right tabular-nums">
+                        <p className="text-petrol-600 text-[11px] font-bold tracking-[0.1em] uppercase">
                           Level {level}
                         </p>
-                        <p className="text-petrol-950 text-sm font-semibold">
+                        {/* No rate reads quieter than a rate. */}
+                        <p
+                          className={`text-sm ${
+                            entry && entry.rate !== null
+                              ? "text-petrol-950 font-semibold"
+                              : "text-petrol-600 font-medium"
+                          }`}
+                        >
                           {!entry ? "Not run" : entry.rate === null ? "n/a" : formatRate(entry.rate)}
                         </p>
                         {entry && (
-                          <p className="text-petrol-600 text-[10px]">
-                            {entry.rate === null ? (
-                              <>
-                                {entry.counts.pass.toLocaleString()} of{" "}
-                                {(entry.counts.pass + entry.counts.fail).toLocaleString()}
-                              </>
-                            ) : (
-                              headlineBaseText(entry.counts)
-                            )}
+                          <p className="text-petrol-600 text-[11px] leading-4">
+                            {entry.rate === null ? "Nothing could be assessed" : headlineBaseText(entry.counts)}
                           </p>
                         )}
                       </div>

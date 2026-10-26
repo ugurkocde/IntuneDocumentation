@@ -73,6 +73,7 @@ import {
   drawSectionHeading as drawChromeSectionHeading,
   drawTableHeader,
   drawToc,
+  drawNoticeCallout,
   drawZebraRow,
   layoutToc,
   pageFrame,
@@ -1712,32 +1713,13 @@ export async function generateComplianceReportPDF(
       color: secondaryColor,
     });
     yPosition += 6;
-    const disclaimerLines = (
-      strings.disclaimer.match(/[^.]+[.]?/g) ?? [strings.disclaimer]
-    ).flatMap((sentence) => wrap(sentence.trim(), contentWidth - 20, 8.8));
-    const disclaimerHeight = disclaimerLines.length * 4.1 + 14;
-    drawCard(doc, margin, yPosition, contentWidth, disclaimerHeight, {
-      fill: [255, 250, 243],
-      stroke: TONES.na.border,
-    });
-    doc.setFillColor(...TONES.partial.text);
-    doc.circle(margin + 7.5, yPosition + 7.5, 3, "F");
-    setFont(doc, 9, "bold", PALETTE.white);
-    doc.text("!", margin + 7.5, yPosition + 7.5 + capHeight(9) / 2, {
-      align: "center",
-    });
-    setFont(doc, 8.6, "bold", TONES.partial.text);
-    doc.text(layout.disclaimerHeading, margin + 14, yPosition + 6.6);
-    drawLines(
-      disclaimerLines,
-      margin + 14,
-      yPosition + 9.2,
-      8.8,
-      "normal",
-      textColor,
-      4.1,
-    );
-    yPosition += disclaimerHeight + 10;
+    yPosition =
+      drawNoticeCallout(doc, theme, frame, yPosition, {
+        heading: layout.disclaimerHeading,
+        paragraphs: (
+          strings.disclaimer.match(/[^.]+[.]?/g) ?? [strings.disclaimer]
+        ).map((sentence) => sentence.trim()),
+      }) + 10;
     tocPage = currentPage();
     tocStartY = yPosition;
   }

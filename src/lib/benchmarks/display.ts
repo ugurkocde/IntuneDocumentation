@@ -70,6 +70,29 @@ export const REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
     "The delivered pack holds a value for this setting, or a platform list for its policy, that cannot be compared.",
 };
 
+/** Short forms of REASON_LABELS for table cells; the full sentence is shown once beside them. */
+export const SHORT_REASON_LABELS: Readonly<Record<ReasonCode, string>> = {
+  collectionIncomplete: "Collection incomplete",
+  unreadableValue: "Value not readable",
+  profileChoice: "Pack value to choose",
+  notAssigned: "Only on unassigned policies",
+  notAssignedDiffers: "Other value, unassigned only",
+  notAssignedMixed: "Mixed values, unassigned only",
+  assignmentUnknown: "Assignment unknown",
+  settingOutsidePack: "Setting outside the pack",
+  otherProfiles: "Other profile types may set it",
+  packValueUnreadable: "Pack value not comparable",
+};
+
+/** What each displayed state means, for legends. */
+export const STATE_DESCRIPTIONS: Readonly<Record<keyof Omit<HeadlineStates, "assessed" | "total">, string>> = {
+  matches: "The recommended value is set on at least one assigned policy.",
+  differs: "A policy that is assigned, or whose assignment could not be read, holds another value.",
+  notConfigured: "A complete collection shows the setting in no policy, and no profile of another type exists for its platform.",
+  needsReview: "Checked automatically, but the collected data does not show whether it matches.",
+  notAssessed: "Not compared here; the reason says why.",
+};
+
 export const READINESS_DISCLAIMER = "Readiness comparison, not a certification";
 
 /**

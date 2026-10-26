@@ -9,7 +9,10 @@ import type { BenchmarkAssessment } from "../../../../../src/lib/benchmarks/asse
 import { assessBenchmark } from "../../../../../src/lib/benchmarks/assessment";
 import * as engine from "../../../../../src/lib/benchmarks/__tests__/fixtures";
 import { unassignedAssessment } from "../../../../../src/lib/benchmarks/__tests__/export-fixtures";
-import { SYNTHETIC_CATALOG, syntheticAssessment } from "../__fixtures__/benchmarks";
+import { LEVEL_2_NOTE, READINESS_DISCLAIMER, SETTINGS_BASIS_NOTE } from "../../../../../src/lib/benchmarks/display";
+import type { BenchmarkAssessmentView } from "../../shared/ipc-types";
+import { SYNTHETIC_CATALOG, syntheticAssessment, withFixPlan } from "../__fixtures__/benchmarks";
+import { formatDay } from "../lib/benchmarks-view";
 
 const mocks = vi.hoisted(() => ({
   catalog: vi.fn(),
@@ -108,8 +111,12 @@ async function click(element: Element) {
   await settle();
 }
 
-async function compare(assessment: BenchmarkAssessment = syntheticAssessment()) {
-  mocks.assess.mockResolvedValueOnce(assessment);
+// Main returns the assessment with its fix plan; engine assessments get theirs here.
+const view = (assessment: BenchmarkAssessment | BenchmarkAssessmentView): BenchmarkAssessmentView =>
+  "fixPlan" in assessment ? assessment : withFixPlan(assessment);
+
+async function compare(assessment: BenchmarkAssessment | BenchmarkAssessmentView = syntheticAssessment()) {
+  mocks.assess.mockResolvedValueOnce(view(assessment));
   await click(screen.getByRole("button", { name: "Compare with tenant" }));
   await until(() => expect(screen.getByRole("region", { name: "Accepted differences" })).toBeTruthy());
   await until(() => expect(screen.queryByText("Loading exceptions")).toBeNull());
@@ -200,13 +207,32 @@ describe("BenchmarksScreen load step", () => {
     expect(screen.getByLabelText("Benchmark")).toBeTruthy();
   });
 
-  it("asks for a collection before comparing", async () => {
+  it("shows an empty state with Collect on Overview before the first collection", async () => {
     mocks.state.current = appState({ collected: false });
     await renderScreen();
-    expect(screen.getByText("Collect tenant data first.")).toBeTruthy();
-    await click(screen.getByRole("button", { name: "Go to Overview" }));
+    expect(screen.getByText("Collect tenant data first")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Compare with tenant" })).toBeNull();
+    const collect = screen.getByRole("button", { name: "Collect on Overview" });
+    // The primary action of the empty state.
+    expect(collect.className).toContain("bg-petrol-950");
+    await click(collect);
     expect(mocks.navigate).toHaveBeenCalledWith("overview");
     expect(mocks.assess).not.toHaveBeenCalled();
+  });
+
+  it("keeps the setup while a collection runs and says why Compare waits", async () => {
+    mocks.state.current = appState({ collected: false, running: true });
+    await renderScreen();
+    expect(screen.getByText("Available when the collection finishes.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Compare with tenant" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("marks the selected Level with the accessible teal and a focus ring offset", async () => {
+    await renderScreen();
+    const selected = screen.getByRole("radio", { name: "Level 1" }).closest("label")!;
+    expect(selected.className).toContain("bg-teal-700");
+    expect(selected.className).toContain("has-[:focus-visible]:ring-offset-2");
+    expect(screen.getByRole("radio", { name: "Level 2" }).closest("label")!.className).not.toContain("bg-teal-700");
   });
 });
 
@@ -224,17 +250,33 @@ describe("BenchmarksScreen compare step", () => {
     expect(current()).toContain("Review results");
   });
 
-  it("shows the main refusal as an error and keeps the setup", async () => {
+  it("shows the main refusal with its cause and next step, marks the step and keeps one retry action", async () => {
     await renderScreen();
     mocks.assess.mockRejectedValueOnce(new Error("Error invoking remote method 'benchmarks:assess': Error: Not available yet."));
     await click(screen.getByRole("button", { name: "Compare with tenant" }));
     const alert = screen.getByRole("alert");
     expect(within(alert).getByText("The comparison could not run")).toBeTruthy();
     expect(within(alert).getByText("Not available yet.")).toBeTruthy();
+    expect(within(alert).getByText(/then compare again/)).toBeTruthy();
+    // The Compare button below retries; the alert has no second action.
+    expect(within(alert).queryByRole("button")).toBeNull();
+    const failed = screen.getByRole("list", { name: "Steps" }).querySelector('[aria-current="step"]')!;
+    expect(failed.textContent).toContain("Step 2, failed");
+    expect(failed.className).toContain("bg-red-50");
     expect(screen.getByLabelText("Benchmark")).toBeTruthy();
     mocks.assess.mockResolvedValueOnce(syntheticAssessment());
-    await click(within(alert).getByRole("button", { name: "Try again" }));
+    await click(screen.getByRole("button", { name: "Compare again" }));
     expect(screen.getByRole("list", { name: "Recommendations" })).toBeTruthy();
+  });
+
+  it("refuses a malformed pack result as a failed comparison instead of a blank screen", async () => {
+    await renderScreen();
+    const broken = syntheticAssessment();
+    (broken.recommendations[0] as unknown as { settings: unknown }).settings = null;
+    mocks.assess.mockResolvedValueOnce(broken);
+    await click(screen.getByRole("button", { name: "Compare with tenant" }));
+    expect(screen.getByText("The comparison result could not be read. Try again.")).toBeTruthy();
+    expect(screen.getByLabelText("Benchmark")).toBeTruthy();
   });
 
   it("refuses a result without the assessment lists", async () => {
@@ -247,18 +289,32 @@ describe("BenchmarksScreen compare step", () => {
 });
 
 describe("BenchmarksScreen review step", () => {
-  it("shows each Level's headline with the readiness line and the counts outside the rate", async () => {
+  it("shows each Level's headline with per state counts, the rate with its base and the reasons outside it", async () => {
     await renderScreen();
     const assessment = syntheticAssessment({ count: 30, levels: [1, 2] });
     await compare(assessment);
     const level1 = screen.getByRole("region", { name: "Level 1" });
+    // Ten of fifteen assessed: the rate may lead, always with its base.
     expect(within(level1).getByText("50%")).toBeTruthy();
-    // The rate with its base: how many results it is made of and how many need review.
-    const review = assessment.levels[0]!.headline.counts.review;
-    expect(
-      within(level1).getByText(`of 10 assessed, ${review} ${review === 1 ? "needs" : "need"} review`),
-    ).toBeTruthy();
-    expect(within(level1).getByText("Readiness comparison, not a certification")).toBeTruthy();
+    expect(within(level1).getByText("of 10 assessed, 0 need review")).toBeTruthy();
+    // All five states, a zero as a plain count rather than a button.
+    const counts = within(level1).getByRole("list", { name: "Results of Level 1" });
+    expect(within(counts).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "Matches5",
+      "Differs0",
+      "Not configured5",
+      "Needs review0",
+      "Not assessed5",
+    ]);
+    expect(within(counts).getAllByRole("button").map((chip) => chip.getAttribute("aria-label"))).toEqual([
+      "Matches: 5. Show in the list",
+      "Not configured: 5. Show in the list",
+      "Not assessed: 5. Show in the list",
+    ]);
+    // Level 2 has no missing setting and still shows its Not configured count.
+    const level2Counts = within(screen.getByRole("region", { name: "Level 2" })).getByRole("list", { name: "Results of Level 2" });
+    expect(within(level2Counts).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(level2Counts).getByText("Not configured")).toBeTruthy();
     expect(within(level1).getByText(/outside the pack, so it is not assessed here/)).toBeTruthy();
     expect(within(level1).getByText(/coverage of the full benchmark will be shown once its list is published/)).toBeTruthy();
     const level2 = screen.getByRole("region", { name: "Level 2" });
@@ -267,14 +323,63 @@ describe("BenchmarksScreen review step", () => {
     expect(text).not.toMatch(/\bcompliant\b|\bscore\b|\bcertified\b/i);
   });
 
+  it("says the readiness line once, in the summary, not in each Level card", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 30, levels: [1, 2], level: 2 }));
+    expect(screen.getAllByText(`${READINESS_DISCLAIMER}.`)).toHaveLength(1);
+    expect(document.body.textContent!.split(READINESS_DISCLAIMER)).toHaveLength(2);
+    const summary = screen.getByRole("region", { name: "Comparison" });
+    expect(within(summary).getByText(`${READINESS_DISCLAIMER}.`)).toBeTruthy();
+  });
+
+  it("lets the counts lead when too few results were assessed, and keeps the rate with its base", async () => {
+    await renderScreen();
+    // Eight assessed: below the bar for a hero percentage.
+    await compare(syntheticAssessment({ count: 12 }));
+    const level1 = screen.getByRole("region", { name: "Level 1" });
+    expect(within(level1).getByText("50% of 8 assessed, 2 need review")).toBeTruthy();
+    expect(within(level1).getByText(/Too few results could be assessed for the rate to lead/)).toBeTruthy();
+    expect(within(level1).queryByText("50%")).toBeNull();
+  });
+
+  it("opens the list on Differs from the headline count", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 12 }));
+    await click(screen.getByRole("button", { name: "Differs: 2. Show in the list" }));
+    expect(screen.getByRole("button", { name: "Differs, 2", pressed: true })).toBeTruthy();
+    expect(rowTitles()).toHaveLength(2);
+    expect(rowTitles().every((title) => title.includes("Differs"))).toBe(true);
+  });
+
+  it("shows both Levels with the Level 2 note when Level 2 was compared", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 30, levels: [1, 2], level: 2 }));
+    expect(screen.getByRole("region", { name: "Level 1" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Level 2" })).toBeTruthy();
+    expect(screen.getByText(LEVEL_2_NOTE)).toBeTruthy();
+    expect(screen.queryByText(SETTINGS_BASIS_NOTE)).toBeNull();
+  });
+
+  it("explains a pack judged by settings", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 12, basis: "settings" }));
+    expect(screen.getByText(SETTINGS_BASIS_NOTE)).toBeTruthy();
+    expect(screen.queryByText(LEVEL_2_NOTE)).toBeNull();
+    // Rows are titled by the setting's display name with the id under it.
+    const settings = screen.getByRole("list", { name: "Settings" });
+    const first = within(settings).getAllByRole("button", { expanded: false })[0]!;
+    expect(first.textContent).toContain("Synthetic setting 2");
+    expect(first.textContent).toContain("device_vendor_msft_policy_config_synthetic_area_synthetic_setting_2");
+  });
+
   it("names the Levels the results show in the review header", async () => {
     await renderScreen();
     await compare(syntheticAssessment({ count: 30, levels: [1, 2], level: 2 }));
-    expect(screen.getByText(/^Version 2\.0\.0, Levels 1 and 2\. Compared/)).toBeTruthy();
-    expect(screen.queryByText(/^Version 2\.0\.0, Level 2\./)).toBeNull();
+    expect(screen.getByText(/^Version 2\.0\.0, Levels 1 and 2 for Synthetic Contoso Lab\. Compared/)).toBeTruthy();
+    expect(screen.queryByText(/^Version 2\.0\.0, Level 2 /)).toBeNull();
     mocks.assess.mockResolvedValueOnce(syntheticAssessment({ levels: [1] }));
     await click(screen.getByRole("button", { name: "Compare again" }));
-    await until(() => expect(screen.getByText(/^Version 2\.0\.0, Level 1\. Compared/)).toBeTruthy());
+    await until(() => expect(screen.getByText(/^Version 2\.0\.0, Level 1 for Synthetic Contoso Lab\. Compared/)).toBeTruthy());
   });
 
   it("shows n/a when nothing could be assessed", async () => {
@@ -282,17 +387,19 @@ describe("BenchmarksScreen review step", () => {
     assessment.levels[0]!.headline = { ...assessment.levels[0]!.headline, rate: null };
     await renderScreen();
     await compare(assessment);
-    expect(screen.getByText("n/a")).toBeTruthy();
-    expect(screen.getByText("Nothing could be assessed as Matches or Differs.")).toBeTruthy();
+    expect(screen.getByText("No rate")).toBeTruthy();
+    expect(screen.getByText("Matching recommendations: nothing could be assessed as Matches or Differs.")).toBeTruthy();
   });
 
-  it("filters by result and Level, searches, and shows the filtered empty state", async () => {
+  it("filters by state and Level, searches, and shows the filtered empty state", async () => {
     await renderScreen();
     await compare(syntheticAssessment({ count: 12, levels: [1, 2] }));
     expect(rowTitles()).toHaveLength(12);
 
-    await click(screen.getByRole("button", { name: "Differs, 4" }));
-    expect(rowTitles()).toHaveLength(4);
+    await click(screen.getByRole("button", { name: "Not configured, 2" }));
+    expect(rowTitles()).toHaveLength(2);
+    expect(rowTitles().every((title) => title.includes("Not configured"))).toBe(true);
+    await click(screen.getByRole("button", { name: "Differs, 2" }));
     expect(rowTitles().every((title) => title.includes("Differs"))).toBe(true);
     await click(screen.getByRole("button", { name: "Level 2" }));
     expect(rowTitles()).toHaveLength(2);
@@ -301,14 +408,13 @@ describe("BenchmarksScreen review step", () => {
     await click(screen.getByRole("button", { name: "All, 6" }));
     await click(screen.getByRole("button", { name: "All" }));
     expect(screen.getByRole("button", { name: "All, 12" })).toBeTruthy();
-    await act(async () => fireEvent.change(screen.getByLabelText("Search by id, title or setting id"), {
-      target: { value: "synthetic_setting_7" },
-    }));
+    const search = screen.getByLabelText("Search by name or id") as HTMLInputElement;
+    // The placeholder uses the full petrol-600 for contrast.
+    expect(search.className).toContain("placeholder:text-petrol-600 ");
+    await act(async () => fireEvent.change(search, { target: { value: "synthetic_setting_7" } }));
     await until(() => expect(rowTitles()).toEqual([expect.stringContaining("Synthetic recommendation 7")]));
 
-    await act(async () => fireEvent.change(screen.getByLabelText("Search by id, title or setting id"), {
-      target: { value: "nothing like this" },
-    }));
+    await act(async () => fireEvent.change(search, { target: { value: "nothing like this" } }));
     await until(() => expect(screen.getByText("No recommendation matches the filters")).toBeTruthy());
     await click(screen.getByRole("button", { name: "Clear filters" }));
     await until(() => expect(rowTitles()).toHaveLength(12));
@@ -324,14 +430,59 @@ describe("BenchmarksScreen review step", () => {
     expect(rowTitles()).toHaveLength(250);
   });
 
-  it("opens the setting detail with the policies that hold it", async () => {
+  it("shows readable names with the id under them, most severe first, with an id sort", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 12 }));
+    const first = rowTitles()[0]!;
+    expect(first.indexOf("Synthetic recommendation 2")).toBeLessThan(first.indexOf("2.1.2"));
+    // Differs, then Not configured.
+    expect(rowTitles().map((title) => title.match(/\d+\.\d+\.\d+/)![0]).slice(0, 4)).toEqual([
+      "2.1.2",
+      "8.1.8",
+      "3.1.3",
+      "9.1.9",
+    ]);
+    await act(async () => fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "id" } }));
+    expect(rowTitles().map((title) => title.match(/\d+\.\d+\.\d+/)![0]).slice(0, 4)).toEqual([
+      "1.1.1",
+      "1.2.10",
+      "2.1.2",
+      "2.2.11",
+    ]);
+  });
+
+  it("opens a row with current and recommended values, the holding policy's reach, raw JSON and the next step", async () => {
     await renderScreen();
     await compare();
     await click(row("Synthetic recommendation 2"));
     const detail = within(list()).getByRole("list", { name: "Settings" });
+    expect(within(detail).getByText("Synthetic setting 2")).toBeTruthy();
     expect(within(detail).getByText("device_vendor_msft_policy_config_synthetic_area_synthetic_setting_2")).toBeTruthy();
-    expect(within(detail).getByText("Synthetic tenant policy 2")).toBeTruthy();
-    expect(within(detail).getByText("Recommended value")).toBeTruthy();
+    expect(within(detail).getByText("Current")).toBeTruthy();
+    expect(within(detail).getByText("Recommended")).toBeTruthy();
+    expect(within(detail).getByText("Disabled")).toBeTruthy();
+    expect(within(detail).getByText("Enabled")).toBeTruthy();
+    const holders = within(detail).getByRole("list", { name: "Policies holding this setting" });
+    expect(holders.textContent).toContain("Synthetic security policy A, assigned to Group: Synthetic pilot devices");
+    // The raw instances stay behind a disclosure.
+    expect(within(detail).getByText("Raw values (JSON)").closest("details")!.open).toBe(false);
+    expect(
+      within(list()).getByText(
+        "Change Synthetic setting 2 in policy Synthetic security policy A from Disabled to Enabled.",
+      ),
+    ).toBeTruthy();
+    expect(within(list()).getByText("Next step:")).toBeTruthy();
+  });
+
+  it("names a missing setting Not configured, on the row and as its current value", async () => {
+    await renderScreen();
+    await compare();
+    const missing = row("Synthetic recommendation 3");
+    expect(within(missing).getByText("Not configured")).toBeTruthy();
+    await click(missing);
+    const detail = within(list()).getByRole("list", { name: "Settings" });
+    // The current value; the row chip already says the state, so the setting has no second chip.
+    expect(within(detail).getAllByText("Not configured")).toHaveLength(1);
   });
 
   it("judges each policy on the displayed nested setting, not on its whole root (finding 2)", async () => {
@@ -367,12 +518,14 @@ describe("BenchmarksScreen review step", () => {
     await click(row("Synthetic nested match"));
     let detail = within(list()).getByRole("list", { name: "Policies holding this setting" });
     expect(within(detail).getByText("Synthetic grouped tenant policy")).toBeTruthy();
-    expect(within(detail).getByText("Matches")).toBeTruthy();
+    // The child's own value: it matches, so neither the value nor a Differs label shows a difference.
+    expect(within(detail).getByText("1")).toBeTruthy();
     expect(within(detail).queryByText("Differs")).toBeNull();
+    expect(within(row("Synthetic nested difference")).getByText("Differs")).toBeTruthy();
     await click(within(list()).getByRole("button", { name: /Synthetic nested match/, expanded: true }));
     await click(row("Synthetic nested difference"));
     detail = within(list()).getByRole("list", { name: "Policies holding this setting" });
-    expect(within(detail).getByText("Differs")).toBeTruthy();
+    expect(within(detail).getByText("2")).toBeTruthy();
   });
 
   it("says why a matching setting needs review beside its badge", async () => {
@@ -460,19 +613,38 @@ describe("BenchmarksScreen exceptions", () => {
     await compare();
     expect(mocks.exceptions).toHaveBeenCalledWith({ action: "list", ...identity });
     const panel = screen.getByRole("region", { name: "Accepted differences" });
-    expect(within(panel).getByText("Synthetic reason")).toBeTruthy();
-    expect(within(panel).getByText("Until 2999-12-31")).toBeTruthy();
+    const recorded = within(panel).getByRole("list", { name: "Exceptions" });
+    expect(within(recorded).getByText("Synthetic reason")).toBeTruthy();
+    expect(within(recorded).getByText(`Until ${formatDay("2999-12-31")}`)).toBeTruthy();
 
-    await click(screen.getByRole("button", { name: "Differs, 4" }));
+    // The stored exception shows on its row.
+    expect(within(row("Synthetic recommendation 2")).getByText(`Accepted until ${formatDay("2999-12-31")}`)).toBeTruthy();
+
+    await click(screen.getByRole("button", { name: "Differs, 2" }));
     await click(row("Synthetic recommendation 8"));
     const settingId = "device_vendor_msft_policy_config_synthetic_area_synthetic_setting_8";
-    await click(screen.getByRole("button", { name: `Add an exception for ${settingId}` }));
-    expect((within(panel).getByLabelText("Setting") as HTMLSelectElement).value).toBe(settingId);
+    await click(screen.getByRole("button", { name: "Add an exception for Synthetic setting 8" }));
+    const select = within(panel).getByLabelText("Setting") as HTMLSelectElement;
+    expect(select.value).toBe(settingId);
+    // Options carry the recommendation id and the readable name; the id is on a second line.
+    expect(select.selectedOptions[0]!.textContent).toBe("8.1.8 Synthetic recommendation 8");
+    expect(select.selectedOptions[0]!.title).toBe(settingId);
+    expect(within(panel).getByText(`Setting: Synthetic setting 8 (${settingId})`)).toBeTruthy();
     expect(document.activeElement).toBe(within(panel).getByLabelText("Owner"));
 
-    // Every field is required before anything is sent.
+    // Every field is required before anything is sent; all errors show at once, each on its field.
     await click(within(panel).getByRole("button", { name: "Add exception" }));
-    expect(within(panel).getByText("Enter an owner.")).toBeTruthy();
+    const ownerError = within(panel).getByText("Enter an owner.");
+    const ownerInput = within(panel).getByLabelText("Owner");
+    expect(ownerInput.getAttribute("aria-invalid")).toBe("true");
+    expect(ownerInput.getAttribute("aria-describedby")).toBe(ownerError.id);
+    expect(ownerInput.className).toContain("border-red-600");
+    expect(within(panel).getByText("Enter a reason.").id).toBe(
+      within(panel).getByLabelText("Reason").getAttribute("aria-describedby"),
+    );
+    expect(within(panel).getByText("Enter an expiry date.")).toBeTruthy();
+    // The first field with a problem gets the focus.
+    expect(document.activeElement).toBe(ownerInput);
     await act(async () => fireEvent.change(within(panel).getByLabelText("Owner"), { target: { value: "Synthetic Owner" } }));
     await act(async () => fireEvent.change(within(panel).getByLabelText("Reason"), { target: { value: "Synthetic" } }));
     await act(async () =>
@@ -480,6 +652,9 @@ describe("BenchmarksScreen exceptions", () => {
     );
     await click(within(panel).getByRole("button", { name: "Add exception" }));
     expect(within(panel).getByText("The expiry date must be today or later.")).toBeTruthy();
+    expect(within(panel).getByLabelText("Expires on").getAttribute("aria-invalid")).toBe("true");
+    expect(within(panel).getByLabelText("Owner").getAttribute("aria-invalid")).toBeNull();
+    expect(document.activeElement).toBe(within(panel).getByLabelText("Expires on"));
     expect(mocks.exceptions).toHaveBeenCalledTimes(1);
 
     const added = { ...stored, id: "exception-2", settingId, reason: "Synthetic" };
@@ -506,11 +681,42 @@ describe("BenchmarksScreen exceptions", () => {
 
     mocks.exceptions.mockResolvedValueOnce([added]);
     mocks.assess.mockResolvedValueOnce(syntheticAssessment());
-    await click(within(panel).getByRole("button", { name: `Remove the exception for ${stored.settingId}` }));
+    await click(within(panel).getByRole("button", { name: "Remove the exception for Synthetic setting 2" }));
     expect(mocks.exceptions).toHaveBeenLastCalledWith({ action: "remove", ...identity, settingId: stored.settingId });
-    expect(within(panel).queryByText("Synthetic reason")).toBeNull();
+    expect(within(within(panel).getByRole("list", { name: "Exceptions" })).queryByText("Synthetic reason")).toBeNull();
     await until(() => expect(screen.queryByText("60% with 1 exclusion")).toBeNull());
     expect(mocks.assess).toHaveBeenCalledTimes(3);
+  });
+
+  it("says when saving replaces an existing exception", async () => {
+    mocks.exceptions.mockResolvedValueOnce([stored]);
+    await renderScreen();
+    await compare();
+    const panel = screen.getByRole("region", { name: "Accepted differences" });
+    await act(async () =>
+      fireEvent.change(within(panel).getByLabelText("Setting"), {
+        target: { value: "device_vendor_msft_policy_config_synthetic_area_synthetic_setting_8" },
+      }),
+    );
+    // Errors of an earlier attempt go when another setting is chosen.
+    await click(within(panel).getByRole("button", { name: "Add exception" }));
+    expect(within(panel).getByText("Enter an owner.")).toBeTruthy();
+    await act(async () => fireEvent.change(within(panel).getByLabelText("Setting"), { target: { value: stored.settingId } }));
+    expect(within(panel).getByText(/This setting already has an exception, accepted until .*\. Saving replaces it\./)).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Replace exception" })).toBeTruthy();
+    expect(within(panel).queryByText("Enter an owner.")).toBeNull();
+    // The form holds the exception to change.
+    expect((within(panel).getByLabelText("Owner") as HTMLInputElement).value).toBe("Synthetic Owner");
+    expect((within(panel).getByLabelText("Reason") as HTMLTextAreaElement).value).toBe("Synthetic reason");
+    expect((within(panel).getByLabelText("Expires on") as HTMLInputElement).value).toBe("2999-12-31");
+    await act(async () =>
+      fireEvent.change(within(panel).getByLabelText("Setting"), {
+        target: { value: "device_vendor_msft_policy_config_synthetic_area_synthetic_setting_8" },
+      }),
+    );
+    expect(within(panel).queryByText(/Saving replaces it/)).toBeNull();
+    expect(within(panel).getByRole("button", { name: "Add exception" })).toBeTruthy();
+    expect((within(panel).getByLabelText("Owner") as HTMLInputElement).value).toBe("");
   });
 
   it("shows an exceptions error without the form", async () => {
@@ -655,17 +861,32 @@ describe("BenchmarksScreen history", () => {
     await compare();
     expect(mocks.history).toHaveBeenCalledWith(identity);
     const panel = screen.getByRole("region", { name: "Trend of this benchmark, version and Level" });
-    await until(() => expect(within(panel).getByRole("list", { name: "Stored comparisons" })).toBeTruthy());
-    const points = within(panel).getAllByRole("listitem").map((item) => item.textContent);
+    await until(() => expect(within(panel).getByRole("table", { name: "Stored comparisons" })).toBeTruthy());
+    const table = within(panel).getByRole("table", { name: "Stored comparisons" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Compared",
+      "Headline",
+      "Assessed",
+      "Review",
+      "Change",
+    ]);
+    const points = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((item) => within(item).getAllByRole("cell").map((cell) => cell.textContent));
     expect(points).toHaveLength(2);
-    expect(points[0]).toContain("-45.0 pp");
-    expect(points[0]).toContain("of 20 assessed, 1 needs review");
-    expect(points[1]).toContain("First comparison");
+    // A true minus sign, and the base in its own columns.
+    expect(points[0]!.slice(1)).toEqual(["50%", "20", "1", "\u221245.0 pp"]);
+    expect(points[1]!.at(-1)).toBe("First comparison");
+    // The base is said once, as the caption.
     expect(
-      within(panel).getByText(
-        /fell below 90%, from 95% \(of 20 assessed, 2 need review\) to 50% \(of 20 assessed, 3 need review\)/,
+      within(table).getByText(
+        /Headline is Matches out of the assessed results \(Matches, Differs and Not configured\)\. Needs review and Not assessed are not counted\./,
       ),
     ).toBeTruthy();
+    // The drift alert says what happened without repeating the table.
+    const drift = within(panel).getByText(/The latest comparison is below 90%, down from the comparison of/);
+    expect(drift.textContent).not.toMatch(/assessed|95%|50%/);
     expect(within(panel).getByRole("img")).toBeTruthy();
   });
 
@@ -695,9 +916,9 @@ describe("BenchmarksScreen history", () => {
     await renderScreen();
     await compare(syntheticAssessment({ levels: [1, 2] }));
     const panel = screen.getByRole("region", { name: "Trend of this benchmark and version per Level" });
-    await until(() => expect(within(panel).getByRole("list", { name: "Stored comparisons, Level 2" })).toBeTruthy());
-    const one = within(panel).getByRole("list", { name: "Stored comparisons, Level 1" });
-    const two = within(panel).getByRole("list", { name: "Stored comparisons, Level 2" });
+    await until(() => expect(within(panel).getByRole("table", { name: "Stored comparisons, Level 2" })).toBeTruthy());
+    const one = within(panel).getByRole("table", { name: "Stored comparisons, Level 1" });
+    const two = within(panel).getByRole("table", { name: "Stored comparisons, Level 2" });
     expect(one.textContent).toContain("50%");
     expect(two.textContent).toContain("100%");
   });
@@ -707,7 +928,7 @@ describe("BenchmarksScreen history", () => {
     await compare({
       ...syntheticAssessment(),
       history: { recorded: false, reason: "Synthetic: the stored benchmark run holds more than 5000 results." },
-    } as BenchmarkAssessment);
+    });
     const panel = screen.getByRole("region", { name: "Trend of this benchmark, version and Level" });
     await until(() => expect(within(panel).getByText("This comparison was not stored")).toBeTruthy());
     expect(within(panel).getByText(/holds more than 5000 results/)).toBeTruthy();
@@ -780,8 +1001,17 @@ describe("BenchmarksScreen portfolio", () => {
     expect(within(one).getByText("Signed in")).toBeTruthy();
     expect(within(one).getByText("75%")).toBeTruthy();
     expect(within(one).getByText("of 4 assessed, 0 need review")).toBeTruthy();
-    const other = within(panel).getByRole("listitem", { name: "tenant-2" });
+    // A tenant without a stored name says so, with its id as the secondary line.
+    const other = within(panel).getByRole("listitem", { name: "Name unknown" });
+    expect(within(other).getByText("tenant-2")).toBeTruthy();
     expect(within(other).getByText("Stored comparisons of other benchmarks only")).toBeTruthy();
+    // Numeric columns have one width on every row.
+    expect(within(one).getByText("75%").parentElement!.className).toContain("w-40");
+    // No rate reads quieter than a rate.
+    expect(within(other).getByText("Not run").className).toContain("text-petrol-600");
+    expect(within(one).getByText("75%").className).toContain("text-petrol-950");
+    // Without a comparison on this screen the portfolio carries the readiness line.
+    expect(within(panel).getByText(/Readiness comparison, not a certification/)).toBeTruthy();
     expect(mocks.portfolio).toHaveBeenCalledWith(undefined);
 
     await act(async () =>
@@ -797,5 +1027,282 @@ describe("BenchmarksScreen portfolio", () => {
     mocks.portfolio.mockResolvedValue({ ...view, available: false, reason: "Synthetic: history is off.", rows: [] });
     await renderScreen();
     await until(() => expect(screen.getByText("Synthetic: history is off.")).toBeTruthy());
+  });
+});
+
+describe("BenchmarksScreen fix plan", () => {
+  it("lists the engine's steps in order with policy names and counts", async () => {
+    await renderScreen();
+    const assessment = syntheticAssessment({ count: 12 });
+    await compare(assessment);
+    const plan = screen.getByRole("region", { name: "What to do next" });
+    const steps = within(plan).getAllByRole("listitem").filter((item) => item.parentElement?.getAttribute("aria-label") === "Fix plan steps");
+    expect(steps.map((step) => within(step).getByText(assessment.fixPlan.actions[steps.indexOf(step)]!.text))).toHaveLength(
+      assessment.fixPlan.actions.length,
+    );
+    expect(assessment.fixPlan.actions.map((action) => action.kind)).toEqual([
+      "changeValue",
+      "changeValue",
+      "assignPolicy",
+      "checkValue",
+      "addSetting",
+    ]);
+    expect(steps[2]!.textContent).toContain("Assign a policy");
+    expect(steps[2]!.textContent).toContain(
+      "Assign policy Synthetic pilot policy, which would let 1 result be judged: 1 would match.",
+    );
+    expect(steps[0]!.textContent).toContain("Synthetic security policy A");
+  });
+
+  it("narrows the list to the results of a step and back", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 12 }));
+    const plan = screen.getByRole("region", { name: "What to do next" });
+    await click(within(plan).getByRole("button", { name: "Show the 2 results of step 5 in the list" }));
+    expect(rowTitles()).toHaveLength(2);
+    expect(rowTitles().every((title) => title.includes("Not configured"))).toBe(true);
+    expect(screen.getByText("Fix plan, Step 5: Add missing settings.")).toBeTruthy();
+    expect(within(plan).getByRole("button", { name: "Show the 2 results of step 5 in the list", pressed: true })).toBeTruthy();
+    await click(within(list().parentElement!).getByRole("button", { name: "Show all" }));
+    expect(rowTitles()).toHaveLength(12);
+    expect(within(plan).getByRole("button", { name: "Show the 2 results of step 5 in the list", pressed: false })).toBeTruthy();
+  });
+
+  it("says when there is nothing to change", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 1 }));
+    expect(screen.getByText("Nothing to change: no result differs, is not configured or needs review.")).toBeTruthy();
+  });
+
+  it("shows the first steps of a long plan and all on request", async () => {
+    await renderScreen();
+    const long = syntheticAssessment({ count: 12 });
+    const [first] = long.fixPlan.actions;
+    long.fixPlan = {
+      ...long.fixPlan,
+      actions: Array.from({ length: 8 }, (_, index) => ({ ...first!, id: `${first!.id}:${index}` })),
+    };
+    await compare(long);
+    const plan = screen.getByRole("region", { name: "What to do next" });
+    const count = () => within(within(plan).getByRole("list", { name: "Fix plan steps" })).getAllByRole("listitem", { name: undefined }).filter((item) => item.parentElement?.getAttribute("aria-label") === "Fix plan steps").length;
+    expect(count()).toBe(5);
+    await click(within(plan).getByRole("button", { name: "Show all 8 steps" }));
+    expect(count()).toBe(8);
+    await click(within(plan).getByRole("button", { name: "Show the first 5 steps" }));
+    expect(count()).toBe(5);
+  });
+});
+
+describe("BenchmarksScreen page", () => {
+  it("orders summary, fix plan, headlines, list, exceptions, history, manual section and exports", async () => {
+    await renderScreen();
+    await compare();
+    const order = [
+      screen.getByRole("region", { name: "Comparison" }),
+      screen.getByRole("region", { name: "What to do next" }),
+      screen.getByRole("region", { name: "Headline per Level" }),
+      document.getElementById("benchmark-list-title")!,
+      screen.getByRole("region", { name: "Accepted differences" }),
+      screen.getByRole("region", { name: "Trend of this benchmark, version and Level" }),
+      screen.getByRole("region", { name: "Recommendations to check by hand" }),
+      screen.getByRole("region", { name: "Readiness files and draft policies" }),
+    ];
+    for (let index = 1; index < order.length; index += 1)
+      expect(order[index - 1]!.compareDocumentPosition(order[index]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("exports the PDF from the summary, next to Compare again", async () => {
+    await renderScreen();
+    await compare();
+    const summary = screen.getByRole("region", { name: "Comparison" });
+    const buttons = within(summary).getAllByRole("button").map((button) => button.textContent);
+    expect(buttons).toEqual(["Change benchmark", "Compare again", "Export PDF"]);
+    mocks.exportFile.mockResolvedValueOnce("/synthetic/readiness.pdf");
+    await click(within(summary).getByRole("button", { name: "Export PDF" }));
+    expect(mocks.exportFile).toHaveBeenCalledWith({ format: "pdf" });
+    expect(within(summary).getByText("Readiness PDF saved: readiness.pdf")).toBeTruthy();
+  });
+
+  it("makes only the PDF primary among the exports, and the file actions secondary or ghost", async () => {
+    await renderScreen();
+    await compare();
+    const exports = screen.getByRole("region", { name: "Readiness files and draft policies" });
+    const primary = within(exports)
+      .getAllByRole("button")
+      .filter((button) => /\bbg-petrol-950\b/.test(button.className))
+      .map((button) => button.textContent);
+    expect(primary).toEqual(["PDF (.pdf)"]);
+    mocks.exportFile.mockResolvedValueOnce("/synthetic/readiness.csv");
+    await click(within(exports).getByRole("button", { name: "CSV (.csv)" }));
+    expect(within(exports).getByRole("button", { name: "Open file" }).className).toContain("border-petrol-950/12");
+    expect(within(exports).getByRole("button", { name: "Show in folder" }).className).not.toMatch(/\bbg-petrol-950\b|border-petrol-950\/12/);
+  });
+
+  it("shows the manual notice in the info tone, unchanged", async () => {
+    await renderScreen();
+    await compare();
+    const manual = screen.getByRole("region", { name: "Recommendations to check by hand" });
+    const notice = within(manual).getByText(/Not all recommendations from the CIS Benchmarks are included/);
+    const box = notice.closest("div.rounded-xl")!;
+    expect(box.className).toContain("bg-teal-50");
+    expect(box.className).not.toContain("amber");
+  });
+
+  it("keeps result chip text at 11 px", async () => {
+    await renderScreen();
+    await compare();
+    const chip = within(row("Synthetic recommendation 2")).getByText("Differs");
+    expect(chip.className).toContain("text-[11px]");
+  });
+});
+
+describe("BenchmarksScreen error boundaries", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it("keeps the screen when the history is malformed and offers Try again", async () => {
+    mocks.history.mockResolvedValueOnce({ ...HISTORY, trend: "broken" });
+    await renderScreen();
+    await compare();
+    await until(() => expect(screen.getByText("The history could not be shown")).toBeTruthy());
+    const fallback = screen.getByText("The history could not be shown").closest('[role="alert"]')!;
+    expect(screen.getByRole("list", { name: "Recommendations" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "What to do next" })).toBeTruthy();
+    await click(within(fallback as HTMLElement).getByRole("button", { name: "Try again" }));
+    await until(() => expect(screen.getByRole("region", { name: "Trend of this benchmark, version and Level" })).toBeTruthy());
+  });
+
+  it("keeps the screen when a Level summary is malformed", async () => {
+    const broken = syntheticAssessment();
+    (broken.levels[0]!.headline as unknown as { states: unknown }).states = null;
+    await renderScreen();
+    await compare(broken);
+    expect(screen.getByText("The headline could not be shown")).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Recommendations" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Readiness files and draft policies" })).toBeTruthy();
+  });
+
+  it("keeps the screen when the fix plan is malformed", async () => {
+    const broken = syntheticAssessment();
+    (broken.fixPlan.actions[0] as unknown as { results: unknown }).results = null;
+    await renderScreen();
+    await compare(broken);
+    expect(screen.getByText("The fix plan could not be shown")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Headline per Level" })).toBeTruthy();
+  });
+});
+
+describe("BenchmarksScreen review round", () => {
+  it("brings a failed panel back with the next comparison", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const broken = syntheticAssessment();
+    (broken.levels[0]!.headline as unknown as { states: unknown }).states = null;
+    await renderScreen();
+    await compare(broken);
+    expect(screen.getByText("The headline could not be shown")).toBeTruthy();
+    mocks.assess.mockResolvedValueOnce({ ...syntheticAssessment(), assessedAt: "2026-10-22T10:00:00.000Z" });
+    await click(screen.getByRole("button", { name: "Compare again" }));
+    await until(() => expect(screen.queryByText("The headline could not be shown")).toBeNull());
+    expect(screen.getByRole("region", { name: "Level 1" })).toBeTruthy();
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it("marks the catalog step failed and leaves every step ahead before the first collection", async () => {
+    mocks.catalog.mockRejectedValueOnce(new Error("The content service could not be reached."));
+    await renderScreen();
+    const current = screen.getByRole("list", { name: "Steps" }).querySelector('[aria-current="step"]')!;
+    expect(current.textContent).toContain("Step 1, failed");
+    act(() => root?.unmount());
+    root = null;
+    mocks.state.current = appState({ collected: false });
+    await renderScreen();
+    const steps = screen.getByRole("list", { name: "Steps" });
+    expect(steps.querySelectorAll("svg").length).toBe(0);
+    expect(steps.textContent).not.toMatch(/done|failed/);
+  });
+
+  it("keeps Compare again and Export PDF in one group that wraps together", async () => {
+    await renderScreen();
+    await compare();
+    const summary = screen.getByRole("region", { name: "Comparison" });
+    const group = within(summary).getByRole("button", { name: "Export PDF" }).parentElement!;
+    expect(group.className).toContain("flex-nowrap");
+    expect(within(group).getByRole("button", { name: "Compare again" })).toBeTruthy();
+    expect(within(group).queryByRole("button", { name: "Change benchmark" })).toBeNull();
+  });
+
+  it("narrows the list to the results without a step from the fix plan note", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 24, complete: false }));
+    const plan = screen.getByRole("region", { name: "What to do next" });
+    const show = within(plan).getByRole("button", { name: /^Show \d+ results?$/ });
+    await click(show);
+    expect(screen.getByText("Fix plan, results without a step.")).toBeTruthy();
+    expect(screen.getByText("Showing the results that no step covers.")).toBeTruthy();
+    expect(rowTitles().length).toBeGreaterThan(0);
+    expect(rowTitles().every((title) => title.includes("Needs review") || title.includes("Differs"))).toBe(true);
+  });
+
+  it("says Not configured in the incomplete collection alert", async () => {
+    await renderScreen();
+    await compare(syntheticAssessment({ complete: false }));
+    expect(screen.getByText(/never Differs or Not configured/)).toBeTruthy();
+  });
+
+  it("gives the search and form fields a solid focus ring with an offset", async () => {
+    await renderScreen();
+    await compare();
+    const search = screen.getByLabelText("Search by name or id");
+    expect(search.className).toContain("focus-visible:ring-teal-600 ");
+    expect(search.className).toContain("focus-visible:ring-offset-2");
+    expect(search.className).not.toMatch(/ring-teal-600\/\d+/);
+    const owner = within(screen.getByRole("region", { name: "Accepted differences" })).getByLabelText("Owner");
+    expect(owner.className).toContain("focus-visible:ring-offset-2");
+  });
+
+  it("names manual recommendations before their id, as the result list does", async () => {
+    await renderScreen();
+    await compare();
+    const manual = within(screen.getByRole("region", { name: "Recommendations to check by hand" })).getByRole("list", {
+      name: "Manual recommendations, Level 1",
+    });
+    const first = within(manual).getAllByRole("listitem")[0]!.textContent!;
+    expect(first.indexOf("Synthetic manual recommendation 1")).toBeLessThan(first.indexOf("9.1.1"));
+  });
+
+  it("labels the sparkline with its dates and the 90% line", async () => {
+    mocks.history.mockResolvedValue({
+      ...HISTORY,
+      trend: [
+        { benchmark: "synthetic-bench", version: "2.0.0", level: 1, assessedAt: "2026-10-01T09:00:00.000Z", basis: "recommendations", rate: 0.9, counts: { pass: 9, fail: 1, review: 0, notAssessed: 0 }, comparison: "first", change: null },
+        { benchmark: "synthetic-bench", version: "2.0.0", level: 1, assessedAt: "2026-10-22T09:30:00.000Z", basis: "recommendations", rate: 0.8, counts: { pass: 8, fail: 2, review: 0, notAssessed: 0 }, comparison: "compared", change: -0.1 },
+      ],
+    });
+    await renderScreen();
+    await compare();
+    const panel = screen.getByRole("region", { name: "Trend of this benchmark, version and Level" });
+    await until(() => expect(within(panel).getByRole("img")).toBeTruthy());
+    expect(within(panel).getByRole("img").getAttribute("aria-label")).toMatch(/from .+ to .+, oldest first\. The dashed line marks 90%\./);
+    expect(within(panel).getByText("Dashed line: 90%")).toBeTruthy();
+    expect(within(panel).getByRole("img").getAttribute("height")).toBe("64");
+  });
+
+  it("keeps no text of the screen below 11 px", async () => {
+    mocks.exceptions.mockResolvedValueOnce([
+      { id: "e", benchmark: "synthetic-bench", version: "2.0.0", level: 1, settingId: "device_vendor_msft_policy_config_synthetic_area_synthetic_setting_2", owner: "Synthetic Owner", reason: "Synthetic", expiresOn: "2999-12-31", createdAt: "2026-10-22T09:00:00.000Z" },
+    ]);
+    await renderScreen();
+    await compare(syntheticAssessment({ count: 12, levels: [1, 2] }));
+    await click(row("Synthetic recommendation 2"));
+    // The shared Badge base is 10 px; every use here overrides it with 11 px,
+    // which the stylesheet emits later. The page header eyebrow is shared by all screens.
+    const small = [...container.querySelectorAll<HTMLElement>("[class*='text-[9px]'], [class*='text-[10px]']")].filter(
+      (element) => !element.closest("header") && !element.className.includes("text-[11px]"),
+    );
+    expect(small.map((element) => element.textContent)).toEqual([]);
   });
 });

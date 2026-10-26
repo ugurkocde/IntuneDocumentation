@@ -1,20 +1,25 @@
 import type {
   BenchmarkAssessment,
   LevelSummary,
+  Observation,
   RecommendationResult,
   ResultState,
   SettingFinding,
 } from "../../../../../src/lib/benchmarks/assessment";
+import { buildFixPlan } from "../../../../../src/lib/benchmarks/fix-plan";
 import {
   MANUAL_NOT_ASSESSED_NOTE,
   MANUAL_RECOMMENDATIONS_NOTICE,
   MANUAL_RECOMMENDATIONS_URL,
 } from "../../../../../src/lib/benchmarks/manual";
-import type { BenchmarkCatalog, BenchmarkLevel } from "../../shared/ipc-types";
+import type { RecordJson } from "../../../../../src/lib/benchmarks/policies";
+import type { SettingNames } from "../../../../../src/lib/benchmarks/tenant-settings";
+import type { BenchmarkAssessmentView, BenchmarkCatalog, BenchmarkLevel } from "../../shared/ipc-types";
 
 // Synthetic benchmark data for renderer tests and screenshots. Nothing here
 // comes from a delivered pack: the benchmark id is synthetic-bench and every
-// title says Synthetic.
+// title says Synthetic. Values are Settings Catalog instances in the shapes
+// Graph returns, so the engine's fix plan (buildFixPlan) runs on them.
 
 export const SYNTHETIC_CATALOG: BenchmarkCatalog = {
   benchmarks: [
@@ -26,6 +31,50 @@ export const SYNTHETIC_CATALOG: BenchmarkCatalog = {
 
 const LONG_TITLE =
   " with a deliberately long synthetic title that wraps across several lines to check that the review list keeps its layout, chips and spacing intact at every width";
+
+const T = "#microsoft.graph.deviceManagementConfiguration";
+
+// A choice instance as Graph returns it: the value is "<definition id>_<option>".
+function choiceInstance(id: string, option: string): RecordJson {
+  return {
+    "@odata.type": `${T}ChoiceSettingInstance`,
+    settingDefinitionId: id,
+    settingInstanceTemplateReference: null,
+    choiceSettingValue: { settingValueTemplateReference: null, value: `${id}_${option}`, children: [] },
+  };
+}
+
+// A secret value, which Graph never returns readable.
+function secretInstance(id: string): RecordJson {
+  return {
+    "@odata.type": `${T}SimpleSettingInstance`,
+    settingDefinitionId: id,
+    settingInstanceTemplateReference: null,
+    simpleSettingValue: { "@odata.type": `${T}SecretSettingValue`, valueState: "encryptedValueToken" },
+  };
+}
+
+// Tenant policies the synthetic settings sit in.
+const POLICIES = {
+  a: {
+    policyId: "00000000-0000-0000-0000-0000000000a1",
+    policyName: "Synthetic security policy A",
+    assignment: "assigned" as const,
+    reach: { targets: ["Group: Synthetic pilot devices"], exclusions: [], removals: [], filters: 0 },
+  },
+  b: {
+    policyId: "00000000-0000-0000-0000-0000000000b2",
+    policyName: "Synthetic security policy B with a longer name for the wrapping check",
+    assignment: "assigned" as const,
+    reach: { targets: ["All devices"], exclusions: ["Group: Synthetic kiosks"], removals: [], filters: 1 },
+  },
+  pilot: {
+    policyId: "00000000-0000-0000-0000-0000000000c3",
+    policyName: "Synthetic pilot policy",
+    assignment: "notAssigned" as const,
+    reach: { targets: [], exclusions: [], removals: [], filters: 0 },
+  },
+};
 
 type Outcome = {
   result: ResultState;
@@ -52,6 +101,29 @@ function outcome(index: number, complete: boolean): Outcome {
   }
 }
 
+// The policy holding one setting with its value, as the engine observes it.
+function observation(index: number, settingId: string, { status, reason }: Outcome): Observation[] {
+  if (status === "Missing" || status === "Unmapped" || reason === "collectionIncomplete") return [];
+  const policy = reason === "notAssigned" ? POLICIES.pilot : Math.floor(index / 6) % 2 ? POLICIES.b : POLICIES.a;
+  if (reason === "unreadableValue") {
+    const value = secretInstance(settingId);
+    return [
+      { ...policy, templated: false, value, comparison: "unknown", current: { text: "Not readable", raw: value, cause: "secret" } },
+    ];
+  }
+  const differs = status === "Different";
+  const value = choiceInstance(settingId, differs ? "0" : "1");
+  return [
+    {
+      ...policy,
+      templated: false,
+      value,
+      comparison: differs ? "differ" : "match",
+      current: { text: differs ? "Disabled" : "Enabled", raw: value },
+    },
+  ];
+}
+
 export function syntheticAssessment({
   count = 12,
   complete = true,
@@ -69,16 +141,24 @@ export function syntheticAssessment({
   version?: string;
   // The Level that was compared; defaults to the first of levels.
   level?: BenchmarkLevel;
-} = {}): BenchmarkAssessment {
+} = {}): BenchmarkAssessmentView {
   const settings: SettingFinding[] = [];
   const recommendations: RecommendationResult[] = [];
+  const settingNames: SettingNames = {};
   for (let index = 0; index < count; index += 1) {
-    const { result, status, reason } = outcome(index, complete);
+    const found = outcome(index, complete);
+    const { result, status, reason } = found;
     const level = levels[index % levels.length]!;
     const settingId = `device_vendor_msft_policy_config_synthetic_area_synthetic_setting_${index + 1}`;
+    // Every seventh setting has no definition name and is shown by its id.
+    if (index % 7 !== 6)
+      settingNames[settingId] = {
+        name: `Synthetic setting ${index + 1}${longTitles ? " with a long display name" : ""}`,
+        options: { [`${settingId}_1`]: "Enabled", [`${settingId}_0`]: "Disabled" },
+      };
     const key = `0:${index}`;
     if (status !== "Unmapped") {
-      const current = status === "Different" ? "Disabled" : status === "Review" ? "Not readable" : "Enabled";
+      const recommended = choiceInstance(settingId, "1");
       settings.push({
         key,
         packLevel: basis === "recommendations" ? 1 : levels[0]!,
@@ -91,26 +171,9 @@ export function syntheticAssessment({
         status,
         result,
         ...(reason ? { reason } : {}),
-        recommended: { settingDefinitionId: settingId, choiceSettingValue: { value: `${settingId}_1` } },
-        recommendedValue: { text: "Enabled", raw: null },
-        observations:
-          status === "Missing"
-            ? []
-            : [
-                {
-                  policyId: `policy-${index}`,
-                  policyName: `Synthetic tenant policy ${index + 1}`,
-                  templated: false,
-                  assignment: reason === "notAssigned" ? "notAssigned" : "assigned",
-                  reach:
-                    reason === "notAssigned"
-                      ? { targets: [], exclusions: [], removals: [], filters: 0 }
-                      : { targets: ["Group: Synthetic pilot devices"], exclusions: [], removals: [], filters: 0 },
-                  current: { text: current, raw: null },
-                  value: { settingDefinitionId: settingId },
-                  comparison: status === "Different" ? "differ" : status === "Review" ? "unknown" : "match",
-                },
-              ],
+        recommended,
+        recommendedValue: { text: "Enabled", raw: recommended },
+        observations: observation(index, settingId, found),
       });
     }
     recommendations.push({
@@ -188,7 +251,7 @@ export function syntheticAssessment({
       listIdentifiers: [],
     };
   });
-  return {
+  const assessment: BenchmarkAssessment = {
     benchmark: "synthetic-bench",
     version,
     level: compared,
@@ -209,6 +272,15 @@ export function syntheticAssessment({
     listUsed: false,
     manualNote: MANUAL_NOT_ASSESSED_NOTE,
     notice: { text: MANUAL_RECOMMENDATIONS_NOTICE, url: MANUAL_RECOMMENDATIONS_URL },
-    settingNames: {},
+    settingNames,
   };
+  return withFixPlan(assessment);
+}
+
+// The view main returns for an assessment: the engine's fix plan added, as
+// benchmarks:assess does (apps/desktop/src/main/benchmarks.ts).
+export function withFixPlan(
+  assessment: BenchmarkAssessment & Partial<Pick<BenchmarkAssessmentView, "history" | "tenantName">>,
+): BenchmarkAssessmentView {
+  return { tenantName: "Synthetic Contoso Lab", ...assessment, fixPlan: buildFixPlan(assessment) };
 }

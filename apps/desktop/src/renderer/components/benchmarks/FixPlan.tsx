@@ -48,6 +48,9 @@ function Step({
   onShow: () => void;
 }) {
   const results = action.results.length;
+  // The engine's warning, unless the step text already says it.
+  const caution = action.caution && !action.text.includes(action.caution) ? action.caution : null;
+  const assigns = action.kind === "assignPolicy" || action.kind === "changeBeforeAssign";
   return (
     <li className="flex gap-3 py-4 first:pt-0 last:pb-0 @xl:gap-4">
       <span
@@ -81,11 +84,17 @@ function Step({
           </Button>
         </div>
         {/* What the engine's simulation shows assigning the policy as it is would break, to do first. */}
-        {action.conditions && action.conditions.length > 0 && (
+        {caution && !assigns && (
+          <p className="mt-2 max-w-3xl rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-xs leading-5 break-words text-amber-950">
+            {caution}
+          </p>
+        )}
+        {((caution && assigns) || (action.conditions && action.conditions.length > 0)) && (
           <div className="mt-2 max-w-3xl rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-xs">
             <p className="font-semibold text-amber-900">Before assigning it</p>
+            {caution && assigns && <p className="mt-1 leading-5 break-words text-amber-950">{caution}</p>}
             <ul className="mt-1 space-y-1" aria-label={`Before assigning the policy of step ${number}`}>
-              {distinct(action.conditions).map((setting) => (
+              {distinct(action.conditions ?? []).map((setting) => (
                 <li key={`${setting.findingKey}:${setting.settingId}`} className="leading-5 break-words text-amber-950">
                   {setting.text}
                 </li>

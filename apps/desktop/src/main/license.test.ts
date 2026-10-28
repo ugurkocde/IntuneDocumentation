@@ -34,9 +34,8 @@ vi.mock("./config", () => ({
   LICENSE_PUBLIC_KEY: keys.publicPem,
 }));
 
-const { CLOCK_TOLERANCE_MS, LicenseService, entitlementCurrent } = await import(
-  "./license"
-);
+const { CLOCK_TOLERANCE_MS, LicenseService, MSP_PLAN_REQUIRED, entitlementCurrent } =
+  await import("./license");
 
 const TENANT = "11111111-2222-3333-4444-555555555555";
 const INSTALL = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
@@ -446,5 +445,111 @@ describe("LicenseService organization licenses", () => {
     await expect(license.requireEntitlement(TENANT)).rejects.toThrow(
       "maximum number of tenants",
     );
+  });
+});
+
+describe("LicenseService MSP plan", () => {
+  beforeEach(() => {
+    keys.dir.current = mkdtempSync(path.join(tmpdir(), "license-test-"));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0 + DAY);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    rmSync(keys.dir.current, { recursive: true, force: true });
+  });
+
+  it("accepts an MSP entitlement", async () => {
+    storeLicense(token({ plan: "msp", tenants: 25 }));
+    await expect(new LicenseService().requireMspPlan(TENANT)).resolves.toBeUndefined();
+  });
+
+  it("rejects a Pro entitlement", async () => {
+    storeLicense(token({ plan: "pro" }));
+    const license = new LicenseService();
+    await expect(license.requireEntitlement(TENANT)).resolves.toBeUndefined();
+    await expect(license.requireMspPlan(TENANT)).rejects.toThrow(MSP_PLAN_REQUIRED);
+  });
+
+  it("rejects without a signed in tenant", async () => {
+    storeLicense(token({ plan: "msp" }));
+    await expect(new LicenseService().requireMspPlan(null)).rejects.toThrow(
+      "Sign in before continuing.",
+    );
+  });
+
+  it("rejects an MSP token issued for another tenant", async () => {
+    storeLicense(token({ plan: "msp", tenantId: "99999999-2222-3333-4444-555555555555" }));
+    // No activation for the tenant: the service is unreachable in tests.
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 503 })));
+    try {
+      await expect(new LicenseService().requireMspPlan(TENANT)).rejects.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("LicenseService CIS claim", () => {
+  beforeEach(() => {
+    keys.dir.current = mkdtempSync(path.join(tmpdir(), "license-test-"));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0 + DAY);
+    // Nothing here may reach the licensing service.
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 503 })));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    rmSync(keys.dir.current, { recursive: true, force: true });
+  });
+
+  it("is closed without the claim, while the token still serves as bearer", async () => {
+    const value = token();
+    storeLicense(value);
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(false);
+    expect(await license.entitlementToken(TENANT)).toBe(value);
+  });
+
+  it("opens with the internal claim for that tenant only", async () => {
+    const value = token({ cis: "internal" });
+    storeLicense(value);
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(true);
+    expect(await license.cisInternal(TENANT.toUpperCase())).toBe(true);
+    expect(await license.entitlementToken(TENANT)).toBe(value);
+    expect(await license.cisInternal(null)).toBe(false);
+    expect(await license.cisInternal("99999999-2222-3333-4444-555555555555")).toBe(false);
+    expect(await license.entitlementToken("99999999-2222-3333-4444-555555555555")).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses a token with an unknown claim value", async () => {
+    for (const cis of ["public", "Internal", true, 1, null]) {
+      storeLicense(token({ cis }));
+      const license = new LicenseService();
+      expect(await license.cisInternal(TENANT)).toBe(false);
+      expect(await license.entitlementToken(TENANT)).toBeNull();
+      expect((await license.status(TENANT)).entitled).toBe(false);
+    }
+  });
+
+  it("closes once the activation expires and hands out no token", async () => {
+    storeLicense(token({ cis: "internal" }));
+    expect(await new LicenseService().cisInternal(TENANT)).toBe(true);
+    vi.setSystemTime(T0 + 15 * DAY);
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(false);
+    expect(await license.entitlementToken(TENANT)).toBeNull();
+  });
+
+  it("closes for an activation of another installation", async () => {
+    storeLicense(token({ cis: "internal", installId: "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee" }));
+    const license = new LicenseService();
+    expect(await license.cisInternal(TENANT)).toBe(false);
+    expect(await license.entitlementToken(TENANT)).toBeNull();
   });
 });

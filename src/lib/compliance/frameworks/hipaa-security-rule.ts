@@ -137,6 +137,15 @@ export const HIPAA_SECURITY_RULE: FrameworkDefinition = {
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": [],
+    "macos-inactivity-lock": [],
+    "ios-inactivity-lock": [],
+    "android-inactivity-lock": [],
+    "tenant-phishing-resistant-method-enabled": [],
+    "tenant-weak-methods-disabled": [],
+    "tenant-security-defaults-enabled": [],
+
     "windows-lsa-protection": [],
     "windows-remote-credential-guard": [],
     "windows-laps-management": ["164.308(a)(5)(ii)(D)"],
@@ -497,6 +506,8 @@ export const HIPAA_OUTSIDE_INTUNE_SCOPE: readonly OutsideScopeMeasure[] = [
       de: "Verfahren für den Notfallzugriff",
     },
   },
+  // Screen lock after inactivity is a lock, not a logoff: it does not end the
+  // session, so the session-lock capabilities do not map here.
   {
     id: "164.312(a)(2)(iii)",
     title: {

@@ -1,13 +1,29 @@
 import { displayCheckValue, checkSummary } from "./check-results";
-import { assignmentDetails, summarizeAssignments } from "./assignments";
+import {
+  assignmentDetails,
+  assignmentsIncomplete,
+  itemFetchErrors,
+  summarizeAssignments,
+} from "./assignments";
+import { collectionFamilies } from "./coverage";
+import { canonicalPlatforms, isIdentifier } from "./graph-rows";
 import {
   CONTROL_STATUS_LABELS,
   CAPABILITY_STATUS_LABELS,
   CONTROL_STATUS_COLORS,
   CAPABILITY_STATUS_COLORS,
+  alternativeLabel,
   frameworkCoverageLabel,
 } from "./presentation";
+import { countedCapabilityIds } from "./engine";
+import { outsideIntuneScope } from "./outside-scope";
 import { createEvidenceManifest } from "./manifest";
+import { tenantPolicySettingId } from "./tenant-policies";
+import {
+  deviceStatusAnnexRows,
+  hasPolicyDeviceStatus,
+  type DeviceStatusAnnexRow,
+} from "./device-status-annex";
 import verifiedSettings from "./verified-technical-settings.json";
 import additionalVerifiedSettings from "./additional-verified-settings.json";
 import { humanizePropertyName } from "../configuration-parser";
@@ -20,16 +36,22 @@ import {
   centredBaseline,
   chipWidth,
   clampLine,
+  dateParts,
   drawCard,
   drawChip,
   drawDonut,
   drawEyebrow,
   drawKpiTile,
+  drawLines as drawTextLines,
   drawMarker,
   drawPill,
   drawRule,
   drawStackedBar,
+  fitFontSize as fitTextSize,
+  fnv1a,
+  mixColor,
   pillMetrics,
+  pinPdfMetadata,
   setFont,
   textWidth,
   wrapLines,
@@ -38,6 +60,25 @@ import {
   type RgbColor,
   type Tone,
 } from "./pdf-kit";
+import {
+  brandingTheme,
+  drawCoverBackground,
+  drawCoverFooter,
+  drawCoverHeadline,
+  drawCoverMasthead,
+  drawCoverTenantBlock,
+  drawDocumentControlGrid,
+  drawPageTitle as drawChromePageTitle,
+  drawRunningChrome,
+  drawSectionHeading as drawChromeSectionHeading,
+  drawTableHeader,
+  drawToc,
+  drawNoticeCallout,
+  drawZebraRow,
+  layoutToc,
+  pageFrame,
+  tableHeaderLines,
+} from "./pdf-chrome";
 import jsPDF from "jspdf";
 import type { BrandingOptions } from "~/types/branding";
 import type { DetailedExportData } from "../configuration-analyzer";
@@ -52,13 +93,14 @@ import type {
   ControlAssessment,
   ControlStatus,
   FrameworkAssessment,
+  PolicyStatusSource,
   TechnicalCheck,
+  TenantPolicyCollectionStatus,
 } from "./types";
 
 export type ComplianceFrameworkId =
   | "nist-800-53-r5"
   | "nist-csf-2"
-  | "bsi-it-grundschutz"
   | "iso-27001-2022"
   | "soc2-tsc"
   | "def-stan-05-138-i4"
@@ -67,9 +109,8 @@ export type ComplianceFrameworkId =
   | "nist-800-171-r3"
   | "essential-eight"
   | "nis2-2022-2555"
+  | "dora-2022-2554"
   | "hipaa-security-rule";
-
-type Locale = "en" | "de";
 
 interface ReportStrings {
   title: string;
@@ -88,7 +129,6 @@ interface ReportStrings {
   tocHeading: string;
   summaryHeading: string;
   summaryCounts: (framework: FrameworkAssessment) => string;
-  summaryScope?: string;
   resultsHeading: string;
   resultsHeaders: readonly [string, string, string, string];
   assignedDeviations: string;
@@ -128,377 +168,114 @@ interface ReportStrings {
   methodologyHeading: string;
   notePrefix: string;
   continuationCaption: (controlId: string) => string;
-  manualHeading: string;
-  manualNote: string;
-  manualStatus: string;
-  manualStatuses: readonly [string, string, string, string];
-  manualResponsible: string;
-  manualDueDate: string;
-  manualComment: string;
   pageNumber: (page: number, total: number) => string;
   fileFrameworkLabels: Record<ComplianceFrameworkId, string>;
 }
 
-/** jsPDF 3 methods missing from the bundled type declarations. */
-interface PdfMetadataApi {
-  setCreationDate: (date: Date | string) => void;
-  setFileId: (value: string) => void;
-}
-
-interface ImagePropertiesProvider {
-  getImageProperties: (dataUrl: string) => {
-    width: number;
-    height: number;
-  };
-}
-
-const STRINGS: Record<Locale, ReportStrings> = {
-  en: {
-    title: "Technical Evidence Report: Intune Configuration",
-    coverLead:
-      "Evidence matrix for selected assessment points, read from the Microsoft Intune configuration",
-    generatedOn: "Report date",
-    documentControlLabels: [
-      "Tenant",
-      "Prepared for",
-      "Prepared by",
-      "Contact",
-      "Report ID",
-      "Revision",
-      "Ruleset version",
-      "Classification",
-    ],
-    tocHeading: "Table of Contents",
-    summaryHeading: "Summary",
-    summaryCounts: (framework) =>
-      `${framework.summary.withEvidence} of ${framework.summary.totalControls} selected controls with configuration evidence (${framework.summary.partial} partial)`,
-    resultsHeading: "Results Overview",
-    resultsHeaders: ["Category", "Evidence", "Partial", "No evidence"],
-    assignedDeviations: "Assigned deviating configurations",
-    assignedDeviationsExplanation:
-      "At least one assigned policy explicitly contradicts the target configuration.",
-    unassignedCompliant: "Configured settings without assignment",
-    unassignedCompliantExplanation:
-      "The detected target configuration is not effective until it is assigned.",
-    findingsHeading: "Key findings",
-    noFindings: "No prioritized findings were identified.",
-    provenanceHeading: "Data Basis and Scope",
-    dataBasis:
-      "The assessment runs on the data provided at generation time. Data basis: configuration export provided at the time the report was generated.",
-    rulesetLabel: "Ruleset version",
-    inventoryHeading: "Assessed inventory",
-    inventoryHeaders: ["Policy family", "Items", "Assigned"],
-    inventoryFamilies: [
-      "Settings Catalog policies",
-      "Device configurations",
-      "Device compliance policies",
-    ],
-    inventoryOther: "Other policy families",
-    collectionHeading: "Collection notes",
-    incompleteCollection:
-      "Data collection was incomplete. Assessment points without evidence may be caused by missing data.",
-    noCollectionErrors: "No collection errors were provided.",
-    platformScope: "Platforms observed in export",
-    controlStatuses: {
-      ...CONTROL_STATUS_LABELS,
-      evidenceFound: "Technical configuration evidence detected",
-      partialEvidence: "Technical configuration evidence partially detected",
-      noEvidence: "No supported technical configuration evidence detected",
-    },
-    capabilityStatuses: {
-      ...CAPABILITY_STATUS_LABELS,
-      enforced: "Setting configured and assigned",
-      configuredNotAssigned: "Setting configured, but not assigned",
-      disabledByPolicy: "Deviating configuration detected",
-      noEvidence: "No evidence",
-    },
-    counterEvidenceStatuses: {
-      unknown: "Assignment unknown; effective scope unverified",
-      assigned: "Deviating configuration detected and assigned (risk)",
-      notAssigned: "Deviating configuration detected, but not assigned",
-    },
-    notAssigned: "Not assigned",
-    assigned: "Assigned",
-    evidenceRefs: "Evidence",
-    gapIntro:
-      "No technical evidence was found. Possible implementation through these Intune settings:",
-    disclaimer:
-      "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is not a compliance certification or an IT Grundschutz check and does not replace an audit. Missing evidence means that no supported configuration with a known assignment was detected in the evaluated dataset.",
-    appendixHeading: "Appendix A: Evidence Register",
-    appendixContinuation: "Appendix A (continued)",
-    appendixHeaders: [
-      "Ref",
-      "Policy",
-      "Type",
-      "Setting",
-      "Value",
-      "Assignment",
-    ],
-    appendixNote:
-      "Referenced assessment points for each item of evidence are listed in the relevant sections.",
-    methodology:
-      "Evidence is determined exclusively from concrete Intune settings: An assessment point is considered technically evidenced only when a recognized setting is configured with a recognized value and the policy is assigned. Configurations that explicitly contradict the target state are reported separately. Unsupported settings or settings that cannot be mapped unambiguously remain unassessed. Organizational requirements are not part of this automated technical assessment and must be assessed separately.",
-    footer: "Generated with Intune Documentation (intunedocumentation.com)",
-    methodologyHeading: "Methodology",
-    notePrefix: "Note: ",
-    continuationCaption: (controlId) => `${controlId} (continued)`,
-    manualHeading: "Manual assessment (IT Grundschutz check)",
-    manualNote:
-      "The manual assessment of implementation status is performed by the reviewer and is independent of the automated technical evidence.",
-    manualStatus: "Implementation status",
-    manualStatuses: ["not applicable", "yes", "partial", "no"],
-    manualResponsible: "Responsible",
-    manualDueDate: "Target date",
-    manualComment: "Comment",
-    pageNumber: (page, total) => `Page ${page} of ${total}`,
-    fileFrameworkLabels: {
-      "nist-800-53-r5": "NIST-800-53-R5",
-      "nist-csf-2": "NIST-CSF-2",
-      "bsi-it-grundschutz": "BSI-IT-Grundschutz",
-      "iso-27001-2022": "ISO-27001",
-      "soc2-tsc": "SOC-2",
-      "def-stan-05-138-i4": "Def-Stan-05-138",
-      "cyber-essentials-v3": "Cyber-Essentials",
-      "essential-eight": "Essential-Eight",
-      "nist-800-171-r2": "NIST-800-171-R2",
-      "nist-800-171-r3": "NIST-800-171-R3",
-      "nis2-2022-2555": "NIS2",
-      "hipaa-security-rule": "HIPAA-Security-Rule",
-    },
+const STRINGS: ReportStrings = {
+  title: "Technical Evidence Report: Intune Configuration",
+  coverLead:
+    "Evidence matrix for selected assessment points, read from the Microsoft Intune configuration",
+  generatedOn: "Report date",
+  documentControlLabels: [
+    "Tenant",
+    "Prepared for",
+    "Prepared by",
+    "Contact",
+    "Report ID",
+    "Revision",
+    "Ruleset version",
+    "Classification",
+  ],
+  tocHeading: "Table of Contents",
+  summaryHeading: "Summary",
+  summaryCounts: (framework) =>
+    `${framework.summary.withEvidence} of ${framework.summary.totalControls} selected controls with configuration evidence (${framework.summary.partial} partial)`,
+  resultsHeading: "Results Overview",
+  resultsHeaders: ["Category", "Evidence", "Partial", "No evidence"],
+  assignedDeviations: "Assigned deviating configurations",
+  assignedDeviationsExplanation:
+    "At least one assigned policy explicitly contradicts the target configuration.",
+  unassignedCompliant: "Configured settings without assignment",
+  unassignedCompliantExplanation:
+    "The detected target configuration is not effective until it is assigned.",
+  findingsHeading: "Key findings",
+  noFindings: "No prioritized findings were identified.",
+  provenanceHeading: "Data Basis and Scope",
+  dataBasis:
+    "The assessment runs on the data provided at generation time. Data basis: configuration export provided at the time the report was generated.",
+  rulesetLabel: "Ruleset version",
+  inventoryHeading: "Assessed inventory",
+  inventoryHeaders: ["Policy family", "Items", "Assigned"],
+  inventoryFamilies: [
+    "Settings Catalog policies",
+    "Device configurations",
+    "Device compliance policies",
+  ],
+  inventoryOther: "Other policy families",
+  collectionHeading: "Collection notes",
+  incompleteCollection:
+    "Data collection was incomplete. Assessment points without evidence may be caused by missing data.",
+  noCollectionErrors: "No collection errors were provided.",
+  platformScope: "Platforms observed in export",
+  controlStatuses: {
+    ...CONTROL_STATUS_LABELS,
+    evidenceFound: "Technical configuration evidence detected",
+    partialEvidence: "Technical configuration evidence partially detected",
+    noEvidence: "No supported technical configuration evidence detected",
   },
-  de: {
-    title: "Technischer Nachweisbericht: Intune-Konfiguration",
-    coverLead:
-      "Nachweismatrix für ausgewählte Prüfpunkte aus der Microsoft-Intune-Konfiguration",
-    generatedOn: "Berichtsstand",
-    documentControlLabels: [
-      "Mandant",
-      "Erstellt für",
-      "Erstellt von",
-      "Kontakt",
-      "Berichts-ID",
-      "Revision",
-      "Regelwerk-Version",
-      "Klassifizierung",
-    ],
-    tocHeading: "Inhaltsverzeichnis",
-    summaryHeading: "Zusammenfassung",
-    summaryCounts: (framework) => {
-      const requirements = framework.controls.filter(
-        (item) => item.control.tier,
-      );
-      const buildingBlocks = framework.controls.filter(
-        (item) => !item.control.tier,
-      );
-      const requirementsWithEvidence = requirements.filter(
-        (item) => item.status === "evidenceFound",
-      ).length;
-      const requirementsPartial = requirements.filter(
-        (item) => item.status === "partialEvidence",
-      ).length;
-      const buildingBlocksWithEvidence = buildingBlocks.filter(
-        (item) => item.status === "evidenceFound",
-      ).length;
-      const buildingBlocksPartial = buildingBlocks.filter(
-        (item) => item.status === "partialEvidence",
-      ).length;
-      return `${requirementsWithEvidence} von ${requirements.length} Anforderungen mit Nachweis (${requirementsPartial} teilweise), ${buildingBlocksWithEvidence} von ${buildingBlocks.length} Bausteinen mit Nachweis (${buildingBlocksPartial} teilweise)`;
-    },
-    summaryScope: "Bewertet werden nur ausgewählte technische Prüfpunkte.",
-    resultsHeading: "Ergebnisübersicht",
-    resultsHeaders: ["Kategorie", "Nachweis", "Teilweise", "Kein Nachweis"],
-    assignedDeviations: "Abweichende Konfigurationen (zugewiesen)",
-    assignedDeviationsExplanation:
-      "Mindestens eine zugewiesene Richtlinie widerspricht der Sollkonfiguration.",
-    unassignedCompliant: "Konfigurierte Einstellungen ohne Zuweisung",
-    unassignedCompliantExplanation:
-      "Die erkannte Sollkonfiguration ist ohne Zuweisung nicht wirksam.",
-    findingsHeading: "Wesentliche Feststellungen",
-    noFindings: "Keine priorisierten Feststellungen ermittelt.",
-    provenanceHeading: "Datengrundlage und Geltungsbereich",
-    dataBasis:
-      "Die Bewertung erfolgt auf Basis der zum Zeitpunkt der Berichtserstellung vorliegenden Daten. Datengrundlage: zum Zeitpunkt der Berichtserstellung übermittelter Konfigurationsexport.",
-    rulesetLabel: "Regelwerk-Version",
-    inventoryHeading: "Geprüfter Bestand",
-    inventoryHeaders: ["Richtlinienfamilie", "Anzahl", "Davon mit Zuweisung"],
-    inventoryOther: "Weitere Richtlinienfamilien",
-    inventoryFamilies: [
-      "Einstellungskatalog-Richtlinien",
-      "Gerätekonfigurationen",
-      "Gerätekonformitätsrichtlinien",
-    ],
-    collectionHeading: "Erhebungshinweise",
-    incompleteCollection:
-      "Die Datenerhebung war unvollständig. Prüfpunkte ohne Nachweis können auf fehlende Daten zurückgehen.",
-    noCollectionErrors: "Keine Erhebungsfehler übermittelt.",
-    platformScope: "Im Export erkannte Plattformen",
-    controlStatuses: {
-      ...CONTROL_STATUS_LABELS,
-      notApplicable: "Außerhalb des gewählten Geltungsbereichs",
-      notAssessed: "Nicht bewertet",
-      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
-      evidenceFound: "Technischer Konfigurationsnachweis erkannt",
-      partialEvidence: "Technischer Konfigurationsnachweis teilweise erkannt",
-      noEvidence:
-        "Kein unterstützter technischer Konfigurationsnachweis erkannt",
-    },
-    capabilityStatuses: {
-      ...CAPABILITY_STATUS_LABELS,
-      requirementAssigned: "Konformitätsanforderung zugewiesen",
-      assignmentUnknown: "Zuweisung unbekannt",
-      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
-      partialConfiguration: "Erforderliche Einstellungen teilweise vorhanden",
-      collectionIncomplete: "Datenerhebung unvollständig",
-      notApplicable: "Außerhalb des Geltungsbereichs",
-      enforced: "Einstellung konfiguriert und zugewiesen",
-      configuredNotAssigned:
-        "Einstellung konfiguriert, jedoch nicht zugewiesen",
-      disabledByPolicy: "Abweichende Konfiguration erkannt",
-      noEvidence: "Kein Nachweis",
-    },
-    counterEvidenceStatuses: {
-      unknown: "Assignment unknown; effective scope unverified",
-      assigned: "Abweichende Konfiguration erkannt und zugewiesen (Risiko)",
-      notAssigned: "Abweichende Konfiguration erkannt, jedoch nicht zugewiesen",
-    },
-    notAssigned: "Nicht zugewiesen",
-    assigned: "Zugewiesen",
-    evidenceRefs: "Belege",
-    gapIntro:
-      "Kein technischer Nachweis gefunden. Mögliche technische Umsetzung mit folgenden Intune-Einstellungen:",
-    disclaimer:
-      "Dieser Bericht dokumentiert technische Nachweise aus der Microsoft-Intune-Konfiguration des Mandanten. Der Bericht stellt weder eine Zertifizierung noch einen IT-Grundschutz-Check dar und ersetzt keine Prüfung. Ein fehlender Nachweis bedeutet, dass im ausgewerteten Datenbestand keine unterstützte und wirksam zugewiesene Konfiguration erkannt wurde.",
-    appendixHeading: "Anhang A: Nachweisverzeichnis",
-    appendixContinuation: "Anhang A (Fortsetzung)",
-    appendixHeaders: [
-      "Ref",
-      "Richtlinie",
-      "Typ",
-      "Einstellung",
-      "Wert",
-      "Zuweisung",
-    ],
-    appendixNote:
-      "Referenzierte Prüfpunkte je Nachweis sind den Abschnitten zu entnehmen.",
-    methodology:
-      "Nachweise werden ausschließlich anhand konkreter Intune-Einstellungen ermittelt: Ein Prüfpunkt gilt nur dann als technisch nachgewiesen, wenn eine erkannte Einstellung mit einem erkannten Sollwert konfiguriert und die Richtlinie zugewiesen ist. Konfigurationen, die der Sollvorgabe ausdrücklich widersprechen, werden gesondert ausgewiesen. Nicht unterstützte oder nicht eindeutig zuordenbare Einstellungen bleiben unbewertet. Organisatorische Anforderungen sind nicht Teil dieser automatisierten technischen Prüfung und müssen separat bewertet werden.",
-    footer: "Erstellt mit Intune Documentation (intunedocumentation.com)",
-    methodologyHeading: "Methodik",
-    notePrefix: "Hinweis: ",
-    continuationCaption: (controlId) => `${controlId} (Fortsetzung)`,
-    manualHeading: "Manuelle Bewertung (IT-Grundschutz-Check)",
-    manualNote:
-      "Die manuelle Bewertung des Umsetzungsstatus erfolgt durch die prüfende Person und ist unabhängig vom automatisierten technischen Nachweis.",
-    manualStatus: "Umsetzungsstatus",
-    manualStatuses: ["entbehrlich", "ja", "teilweise", "nein"],
-    manualResponsible: "Verantwortlich",
-    manualDueDate: "Zieltermin",
-    manualComment: "Bemerkung",
-    pageNumber: (page, total) => `Seite ${page} von ${total}`,
-    fileFrameworkLabels: {
-      "nist-800-53-r5": "NIST-800-53-R5",
-      "nist-csf-2": "NIST-CSF-2",
-      "bsi-it-grundschutz": "BSI-IT-Grundschutz",
-      "iso-27001-2022": "ISO-27001",
-      "soc2-tsc": "SOC-2",
-      "def-stan-05-138-i4": "Def-Stan-05-138",
-      "cyber-essentials-v3": "Cyber-Essentials",
-      "essential-eight": "Essential-Eight",
-      "nist-800-171-r2": "NIST-800-171-R2",
-      "nist-800-171-r3": "NIST-800-171-R3",
-      "nis2-2022-2555": "NIS2",
-      "hipaa-security-rule": "HIPAA-Security-Rule",
-    },
+  capabilityStatuses: {
+    ...CAPABILITY_STATUS_LABELS,
+    enforced: "Setting configured and assigned",
+    configuredNotAssigned: "Setting configured, but not assigned",
+    disabledByPolicy: "Deviating configuration detected",
+    noEvidence: "No evidence",
   },
-};
-
-export const GERMAN_CAPABILITY_NAMES: Readonly<Record<string, string>> = {
-  "windows-lsa-protection": "LSA-Prozessschutz erforderlich",
-  "windows-remote-credential-guard": "Remote Credential Guard erforderlich",
-  "windows-laps-management": "Windows-LAPS-Kennwortverwaltung aktiviert",
-  "windows-process-creation-logging":
-    "Prozesserstellungsüberwachung mit Befehlszeilen",
-  "windows-powershell-module-logging":
-    "PowerShell-Protokollierung aller Module",
-  "windows-applocker-rule-collections":
-    "AppLocker-Regelsammlungstypen und Erzwingung",
-  "windows-office-v3-signatures": "VBA-V3-Signaturen erforderlich",
-  "windows-office-macros-disabled": "Office-VBA-Makros deaktiviert",
-  "windows-office-internet-macros-blocked":
-    "Office-Makros aus dem Internet blockiert",
-  "windows-office-macro-antivirus": "Laufzeitprüfung von Office-Makros",
-  "windows-office-signed-macros": "Nur signierte Office-Makros zugelassen",
-  "windows-office-macro-settings-managed":
-    "Office-Makroeinstellungen durch Richtlinien verwaltet",
-  "macos-office-macros-disabled": "Office-VBA-Makros unter macOS deaktiviert",
-  "windows-ie-disabled": "Internet Explorer 11 deaktiviert",
-  "windows-browser-java-blocked": "Java in der Internetzone blockiert",
-  "windows-browser-intrusive-ads-blocked":
-    "Aufdringliche Browserwerbung blockiert",
-  "macos-browser-intrusive-ads-blocked":
-    "Aufdringliche Browserwerbung unter macOS blockiert",
-  "windows-browser-security-settings-managed":
-    "Browsersicherheitseinstellungen durch Richtlinien verwaltet",
-  "windows-powershell-scriptblock-logging":
-    "PowerShell-Skriptblockprotokollierung aktiviert",
-  "windows-powershell-transcription": "PowerShell-Transkription aktiviert",
-  "tenant-mfa-all-apps":
-    "MFA für alle Cloud-Apps im Richtlinienumfang erforderlich",
-  "tenant-phishing-resistant-mfa": "Phishingresistente MFA erforderlich",
-
-  "windows-office-macro-win32-block":
-    "Win32-Aufrufe durch Office-Makros blockiert",
-  "windows-office-child-process-block": "Unterprozesse von Office blockiert",
-  "windows-office-executable-block": "Ausführbare Office-Inhalte blockiert",
-  "windows-office-injection-block": "Prozessinjektion durch Office blockiert",
-  "windows-adobe-child-process-block":
-    "Unterprozesse von Adobe Reader blockiert",
-
-  "windows-antivirus-required": "Antivirenschutz als Konformitätsanforderung",
-  "windows-periodic-antimalware-scan": "Regelmäßige Schadsoftwareprüfungen",
-  "windows-quality-update-deadline": "Qualitätsupdate-Frist bis 14 Tage",
-  "windows-application-control": "Anwendungssteuerung im Erzwingungsmodus",
-  "windows-behavior-monitoring": "Verhaltensüberwachung",
-  "windows-network-inspection": "Netzwerkprüfung gegen Schadsoftware",
-  "windows-memory-integrity": "Speicherintegrität (HVCI)",
-  "windows-virtualization-security": "Virtualisierungsbasierte Sicherheit",
-  "windows-credential-guard": "Credential Guard konfiguriert",
-  "windows-credential-theft-protection":
-    "Schutz vor Diebstahl von Anmeldeinformationen",
-  "tenant-mfa-required": "MFA-Anforderung durch bedingten Zugriff",
-  "tenant-compliant-device-required":
-    "Gerätekonformität durch bedingten Zugriff",
-  "ios-app-data-transfer":
-    "Datentransferbeschränkungen für verwaltete iOS-Apps",
-  "android-app-data-transfer":
-    "Datentransferbeschränkungen für verwaltete Android-Apps",
-  "windows-disk-encryption": "Festplattenverschlüsselung (BitLocker)",
-  "windows-realtime-antimalware":
-    "Echtzeitschutz durch Microsoft Defender Antivirus",
-  "windows-firewall": "Windows-Firewall",
-  "windows-password-required": "Kennwort oder PIN erforderlich (Windows)",
-  "windows-automatic-updates": "Automatische Updates (Windows)",
-  "windows-secure-boot": "Sicherer Start (Secure Boot)",
-  "windows-code-integrity": "Codeintegrität erforderlich",
-  "windows-minimum-os-version": "Mindestversion des Betriebssystems (Windows)",
-  "windows-telemetry-minimized": "Minimierte Diagnosedaten (Windows)",
-  "windows-cortana-disabled": "Cortana deaktiviert",
-  "windows-microsoft-account-blocked": "Private Microsoft-Konten gesperrt",
-  "macos-disk-encryption": "Festplattenverschlüsselung (FileVault)",
-  "macos-firewall": "macOS-Firewall",
-  "macos-password-required": "Kennwort oder PIN erforderlich (macOS)",
-  "macos-system-integrity": "System Integrity Protection",
-  "macos-gatekeeper": "Beschränkung der App-Quellen durch Gatekeeper",
-  "macos-minimum-os-version": "Mindestversion des Betriebssystems (macOS)",
-  "ios-passcode-required": "Gerätecode erforderlich (iOS/iPadOS)",
-  "ios-jailbreak-block": "Blockierung von Jailbreak-Geräten",
-  "ios-minimum-os-version": "Mindestversion des Betriebssystems (iOS/iPadOS)",
-  "android-storage-encryption": "Speicherverschlüsselung (Android)",
-  "android-password-required": "Kennwort oder PIN erforderlich (Android)",
-  "android-device-integrity": "Geräteintegrität (Android)",
-  "android-app-source-restriction":
-    "Blockierung unbekannter App-Quellen (Android)",
-  "android-minimum-os-version": "Mindestversion des Betriebssystems (Android)",
+  counterEvidenceStatuses: {
+    unknown: "Assignment unknown; effective scope unverified",
+    assigned: "Deviating configuration detected and assigned (risk)",
+    notAssigned: "Deviating configuration detected, but not assigned",
+  },
+  notAssigned: "Not assigned",
+  assigned: "Assigned",
+  evidenceRefs: "Evidence",
+  gapIntro:
+    "No technical evidence was found. Possible implementation through these Intune settings:",
+  disclaimer:
+    "This report documents technical evidence from the tenant's Microsoft Intune configuration. It is not a compliance certification and does not replace an audit. Missing evidence means that no supported configuration with a known assignment was detected in the evaluated dataset.",
+  appendixHeading: "Appendix A: Evidence Register",
+  appendixContinuation: "Appendix A (continued)",
+  appendixHeaders: [
+    "Ref",
+    "Policy",
+    "Type",
+    "Setting",
+    "Value",
+    "Assignment",
+  ],
+  appendixNote:
+    "Referenced assessment points for each item of evidence are listed in the relevant sections.",
+  methodology:
+    "Evidence is determined exclusively from concrete Intune settings: An assessment point is considered technically evidenced only when a recognized setting is configured with a recognized value and the policy is assigned. Configurations that explicitly contradict the target state are reported separately. Unsupported settings or settings that cannot be mapped unambiguously remain unassessed. Organizational requirements are not part of this automated technical assessment and must be assessed separately.",
+  footer: "Generated with Intune Documentation (intunedocumentation.com)",
+  methodologyHeading: "Methodology",
+  notePrefix: "Note: ",
+  continuationCaption: (controlId) => `${controlId} (continued)`,
+  pageNumber: (page, total) => `Page ${page} of ${total}`,
+  fileFrameworkLabels: {
+    "nist-800-53-r5": "NIST-800-53-R5",
+    "nist-csf-2": "NIST-CSF-2",
+    "iso-27001-2022": "ISO-27001",
+    "soc2-tsc": "SOC-2",
+    "def-stan-05-138-i4": "Def-Stan-05-138",
+    "cyber-essentials-v3": "Cyber-Essentials",
+    "essential-eight": "Essential-Eight",
+    "nist-800-171-r2": "NIST-800-171-R2",
+    "nist-800-171-r3": "NIST-800-171-R3",
+    "nis2-2022-2555": "NIS2",
+    "dora-2022-2554": "DORA",
+    "hipaa-security-rule": "HIPAA-Security-Rule",
+  },
 };
 
 const PRODUCT_TERMS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -539,132 +316,6 @@ const VERIFIED_SETTING_NAMES: ReadonlyMap<string, string> = new Map(
 const ASSIGNED_COUNTER_EVIDENCE_COLOR: RgbColor = [190, 45, 45];
 const UNASSIGNED_COUNTER_EVIDENCE_COLOR: RgbColor = [171, 95, 0];
 
-const GERMAN_BSI_FRAMEWORK_NOTE =
-  "Die Bausteine zu Clients SYS.2.2.3, SYS.2.4, SYS.3.2.1 und SYS.3.2.2 werden auf Anforderungsebene abgebildet. Weitere Bausteine werden derzeit nur auf Bausteinebene betrachtet. Berücksichtigt werden ausschließlich ausgewählte technische Nachweise aus der Geräteverwaltung.";
-
-const GERMAN_EVIDENCE_VALUE_TRANSLATIONS: Readonly<Record<string, string>> = {
-  "Settings Catalog": "Einstellungskatalog",
-  "Compliance Policy": "Gerätekonformitätsrichtlinie",
-  "All Users": "Alle Benutzer",
-  "All Devices": "Alle Geräte",
-  "Custom target": "Benutzerdefinierte Zuweisung",
-  "Not assigned": "Nicht zugewiesen",
-};
-
-const GERMAN_COMPLIANCE_NOTE_TRANSLATIONS: Readonly<Record<string, string>> = {
-  "Compliance policy with a block action for noncompliant devices.":
-    "Gerätekonformitätsrichtlinie mit Blockierungsaktion für nicht konforme Geräte.",
-  "Compliance policy: marks devices noncompliant. Access enforcement depends on Conditional Access.":
-    "Die Gerätekonformitätsrichtlinie kennzeichnet Geräte als nicht konform. Die Zugriffsdurchsetzung hängt von Richtlinien für bedingten Zugriff ab.",
-};
-
-function translateEvidenceValue(value: string, locale: Locale): string {
-  if (locale !== "de") return value;
-  if (value.startsWith("Group: ")) {
-    return `Gruppe: ${value.slice("Group: ".length)}`;
-  }
-  if (value.startsWith("Excluded: ")) {
-    return `Ausgeschlossen: ${translateEvidenceValue(value.slice("Excluded: ".length), locale)}`;
-  }
-  return GERMAN_EVIDENCE_VALUE_TRANSLATIONS[value] ?? value;
-}
-
-function translateEvidenceNote(value: string, locale: Locale): string {
-  if (locale !== "de") return value;
-  return GERMAN_COMPLIANCE_NOTE_TRANSLATIONS[value] ?? value;
-}
-
-function translateAssessmentLimitation(text: string): string {
-  const sourceGap =
-    /^(\w+): (not collected|collection incomplete)\. Refresh the policies to retry collection\. See collection coverage for the API error details\.$/.exec(
-      text,
-    );
-  if (sourceGap)
-    return `${sourceGap[1]}: ${sourceGap[2] === "not collected" ? "nicht erhoben" : "Datenerhebung unvollständig"}. Richtlinien aktualisieren, um die Erhebung erneut zu versuchen. API-Fehlerdetails stehen im Abschnitt zur Datenerhebung.`;
-  const translations: Record<string, string> = {
-    "Conditional Access policies were not collected. Enable Include Conditional Access in Settings, complete sign-in or consent if requested, and refresh the policies to assess MFA and access requirements.":
-      "Richtlinien für bedingten Zugriff wurden nicht erhoben. In den Einstellungen den bedingten Zugriff einschließen, gegebenenfalls Anmeldung oder Zustimmung abschließen und die Richtlinien aktualisieren, um MFA- und Zugriffsanforderungen zu bewerten.",
-    "Assignment data is unavailable for some matching policies; effective targeting remains unknown.":
-      "Für einige passende Richtlinien fehlen Zuweisungsdaten; der tatsächliche Zielumfang bleibt unbekannt.",
-    "These settings support part of this control. Remaining technical and organizational requirements need separate assessment.":
-      "Diese Einstellungen liefern Teilnachweise. Weitere technische und organisatorische Anforderungen sind separat zu bewerten.",
-    "Relevant policy collection is incomplete; additional or contradictory evidence may be missing.":
-      "Die relevante Datenerhebung ist unvollständig. Weitere oder widersprüchliche Nachweise können fehlen.",
-    "Mixed policy evidence. Review profile settings and targeting overlap; a device conflict has not been established.":
-      "Widersprüchliche Richtliniennachweise. Profileinstellungen und überlappende Zuweisungen prüfen; ein Gerätekonflikt wurde nicht nachgewiesen.",
-    "Not all required settings are present together on an assigned policy.":
-      "Nicht alle erforderlichen Einstellungen sind gemeinsam in einer zugewiesenen Richtlinie vorhanden.",
-    "A minimum version is configured; whether it is current is not assessed.":
-      "Eine Mindestversion ist konfiguriert; ob sie aktuell ist, wird nicht bewertet.",
-    "No detector is available for this control in the selected platform scope.":
-      "Für diesen Prüfpunkt ist im gewählten Plattformumfang keine Erkennungsregel verfügbar.",
-    "Hardware support and installed OS security-update support are not verified. A configured minimum version does not establish currency.":
-      "Hardware-Unterstützung und Sicherheitsupdates für das installierte Betriebssystem sind nicht geprüft. Eine Mindestversion belegt keine Aktualität.",
-    "XProtect status, installed software and actual activation of macOS protections are unassessed.":
-      "XProtect-Status, installierte Software und tatsächliche Aktivierung der macOS-Schutzfunktionen sind unbewertet.",
-    "FileVault recovery key custody and storage location are unassessed.":
-      "Verwahrung und Speicherort der FileVault-Wiederherstellungsschlüssel sind unbewertet.",
-    "LSA protected-mode monitoring and applicable RDP restrictions are unassessed.":
-      "Überwachung des geschützten LSA-Modus und erforderliche RDP-Beschränkungen sind unbewertet.",
-    "Passcode complexity, lock timeout and effective device enforcement require separate review.":
-      "Code-Komplexität, Sperrfrist und tatsächliche Durchsetzung am Gerät sind separat zu prüfen.",
-    "Installed OS and app support, actual patch installation and replacement of unsupported devices are unassessed.":
-      "Support für Betriebssystem und Apps, tatsächliche Update-Installation und Ersatz nicht mehr unterstützter Geräte sind unbewertet.",
-    "Approved device models and organizational authorization are unassessed.":
-      "Freigegebene Gerätemodelle und organisatorische Genehmigungen sind unbewertet.",
-    "Alerts, wipe and lock actions, grace periods and effective Conditional Access coverage require separate review.":
-      "Warnungen, Lösch- und Sperraktionen, Karenzfristen und tatsächlicher Geltungsbereich des bedingten Zugriffs sind separat zu prüfen.",
-  };
-  return translations[text] ?? text;
-}
-
-/**
- * Calendar parts in local time, or in UTC for fixed render dates so the
- * same input renders the same date in every time zone.
- */
-function dateParts(date: Date, utc = false) {
-  return {
-    year: String(utc ? date.getUTCFullYear() : date.getFullYear()),
-    month: String((utc ? date.getUTCMonth() : date.getMonth()) + 1).padStart(
-      2,
-      "0",
-    ),
-    day: String(utc ? date.getUTCDate() : date.getDate()).padStart(2, "0"),
-    hours: String(utc ? date.getUTCHours() : date.getHours()).padStart(2, "0"),
-    minutes: String(utc ? date.getUTCMinutes() : date.getMinutes()).padStart(
-      2,
-      "0",
-    ),
-    seconds: String(utc ? date.getUTCSeconds() : date.getSeconds()).padStart(
-      2,
-      "0",
-    ),
-  };
-}
-
-/** PDF date string with an explicit UTC offset. */
-function pdfUtcDate(date: Date): string {
-  const { year, month, day, hours, minutes, seconds } = dateParts(date, true);
-  return `D:${year}${month}${day}${hours}${minutes}${seconds}+00'00'`;
-}
-
-function formatReportDate(date: Date, locale: Locale, utc = false): string {
-  const { year, month, day } = dateParts(date, utc);
-  return locale === "de"
-    ? `${day}.${month}.${year}`
-    : `${year}-${month}-${day}`;
-}
-
-function hexToRgb(hex: string | undefined, fallback: RgbColor): RgbColor {
-  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? "");
-  if (!match?.[1] || !match[2] || !match[3]) return fallback;
-  return [
-    Number.parseInt(match[1], 16),
-    Number.parseInt(match[2], 16),
-    Number.parseInt(match[3], 16),
-  ];
-}
-
 function localIsoDate(date: Date, utc = false): string {
   const { year, month, day } = dateParts(date, utc);
   return `${year}-${month}-${day}`;
@@ -689,7 +340,6 @@ function tenantSlug(value: string): string {
 const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-53-r5": "N53",
   "nist-csf-2": "CSF",
-  "bsi-it-grundschutz": "BSI",
   "iso-27001-2022": "ISO",
   "soc2-tsc": "SOC",
   "def-stan-05-138-i4": "DEF",
@@ -698,6 +348,7 @@ const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
   "nis2-2022-2555": "NIS2",
+  "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA",
 };
 
@@ -724,39 +375,12 @@ function reportSuffix(seed?: string): string {
   return suffix;
 }
 
-function fnv1a(text: string, offset: number): number {
-  let hash = offset >>> 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
-}
-
-/** 32 hex characters for the PDF file identifier, derived from the inputs. */
-function deterministicFileId(seed: string): string {
-  return [0x811c9dc5, 0x01234567, 0x89abcdef, 0x5bd1e995]
-    .map((offset) => fnv1a(seed, offset).toString(16).padStart(8, "0"))
-    .join("")
-    .toUpperCase();
-}
-
 function defaultReportId(
   frameworkId: ComplianceFrameworkId,
   generatedAt: Date,
   seed?: string,
 ): string {
   return `IDOC-${frameworkReportCode(frameworkId)}-${localIsoDate(generatedAt, seed !== undefined).replaceAll("-", "")}-${reportSuffix(seed)}`;
-}
-
-function formatReportTimestamp(
-  date: Date,
-  locale: Locale,
-  utc = false,
-): string {
-  if (locale === "en") return date.toISOString();
-  const { hours, minutes } = dateParts(date, utc);
-  return `${formatReportDate(date, locale, utc)}, ${hours}:${minutes} Uhr${utc ? " UTC" : ""}`;
 }
 
 function truncate(value: string, maximumLength: number): string {
@@ -791,6 +415,48 @@ export interface ComplianceReportOptions {
    */
   excerpt?: { controlIds: readonly string[] };
 }
+
+// Device status annex: Intune's per-policy status counts, context only.
+const DEVICE_STATUS_STRINGS: {
+  eyebrow: string;
+  heading: string;
+  lead: string;
+  collected: (when: string) => string;
+  headers: readonly [string, string, string, string, string, string, string];
+  noStatus: string;
+  notCollected: string;
+  notReported: string;
+  sources: Record<PolicyStatusSource, string>;
+  sourceStates: Record<TenantPolicyCollectionStatus, string>;
+} = {
+  eyebrow: "Annex",
+  heading: "Policy device status",
+  lead: "Device counts as summarised by Intune for the device policies cited in this report. Context only: no status in this report depends on them, and they do not show the state of an individual device. Errors include devices reported as not compliant. No status reported means the Intune summary has no row for the policy, not a count of zero.",
+  collected: (when) => `Status summaries read on ${when}.`,
+  headers: [
+    "Policy",
+    "Source",
+    "Succeeded",
+    "Errors",
+    "Conflicts",
+    "Not applicable",
+    "Pending",
+  ],
+  noStatus: "No status reported",
+  notCollected: "Not collected",
+  notReported: "n/a",
+  sources: {
+    configurationPolicies: "Configuration report",
+    compliancePolicies: "Compliance report",
+    deviceConfigurations: "Profile status overview",
+  },
+  sourceStates: {
+    collected: "collected",
+    permissionDenied: "access denied",
+    failed: "failed",
+    skipped: "skipped",
+  },
+};
 
 interface EvidenceRegistryEntry {
   ref: string;
@@ -831,7 +497,6 @@ interface LayoutStrings {
   distributionHeading: string;
   controlsCount: (count: number) => string;
   familyHeading: string;
-  tierHeading: string;
   familySmall: string;
   heroLead: (count: number, total: number) => string;
   findingsSmall: string;
@@ -876,261 +541,141 @@ interface LayoutStrings {
   resultLabels: Record<NonNullable<TechnicalCheck["result"]>, string>;
   notFound: string;
   unavailable: string;
+  outsideScopeEyebrow: string;
+  outsideScopeCount: (count: number) => string;
+  outsideScopeRowNote: string;
 }
 
-const LAYOUT: Record<Locale, LayoutStrings> = {
-  en: {
-    productName: "Intune Documentation",
-    coverTenant: "Tenant",
-    coverFootRight: "Technical configuration evidence, not a certification",
-    sampleTag: "SAMPLE REPORT, FICTIONAL TENANT",
-    donutCaption: "Controls with supporting technical evidence",
-    donutSub: "Supporting evidence only, not a compliance score",
-    donutCount: (count, total) => `${count} of ${total} controls`,
-    atAGlance: "At a glance",
-    glanceNote: (ruleset) =>
-      `Evidence is read from the Microsoft Intune configuration export on the report date and mapped using ruleset ${ruleset}. Organizational aspects of each control are listed separately for review.`,
-    documentControl: "Document control",
-    frameworkLabel: "Framework",
-    aboutEyebrow: "About this report",
-    disclaimerHeading: "Read this first",
-    summaryEyebrow: "01 Executive summary",
-    heroLabel: "Controls with technical evidence",
-    tileCaptions: {
-      noEvidence: "controls without recognized evidence",
-      conflictingEvidence: "controls with mixed policy evidence",
-    },
-    withEvidenceLabel: "With technical evidence",
-    withEvidenceCaption: (configuration, supporting) =>
-      `${configuration} configuration, ${supporting} supporting or partial`,
-    safeguardsLabel: "Safeguards in place",
-    safeguardsCaption: (total) => `of ${total} mapped, set up and switched on`,
-    distributionHeading: "Status distribution",
-    controlsCount: (count) => `${count} controls`,
-    familyHeading: "Coverage by family",
-    tierHeading: "Coverage by tier",
-    familySmall: "controls with technical evidence",
-    heroLead: (count, total) =>
-      `${count} of ${total} assessable controls have supporting technical evidence in the Intune configuration.`,
-    findingsSmall: "ordered by severity, then control",
-    findingKinds: {
-      risk: "Assigned deviation",
-      gap: "No recognized evidence",
-      unassigned: "Not assigned",
-    },
-    moreFindings: (count) =>
-      count === 1
-        ? "1 further finding is listed on the control detail pages."
-        : `${count} further findings are listed on the control detail pages.`,
-    moreFindingsExcerpt: (count) =>
-      count === 1
-        ? "1 further finding is listed in the full report."
-        : `${count} further findings are listed in the full report.`,
-    moreFamilies: (count) =>
-      count === 1
-        ? "1 more family is listed in the results overview."
-        : `${count} more families are listed in the results overview.`,
-    seePage: (page) => `See page ${page}`,
-    scopeNote: "Scope note",
-    resultsEyebrow: "02 Results",
-    resultsLead:
-      "Each selected control, its rolled up status, how many of its capabilities are evidenced, and where the supporting evidence is recorded.",
-    overviewHeaders: ["Control", "Status", "Capabilities", "Evidence", "Page"],
-    groupSummary: (count, total) => `${count} of ${total} with evidence`,
-    ofCount: (count, total) => `${count} of ${total}`,
-    noneRecorded: "None recorded",
-    seeBelow: "See below",
-    seeRegister: (ref) => `(see register ${ref})`,
-    evidenceItems: (count) =>
-      count === 1 ? "1 evidence item" : `${count} evidence items`,
-    notAvailable: "n/a",
-    excerptNote: (ids) =>
-      `Sample report: detail pages are included for selected controls only (${ids}). A full report includes a detail page for every control.`,
-    dataEyebrow: "03 Data basis",
-    coverageHeaders: [
-      "Policy family",
-      "Collection",
-      "Policies",
-      "Recognized",
-      "Unrecognized",
-    ],
-    collectionStatuses: {
-      complete: "complete",
-      incomplete: "incomplete",
-      unknown: "unknown",
-      notCollected: "not collected",
-    },
-    detailEyebrow: "Control detail",
-    capabilitiesWord: "capabilities",
-    evidenceCount: (count) =>
-      count === 1 ? "1 evidence reference" : `${count} evidence references`,
-    checkHeaders: ["Check", "Expected", "Actual", "Result"],
-    policyLabel: "Policy",
-    evidenceLabel: "Evidence",
-    noPolicy: "No matching policy found",
-    assignmentUnknown: "Assignment unknown",
-    unassessedHeading:
-      "Additional verification: not assessed by technical evidence",
-    gapHeading: (title) => `Gap: ${title}`,
-    appendixEyebrow: "Appendix A",
-    appendixLead:
-      "Every configuration value cited in this report, as read from the tenant export. References are stable within a report ID.",
-    methodologyEyebrow: "Appendix B",
-    methodologyEarlyEyebrow: "About the method",
-    howToRead: "How to read this report",
-    howToReadNotes: [
-      "Status is shown by marker shape and label, never by colour alone.",
-      "A control rolls up from its capabilities. A capability rolls up from its checks.",
-      "Only assigned policies count as evidence. Configured but unassigned settings are reported separately.",
-      "Evidence references point to rows of the evidence register in Appendix A.",
-    ],
-    shortStatuses: CONTROL_STATUS_LABELS,
-    assessmentLabels: {
-      checked: "Checked",
-      unableToCheck: "Unable to check",
-      outsideScope: "Outside selected scope",
-    },
-    resultLabels: {
-      matches: "Matches expected value",
-      missing: "Missing",
-      different: "Different value",
-    },
-    notFound: "Not found",
-    unavailable: "Unavailable",
+const LAYOUT: LayoutStrings = {
+  productName: "Intune Documentation",
+  coverTenant: "Tenant",
+  coverFootRight: "Technical configuration evidence, not a certification",
+  sampleTag: "SAMPLE REPORT, FICTIONAL TENANT",
+  donutCaption: "Controls with supporting technical evidence",
+  donutSub: "Supporting evidence only, not a compliance score",
+  donutCount: (count, total) => `${count} of ${total} controls`,
+  atAGlance: "At a glance",
+  glanceNote: (ruleset) =>
+    `Evidence is read from the Microsoft Intune configuration export on the report date and mapped using ruleset ${ruleset}. Organizational aspects of each control are listed separately for review.`,
+  documentControl: "Document control",
+  frameworkLabel: "Framework",
+  aboutEyebrow: "About this report",
+  disclaimerHeading: "Read this first",
+  summaryEyebrow: "01 Executive summary",
+  heroLabel: "Controls with technical evidence",
+  tileCaptions: {
+    noEvidence: "controls without recognized evidence",
+    conflictingEvidence: "controls with mixed policy evidence",
   },
-  de: {
-    productName: "Intune Documentation",
-    coverTenant: "Mandant",
-    coverFootRight: "Technischer Konfigurationsnachweis, keine Zertifizierung",
-    sampleTag: "MUSTERBERICHT, FIKTIVER MANDANT",
-    donutCaption: "Prüfpunkte mit unterstützendem technischem Nachweis",
-    donutSub: "Nur unterstützender Nachweis, keine Compliance-Bewertung",
-    donutCount: (count, total) => `${count} von ${total} Prüfpunkten`,
-    atAGlance: "Auf einen Blick",
-    glanceNote: (ruleset) =>
-      `Nachweise werden zum Berichtsstand aus dem Konfigurationsexport von Microsoft Intune gelesen und mit Regelwerk ${ruleset} zugeordnet. Organisatorische Aspekte der Prüfpunkte sind gesondert zur Prüfung aufgeführt.`,
-    documentControl: "Dokumentenlenkung",
-    frameworkLabel: "Rahmenwerk",
-    aboutEyebrow: "Zu diesem Bericht",
-    disclaimerHeading: "Bitte zuerst lesen",
-    summaryEyebrow: "01 Überblick",
-    heroLabel: "Prüfpunkte mit technischem Nachweis",
-    tileCaptions: {
-      noEvidence: "Prüfpunkte ohne erkannten Nachweis",
-      conflictingEvidence: "Prüfpunkte mit widersprüchlichen Nachweisen",
-    },
-    withEvidenceLabel: "Mit technischem Nachweis",
-    withEvidenceCaption: (configuration, supporting) =>
-      `${configuration} Konfiguration, ${supporting} unterstützend oder teilweise`,
-    safeguardsLabel: "Aktive Schutzfunktionen",
-    safeguardsCaption: (total) =>
-      `von ${total} zugeordneten, eingerichtet und eingeschaltet`,
-    distributionHeading: "Statusverteilung",
-    controlsCount: (count) => `${count} Prüfpunkte`,
-    familyHeading: "Abdeckung nach Gruppe",
-    tierHeading: "Abdeckung nach Anforderungsstufe",
-    familySmall: "Prüfpunkte mit technischem Nachweis",
-    heroLead: (count, total) =>
-      `${count} von ${total} bewertbaren Prüfpunkten haben unterstützende technische Nachweise in der Intune-Konfiguration.`,
-    findingsSmall: "nach Schweregrad, dann Prüfpunkt",
-    findingKinds: {
-      risk: "Zugewiesene Abweichung",
-      gap: "Kein Nachweis",
-      unassigned: "Nicht zugewiesen",
-    },
-    moreFindings: (count) =>
-      count === 1
-        ? "1 weitere Feststellung steht auf den Detailseiten der Prüfpunkte."
-        : `${count} weitere Feststellungen stehen auf den Detailseiten der Prüfpunkte.`,
-    moreFindingsExcerpt: (count) =>
-      count === 1
-        ? "1 weitere Feststellung steht im vollständigen Bericht."
-        : `${count} weitere Feststellungen stehen im vollständigen Bericht.`,
-    moreFamilies: (count) =>
-      count === 1
-        ? "1 weitere Gruppe steht in der Ergebnisübersicht."
-        : `${count} weitere Gruppen stehen in der Ergebnisübersicht.`,
-    seePage: (page) => `Siehe Seite ${page}`,
-    scopeNote: "Hinweis zum Umfang",
-    resultsEyebrow: "02 Ergebnisse",
-    resultsLead:
-      "Jeder ausgewählte Prüfpunkt mit zusammengefasstem Status, Anzahl der nachgewiesenen Fähigkeiten und Verweis auf die zugehörigen Belege.",
-    overviewHeaders: ["Prüfpunkt", "Status", "Fähigkeiten", "Belege", "Seite"],
-    groupSummary: (count, total) => `${count} von ${total} mit Nachweis`,
-    ofCount: (count, total) => `${count} von ${total}`,
-    noneRecorded: "Keine erfasst",
-    seeBelow: "Siehe unten",
-    seeRegister: (ref) => `(siehe Verzeichnis ${ref})`,
-    evidenceItems: (count) => (count === 1 ? "1 Beleg" : `${count} Belege`),
-    notAvailable: "n. v.",
-    excerptNote: (ids) =>
-      `Musterbericht: Detailseiten sind nur für ausgewählte Prüfpunkte enthalten (${ids}). Ein vollständiger Bericht enthält eine Detailseite für jeden Prüfpunkt.`,
-    dataEyebrow: "03 Datengrundlage",
-    coverageHeaders: [
-      "Richtlinienfamilie",
-      "Erhebung",
-      "Richtlinien",
-      "Erkannt",
-      "Nicht erkannt",
-    ],
-    collectionStatuses: {
-      complete: "vollständig",
-      incomplete: "unvollständig",
-      unknown: "unbekannt",
-      notCollected: "nicht erhoben",
-    },
-    detailEyebrow: "Prüfpunktdetails",
-    capabilitiesWord: "Fähigkeiten",
-    evidenceCount: (count) =>
-      count === 1 ? "1 Belegverweis" : `${count} Belegverweise`,
-    checkHeaders: ["Prüfung", "Sollwert", "Istwert", "Ergebnis"],
-    policyLabel: "Richtlinie",
-    evidenceLabel: "Belege",
-    noPolicy: "Keine passende Richtlinie gefunden",
-    assignmentUnknown: "Zuweisung unbekannt",
-    unassessedHeading:
-      "Zusätzliche Prüfung: nicht durch technische Nachweise bewertet",
-    gapHeading: (title) => `Lücke: ${title}`,
-    appendixEyebrow: "Anhang A",
-    appendixLead:
-      "Alle in diesem Bericht zitierten Konfigurationswerte, wie im Mandantenexport gelesen. Verweise sind innerhalb einer Berichts-ID stabil.",
-    methodologyEyebrow: "Anhang B",
-    methodologyEarlyEyebrow: "Zur Methode",
-    howToRead: "Lesehilfe",
-    howToReadNotes: [
-      "Der Status wird durch Form und Beschriftung angezeigt, nie allein durch Farbe.",
-      "Ein Prüfpunkt ergibt sich aus seinen Fähigkeiten, eine Fähigkeit aus ihren Prüfungen.",
-      "Nur zugewiesene Richtlinien zählen als Nachweis. Konfigurierte, aber nicht zugewiesene Einstellungen werden gesondert ausgewiesen.",
-      "Belegverweise zeigen auf Zeilen des Nachweisverzeichnisses in Anhang A.",
-    ],
-    shortStatuses: {
-      evidenceFound: "Konfigurationsnachweis",
-      partialEvidence: "Unterstützender oder teilweiser Nachweis",
-      noEvidence: "Kein erkannter Nachweis",
-      conflictingEvidence: "Widersprüchliche Richtliniennachweise",
-      notAssessed: "Nicht bewertet",
-      notApplicable: "Außerhalb des Geltungsbereichs",
-    },
-    assessmentLabels: {
-      checked: "Geprüft",
-      unableToCheck: "Nicht prüfbar",
-      outsideScope: "Außerhalb des Umfangs",
-    },
-    resultLabels: {
-      matches: "Entspricht dem Sollwert",
-      missing: "Fehlt",
-      different: "Abweichender Wert",
-    },
-    notFound: "Nicht gefunden",
-    unavailable: "Nicht verfügbar",
+  withEvidenceLabel: "With technical evidence",
+  withEvidenceCaption: (configuration, supporting) =>
+    `${configuration} configuration, ${supporting} supporting or partial`,
+  safeguardsLabel: "Safeguards in place",
+  safeguardsCaption: (total) => `of ${total} mapped, set up and switched on`,
+  distributionHeading: "Status distribution",
+  controlsCount: (count) => `${count} controls`,
+  familyHeading: "Coverage by family",
+  familySmall: "controls with technical evidence",
+  heroLead: (count, total) =>
+    `${count} of ${total} assessable controls have supporting technical evidence in the Intune configuration.`,
+  findingsSmall: "ordered by severity, then control",
+  findingKinds: {
+    risk: "Assigned deviation",
+    gap: "No recognized evidence",
+    unassigned: "Not assigned",
   },
+  moreFindings: (count) =>
+    count === 1
+      ? "1 further finding is listed on the control detail pages."
+      : `${count} further findings are listed on the control detail pages.`,
+  moreFindingsExcerpt: (count) =>
+    count === 1
+      ? "1 further finding is listed in the full report."
+      : `${count} further findings are listed in the full report.`,
+  moreFamilies: (count) =>
+    count === 1
+      ? "1 more family is listed in the results overview."
+      : `${count} more families are listed in the results overview.`,
+  seePage: (page) => `See page ${page}`,
+  scopeNote: "Scope note",
+  resultsEyebrow: "02 Results",
+  resultsLead:
+    "Each selected control, its rolled up status, how many of its capabilities are evidenced, and where the supporting evidence is recorded.",
+  overviewHeaders: ["Control", "Status", "Capabilities", "Evidence", "Page"],
+  groupSummary: (count, total) => `${count} of ${total} with evidence`,
+  ofCount: (count, total) => `${count} of ${total}`,
+  noneRecorded: "None recorded",
+  seeBelow: "See below",
+  seeRegister: (ref) => `(see register ${ref})`,
+  evidenceItems: (count) =>
+    count === 1 ? "1 evidence item" : `${count} evidence items`,
+  notAvailable: "n/a",
+  excerptNote: (ids) =>
+    `Sample report: detail pages are included for selected controls only (${ids}). A full report includes a detail page for every control.`,
+  dataEyebrow: "03 Data basis",
+  coverageHeaders: [
+    "Policy family",
+    "Collection",
+    "Policies",
+    "Recognized",
+    "Unrecognized",
+  ],
+  collectionStatuses: {
+    complete: "complete",
+    incomplete: "incomplete",
+    unknown: "unknown",
+    notCollected: "not collected",
+  },
+  detailEyebrow: "Control detail",
+  capabilitiesWord: "capabilities",
+  evidenceCount: (count) =>
+    count === 1 ? "1 evidence reference" : `${count} evidence references`,
+  checkHeaders: ["Check", "Expected", "Actual", "Result"],
+  policyLabel: "Policy",
+  evidenceLabel: "Evidence",
+  noPolicy: "No matching policy found",
+  assignmentUnknown: "Assignment unknown",
+  unassessedHeading:
+    "Additional verification: not assessed by technical evidence",
+  gapHeading: (title) => `Gap: ${title}`,
+  appendixEyebrow: "Appendix A",
+  appendixLead:
+    "Every configuration value cited in this report, as read from the tenant export. References are stable within a report ID.",
+  methodologyEyebrow: "Appendix B",
+  methodologyEarlyEyebrow: "About the method",
+  howToRead: "How to read this report",
+  howToReadNotes: [
+    "Status is shown by marker shape and label, never by colour alone.",
+    "A control rolls up from its capabilities. A capability rolls up from its checks.",
+    "Only assigned policies count as evidence. Configured but unassigned settings are reported separately.",
+    "Evidence references point to rows of the evidence register in Appendix A.",
+  ],
+  shortStatuses: CONTROL_STATUS_LABELS,
+  assessmentLabels: {
+    checked: "Checked",
+    unableToCheck: "Unable to check",
+    outsideScope: "Outside selected scope",
+  },
+  resultLabels: {
+    matches: "Matches expected value",
+    missing: "Missing",
+    different: "Different value",
+  },
+  notFound: "Not found",
+  unavailable: "Unavailable",
+  outsideScopeEyebrow: "Outside Intune scope",
+  outsideScopeCount: (count) =>
+    count === 1
+      ? "1 measure is outside Intune scope and needs its own assessment."
+      : `${count} measures are outside Intune scope; each needs its own assessment.`,
+  outsideScopeRowNote:
+    "Needs its own assessment; this report holds no evidence for it.",
 };
 
 /** Short framework names for the cover title and the running header. */
 const SHORT_FRAMEWORK_NAMES: Record<ComplianceFrameworkId, string> = {
   "nist-800-53-r5": "NIST SP 800-53",
   "nist-csf-2": "NIST CSF 2.0",
-  "bsi-it-grundschutz": "BSI IT-Grundschutz",
   "iso-27001-2022": "ISO/IEC 27001:2022",
   "soc2-tsc": "SOC 2",
   "def-stan-05-138-i4": "Def Stan 05-138",
@@ -1139,6 +684,7 @@ const SHORT_FRAMEWORK_NAMES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r3": "NIST SP 800-171",
   "essential-eight": "Essential Eight",
   "nis2-2022-2555": "NIS2 Directive",
+  "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA Security Rule",
 };
 
@@ -1235,11 +781,17 @@ function groupLabel(
       return { code: key, name: NIST_CSF_FUNCTIONS[key] };
     case "nis2-2022-2555":
       return { code: key, name: "Cybersecurity risk-management measures" };
+    case "dora-2022-2554":
+      return {
+        code: key,
+        name: key.startsWith("RTS")
+          ? "Delegated Regulation (EU) 2024/1774"
+          : "Regulation (EU) 2022/2554",
+      };
     case "hipaa-security-rule":
       return { code: `§ ${key}`, name: HIPAA_SECTIONS[key] };
     case "essential-eight":
     case "def-stan-05-138-i4":
-    case "bsi-it-grundschutz":
       return { name: key };
     default:
       return { code: key };
@@ -1261,9 +813,11 @@ function controlFamily(
             control.control.id.slice(0, 2))
           : frameworkId === "nis2-2022-2555"
             ? "Art. 21(2)"
-            : frameworkId === "hipaa-security-rule"
-              ? control.control.id.split("(")[0]
-              : control.control.id.split(".")[0];
+            : frameworkId === "dora-2022-2554"
+              ? control.control.id.replace(/^(\w+) (\d+).*$/, "$1 Art. $2")
+              : frameworkId === "hipaa-security-rule"
+                ? control.control.id.split("(")[0]
+                : control.control.id.split(".")[0];
 }
 
 /**
@@ -1315,26 +869,11 @@ function buildComplianceReportOutline(
   });
 }
 
-const BSI_TIERS = [
-  "Basis-Anforderung",
-  "Standard-Anforderung",
-  "Anforderung bei erhöhtem Schutzbedarf",
-  undefined,
-] as const;
-
-/** Groups controls for the overview: BSI by tier, others by family. */
+/** Groups controls for the overview by family. */
 function buildControlGroups(
   frameworkId: ComplianceFrameworkId,
   controls: readonly ControlAssessment[],
 ): ControlGroup[] {
-  if (frameworkId === "bsi-it-grundschutz") {
-    return BSI_TIERS.map((tier) => ({
-      key: tier ?? "Bausteine",
-      name: tier ?? "Bausteine",
-      controls: controls.filter((item) => item.control.tier === tier),
-    })).filter((group) => group.controls.length > 0);
-  }
-
   // Cyber Essentials controls are themes, so one group avoids a group row
   // per control that only repeats the control name.
   if (frameworkId === "cyber-essentials-v3") {
@@ -1445,6 +984,8 @@ function implementationSignals(results: readonly CapabilityResult[]): string[] {
         if (odataType) signals.add(`${odataType}.${signal.propertyPath}`);
       } else if (signal.source === "policyCheck") {
         signals.add(signal.check);
+      } else if (signal.source === "tenantPolicy") {
+        signals.add(`${signal.policy}.${signal.check}`);
       } else {
         signals.add(signal.settingId);
       }
@@ -1461,7 +1002,7 @@ export function complianceReportFileName(
 ): string {
   const now = new Date();
   const frameworkLabel =
-    STRINGS.en.fileFrameworkLabels[frameworkId] +
+    STRINGS.fileFrameworkLabels[frameworkId] +
     (frameworkId === "essential-eight"
       ? `-ML${essentialEightMaturityLevel}`
       : "");
@@ -1471,14 +1012,6 @@ export function complianceReportFileName(
 }
 
 const REGISTRY_KEY_COLLATOR = new Intl.Collator("en");
-
-function mixColor(color: RgbColor, target: RgbColor, amount: number): RgbColor {
-  return [
-    Math.round(color[0] + (target[0] - color[0]) * amount),
-    Math.round(color[1] + (target[1] - color[1]) * amount),
-    Math.round(color[2] + (target[2] - color[2]) * amount),
-  ];
-}
 
 const CONTROL_STATUS_TONES: Record<ControlStatus, Tone> = {
   evidenceFound: "found",
@@ -1569,15 +1102,15 @@ export async function generateComplianceReportPDF(
   data: DetailedExportData,
   options: ComplianceReportOptions,
 ): Promise<Uint8Array> {
-  const locale: Locale =
-    options.frameworkId === "bsi-it-grundschutz" ? "de" : "en";
-  const strings = STRINGS[locale];
-  const layout = LAYOUT[locale];
+  const strings = STRINGS;
+  const layout = LAYOUT;
   const branding = options.branding ?? data.branding;
-  const primaryColor = hexToRgb(branding?.colors?.primary, PALETTE.navy);
-  const secondaryColor = hexToRgb(branding?.colors?.secondary, PALETTE.blue);
-  const accentColor = hexToRgb(branding?.colors?.accent, PALETTE.green);
-  const textColor = hexToRgb(branding?.colors?.text, PALETTE.ink);
+  const theme = brandingTheme(branding);
+  const {
+    primary: primaryColor,
+    secondary: secondaryColor,
+    text: textColor,
+  } = theme;
   const primaryTint = mixColor(primaryColor, PALETTE.white, 0.92);
 
   const manifest = await createEvidenceManifest(data);
@@ -1634,18 +1167,21 @@ export async function generateComplianceReportPDF(
     if (name) return name;
     if (!result) return undefined;
     const { capability } = result;
-    if (settingId === capability.id) return capabilityName(result);
+    if (settingId === capability.id) return capability.name;
     const signal = capability.signals.find((item) =>
-      item.source === "policyCheck"
-        ? item.check === settingId
-        : item.source === "graphProperty"
-          ? item.propertyPath === settingId ||
-            item.odataTypes.some(
-              (type) => settingId === `${type}.${item.propertyPath}`,
-            )
-          : false,
+      item.source === "tenantPolicy"
+        ? tenantPolicySettingId(item) === settingId
+        : item.source === "policyCheck"
+          ? item.check === settingId
+          : item.source === "graphProperty"
+            ? item.propertyPath === settingId ||
+              item.odataTypes.some(
+                (type) => settingId === `${type}.${item.propertyPath}`,
+              )
+            : false,
     );
-    if (signal?.source === "policyCheck") return capabilityName(result);
+    if (signal?.source === "policyCheck" || signal?.source === "tenantPolicy")
+      return capability.name;
     if (signal?.source === "graphProperty")
       return readablePropertyName(signal.propertyPath);
     return undefined;
@@ -1701,19 +1237,16 @@ export async function generateComplianceReportPDF(
     metadata.reportId ??
     defaultReportId(options.frameworkId, generatedAt, deterministicSeed);
   const revision = metadata.revision ?? "1.0";
-  const classification =
-    metadata.classification ?? (locale === "de" ? "Intern" : "Internal");
+  const classification = metadata.classification ?? "Internal";
   const tenantName = metadata.tenantLabel ?? branding?.companyName;
   const shortName =
     options.frameworkId === "essential-eight"
       ? `${SHORT_FRAMEWORK_NAMES[options.frameworkId]} ML${assessment.scope.essentialEightMaturityLevel ?? 1}`
       : SHORT_FRAMEWORK_NAMES[options.frameworkId];
   const frameworkDisplay =
-    options.frameworkId === "bsi-it-grundschutz"
-      ? "BSI IT-Grundschutz-Kompendium, Edition 2023"
-      : options.frameworkId === "iso-27001-2022"
-        ? "ISO/IEC 27001:2022, Annex A"
-        : `${framework.framework.name} ${framework.framework.version}`;
+    options.frameworkId === "iso-27001-2022"
+      ? "ISO/IEC 27001:2022, Annex A"
+      : `${framework.framework.name} ${framework.framework.version}`;
 
   // Only evidence cited on rendered detail pages enters the register, so an
   // excerpt never shows a reference that the register does not list.
@@ -1791,21 +1324,15 @@ export async function generateComplianceReportPDF(
     author: branding?.companyName ?? strings.footer,
     subject: `${framework.framework.name} ${framework.framework.version}`,
   });
-  if (deterministicSeed !== undefined) {
-    const metadataApi = doc as unknown as PdfMetadataApi;
-    metadataApi.setCreationDate(pdfUtcDate(generatedAt));
-    metadataApi.setFileId(
-      deterministicFileId(`${deterministicSeed}|${reportId}`),
-    );
-  }
+  if (deterministicSeed !== undefined)
+    pinPdfMetadata(doc, generatedAt, `${deterministicSeed}|${reportId}`);
 
-  const pageWidth = doc.internal.pageSize.width;
-  const pageHeight = doc.internal.pageSize.height;
-  const margin = 15;
-  const right = pageWidth - margin;
-  const contentWidth = pageWidth - margin * 2;
-  const contentTop = 21;
-  const contentBottom = 276;
+  const frame = pageFrame(doc, {
+    margin: 15,
+    contentTop: 21,
+    contentBottom: 276,
+  });
+  const { margin, right, contentWidth, contentTop, contentBottom } = frame;
   let yPosition = contentTop;
   const tocEntries: TocEntry[] = [];
   const controlPages = new Map<string, number>();
@@ -1843,12 +1370,7 @@ export async function generateComplianceReportPDF(
     size: number,
     minimum: number,
     style: FontStyle = "bold",
-  ): number => {
-    let fitted = size;
-    while (fitted > minimum && textWidth(doc, text, fitted, style) > width)
-      fitted -= 0.5;
-    return fitted;
-  };
+  ): number => fitTextSize(doc, text, width, size, minimum, style);
 
   const addContentPage = () => {
     doc.addPage();
@@ -1869,12 +1391,7 @@ export async function generateComplianceReportPDF(
     style: FontStyle,
     color: RgbColor,
     lineHeight: number,
-  ) => {
-    setFont(doc, fontSize, style, color);
-    lines.forEach((line, index) => {
-      doc.text(line, x, top + capHeight(fontSize) + index * lineHeight);
-    });
-  };
+  ) => drawTextLines(doc, lines, x, top, fontSize, style, color, lineHeight);
 
   const drawWrappedText = (
     text: string,
@@ -1910,42 +1427,23 @@ export async function generateComplianceReportPDF(
   ) => {
     if (options.record !== false)
       tocEntries.push({ title, page: currentPage(), level: 0 });
-    drawEyebrow(doc, eyebrow, margin, yPosition + 2.4, {
-      color: secondaryColor,
+    yPosition = drawChromePageTitle(doc, theme, frame, yPosition, {
+      eyebrow,
+      title,
+      lead: options.lead,
+      size: options.size,
     });
-    const size = fitFontSize(title, contentWidth, options.size ?? 20, 12);
-    setFont(doc, size, "bold", primaryColor);
-    doc.text(title, margin, yPosition + 4.5 + capHeight(size) + 1.2);
-    yPosition += 6 + capHeight(size) + 2.5;
-    if (options.lead) {
-      const lines = wrap(options.lead, 150, 8.8);
-      drawLines(
-        lines,
-        margin,
-        yPosition + 0.5,
-        8.8,
-        "normal",
-        PALETTE.muted,
-        4,
-      );
-      yPosition += lines.length * 4 + 1;
-    }
-    yPosition += 4;
   };
 
   const drawSectionHeading = (text: string, small?: string) => {
-    const baseline = yPosition + capHeight(10.5);
-    setFont(doc, 10.5, "bold", primaryColor);
-    doc.text(
-      clampLine(doc, text, small ? 110 : contentWidth, 10.5, "bold"),
-      margin,
-      baseline,
+    yPosition = drawChromeSectionHeading(
+      doc,
+      theme,
+      frame,
+      yPosition,
+      text,
+      small,
     );
-    if (small) {
-      setFont(doc, 7, "normal", PALETTE.muted);
-      doc.text(small, right, baseline, { align: "right" });
-    }
-    yPosition += 6.5;
   };
 
   const drawControlContinuationCaption = (controlId: string) => {
@@ -1974,18 +1472,10 @@ export async function generateComplianceReportPDF(
       maxWidth,
     });
 
-  const capabilityName = (result: CapabilityResult) =>
-    locale === "de"
-      ? (GERMAN_CAPABILITY_NAMES[result.capability.id] ??
-        result.capability.name)
-      : result.capability.name;
-
   const assignmentLabel = (assignment: CapabilityEvidence["assignment"]) => {
     if (assignment.state === "notAssigned") return strings.notAssigned;
     if (assignment.state === "unknown") return layout.assignmentUnknown;
-    const targets = assignmentDetails(assignment).map((target) =>
-      translateEvidenceValue(target, locale),
-    );
+    const targets = assignmentDetails(assignment);
     return `${strings.assigned}: ${targets.join(", ") || strings.assigned}`;
   };
 
@@ -2005,8 +1495,30 @@ export async function generateComplianceReportPDF(
 
   const totalControls = controls.length;
   const frameworkCounts = statusCounts(controls);
+  // Measures without an Intune mapping, from the list the management summary
+  // uses, so both reports name the same measures.
+  const outsideMeasures = outsideIntuneScope(options.frameworkId);
+  const notEvaluatedCount = outsideMeasures.filter(
+    (measure) => measure.notEvaluated,
+  ).length;
+  const outsideCount = outsideMeasures.length - notEvaluatedCount;
+  const outsideScopeLines = [
+    ...(outsideCount > 0 ? [layout.outsideScopeCount(outsideCount)] : []),
+    ...(notEvaluatedCount > 0
+      ? [MANAGEMENT_REPORT_STRINGS.en.notEvaluatedLine(notEvaluatedCount)]
+      : []),
+  ];
   // Same formulas as the management summary so both reports agree.
-  const metrics = computeMetrics(framework, assessment.capabilities);
+  const metrics = computeMetrics(
+    framework,
+    assessment.capabilities,
+    framework.framework.totalRequirements,
+    notEvaluatedCount,
+  );
+  // Safeguards per control, without capabilities excluded by an alternative,
+  // the same denominator as the management summary.
+  const countedIds = (control: ControlAssessment) =>
+    countedCapabilityIds(control, capabilitiesById);
   const coverageFraction =
     metrics.assessable > 0 ? metrics.withEvidence / metrics.assessable : 0;
   const coveragePercent =
@@ -2029,104 +1541,13 @@ export async function generateComplianceReportPDF(
   const groups = buildControlGroups(options.frameworkId, controls);
 
   // ---------------------------------------------------------------- Cover
-  const bandHeight = 134;
-  doc.setFillColor(...primaryColor);
-  doc.rect(0, 0, pageWidth, bandHeight, "F");
-  const ringSoft = mixColor(primaryColor, secondaryColor, 0.16);
-  const ringStrong = mixColor(primaryColor, secondaryColor, 0.4);
-  const ringX = 173;
-  const ringY = 55;
-  doc.setDrawColor(...ringSoft);
-  doc.setLineWidth(0.6);
-  doc.circle(ringX, ringY, 70, "S");
-  doc.circle(ringX, ringY, 38, "S");
-  drawDonut(
-    doc,
-    ringX,
-    ringY,
-    56,
-    10,
-    [{ value: coverageFraction, color: ringStrong }],
-    1,
-    ringSoft,
-  );
+  drawCoverBackground(doc, theme, frame, { ringFraction: coverageFraction });
 
-  // Product mark and name.
-  doc.setFillColor(...secondaryColor);
-  doc.roundedRect(margin, 14, 6.5, 6.5, 1.4, 1.4, "F");
-  doc.setFillColor(...PALETTE.white);
-  [
-    [15.5, 3.9],
-    [16.9, 3],
-    [18.3, 2.2],
-  ].forEach(([barY, barWidth]) =>
-    doc.roundedRect(
-      margin + 1.3,
-      barY ?? 0,
-      barWidth ?? 0,
-      0.7,
-      0.35,
-      0.35,
-      "F",
-    ),
-  );
-  doc.setFillColor(...accentColor);
-  doc.circle(margin + 6.5 - 1.85, 14 + 6.5 - 1.85, 0.75, "F");
-  setFont(doc, 9.5, "bold", PALETTE.white);
-  doc.text(layout.productName, margin + 9, 18.7);
-
-  let coverRightTop = 13;
-  const logoDataUrl = branding?.logo?.dataUrl;
-  let logoDrawn = false;
-  if (logoDataUrl) {
-    try {
-      const properties = (
-        doc as unknown as ImagePropertiesProvider
-      ).getImageProperties(logoDataUrl);
-      const ratio = properties.height / Math.max(properties.width, 1);
-      let width = Math.min(branding?.logo?.width ?? 36, 44);
-      let height = branding?.logo?.height ?? width * ratio;
-      if (height > 14) {
-        width = (width * 14) / height;
-        height = 14;
-      }
-      const boxWidth = width + 5;
-      const boxHeight = height + 4;
-      doc.setFillColor(...PALETTE.white);
-      doc.roundedRect(
-        right - boxWidth,
-        coverRightTop,
-        boxWidth,
-        boxHeight,
-        1.5,
-        1.5,
-        "F",
-      );
-      const format = /image\/(jpe?g)/i.test(logoDataUrl) ? "JPEG" : "PNG";
-      doc.addImage(
-        logoDataUrl,
-        format,
-        right - boxWidth + 2.5,
-        coverRightTop + 2,
-        width,
-        height,
-      );
-      coverRightTop += boxHeight + 3;
-      logoDrawn = true;
-    } catch {
-      logoDrawn = false;
-    }
-  }
-  if (!logoDrawn && branding?.companyName) {
-    setFont(doc, 9.5, "bold", PALETTE.white);
-    doc.text(
-      clampLine(doc, branding.companyName, 80, 9.5, "bold"),
-      right,
-      18.7,
-      { align: "right" },
-    );
-    coverRightTop = 24;
-  }
+  const coverRightTop = drawCoverMasthead(doc, theme, frame, {
+    productName: layout.productName,
+    logo: branding?.logo,
+    companyName: branding?.companyName,
+  });
   if (isExcerpt) {
     const tagSize = 6.2;
     const tagWidth =
@@ -2145,74 +1566,26 @@ export async function generateComplianceReportPDF(
     );
   }
 
-  doc.setFillColor(...accentColor);
-  doc.roundedRect(margin, 48.5, 14, 1.2, 0.6, 0.6, "F");
-  setFont(doc, 8.5, "bold", PALETTE.coverAccentText);
-  doc.text(
-    clampLine(doc, strings.title, contentWidth, 8.5, "bold"),
-    margin,
-    56.5,
-  );
-  const coverTitleSize = fitFontSize(shortName, contentWidth, 36, 24);
-  setFont(doc, coverTitleSize, "bold", PALETTE.white);
-  const coverTitleLines = wrap(
-    shortName,
-    contentWidth,
-    coverTitleSize,
-    "bold",
-    2,
-  );
-  coverTitleLines.forEach((line, index) =>
-    doc.text(line, margin, 70 + index * coverTitleSize * 0.42),
-  );
-  const coverTitleBottom =
-    70 + (coverTitleLines.length - 1) * coverTitleSize * 0.42;
   // The subtitle adds what the short title leaves out (edition, revision,
   // target level); the full framework name is in the document control grid.
   const coverSubtitle =
-    options.frameworkId === "bsi-it-grundschutz"
-      ? "Kompendium, Edition 2023"
-      : options.frameworkId === "iso-27001-2022"
-        ? "Annex A"
-        : framework.framework.version;
-  const displaySize = fitFontSize(coverSubtitle, contentWidth, 13, 8, "normal");
-  setFont(doc, displaySize, "normal", PALETTE.coverMutedText);
-  doc.text(coverSubtitle, margin, coverTitleBottom + 10);
-  const leadLines = wrap(strings.coverLead, 150, 9, "normal", 2);
-  drawLines(
-    leadLines,
-    margin,
-    coverTitleBottom + 13.5,
-    9,
-    "normal",
-    PALETTE.coverAccentText,
-    4,
-  );
+    options.frameworkId === "iso-27001-2022"
+      ? "Annex A"
+      : framework.framework.version;
+  drawCoverHeadline(doc, theme, frame, {
+    eyebrow: strings.title,
+    title: shortName,
+    subtitle: coverSubtitle,
+    lead: strings.coverLead,
+  });
 
-  const coverRule = mixColor(primaryColor, PALETTE.white, 0.17);
-  drawRule(doc, margin, 104, right, coverRule, 0.25);
-  if (metadata.tenantLabel) {
-    drawEyebrow(doc, layout.coverTenant, margin, 110.5, {
-      color: PALETTE.coverAccentText,
-    });
-    setFont(doc, 18, "bold", PALETTE.white);
-    doc.text(
-      clampLine(doc, metadata.tenantLabel, 110, 18, "bold"),
-      margin,
-      118.5,
-    );
-  }
-  const coverFacts: Array<[string, string]> = [
-    [strings.generatedOn, formatReportDate(generatedAt, locale, fixedDate)],
-    [strings.documentControlLabels[7], classification],
-  ];
-  coverFacts.forEach(([label, value], index) => {
-    const baseline = 113.5 + index * 5;
-    setFont(doc, 8, "bold", PALETTE.white);
-    const valueWidth = doc.getTextWidth(value);
-    doc.text(value, right, baseline, { align: "right" });
-    setFont(doc, 8, "normal", PALETTE.coverMutedText);
-    doc.text(label, right - valueWidth - 1.4, baseline, { align: "right" });
+  drawCoverTenantBlock(doc, theme, frame, {
+    tenantEyebrow: layout.coverTenant,
+    tenant: metadata.tenantLabel,
+    facts: [
+      [strings.generatedOn, localIsoDate(generatedAt, fixedDate)],
+      [strings.documentControlLabels[7], classification],
+    ],
   });
 
   // Donut card and counts.
@@ -2311,73 +1684,25 @@ export async function generateComplianceReportPDF(
     3.5,
   );
 
-  // Document control grid: only rows with values.
+  // Document control grid: only rows with values. The framework cell spans
+  // two columns so its full name stays one run.
   const controlLabels = strings.documentControlLabels;
-  const controlRows: Array<readonly [string, string | undefined]> = [
-    [layout.frameworkLabel, frameworkDisplay],
-    [controlLabels[0], metadata.tenantLabel],
-    [controlLabels[1], metadata.preparedFor],
-    [controlLabels[2], metadata.preparedBy],
-    [controlLabels[3], metadata.contact],
-    [controlLabels[4], reportId],
-    [controlLabels[5], revision],
-    [controlLabels[6], COMPLIANCE_RULESET_VERSION],
-    [controlLabels[7], classification],
-    [strings.generatedOn, formatReportDate(generatedAt, locale, fixedDate)],
-  ];
-  const visibleControlRows = controlRows.filter(
-    (row): row is readonly [string, string] => Boolean(row[1]),
-  );
-  const gridTop = 222;
-  drawEyebrow(doc, layout.documentControl, margin, gridTop + 2.4, {
-    color: secondaryColor,
-  });
-  drawRule(doc, margin, gridTop + 5, right, primaryColor, 0.4);
-  const cellWidth = contentWidth / 4;
-  // The framework cell spans two columns so its full name stays one run.
-  const gridRows: Array<Array<{ label: string; value: string; span: number }>> =
-    [];
-  for (const [label, value] of visibleControlRows) {
-    const span = label === layout.frameworkLabel ? 2 : 1;
-    const current = gridRows[gridRows.length - 1];
-    const used = current?.reduce((sum, cell) => sum + cell.span, 0) ?? 4;
-    if (!current || used + span > 4) gridRows.push([{ label, value, span }]);
-    else current.push({ label, value, span });
-  }
-  let gridRowTop = gridTop + 5;
-  for (const rowCells of gridRows) {
-    const cellLines = rowCells.map(({ value, span }) =>
-      wrap(value, cellWidth * span - 3, 8.4, "bold", 3),
-    );
-    const rowHeight = Math.max(
-      13,
-      Math.max(...cellLines.map((lines) => lines.length)) * 3.6 + 9.4,
-    );
-    let cellX = margin;
-    rowCells.forEach(({ label, span }, cellIndex) => {
-      setFont(doc, 6.3, "bold", PALETTE.muted);
-      doc.text(
-        clampLine(doc, label, cellWidth * span - 3, 6.3, "bold"),
-        cellX,
-        gridRowTop + 5,
-      );
-      drawLines(
-        cellLines[cellIndex] ?? [],
-        cellX,
-        gridRowTop + 7.2,
-        8.4,
-        "bold",
-        textColor,
-        3.6,
-      );
-      cellX += cellWidth * span;
-    });
-    gridRowTop += rowHeight;
-    drawRule(doc, margin, gridRowTop, right);
-  }
-  setFont(doc, 6.5, "normal", PALETTE.muted);
-  doc.text(strings.footer, margin, 287);
-  doc.text(layout.coverFootRight, right, 287, { align: "right" });
+  drawDocumentControlGrid(doc, theme, frame, 222, layout.documentControl, [
+    { label: layout.frameworkLabel, value: frameworkDisplay, span: 2 },
+    { label: controlLabels[0], value: metadata.tenantLabel },
+    { label: controlLabels[1], value: metadata.preparedFor },
+    { label: controlLabels[2], value: metadata.preparedBy },
+    { label: controlLabels[3], value: metadata.contact },
+    { label: controlLabels[4], value: reportId },
+    { label: controlLabels[5], value: revision },
+    { label: controlLabels[6], value: COMPLIANCE_RULESET_VERSION },
+    { label: controlLabels[7], value: classification },
+    {
+      label: strings.generatedOn,
+      value: localIsoDate(generatedAt, fixedDate),
+    },
+  ]);
+  drawCoverFooter(doc, frame, strings.footer, layout.coverFootRight);
 
   // ---------------------------------------------- Disclaimer and contents
   let tocPage = 0;
@@ -2388,32 +1713,13 @@ export async function generateComplianceReportPDF(
       color: secondaryColor,
     });
     yPosition += 6;
-    const disclaimerLines = (
-      strings.disclaimer.match(/[^.]+[.]?/g) ?? [strings.disclaimer]
-    ).flatMap((sentence) => wrap(sentence.trim(), contentWidth - 20, 8.8));
-    const disclaimerHeight = disclaimerLines.length * 4.1 + 14;
-    drawCard(doc, margin, yPosition, contentWidth, disclaimerHeight, {
-      fill: [255, 250, 243],
-      stroke: TONES.na.border,
-    });
-    doc.setFillColor(...TONES.partial.text);
-    doc.circle(margin + 7.5, yPosition + 7.5, 3, "F");
-    setFont(doc, 9, "bold", PALETTE.white);
-    doc.text("!", margin + 7.5, yPosition + 7.5 + capHeight(9) / 2, {
-      align: "center",
-    });
-    setFont(doc, 8.6, "bold", TONES.partial.text);
-    doc.text(layout.disclaimerHeading, margin + 14, yPosition + 6.6);
-    drawLines(
-      disclaimerLines,
-      margin + 14,
-      yPosition + 9.2,
-      8.8,
-      "normal",
-      textColor,
-      4.1,
-    );
-    yPosition += disclaimerHeight + 10;
+    yPosition =
+      drawNoticeCallout(doc, theme, frame, yPosition, {
+        heading: layout.disclaimerHeading,
+        paragraphs: (
+          strings.disclaimer.match(/[^.]+[.]?/g) ?? [strings.disclaimer]
+        ).map((sentence) => sentence.trim()),
+      }) + 10;
     tocPage = currentPage();
     tocStartY = yPosition;
   }
@@ -2436,18 +1742,16 @@ export async function generateComplianceReportPDF(
     heroTextWidth,
     7.6,
   );
-  const scopeLine =
-    locale === "de"
-      ? `${framework.summary.applicableControls} im Geltungsbereich; ${framework.summary.notApplicable} außerhalb; ${framework.summary.notAssessed} unbewertet; ${framework.summary.conflicting} mit widersprüchlichen Nachweisen. Ausgewählte Zuordnungen, keine vollständige Rahmenwerksbewertung.`
-      : `${framework.summary.applicableControls} in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed policy evidence. Entries are selected mappings, not full framework coverage.`;
+  const scopeLine = `${framework.summary.applicableControls} in scope; ${framework.summary.notApplicable} outside the selected scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed policy evidence. Entries are selected mappings, not full framework coverage.`;
   const scopeLines = [
     ...summaryCountLines,
     ...wrap(scopeLine, heroTextWidth, 7.6),
+    ...outsideScopeLines.flatMap((line) => wrap(line, heroTextWidth, 7.6)),
   ];
   const safeguardLines =
     metrics.safeguardsTotal > 0
       ? wrap(
-          MANAGEMENT_REPORT_STRINGS[locale].heroSentence(
+          MANAGEMENT_REPORT_STRINGS.en.heroSentence(
             metrics.safeguardsInPlace,
             metrics.safeguardsTotal,
           ),
@@ -2613,12 +1917,7 @@ export async function generateComplianceReportPDF(
     return 6.5 + shownRows * familyRowHeight + (hidden > 0 ? 5 : 0) + 5;
   };
   const drawFamilyBlock = (maxRows: number) => {
-    drawSectionHeading(
-      options.frameworkId === "bsi-it-grundschutz"
-        ? layout.tierHeading
-        : layout.familyHeading,
-      layout.familySmall,
-    );
+    drawSectionHeading(layout.familyHeading, layout.familySmall);
     drawRule(doc, margin, yPosition - 1.5, right, primaryColor, 0.4);
     {
       const columns = familyColumns;
@@ -2680,7 +1979,7 @@ export async function generateComplianceReportPDF(
           group.controls.length,
           { gap: 0.5 },
         );
-        const total = ` ${locale === "de" ? "von" : "of"} ${group.controls.length}`;
+        const total = ` of ${group.controls.length}`;
         setFont(doc, 7.8, "normal", PALETTE.muted);
         const totalWidth = doc.getTextWidth(total);
         doc.text(total, x + columnWidth, middle + capHeight(7.8) / 2, {
@@ -2812,48 +2111,24 @@ export async function generateComplianceReportPDF(
     if (ids.length === 0) continue;
     findings.push({
       kind: "risk",
-      title: capabilityName(result),
-      description:
-        locale === "de"
-          ? `Zugewiesene abweichende Konfiguration für ${ids.join(", ")}.`
-          : `Assigned deviating configuration affects ${ids.join(", ")}.`,
+      title: result.capability.name,
+      description: `Assigned deviating configuration affects ${ids.join(", ")}.`,
       controlIds: ids,
     });
-  }
-  if (options.frameworkId === "bsi-it-grundschutz") {
-    for (const control of controls.filter(
-      (item) =>
-        item.control.tier === "Basis-Anforderung" &&
-        item.status === "noEvidence",
-    )) {
-      const names = mappedCapabilitiesFor(control).map(capabilityName);
-      findings.push({
-        kind: "gap",
-        title: names.join(", ") || control.control.title,
-        description: `Kein technischer Nachweis für ${control.control.id}.`,
-        controlIds: [control.control.id],
-      });
-    }
   }
   for (const result of unassignedCompliant) {
     const ids = controlIdsByCapability.get(result.capability.id) ?? [];
     if (ids.length === 0) continue;
     findings.push({
       kind: "unassigned",
-      title: capabilityName(result),
-      description:
-        locale === "de"
-          ? `Konfigurierte Einstellung ohne Zuweisung für ${ids.join(", ")}.`
-          : `Configured setting without assignment affects ${ids.join(", ")}.`,
+      title: result.capability.name,
+      description: `Configured setting without assignment affects ${ids.join(", ")}.`,
       controlIds: ids,
     });
   }
   const prioritizedFindings = findings.slice(0, 5);
 
-  const frameworkNote =
-    locale === "de" && framework.framework.id === "bsi-it-grundschutz"
-      ? GERMAN_BSI_FRAMEWORK_NOTE
-      : framework.framework.note;
+  const frameworkNote = framework.framework.note;
   const coverageLabel = frameworkCoverageLabel(framework);
   const scopeTextWidth = contentWidth - 9 - 30;
   const scopeFor = (includeNote: boolean) => {
@@ -2863,7 +2138,6 @@ export async function generateComplianceReportPDF(
       ...(includeNote && frameworkNote
         ? [`${strings.notePrefix}${frameworkNote}`]
         : []),
-      ...(strings.summaryScope ? [strings.summaryScope] : []),
     ];
     const lines = paragraphs.map((paragraph) =>
       wrap(paragraph, scopeTextWidth, 7, "normal"),
@@ -3486,11 +2760,7 @@ export async function generateComplianceReportPDF(
         const { control } = row;
         const top = yPosition;
         const rowMiddle = top + row.height / 2;
-        if (rowIndex % 2 === 1) {
-          doc.setFillColor(...PALETTE.zebra);
-          doc.rect(margin, top, contentWidth, row.height, "F");
-        }
-        drawRule(doc, margin, top + row.height, right);
+        drawZebraRow(doc, frame, top, row.height, rowIndex);
         drawChip(doc, margin + 1.5, rowMiddle - 2.2, control.control.id, "id", {
           size: 6.6,
           minWidth: 9.6,
@@ -3513,7 +2783,7 @@ export async function generateComplianceReportPDF(
           true,
           widths[1] - 2,
         );
-        const capabilityTotal = control.capabilityIds.length;
+        const capabilityTotal = countedIds(control).length;
         const enforced = control.enforcedCapabilityIds.length;
         drawStackedBar(
           doc,
@@ -3593,15 +2863,18 @@ export async function generateComplianceReportPDF(
       });
     });
 
-    const noteLines = isExcerpt
-      ? wrap(
-          layout.excerptNote(
-            detailControls.map((item) => item.control.id).join(", "),
-          ),
-          contentWidth,
-          6.8,
-        )
-      : [];
+    const noteLines = [
+      ...(isExcerpt
+        ? wrap(
+            layout.excerptNote(
+              detailControls.map((item) => item.control.id).join(", "),
+            ),
+            contentWidth,
+            6.8,
+          )
+        : []),
+      ...outsideScopeLines.flatMap((line) => wrap(line, contentWidth, 6.8)),
+    ];
     const stripHeight = 10 + (noteLines.length ? noteLines.length * 3 + 3 : 0);
     if (yPosition + 8 + stripHeight > contentBottom) addContentPage();
     else yPosition += 8;
@@ -3704,10 +2977,9 @@ export async function generateComplianceReportPDF(
         addContentPage();
         drawHeader();
       }
-      if (rowIndex % 2 === 1) {
-        doc.setFillColor(...PALETTE.zebra);
-        doc.rect(margin, yPosition, contentWidth, row.height, "F");
-      }
+      drawZebraRow(doc, frame, yPosition, row.height, rowIndex, {
+        rule: false,
+      });
       row.cells.forEach((lines, index) => {
         setFont(doc, 7.4, index === 0 ? "bold" : "normal", textColor);
         lines.forEach((line, lineIndex) =>
@@ -3740,6 +3012,35 @@ export async function generateComplianceReportPDF(
     yPosition += 6;
   };
 
+  // ------------------------------------------- Measures outside Intune scope
+  // The same list as the management summary; a sample excerpt keeps only the
+  // counts in the summary and the results overview.
+  if (!isExcerpt && outsideMeasures.length > 0) {
+    const summaryStrings = MANAGEMENT_REPORT_STRINGS.en;
+    addContentPage();
+    drawPageTitle(
+      layout.outsideScopeEyebrow,
+      summaryStrings.outsideScopeHeading,
+      {
+        lead: [
+          summaryStrings.outsideScopeIntro,
+          ...(notEvaluatedCount > 0 ? [summaryStrings.notEvaluatedIntro] : []),
+        ].join(" "),
+      },
+    );
+    drawDataTable(
+      summaryStrings.outsideScopeHeaders,
+      outsideMeasures.map((measure) => ({
+        cells: [measure.id, measure.title.en],
+        note: measure.notEvaluated
+          ? summaryStrings.notEvaluatedNote
+          : layout.outsideScopeRowNote,
+      })),
+      [36, contentWidth - 36],
+      ["left", "left"],
+    );
+  }
+
   // ------------------------------------------------------ Data basis
   if (!isExcerpt) {
     addContentPage();
@@ -3747,7 +3048,7 @@ export async function generateComplianceReportPDF(
     {
       const innerWidth = contentWidth - 10;
       const timestampLines = wrap(
-        `${strings.generatedOn}: ${formatReportTimestamp(generatedAt, locale, fixedDate)}`,
+        `${strings.generatedOn}: ${generatedAt.toISOString()}`,
         innerWidth,
         8.6,
         "bold",
@@ -3798,13 +3099,21 @@ export async function generateComplianceReportPDF(
       "deviceConfigurations",
       "compliancePolicies",
     ] as const;
+    // The family of every item, so its collection errors are matched as the
+    // engine matches them (itemFetchErrors).
+    const familyOf = new Map<unknown, string>();
+    for (const { family, items } of collectionFamilies(data))
+      for (const item of items) familyOf.set(item, family);
     const countAssigned = (items: Array<Record<string, unknown>>): number =>
       items.filter(
         (item) =>
           summarizeAssignments(
             item.assignments,
             undefined,
-            (item.collectionStatus as any)?.assignments === "incomplete",
+            assignmentsIncomplete(
+              item,
+              itemFetchErrors(data.fetchErrors, item, familyOf.get(item)),
+            ),
           ).state === "assigned",
       ).length;
     const familyCounts = inventoryKeys.map((key) => familyItems(data, key));
@@ -3846,21 +3155,23 @@ export async function generateComplianceReportPDF(
     ensureSpace(40);
     drawSectionHeading(strings.collectionHeading);
     drawWrappedText(
-      locale === "de"
-        ? `Erhoben: ${assessment.provenance.collectedAt ?? "unbekannt"}; Regelwerk ${assessment.provenance.rulesetVersion}. Gerätezustand nicht erhoben; tatsächlicher Zugriff nicht geprüft.`
-        : `Collected: ${assessment.provenance.collectedAt ?? "unknown"}; ruleset ${assessment.provenance.rulesetVersion}. Device state not collected; effective access unverified.`,
+      `Collected: ${assessment.provenance.collectedAt ?? "unknown"}; ruleset ${assessment.provenance.rulesetVersion}. ${
+        assessment.provenance.policyStatusSummary === "collected"
+          ? "Per device state is not assessed; Intune status summaries per policy were collected as context only. Effective access unverified."
+          : "Device state not collected; effective access unverified."
+      }`,
       { fontSize: 8, lineHeight: 3.7, after: 1.5 },
     );
     drawWrappedText(
-      `${locale === "de" ? "Geltungsbereich" : "Scope"}: ${(assessment.scope.platforms ?? ["windows", "macos", "ios", "android"]).join(", ")}${options.frameworkId === "def-stan-05-138-i4" ? `; Cyber Risk Profile: ${assessment.scope.defStanRiskLevel ?? "all levels"}` : ""}.`,
+      `Scope: ${(assessment.scope.platforms ?? ["windows", "macos", "ios", "android"]).join(", ")}${options.frameworkId === "def-stan-05-138-i4" ? `; Cyber Risk Profile: ${assessment.scope.defStanRiskLevel ?? "all levels"}` : ""}.`,
       { fontSize: 8, lineHeight: 3.7, after: 2.5 },
     );
     for (const line of [
-      `${locale === "de" ? "Datenstand" : "Snapshot"} SHA-256: ${manifest.snapshotSha256}`,
-      `${locale === "de" ? "Regelwerk" : "Ruleset"} SHA-256: ${manifest.rulesetSha256}`,
+      `Snapshot SHA-256: ${manifest.snapshotSha256}`,
+      `Ruleset SHA-256: ${manifest.rulesetSha256}`,
       ...(framework.framework.source
         ? [
-            `${locale === "de" ? "Herausgeberquelle" : "Publisher reference"}: ${framework.framework.source.url}`,
+            `Publisher reference: ${framework.framework.source.url}`,
           ]
         : []),
     ]) {
@@ -3884,18 +3195,7 @@ export async function generateComplianceReportPDF(
             String(row.recognizedPolicies),
             String(row.unsupportedPolicies),
           ],
-          note: row.errors.length
-            ? row.errors
-                .map((message) =>
-                  locale === "de"
-                    ? message.replaceAll(
-                        "Settings Catalog",
-                        "Einstellungskatalog",
-                      )
-                    : message,
-                )
-                .join("; ")
-            : undefined,
+          note: row.errors.length ? row.errors.join("; ") : undefined,
         })),
         [68, 34, 26, 26, 26],
         ["left", "left", "right", "right", "right"],
@@ -3916,17 +3216,13 @@ export async function generateComplianceReportPDF(
           .slice(0, 12)
           .flatMap((error) =>
             wrap(
-              `${translateEvidenceValue(error.policyType, locale)}: ${truncate(error.error, 120)}${error.permissionHint ? ` (${error.permissionHint})` : ""}`,
+              `${error.policyType}: ${truncate(error.error, 120)}${error.permissionHint ? ` (${error.permissionHint})` : ""}`,
               innerWidth,
               7.3,
             ),
           ),
         ...(fetchErrors.length > 12
-          ? [
-              locale === "de"
-                ? `+${fetchErrors.length - 12} weitere Erhebungshinweise`
-                : `+${fetchErrors.length - 12} more collection notes`,
-            ]
+          ? [`+${fetchErrors.length - 12} more collection notes`]
           : []),
       ];
       const height = headingLines.length * 3.8 + detailLines.length * 3.4 + 10;
@@ -3976,8 +3272,18 @@ export async function generateComplianceReportPDF(
       }
     }
     for (const item of allPolicyItems(data)) {
+      // Every platform of a Settings Catalog policy, read as documented
+      // members (graph-rows.ts canonicalPlatforms); platforms of another
+      // shape name none, as in the configuration analysis.
+      if (item.platforms !== undefined && item.platforms !== null) {
+        for (const member of canonicalPlatforms(item.platforms)?.split(",") ??
+          []) {
+          const platform = platformFromValue(member);
+          if (platform) platforms.add(platform);
+        }
+        continue;
+      }
       const platform =
-        platformFromValue(item.platforms) ??
         platformFromValue(item.platformType) ??
         platformFromValue(item["@odata.type"]);
       if (platform) platforms.add(platform);
@@ -3986,19 +3292,9 @@ export async function generateComplianceReportPDF(
       (platform) => platforms.has(platform),
     );
     drawWrappedText(
-      `${strings.platformScope}: ${orderedPlatforms.length > 0 ? orderedPlatforms.join(", ") : locale === "de" ? "Keine Plattform erkannt" : "No platform detected"}`,
+      `${strings.platformScope}: ${orderedPlatforms.length > 0 ? orderedPlatforms.join(", ") : "No platform detected"}`,
       { fontSize: 8.4, style: "bold", after: 4 },
     );
-
-    if (options.frameworkId === "bsi-it-grundschutz") {
-      drawWrappedText(strings.manualNote, {
-        fontSize: 8,
-        style: "italic",
-        color: PALETTE.muted,
-        lineHeight: 3.7,
-        after: 4,
-      });
-    }
   }
 
   // ------------------------------------------------------ Control detail
@@ -4076,7 +3372,11 @@ export async function generateComplianceReportPDF(
     lastRowIndex: number;
   } => {
     const blocks: FlowBlock[] = [];
-    const statusLabel = strings.capabilityStatuses[result.status];
+    // An alternative in use or a setting that cannot be combined with
+    // Conditional Access is no gap: a neutral label replaces the status.
+    const statusLabel =
+      alternativeLabel(result) ??
+      strings.capabilityStatuses[result.status];
     const pillOptions = {
       tone: toneForCapabilityStatus(result.status),
       marker: markerForCapabilityStatus(result.status),
@@ -4089,7 +3389,7 @@ export async function generateComplianceReportPDF(
     const pillWidth = pillMetrics(doc, statusLabel, pillOptions).width;
     const platform = platformFromValue(result.capability.platform);
     const nameWidth = innerWidth - pillWidth - 4;
-    const nameLines = wrap(capabilityName(result), nameWidth, 9, "bold");
+    const nameLines = wrap(result.capability.name, nameWidth, 9, "bold");
     const platformFits =
       platform &&
       nameLines.length === 1 &&
@@ -4126,7 +3426,7 @@ export async function generateComplianceReportPDF(
 
     const caveat =
       result.evidence.length > 0
-        ? result.capability.caveat?.[locale]
+        ? result.capability.caveat?.en
         : undefined;
     if (caveat) {
       const lines = wrap(caveat, innerWidth, 7.2, "italic");
@@ -4226,11 +3526,7 @@ export async function generateComplianceReportPDF(
                 }),
               )),
           ...(check.policyName
-            ? wrap(
-                translateEvidenceValue(check.policyName, locale),
-                widths[0] - 3,
-                6.3,
-              ).map((text) => ({
+            ? wrap(check.policyName, widths[0] - 3, 6.3).map((text) => ({
                 text,
                 size: 6.3,
                 color: PALETTE.muted,
@@ -4319,17 +3615,7 @@ export async function generateComplianceReportPDF(
         ];
         const isLastCheck = checkIndex === result.checks.length - 1;
         const reasonLines = check.reason
-          ? wrap(
-              locale === "de"
-                ? check.reason.replaceAll(
-                    "Settings Catalog",
-                    "Einstellungskatalog",
-                  )
-                : check.reason,
-              innerWidth - 2,
-              6.6,
-              "italic",
-            )
+          ? wrap(check.reason, innerWidth - 2, 6.6, "italic")
           : [];
         // Very long values continue across pages in row chunks.
         const lineCount = Math.max(
@@ -4494,9 +3780,25 @@ export async function generateComplianceReportPDF(
         ref?: string;
       }
     >();
+    // Only a Graph id names one policy. Policies without one are told apart
+    // by name and assignment, so one is never shown with the assignment of
+    // another.
+    const policyKey = (
+      id: string | undefined,
+      name: string,
+      assignment: unknown,
+    ) =>
+      isIdentifier(id)
+        ? id
+        : `\u0000${name}\u0000${JSON.stringify(assignment ?? null)}`;
     for (const evidence of result.evidence) {
-      if (!policies.has(evidence.policyId || evidence.policyName))
-        policies.set(evidence.policyId || evidence.policyName, {
+      const key = policyKey(
+        evidence.policyId,
+        evidence.policyName,
+        evidence.assignment,
+      );
+      if (!policies.has(key))
+        policies.set(key, {
           name: evidence.policyName,
           assignment: evidence.assignment,
           ref: evidenceRegistryByKey.get(evidenceRegistryKey(evidence))?.ref,
@@ -4504,7 +3806,11 @@ export async function generateComplianceReportPDF(
     }
     for (const check of result.checks) {
       if (!check.policyName) continue;
-      const key = check.policyId || check.policyName;
+      const key = policyKey(
+        check.policyId,
+        check.policyName,
+        check.assignment,
+      );
       if (!policies.has(key))
         policies.set(key, {
           name: check.policyName,
@@ -4529,7 +3835,7 @@ export async function generateComplianceReportPDF(
       });
     }
     policyEntries.forEach((policy, index) => {
-      const name = translateEvidenceValue(policy.name, locale);
+      const name = policy.name;
       const chipLabel = policy.assignment
         ? assignmentLabel(policy.assignment)
         : layout.assignmentUnknown;
@@ -4662,12 +3968,7 @@ export async function generateComplianceReportPDF(
           .filter((note): note is string => Boolean(note)),
       );
       for (const note of notes) {
-        const lines = wrap(
-          translateEvidenceNote(note, locale),
-          innerWidth,
-          6.9,
-          "italic",
-        );
+        const lines = wrap(note, innerWidth, 6.9, "italic");
         for (const chunk of chunkLines(lines, maxBlockLines))
           blocks.push({
             height: chunk.length * 3 + 1.4,
@@ -4695,23 +3996,11 @@ export async function generateComplianceReportPDF(
         const assignment = assigned
           ? strings.assigned.toLowerCase()
           : evidence.assignment.state === "unknown"
-            ? locale === "de"
-              ? "Zuweisung unbekannt"
-              : "assignment unknown"
+            ? "assignment unknown"
             : strings.notAssigned.toLowerCase();
         const observed = labelledValue(evidence.observedValue);
-        const refPrefix =
-          locale === "de"
-            ? assigned
-              ? "Risiko"
-              : "Abweichung"
-            : assigned
-              ? "Risk"
-              : "Deviation";
-        const sentence =
-          locale === "de"
-            ? `${refPrefix} ${entry.ref}: ${evidence.policyName} setzt ${evidence.settingId} auf ${observed.label} (${assignment}).`
-            : `${refPrefix} ${entry.ref}: ${evidence.policyName} sets ${evidence.settingId} to ${observed.label} (${assignment}).`;
+        const refPrefix = assigned ? "Risk" : "Deviation";
+        const sentence = `${refPrefix} ${entry.ref}: ${evidence.policyName} sets ${evidence.settingId} to ${observed.label} (${assignment}).`;
         const lines = [
           ...wrapTechnicalId(sentence, innerWidth - 5, 7.2, "bold"),
           ...wrap(
@@ -4851,11 +4140,7 @@ export async function generateComplianceReportPDF(
       },
     ];
     control.unassessedAspects.forEach((aspect, index) => {
-      const lines = wrap(
-        locale === "de" ? translateAssessmentLimitation(aspect) : aspect,
-        innerWidth - 2,
-        7.4,
-      );
+      const lines = wrap(aspect, innerWidth - 2, 7.4);
       const isLast = index === control.unassessedAspects.length - 1;
       chunkLines(lines, maxBlockLines).forEach((chunk, chunkIndex, chunks) => {
         const lastChunk = chunkIndex === chunks.length - 1;
@@ -4875,48 +4160,6 @@ export async function generateComplianceReportPDF(
       addControlContinuationPage(control.control.id);
     flowCard(control.control.id, blocks, { dashed: true });
     yPosition += 4;
-  };
-
-  const drawManualAssessment = (controlId: string) => {
-    const blockHeight = 34;
-    if (yPosition + blockHeight > contentBottom) {
-      addControlContinuationPage(controlId);
-    }
-    const blockTop = yPosition;
-    drawCard(doc, margin, blockTop, contentWidth, blockHeight, {
-      fill: PALETTE.panel,
-      stroke: PALETTE.border,
-    });
-    setFont(doc, 8.4, "bold", primaryColor);
-    doc.text(strings.manualHeading, innerX + 1, blockTop + 6);
-
-    const statusY = blockTop + 13.5;
-    setFont(doc, 7.2, "bold", textColor);
-    doc.text(`${strings.manualStatus}:`, innerX + 1, statusY);
-    let checkboxX = margin + 44;
-    doc.setDrawColor(...PALETTE.muted);
-    doc.setLineWidth(0.3);
-    for (const status of strings.manualStatuses) {
-      doc.setFillColor(...PALETTE.white);
-      doc.roundedRect(checkboxX, statusY - 3.3, 3.8, 3.8, 0.6, 0.6, "FD");
-      setFont(doc, 7.2, "normal", textColor);
-      doc.text(status, checkboxX + 5.4, statusY);
-      checkboxX += 10 + doc.getTextWidth(status);
-    }
-
-    doc.setDrawColor(...PALETTE.muted);
-    doc.setLineWidth(0.25);
-    const ownerY = blockTop + 21.5;
-    setFont(doc, 7.2, "bold", textColor);
-    doc.text(`${strings.manualResponsible}:`, innerX + 1, ownerY);
-    doc.line(margin + 30, ownerY + 0.7, margin + 100, ownerY + 0.7);
-    doc.text(`${strings.manualDueDate}:`, margin + 106, ownerY);
-    doc.line(margin + 128, ownerY + 0.7, right - cardPad, ownerY + 0.7);
-
-    const commentY = blockTop + 28.5;
-    doc.text(`${strings.manualComment}:`, innerX + 1, commentY);
-    doc.line(margin + 30, commentY + 0.7, right - cardPad, commentY + 0.7);
-    yPosition += blockHeight + 4;
   };
 
   if (detailControls.length > 0) {
@@ -4943,11 +4186,7 @@ export async function generateComplianceReportPDF(
     const comparisonSummary =
       control.status === "notApplicable"
         ? strings.controlStatuses.notApplicable
-        : locale === "de"
-          ? controlChecks.length
-            ? `${controlChecks.filter((check) => check.result === "matches").length} Sollwert; ${controlChecks.filter((check) => check.result === "missing").length} fehlt; ${controlChecks.filter((check) => check.result === "different").length} abweichend; ${controlChecks.filter((check) => check.assessmentStatus === "unableToCheck").length} nicht prüfbar`
-            : "Nicht prüfbar"
-          : checkSummary(controlChecks);
+        : checkSummary(controlChecks);
     const mappedCapabilities = mappedCapabilitiesFor(control);
     const requirementText =
       options.frameworkId === "essential-eight"
@@ -5077,7 +4316,7 @@ export async function generateComplianceReportPDF(
     doc.line(sideX - 5, headerTop + 5, sideX - 5, headerTop + headerHeight - 5);
     const sideTop = headerTop + headerHeight / 2 - 8;
     const enforced = control.enforcedCapabilityIds.length;
-    const capabilityTotal = control.capabilityIds.length;
+    const capabilityTotal = countedIds(control).length;
     const meter = layout.ofCount(enforced, capabilityTotal);
     setFont(doc, 11, "bold", primaryColor);
     doc.text(meter, sideX, sideTop + 4);
@@ -5130,16 +4369,13 @@ export async function generateComplianceReportPDF(
 
     if (
       control.status === "noEvidence" &&
-      !controlChecks.some((check) => check.policyId)
+      // A policy check names its policy, also one without an id ("").
+      !controlChecks.some((check) => check.policyId !== undefined)
     ) {
       drawGapCallout(control, mappedCapabilities);
     }
 
     if (control.unassessedAspects.length > 0) drawUnassessedPanel(control);
-
-    if (options.frameworkId === "bsi-it-grundschutz" && control.control.tier) {
-      drawManualAssessment(control.control.id);
-    }
 
     yPosition += 6;
   }
@@ -5159,14 +4395,13 @@ export async function generateComplianceReportPDF(
   });
   {
     const order = [0, 1, 2, 3, 4, 5] as const;
-    // The type column grows to fit its longest word (German compounds such
-    // as "Gerätekonformitätsrichtlinie"), taking the space from the policy
-    // column, so a word never breaks mid-word.
+    // The type column grows to fit its longest word, taking the space from
+    // the policy column, so a word never breaks mid-word.
     const typeFont = 6.9;
     const longestTypeWord = Math.max(
       0,
       ...evidenceRegistry.flatMap(({ evidence }) =>
-        translateEvidenceValue(evidence.policyType, locale)
+        evidence.policyType
           .split(/\s+/)
           .map((word) => textWidth(doc, word, typeFont)),
       ),
@@ -5182,9 +4417,7 @@ export async function generateComplianceReportPDF(
 
     const buildRow = (entry: EvidenceRegistryEntry) => {
       const { evidence } = entry;
-      const targetLabels = assignmentDetails(evidence.assignment).map(
-        (target) => translateEvidenceValue(target, locale),
-      );
+      const targetLabels = assignmentDetails(evidence.assignment);
       const assignment =
         targetLabels.length > 0 ? targetLabels.join(", ") : strings.notAssigned;
       const longAssignment = assignment.length > 110;
@@ -5205,11 +4438,7 @@ export async function generateComplianceReportPDF(
       const cells = [
         [entry.ref],
         wrap(evidence.policyName, widths[1] - 3, 6.9),
-        wrap(
-          translateEvidenceValue(evidence.policyType, locale),
-          widths[2] - 3,
-          typeFont,
-        ),
+        wrap(evidence.policyType, widths[2] - 3, typeFont),
         registerName
           ? wrap(registerName, widths[3] - 3, 6.9)
           : wrapTechnicalId(evidence.settingId, widths[3] - 3, 6.9),
@@ -5334,17 +4563,16 @@ export async function generateComplianceReportPDF(
       yPosition += 6;
     };
     const drawHeader = () => {
-      order.forEach((headerIndex, index) => {
-        drawEyebrow(
-          doc,
-          strings.appendixHeaders[headerIndex],
-          (columnX[index] ?? margin) + 1.5,
-          yPosition + 3.2,
-          { color: PALETTE.muted, size: 5.6, charSpace: 0.2 },
-        );
-      });
-      drawRule(doc, margin, yPosition + 5.2, right, primaryColor, 0.4);
-      yPosition += headerHeight;
+      yPosition = drawTableHeader(
+        doc,
+        theme,
+        frame,
+        yPosition,
+        order.map((headerIndex, index) => ({
+          x: columnX[index] ?? margin,
+          lines: [strings.appendixHeaders[headerIndex]],
+        })),
+      );
     };
 
     const firstRow = rows[0];
@@ -5370,12 +4598,14 @@ export async function generateComplianceReportPDF(
       const unassignedCounter =
         evidence.verdict === "disabled" &&
         evidence.assignment.state === "notAssigned";
-      if (assignedCounter) doc.setFillColor(255, 239, 239);
-      else if (unassignedCounter) doc.setFillColor(255, 247, 230);
-      else if (rowIndex % 2 === 1) doc.setFillColor(...PALETTE.zebra);
-      else doc.setFillColor(...PALETTE.white);
-      doc.rect(margin, yPosition, contentWidth, row.height, "F");
-      drawRule(doc, margin, yPosition + row.height, right);
+      drawZebraRow(doc, frame, yPosition, row.height, rowIndex, {
+        solid: true,
+        fill: assignedCounter
+          ? [255, 239, 239]
+          : unassignedCounter
+            ? [255, 247, 230]
+            : undefined,
+      });
 
       row.cells.forEach((lines, index) => {
         const x = (columnX[index] ?? margin) + 1.5;
@@ -5435,6 +4665,111 @@ export async function generateComplianceReportPDF(
     after: 6,
   });
 
+  // ------------------------------------------------------ Device status annex
+  const deviceStatus = data.policyDeviceStatus;
+  const annexRows: DeviceStatusAnnexRow[] = hasPolicyDeviceStatus(deviceStatus)
+    ? deviceStatusAnnexRows(
+        evidenceRegistry.map((entry) => entry.evidence),
+        deviceStatus,
+      )
+    : [];
+  if (hasPolicyDeviceStatus(deviceStatus) && annexRows.length) {
+    const annex = DEVICE_STATUS_STRINGS;
+    // Shares the register's last page when more than half of it is free.
+    if (yPosition > contentTop + (contentBottom - contentTop) / 2)
+      addContentPage();
+    else if (yPosition > contentTop) yPosition += 6;
+    drawPageTitle(annex.eyebrow, annex.heading, { lead: annex.lead });
+    drawWrappedText(
+      [
+        annex.collected(deviceStatus.collectedAt),
+        ...(
+          Object.entries(deviceStatus.sources) as Array<
+            [PolicyStatusSource, TenantPolicyCollectionStatus]
+          >
+        ).map(
+          ([source, state]) =>
+            `${annex.sources[source]}: ${annex.sourceStates[state]}.`,
+        ),
+      ].join(" "),
+      { fontSize: 7.6, color: PALETTE.muted, after: 4 },
+    );
+    const widths = [58, 30, 18.4, 18.4, 18.4, 18.4, 18.4] as const;
+    const columnX = widths.map(
+      (_, index) =>
+        margin + widths.slice(0, index).reduce((sum, width) => sum + width, 0),
+    );
+    // Header words wrap within their column, so long labels such as "Not
+    // applicable" never run into the next column.
+    const headerColumns = annex.headers.map((header, index) => ({
+      x: columnX[index] ?? margin,
+      lines: tableHeaderLines(doc, header, widths[index] ?? 0),
+    }));
+    const drawAnnexHeader = () => {
+      yPosition = drawTableHeader(doc, theme, frame, yPosition, headerColumns);
+    };
+    drawAnnexHeader();
+    const value = (count: number | null) =>
+      count === null ? annex.notReported : String(count);
+    annexRows.forEach((row, rowIndex) => {
+      const nameLines = wrap(
+        row.policyName || row.policyId,
+        widths[0] - 3,
+        6.9,
+      );
+      const sourceLines = wrap(annex.sources[row.source], widths[1] - 3, 6.2);
+      const height =
+        Math.max(nameLines.length * 3, sourceLines.length * 2.8) + 3;
+      if (yPosition + height > contentBottom) {
+        addContentPage();
+        drawAnnexHeader();
+      }
+      drawZebraRow(doc, frame, yPosition, height, rowIndex, { solid: true });
+      const top = yPosition + 1.5;
+      drawLines(nameLines, margin + 1.5, top, 6.9, "normal", textColor, 3);
+      drawLines(
+        sourceLines,
+        (columnX[1] ?? margin) + 1.5,
+        top,
+        6.2,
+        "normal",
+        PALETTE.muted,
+        2.8,
+      );
+      if (row.state === "reported" && row.counts) {
+        [
+          row.counts.succeeded,
+          row.counts.error,
+          row.counts.conflict,
+          row.counts.notApplicable,
+          row.counts.pending,
+        ].forEach((count, index) =>
+          drawLines(
+            [value(count)],
+            (columnX[index + 2] ?? margin) + 1.5,
+            top,
+            6.9,
+            "bold",
+            textColor,
+            3,
+          ),
+        );
+      } else {
+        drawLines(
+          [row.state === "notCollected" ? annex.notCollected : annex.noStatus],
+          (columnX[2] ?? margin) + 1.5,
+          top,
+          6.9,
+          "italic",
+          PALETTE.muted,
+          3,
+        );
+      }
+      yPosition += height;
+    });
+    yPosition += 6;
+  }
+
   // ------------------------------------------------------ Methodology
   if (!methodologyDrawn) drawMethodology(layout.methodologyEyebrow, true);
   if (methodologyEntry) tocEntries.push(methodologyEntry);
@@ -5443,78 +4778,22 @@ export async function generateComplianceReportPDF(
   // ------------------------------------------------------ Contents
   let tocPageOffset = 0;
   if (!isExcerpt) {
-    const tocContinuationEntryY = contentTop + 14;
-    const drawTocHeading = (y: number) => {
-      setFont(doc, 20, "bold", primaryColor);
-      doc.text(strings.tocHeading, margin, y + capHeight(20) + 1);
-      drawRule(doc, margin, y + capHeight(20) + 4.5, right, primaryColor, 0.4);
-    };
-    const tocRows = tocEntries.map((entry, index) => {
-      const size = entry.level === 1 ? 7.3 : 8.4;
-      const style: FontStyle = entry.level === 1 ? "normal" : "bold";
-      const lines = wrap(
-        entry.title,
-        contentWidth - (entry.level === 1 ? 20 : 14),
-        size,
-        style,
-      );
-      const gapBefore = entry.level === 0 && index > 0 ? 2 : 0;
-      return {
-        entry,
-        lines,
-        size,
-        style,
-        gapBefore,
-        height:
-          gapBefore + lines.length * 3.6 + (entry.level === 0 ? 3.4 : 1.4),
-        pageOffset: 0,
-        y: 0,
-      };
-    });
-    let tocY = tocStartY + 14;
-    for (const row of tocRows) {
-      if (tocY + row.height > contentBottom && tocY > tocContinuationEntryY) {
-        tocPageOffset += 1;
-        tocY = tocContinuationEntryY;
-      }
-      row.pageOffset = tocPageOffset;
-      row.y = tocY;
-      tocY += row.height;
-    }
-
+    const { rows: tocRows, extraPages } = layoutToc(
+      doc,
+      frame,
+      tocEntries,
+      tocStartY,
+    );
+    tocPageOffset = extraPages;
     // Every recorded page moves back by the number of inserted contents pages.
     for (const entry of tocEntries) entry.page += tocPageOffset;
-    for (let offset = 1; offset <= tocPageOffset; offset += 1) {
-      doc.insertPage(tocPage + offset);
-    }
-
-    for (let offset = 0; offset <= tocPageOffset; offset += 1) {
-      // Leave the first page without a heading if no entry fits beneath it.
-      if (offset === 0 && (tocRows[0]?.pageOffset ?? 0) > 0) continue;
-      doc.setPage(tocPage + offset);
-      drawTocHeading(offset === 0 ? tocStartY : contentTop);
-    }
-    for (const row of tocRows) {
-      const { entry, lines, size, style, pageOffset, gapBefore } = row;
-      doc.setPage(tocPage + pageOffset);
-      const top = row.y + gapBefore;
-      const entryX = margin + (entry.level === 1 ? 6 : 0);
-      drawLines(lines, entryX, top + 0.6, size, style, textColor, 3.6);
-      setFont(
-        doc,
-        size,
-        "bold",
-        entry.level === 1 ? PALETTE.muted : primaryColor,
-      );
-      doc.text(String(entry.page), right, top + 0.6 + capHeight(size), {
-        align: "right",
-      });
-      if (entry.level === 0)
-        drawRule(doc, margin, top + lines.length * 3.6 + 1.6, right);
-      doc.link(margin, top - 0.6, contentWidth, row.height - gapBefore, {
-        pageNumber: entry.page,
-      });
-    }
+    drawToc(doc, theme, frame, {
+      heading: strings.tocHeading,
+      tocPage,
+      startY: tocStartY,
+      rows: tocRows,
+      extraPages,
+    });
   }
 
   // Page numbers that point at control detail pages.
@@ -5536,25 +4815,12 @@ export async function generateComplianceReportPDF(
 
   addPdfOutline(doc, buildComplianceReportOutline(tocEntries));
 
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let page = 2; page <= pageCount; page += 1) {
-    doc.setPage(page);
-    setFont(doc, 6.5, "bold", primaryColor);
-    doc.text(shortName, margin, 12.4, { charSpace: 0.15 });
-    if (tenantName) {
-      setFont(doc, 6.5, "normal", PALETTE.muted);
-      doc.text(clampLine(doc, tenantName, 90, 6.5), right, 12.4, {
-        align: "right",
-      });
-    }
-    drawRule(doc, margin, 14.6, right);
-    drawRule(doc, margin, pageHeight - 14.5, right);
-    setFont(doc, 6.5, "normal", PALETTE.muted);
-    doc.text(strings.footer, margin, pageHeight - 10.6);
-    doc.text(strings.pageNumber(page, pageCount), right, pageHeight - 10.6, {
-      align: "right",
-    });
-  }
+  drawRunningChrome(doc, theme, frame, {
+    title: shortName,
+    headerRight: tenantName,
+    footer: strings.footer,
+    pageLabel: strings.pageNumber,
+  });
 
   return new Uint8Array(doc.output("arraybuffer"));
 }

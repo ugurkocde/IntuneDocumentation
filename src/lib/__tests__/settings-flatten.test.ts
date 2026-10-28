@@ -25,6 +25,8 @@ describe("flattenItemSettings", () => {
       value: "Enabled",
       definitionId: "device_vendor_msft_bitlocker_requiredeviceencryption",
       path: [],
+      // History compares the option id, not its name.
+      token: "device_vendor_msft_bitlocker_requiredeviceencryption_1",
     });
   });
 
@@ -40,7 +42,7 @@ describe("flattenItemSettings", () => {
     expect(nested?.path[0]).toMatch(/^device_vendor_msft_bitlocker_/);
   });
 
-  it("numbers repeated groups and skips unconfigured values", () => {
+  it("numbers repeated groups and marks values Graph did not return readably", () => {
     const item = {
       settings: [
         {
@@ -52,23 +54,41 @@ describe("flattenItemSettings", () => {
               {
                 children: [
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId:
                       "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_name",
-                    simpleSettingValue: { value: "Allow RDP" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "Allow RDP",
+                    },
                   },
                 ],
               },
               {
                 children: [
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId:
                       "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_name",
-                    simpleSettingValue: { value: "Block SMB" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "Block SMB",
+                    },
                   },
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId:
                       "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_description",
-                    simpleSettingValue: { value: null },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: null,
+                    },
                   },
                 ],
               },
@@ -98,6 +118,14 @@ describe("flattenItemSettings", () => {
         name: "Name",
         value: "Block SMB",
         path: ["Firewall Rules 2"],
+      }),
+      // A string value of null is no value of its documented type.
+      expect.objectContaining({
+        definitionId:
+          "vendor_msft_firewall_mdmstore_firewallrules_{firewallrulename}_description",
+        value: "Value could not be read",
+        path: ["Firewall Rules 2"],
+        unreadable: true,
       }),
     ]);
   });
@@ -149,6 +177,9 @@ describe("flattenItemSettings", () => {
       {
         name: "EnableCloudRemediation",
         value: "Enabled",
+        // Compared with its type, never as the text "Enabled".
+        token: JSON.stringify(["omasettingboolean", true]),
+        typed: true,
         definitionId:
           "./Device/Vendor/MSFT/RemoteRemediation/CloudRemediationSettings/EnableCloudRemediation",
         path: [],
@@ -196,8 +227,24 @@ describe("flattenItemSettings", () => {
       {
         name: "Configure a policy",
         value: "Enabled: Policy value: Configured value",
+        // Compared by the presentation id, never its label, with the type
+        // of its value.
+        token: JSON.stringify([
+          true,
+          [
+            JSON.stringify([
+              "presentation-1",
+              "grouppolicypresentationvaluetext",
+              "Configured value",
+              null,
+            ]),
+          ],
+        ]),
+        typed: true,
         definitionId: "9c628cf0-6e74-4db6-9dcb-5b6e0e243d61",
         path: ["Windows Components", "BitLocker"],
+        // Named by its definition id; the category is display only.
+        identity: [],
         category: "\\Windows Components\\BitLocker",
       },
     ]);

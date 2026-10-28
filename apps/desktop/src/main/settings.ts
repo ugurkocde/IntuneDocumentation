@@ -1,7 +1,9 @@
 import { app } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { ScheduleHours } from "../shared/ipc-types";
 import { DEFAULT_TENANT } from "./config";
+import { isScheduleHours } from "./scheduler";
 
 export interface AppSettings {
   clientId: string;
@@ -12,7 +14,12 @@ export interface AppSettings {
   // On unless the user turns it off, including installs from before the
   // setting existed. Off means no background update requests.
   checkForUpdates: boolean;
+  // "Keep history on this computer". Off unless the user turns it on.
+  keepHistory: boolean;
+  // Scheduled collection interval in hours, 0 when off (the default).
+  scheduleHours: ScheduleHours;
 }
+
 
 function settingsPath(): string {
   return path.join(app.getPath("userData"), "settings.json");
@@ -30,6 +37,8 @@ function normalize(input: Partial<AppSettings>): AppSettings {
     tenantId,
     autoUpdate: input.autoUpdate === true,
     checkForUpdates: input.checkForUpdates !== false,
+    keepHistory: input.keepHistory === true,
+    scheduleHours: isScheduleHours(input.scheduleHours) ? input.scheduleHours : 0,
   };
 }
 

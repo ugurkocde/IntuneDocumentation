@@ -1,4 +1,9 @@
 import { DOMParser } from "@xmldom/xmldom";
+import {
+  documentedValue,
+  shownOmaValue,
+  unidentifiedOmaRow,
+} from "./graph-rows";
 import { canonicalOmaUri } from "./oma-uri";
 
 // Public CSP schema: https://learn.microsoft.com/windows/client-management/mdm/applocker-csp
@@ -7,8 +12,34 @@ const APPLOCKER_NODE =
   /^\.\/Vendor\/MSFT\/AppLocker\/ApplicationLaunchRestrictions\/([^/]+)\/(EXE|DLL|MSI|Script)\/(Policy|EnforcementMode)$/;
 const MODES = ["Enabled", "AuditOnly", "NotConfigured"];
 
+// Custom profile types of other platforms, which have no AppLocker CSP.
+const OTHER_PLATFORM = /^#?(microsoft\.graph\.)?(android|aosp|ios|macos)/i;
+
+// The value of a custom OMA-URI row, or null when it is encrypted or not
+// of the documented type of its row (graph-rows.ts). An omaSettingStringXml
+// value is Edm.Binary, the UTF-8 bytes of its XML, so it is read decoded
+// (shownOmaValue); the size and document type checks apply to the XML.
+const rowValue = (setting: any): any =>
+  !setting.isEncrypted && documentedValue(setting["@odata.type"], setting.value)
+    ? shownOmaValue(setting)
+    : null;
+
 export function inspectAppLocker(config: Record<string, any>) {
   if (!Array.isArray(config.omaSettings)) return;
+  // A row without its URI may be any AppLocker node, a rule collection or an
+  // enforcement mode override, so the rule collections of a Windows profile
+  // are unknown.
+  if (
+    config.omaSettings.some(unidentifiedOmaRow) &&
+    !OTHER_PLATFORM.test(String(config["@odata.type"] ?? ""))
+  )
+    return {
+      complete: false,
+      matches: false,
+      actual: "A custom OMA-URI row has no URI.",
+      reason:
+        "Graph returned a custom OMA-URI setting of this profile without its URI, so it may be an AppLocker node. Refresh policy details.",
+    };
   const nodes = config.omaSettings.flatMap((setting: any) => {
     const match = APPLOCKER_NODE.exec(canonicalOmaUri(setting?.omaUri) ?? "");
     return match
@@ -38,7 +69,7 @@ export function inspectAppLocker(config: Record<string, any>) {
     .map((item: any) => ({
       group: item.group,
       type: item.type,
-      mode: item.setting.isEncrypted ? null : item.setting.value,
+      mode: rowValue(item.setting),
     }));
   if (orphans.some((item: any) => !MODES.includes(item.mode)))
     return {
@@ -69,9 +100,8 @@ export function inspectAppLocker(config: Record<string, any>) {
     paths: string[];
   }> = [];
   for (const { setting, group, type } of candidates) {
-    const xml = setting.value;
+    const xml = rowValue(setting);
     if (
-      setting.isEncrypted ||
       typeof xml !== "string" ||
       xml.length > 1_000_000 ||
       /<!DOCTYPE|<!ENTITY/i.test(xml)
@@ -106,9 +136,7 @@ export function inspectAppLocker(config: Record<string, any>) {
       if (override.length > 1)
         throw new Error("Ambiguous enforcement override");
       const mode = override.length
-        ? override[0].isEncrypted
-          ? null
-          : override[0].value
+        ? rowValue(override[0])
         : (root.getAttribute("EnforcementMode") ?? "");
       if (!MODES.includes(mode)) throw new Error("Unknown enforcement mode");
       const rules = Array.from(root.childNodes).filter((node) =>

@@ -3,6 +3,7 @@ import type { DetailedExportData } from "../../../../../src/lib/configuration-an
 import { generateDetailedDOCX } from "../../../../../src/lib/docx-generator-detailed";
 import { generateDetailedPDF } from "../../../../../src/lib/pdf-generator-detailed";
 import { COMPACT_SCOPE_MAX_ITEMS } from "../../shared/export-scope";
+import { tenantLabelOf } from "../../shared/tenant-label";
 import type { Action, ExportFormat } from "../state/types";
 import { targetFileName, type ExportTarget } from "./export-targets";
 import { errorMessage, ipc } from "./ipc";
@@ -40,6 +41,8 @@ export async function runExport(
     format: ExportFormat;
     target: ExportTarget;
     returnFamilyKey?: string | null;
+    // The signed in tenant, shown on the document by its shortened id.
+    tenantId?: string | null;
   },
   onFinished: () => void,
 ): Promise<void> {
@@ -73,9 +76,11 @@ export async function runExport(
     unsubscribe();
     stage(dispatch, 3);
     await nextPaint();
+    const tenantLabel = tenantLabelOf(options.tenantId);
     const exportData: DetailedExportData = {
       ...(data as unknown as DetailedExportData),
       includeComplianceEvidence: false,
+      ...(tenantLabel ? { tenantLabel } : {}),
       ...(scoped
         ? {
             documentScope: {
@@ -86,10 +91,12 @@ export async function runExport(
           }
         : {}),
     };
+    // The desktop keeps every framework, NIS2 and DORA included, in the
+    // compliance preview.
     const result =
       format === "docx"
-        ? await generateDetailedDOCX(exportData)
-        : await generateDetailedPDF(exportData);
+        ? await generateDetailedDOCX(exportData, { audience: "desktop" })
+        : await generateDetailedPDF(exportData, { audience: "desktop" });
     stage(dispatch, 4);
     const saved = await ipc.saveFile(targetFileName(target, format), result.buffer);
     if (!saved) {

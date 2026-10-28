@@ -5,6 +5,8 @@ import {
 import { ESSENTIAL_EIGHT_CAPABILITIES } from "./essential-eight-capabilities";
 import { LEGACY_SIGNALS } from "./legacy-signals";
 import { ADDITIONAL_CAPABILITIES } from "./additional-capabilities";
+import { SESSION_LOCK_CAPABILITIES } from "./session-lock";
+import { TENANT_POLICY_CAPABILITIES } from "./tenant-policies";
 import type { ComplianceCapability } from "./types";
 
 // Every signal asserts a concrete Intune setting with the value that actually
@@ -698,6 +700,8 @@ const CORE_CAPABILITIES: readonly ComplianceCapability[] = [
   ...TECHNICAL_CAPABILITIES,
   ...ADDITIONAL_CAPABILITIES,
   ...ESSENTIAL_EIGHT_CAPABILITIES,
+  ...SESSION_LOCK_CAPABILITIES,
+  ...TENANT_POLICY_CAPABILITIES,
 ];
 
 export const COMPLIANCE_CAPABILITIES: readonly ComplianceCapability[] =

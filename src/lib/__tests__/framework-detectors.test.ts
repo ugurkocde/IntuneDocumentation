@@ -33,6 +33,8 @@ const vbaWarnings =
 const vbaChoice = `${vbaWarnings}_l_empty19`;
 function setting(id: string, suffix: string, children: any[] = []) {
   return {
+    "@odata.type":
+      "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
     settingDefinitionId: id,
     choiceSettingValue: { value: `${id}_${suffix}`, children },
   };
@@ -53,7 +55,6 @@ function result(instances: any[], assigned = true) {
 const matrix = [
   ["nist-800-53-r5", "CM-6"],
   ["nist-csf-2", "PR.PS-01"],
-  ["bsi-it-grundschutz", "SYS.2.1"],
   ["iso-27001-2022", "8.9"],
   ["soc2-tsc", "CC6.8"],
   ["def-stan-05-138-i4", "2418"],
@@ -62,6 +63,7 @@ const matrix = [
   ["nist-800-171-r3", "03.04.02"],
   ["essential-eight", "ML1-MAC-01"],
   ["nis2-2022-2555", "21.2.g"],
+  ["dora-2022-2554", "RTS 11(2)(b)"],
 ];
 describe("working detectors across every framework", () => {
   it.each(matrix)(
@@ -187,6 +189,7 @@ describe("working detectors across every framework", () => {
       definition: { id: "e92ea21b-8d97-4cc3-80c9-dd396c3d61e4" },
       presentationValues: [
         {
+          "@odata.type": "#microsoft.graph.groupPolicyPresentationValueText",
           presentation: { id: "e3040ad3-0f64-4b3b-8a39-20cca3793183" },
           value: "4",
         },
@@ -249,7 +252,8 @@ function ca(grants: Record<string, unknown>): Record<string, any> {
     state: "enabled",
     conditions: {
       users: { includeUsers: ["All"] },
-      applications: { includeApplications: ["All"] },
+      // Graph beta returns the exclusion list, empty when unset.
+      applications: { includeApplications: ["All"], excludeApplications: [] },
     },
     grantControls: { operator: "AND", ...grants },
   };
@@ -410,8 +414,16 @@ describe("additional verified policy detectors", () => {
     const parent =
       "device_vendor_msft_policy_config_admx_powershellexecutionpolicy_enablemodulelogging";
     const child = (value: string) => ({
+      "@odata.type":
+        "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance",
       settingDefinitionId: `${parent}_listbox_modulenames`,
-      simpleSettingCollectionValue: [{ value }],
+      simpleSettingCollectionValue: [
+        {
+          "@odata.type":
+            "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+          value,
+        },
+      ],
     });
     const status = (instances: any[]) =>
       result(instances).capabilities.find(

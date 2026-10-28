@@ -7,24 +7,91 @@ import {
 } from "./compliance/presentation";
 import jsPDF from "jspdf";
 import {
+  PALETTE,
+  TONES,
+  capHeight,
+  HEADER_LOGO_BOX,
+  clampLine,
+  dateParts,
+  drawCard,
+  drawDonut,
+  drawEyebrow,
+  drawKpiTile,
+  fitLogo,
+  drawLines,
+  drawMarker,
+  drawRule,
+  drawStackedBar,
+  fitFontSize,
+  pinPdfMetadata,
+  setFont,
+  wrapLines,
+  type FontStyle,
+  type MarkerKind,
+  type RgbColor,
+} from "./compliance/pdf-kit";
+import {
+  applyTheme,
+  brandingTheme,
+  drawCoverBackground,
+  drawCoverFooter,
+  drawCoverHeadline,
+  documentControlGridHeight,
+  drawCoverMasthead,
+  drawCoverTenantBlock,
+  drawDocumentControlGrid,
+  drawFooterNotice,
+  drawPageTitle,
+  drawRunningChrome,
+  drawSectionHeading,
+  drawTableHeader,
+  drawToc,
+  drawZebraRow,
+  layoutRunningFooter,
+  layoutToc,
+  pageFrame,
+} from "./compliance/pdf-chrome";
+import {
   extractSettingValue,
   parseDeviceConfiguration,
   parseAdministrativeTemplate,
   parseComplianceRules,
   parseSecurityBaseline,
   parseAssignments,
+  ASSIGNMENTS_NOT_APPLICABLE,
   formatValue,
+  isUnsetValue,
   parseDocumentableProperties,
   extractAppConfigurationSettings,
+  SETTINGS_UNAVAILABLE,
+  settingsUnavailable,
 } from "./configuration-parser";
+import {
+  assignable,
+  assignmentStatus,
+  itemFetchErrors,
+} from "./compliance/assignments";
 import {
   analyzeConfigurations,
   type DetailedExportData,
   type PolicyExportError,
   type ExportGenerationResult,
 } from "./configuration-analyzer";
-import { REDACTED_VALUE } from "./intune-policy-registry";
+import {
+  DOCUMENT_PRODUCT_LINE,
+  DOCUMENT_SOURCE_NOTE,
+  buildGlanceModel,
+  formatDocumentDate,
+  plural,
+  summaryNotes,
+} from "./documentation-glance";
+import {
+  ADDITIONAL_FAMILY_LABELS,
+  REDACTED_VALUE,
+} from "./intune-policy-registry";
 import { assessCompliance } from "./compliance";
+import { unlistedSources } from "./compliance/graph-rows";
+import { withoutDesktopOnlyFrameworks } from "./compliance/framework-availability";
 import {
   buildConditionalAccessReportRows,
   conditionalAccessStateLabel,
@@ -36,8 +103,39 @@ export type PdfGenerationResult = ExportGenerationResult;
 
 type DetailedPdfData = DetailedExportData;
 
+export interface DetailedPdfOptions {
+  /**
+   * "web" (the default) leaves desktop-only frameworks such as NIS2 and DORA
+   * out of the compliance evidence preview. The desktop app passes "desktop"
+   * to keep every framework.
+   */
+  audience?: "desktop" | "web";
+  /**
+   * Fixed render time. Replaces the current time for the generated date and
+   * the PDF metadata, so the same input always produces the same bytes.
+   */
+  renderDate?: Date;
+}
+
+const PRODUCT_NAME = "Intune Documentation";
+const DEFAULT_TAGLINE =
+  "Comprehensive export of Intune policies, profiles, and assignments";
+
+function controlStatusMarker(
+  status: keyof typeof CONTROL_STATUS_LABELS,
+): MarkerKind {
+  return status === "evidenceFound"
+    ? "filled"
+    : status === "partialEvidence"
+      ? "half"
+      : status === "conflictingEvidence" || status === "notAssessed"
+        ? "triangle"
+        : "outline";
+}
+
 export async function generateDetailedPDF(
   data: DetailedPdfData,
+  options: DetailedPdfOptions = {},
 ): Promise<PdfGenerationResult> {
   const doc = new jsPDF({
     orientation: "portrait",
@@ -45,467 +143,70 @@ export async function generateDetailedPDF(
     format: "a4",
     compress: true, // Enable compression for smaller file size
   });
-
-  let yPosition = 20;
-  const pageHeight = doc.internal.pageSize.height;
-  const pageWidth = doc.internal.pageSize.width;
-  const margin = 15;
-  const maxWidth = pageWidth - 2 * margin;
-  let pageNumber = 1;
+  const generatedAt = options.renderDate
+    ? new Date(options.renderDate.getTime())
+    : new Date();
+  // Fixed render dates read calendar fields in UTC so every time zone renders
+  // the same text.
+  const fixedDate = options.renderDate !== undefined;
+  if (fixedDate)
+    pinPdfMetadata(
+      doc,
+      generatedAt,
+      `documentation|${generatedAt.toISOString()}|${data.collectedAt ?? ""}`,
+    );
 
   // Error tracking for graceful degradation
   const exportErrors: PolicyExportError[] = [];
   let totalPolicies = 0;
   let successfulPolicies = 0;
 
-  // Analyze configurations for overview
-  const analytics = analyzeConfigurations(data);
+  // Analyze configurations for overview; the glance model reads the same
+  // analytics so every count matches the Word export.
+  const analytics = analyzeConfigurations(data, generatedAt);
+  const glance = buildGlanceModel(data, analytics);
 
   // Opt in: a scoped export titles the cover for its scope, and a compact
   // one leaves out the summary pages.
   const scope = data.documentScope;
   const compactScope = scope?.compact === true;
+  // The glance and the Executive Summary, as in the Word export.
+  const showAnalytics =
+    !compactScope &&
+    data.branding?.documentSettings?.includeAnalytics !== false;
 
-  // Extract branding options with defaults
+  // Branding colours over the evidence report palette, the branding font for
+  // every kit and chrome call, and the branding sizes for body text.
   const branding = data.branding;
-  const primaryColor = branding?.colors?.primary || "#003366";
-  const secondaryColor = branding?.colors?.secondary || "#0066CC";
-  const textColor = branding?.colors?.text || "#000000";
-
-  // Font settings with defaults
   const fontFamily = branding?.fonts?.family || "helvetica";
   const headerFontSize = branding?.fonts?.headerSize || 14;
   const bodyFontSize = branding?.fonts?.bodySize || 11;
+  const theme = brandingTheme(branding, fontFamily);
+  applyTheme(doc, theme);
+  const {
+    primary: primaryColor,
+    secondary: secondaryColor,
+    text: textColor,
+  } = theme;
+  const sectionTitleSize = Math.min(Math.max(headerFontSize + 6, 16), 26);
+  const policyNameSize = Math.max(bodyFontSize + 1, 12);
+  const metaFontSize = Math.max(bodyFontSize - 3, 8);
+  const tableFontSize = Math.max(bodyFontSize - 3, 8);
 
-  // Helper function to convert hex to RGB with proper null checking
-  const hexToRgb = (hex: string | undefined): [number, number, number] => {
-    if (!hex) return [0, 0, 0];
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result?.[1] && result[2] && result[3]
-      ? [
-          parseInt(result[1], 16),
-          parseInt(result[2], 16),
-          parseInt(result[3], 16),
-        ]
-      : [0, 0, 0];
-  };
+  const grid = pageFrame(doc, {
+    margin: 15,
+    contentTop: 21,
+    contentBottom: 276,
+  });
 
-  // Helper function to calculate header height on subsequent pages
-  const calculateHeaderHeight = (): number => {
-    // On first page (cover), use normal margin
-    if (pageNumber === 1) {
-      return margin;
-    }
-
-    // On subsequent pages, calculate space needed for header elements
-    let requiredSpace = margin; // Start with base margin (15mm)
-
-    // Check for header logo (positioned at y=5)
-    if (
-      branding?.logo?.position === "header" ||
-      branding?.header?.includeLogo
-    ) {
-      const logoHeight = Math.min(branding?.logo?.height || 15, 25);
-      const logoBottom = 5 + logoHeight; // Logo top + height
-      requiredSpace = Math.max(requiredSpace, logoBottom + 5); // 5mm spacing after logo
-    }
-
-    // Check for header text (positioned at y=10, centered)
-    if (branding?.header?.enabled && branding?.header?.text) {
-      const headerTextSize = 9; // Match the fixed size used in addPageNumber
-      const textHeight = headerTextSize * 0.6; // Text height in mm (rough estimate)
-      const textBottom = 10 + textHeight;
-      requiredSpace = Math.max(requiredSpace, textBottom + 3); // 3mm spacing after text
-    }
-
-    // Ensure minimum safe distance from top (30mm) to prevent any overlap
-    return Math.max(requiredSpace, 30);
-  };
-
-  // Helper functions
-  const checkPageBreak = (neededSpace = 30) => {
-    // Always leave at least 35mm for footer to prevent overlap
-    const minFooterSpace = 35;
-    const totalSpaceNeeded = Math.max(neededSpace, minFooterSpace);
-
-    if (yPosition > pageHeight - totalSpaceNeeded) {
-      doc.addPage();
-      pageNumber++;
-      addPageNumber();
-      // Set yPosition to account for header elements on new page
-      yPosition = calculateHeaderHeight();
-      return true;
-    }
-    return false;
-  };
-
-  const addPageNumber = () => {
-    // Add header logo if configured
-    if (
-      (branding?.logo?.position === "header" ||
-        branding?.header?.includeLogo) &&
-      pageNumber > 1
-    ) {
-      addLogo("header");
-    }
-
-    // Add header text if configured
-    if (branding?.header?.enabled && branding?.header?.text && pageNumber > 1) {
-      const headerTextSize = 9; // Fixed small size for header text
-      doc.setFontSize(headerTextSize);
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(100, 100, 100);
-      doc.text(branding.header.text, pageWidth / 2, 10, { align: "center" });
-      // Explicitly reset after rendering header text
-      doc.setFontSize(bodyFontSize);
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(0, 0, 0);
-    }
-
-    // Add footer logo if configured
-    if (
-      branding?.logo?.position === "footer" ||
-      branding?.footer?.includeLogo
-    ) {
-      addLogo("footer");
-    }
-
-    doc.setFontSize(Math.max(bodyFontSize - 2, 8));
-    doc.setFont(fontFamily, "normal");
-    doc.setTextColor(150, 150, 150);
-
-    // Add footer text if configured
-    if (branding?.footer?.enabled && branding?.footer?.text) {
-      doc.text(branding.footer.text, margin, pageHeight - 10);
-    }
-
-    // The "Page N" text is drawn in a final pass once the page order is final
-
-    // Add confidentiality notice if configured
-    if (branding?.footer?.enabled && branding?.footer?.confidentialityNotice) {
-      doc.setFontSize(Math.max(bodyFontSize - 3, 7));
-      doc.text(
-        branding.footer.confidentialityNotice,
-        pageWidth - margin,
-        pageHeight - 10,
-        { align: "right" },
-      );
-    }
-
-    doc.setTextColor(0, 0, 0);
-
-    // Add watermark to every page (text or logo), but skip page 1 (cover page)
-    if (pageNumber > 1) {
-      addWatermark();
-
-      // Add logo watermark if configured
-      if (branding?.logo?.position === "watermark") {
-        addLogo("watermark");
-      }
-    }
-
-    // Reset font to body defaults after all header/footer rendering
-    doc.setFontSize(bodyFontSize);
-    doc.setFont(fontFamily, "normal");
-    doc.setTextColor(0, 0, 0);
-  };
-
-  const addText = (
-    text: string,
-    fontSize = bodyFontSize,
-    style: "normal" | "bold" | "italic" = "normal",
-    color: [number, number, number] = [0, 0, 0],
-  ) => {
-    doc.setFontSize(fontSize);
-    doc.setFont(fontFamily, style);
-    doc.setTextColor(...color);
-
-    const lines = doc.splitTextToSize(text, maxWidth);
-
-    for (const line of lines) {
-      checkPageBreak();
-      // Re-apply font settings after potential page break (which resets fonts)
-      doc.setFontSize(fontSize);
-      doc.setFont(fontFamily, style);
-      doc.setTextColor(...color);
-      doc.text(line, margin, yPosition);
-      yPosition += fontSize * 0.45;
-    }
-    doc.setTextColor(0, 0, 0);
-  };
-
-  const addSectionHeader = (title: string) => {
-    checkPageBreak(20);
-    yPosition += 3;
-    doc.setFontSize(headerFontSize);
-    doc.setFont(fontFamily, "bold");
-    const [r, g, b] = hexToRgb(primaryColor);
-    doc.setTextColor(r, g, b);
-    doc.text(title, margin, yPosition);
-    yPosition += 8;
-
-    // Add underline with primary color
-    doc.setDrawColor(r, g, b);
-    doc.setLineWidth(0.5);
-    doc.line(margin, yPosition - 2, pageWidth - margin, yPosition - 2);
-    const [tr, tg, tb] = hexToRgb(textColor);
-    doc.setTextColor(tr, tg, tb);
-    yPosition += 3;
-  };
-
-  const addConfigHeader = (
-    name: string,
-    assignments: string,
-    createdDate?: string,
-    modifiedDate?: string,
-  ) => {
-    // Calculate space needed for wrapped name
-    const tempFontSize = Math.max(bodyFontSize + 1, 12);
-    doc.setFontSize(tempFontSize);
-    const nameLines = doc.splitTextToSize(name, maxWidth);
-    const nameHeight = nameLines.length * 6;
-    const totalNeeded = nameHeight + 20; // name + dates + spacing
-
-    checkPageBreak(totalNeeded);
-
-    // Bookmark the policy under the section that is currently being rendered
-    const currentSection = tocEntries[tocEntries.length - 1];
-    if (currentSection) {
-      (currentSection.children ??= []).push({
-        title: name,
-        pageNumber: doc.internal.getCurrentPageInfo().pageNumber,
-      });
-    }
-
-    // Configuration name with secondary color
-    doc.setFontSize(tempFontSize);
-    doc.setFont(fontFamily, "bold");
-    const [r, g, b] = hexToRgb(secondaryColor);
-    doc.setTextColor(r, g, b);
-
-    nameLines.forEach((line: string) => {
-      doc.text(line, margin, yPosition);
-      yPosition += 6;
-    });
-
-    // Reset to normal text color
-    const [tr, tg, tb] = hexToRgb(textColor);
-    doc.setTextColor(tr, tg, tb);
-
-    // Dates and assignments with smaller font
-    doc.setFontSize(Math.max(bodyFontSize - 2, 9));
-    doc.setFont(fontFamily, "normal");
-    doc.setTextColor(100, 100, 100);
-
-    // Show dates if available
-    if (createdDate || modifiedDate) {
-      if (createdDate) {
-        const created = new Date(createdDate).toLocaleDateString();
-        doc.text(`Created: ${created}`, margin, yPosition);
-        yPosition += 4;
-      }
-      if (modifiedDate) {
-        const modified = new Date(modifiedDate).toLocaleDateString();
-        doc.text(`Last Modified: ${modified}`, margin, yPosition);
-        yPosition += 4;
-      }
-    }
-
-    const assignmentLines = doc.splitTextToSize(
-      `Assigned to: ${assignments}`,
-      maxWidth,
-    );
-    for (const line of assignmentLines) {
-      checkPageBreak();
-      doc.setFontSize(Math.max(bodyFontSize - 2, 9));
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(100, 100, 100);
-      doc.text(line, margin, yPosition);
-      yPosition += 4;
-    }
-    yPosition += 2;
-
-    // Reset font and color to defaults
-    doc.setFontSize(bodyFontSize);
-    doc.setFont(fontFamily, "normal");
-    doc.setTextColor(0, 0, 0);
-  };
-
-  const addSettingsTable = (
-    settings: Array<{ name: string; value: string; description?: string }>,
-  ) => {
-    if (settings.length === 0) return;
-
-    // Adjusted column widths for better balance
-    const colWidths = [50, 65, 65]; // Name, Value, Description columns
-    const tableWidth = colWidths.reduce((a, b) => a + b, 0);
-
-    // Helper function to wrap long technical strings
-    const wrapTechnicalString = (str: string, maxWidth: number): string[] => {
-      // For technical strings like "defender_configuration_enableconvertwarntoblock_1"
-      // Break at underscores if the string is too long
-      if (typeof str === "string" && str.includes("_") && str.length > 40) {
-        const parts = str.split("_");
-        const lines: string[] = [];
-        let currentLine = "";
-
-        parts.forEach((part, idx) => {
-          const separator = idx > 0 ? "_" : "";
-          const testLine = currentLine + separator + part;
-          const testWidth = doc.getTextWidth(testLine);
-
-          if (testWidth > maxWidth && currentLine) {
-            lines.push(currentLine);
-            currentLine = part;
-          } else {
-            currentLine = testLine;
-          }
-        });
-
-        if (currentLine) lines.push(currentLine);
-        return lines;
-      }
-
-      // For regular text, use the standard split function
-      return doc.splitTextToSize(str, maxWidth);
-    };
-
-    // Helper to draw table header and advance Y
-    const drawHeader = () => {
-      // Ensure space for header
-      checkPageBreak(15);
-      doc.setFillColor(240, 240, 240);
-      doc.rect(margin, yPosition, tableWidth, 8, "F");
-      doc.setFontSize(Math.max(bodyFontSize - 1, 10));
-      doc.setFont(fontFamily, "bold");
-      doc.text("Setting", margin + 2, yPosition + 5);
-      doc.text("Value", margin + (colWidths[0] || 50) + 2, yPosition + 5);
-      doc.text(
-        "Description",
-        margin + (colWidths[0] || 50) + (colWidths[1] || 65) + 2,
-        yPosition + 5,
-      );
-      yPosition += 8;
-    };
-
-    // Initial header
-    drawHeader();
-
-    // Table rows
-    doc.setFont(fontFamily, "normal");
-    doc.setFontSize(Math.max(bodyFontSize - 3, 8));
-
-    settings.forEach((setting, index) => {
-      // Prepare text for all columns
-      const nameLines = doc.splitTextToSize(
-        setting.name,
-        (colWidths[0] || 50) - 4,
-      );
-      // Ensure valueText is always a string to avoid .includes() errors
-      const valueText =
-        setting.value != null ? String(setting.value) : "Not configured";
-
-      // Handle newlines in values (e.g., arrays formatted with \n)
-      let valueLines: string[] = [];
-      if (valueText.includes("\n")) {
-        // Split by newline and then wrap each line
-        const valueParts = valueText.split("\n");
-        valueParts.forEach((part) => {
-          const wrappedPart = wrapTechnicalString(
-            part,
-            (colWidths[1] || 65) - 4,
-          );
-          valueLines = valueLines.concat(wrappedPart);
-        });
-      } else {
-        valueLines = wrapTechnicalString(valueText, (colWidths[1] || 65) - 4);
-      }
-
-      const descLines = setting.description
-        ? doc.splitTextToSize(setting.description, (colWidths[2] || 65) - 4)
-        : [""];
-
-      // Calculate row height based on maximum lines needed
-      const maxLines = Math.max(
-        nameLines.length,
-        valueLines.length,
-        descLines.length,
-      );
-      const rowHeight = Math.max(8, maxLines * 4 + 4); // Dynamic height based on content
-
-      // Check for page break with actual row height; redraw header on new page
-      if (checkPageBreak(rowHeight + 5)) {
-        drawHeader();
-        // Reset font to normal after redrawing header
-        doc.setFont(fontFamily, "normal");
-        doc.setFontSize(8);
-      }
-
-      // Alternate row background
-      if (index % 2 === 0) {
-        doc.setFillColor(250, 250, 250);
-        doc.rect(margin, yPosition, tableWidth, rowHeight, "F");
-      }
-
-      // Draw cell borders
-      doc.setDrawColor(220, 220, 220);
-      doc.setLineWidth(0.1);
-      doc.line(
-        margin,
-        yPosition + rowHeight,
-        margin + tableWidth,
-        yPosition + rowHeight,
-      );
-
-      // Setting name (all lines)
-      let textY = yPosition + 4;
-      nameLines.forEach((line: string, lineIndex: number) => {
-        if (lineIndex < maxLines) {
-          doc.text(line, margin + 2, textY);
-          textY += 4;
-        }
-      });
-
-      // Value (all lines)
-      textY = yPosition + 4;
-      valueLines.forEach((line: string, lineIndex: number) => {
-        if (lineIndex < maxLines) {
-          doc.text(line, margin + (colWidths[0] || 50) + 2, textY);
-          textY += 4;
-        }
-      });
-
-      // Description (all lines)
-      if (setting.description) {
-        textY = yPosition + 4;
-        doc.setTextColor(80, 80, 80);
-        descLines.forEach((line: string, lineIndex: number) => {
-          if (lineIndex < maxLines) {
-            doc.text(
-              line,
-              margin + (colWidths[0] || 50) + (colWidths[1] || 65) + 2,
-              textY,
-            );
-            textY += 4;
-          }
-        });
-        doc.setTextColor(0, 0, 0);
-      }
-
-      yPosition += rowHeight;
-    });
-
-    yPosition += 5;
-  };
-
-  // Generate PDF content
+  const currentPage = () => doc.internal.getCurrentPageInfo().pageNumber;
 
   // Set PDF metadata with sensible fallbacks
   try {
     const metaTitle =
       branding?.metadata?.title ||
       (branding?.companyName
-        ? `${branding.companyName} - Intune Configuration Report`
+        ? `${branding.companyName}: Intune Configuration Report`
         : "Intune Configuration Report");
     const metaAuthor =
       branding?.metadata?.author ||
@@ -527,1053 +228,865 @@ export async function generateDetailedPDF(
     });
   } catch {}
 
-  // Helper function to add logo with proper sizing while preserving aspect ratio
-  // Returns the drawn logo height in mm when successful (for layout), otherwise null
-  const addLogo = (
-    position: "header" | "footer" | "cover" | "watermark",
-    x?: number,
-    y?: number,
-  ): number | null => {
-    // For header/footer, check if logo should appear there
-    // For cover, only show if position is 'cover'
-    // For watermark, show if position is 'watermark'
-    const shouldShowLogo =
-      branding?.logo?.dataUrl &&
-      (position === "cover"
-        ? branding?.logo?.position === "cover"
-        : position === "header"
-          ? branding?.logo?.position === "header"
-          : position === "footer"
-            ? branding?.logo?.position === "footer"
-            : position === "watermark"
-              ? branding?.logo?.position === "watermark"
-              : false);
-
-    if (shouldShowLogo && branding?.logo?.dataUrl) {
-      try {
-        const imgData = branding.logo.dataUrl;
-
-        // Detect and extract image format from data URL
-        let format: "PNG" | "JPEG" = "PNG"; // Default to PNG
-        let base64Data = imgData;
-
-        if (typeof imgData === "string") {
-          // Check if it's a data URL
-          if (imgData.startsWith("data:")) {
-            const regex = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i;
-            const matches = regex.exec(imgData);
-            if (matches) {
-              // Extract format from data URL
-              const detectedFormat = matches[1]?.toLowerCase();
-              if (detectedFormat === "jpeg" || detectedFormat === "jpg") {
-                format = "JPEG";
-              } else if (detectedFormat === "png") {
-                format = "PNG";
-              }
-              // Extract base64 data without the header
-              base64Data = matches[2] || imgData;
-            } else {
-              // If the data URL doesn't match expected format, try to use it as-is
-              // but remove the data URL prefix if present
-              const dataIndex = imgData.indexOf(",");
-              if (dataIndex > -1) {
-                base64Data = imgData.substring(dataIndex + 1);
-                // Try to detect format from the prefix
-                if (
-                  imgData.toLowerCase().includes("jpeg") ||
-                  imgData.toLowerCase().includes("jpg")
-                ) {
-                  format = "JPEG";
-                }
-              }
-            }
-          }
-          // If not a data URL, assume it's already base64
+  // The branding logo, normalised once. It appears where its position says:
+  // on the cover, in the running header or footer, or as a watermark.
+  const logoImage = (() => {
+    const imgData = branding?.logo?.dataUrl;
+    if (!imgData || typeof imgData !== "string") return null;
+    let format: "PNG" | "JPEG" = "PNG";
+    let base64Data = imgData;
+    if (imgData.startsWith("data:")) {
+      const matches = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i.exec(imgData);
+      if (matches) {
+        const detectedFormat = matches[1]?.toLowerCase();
+        format =
+          detectedFormat === "jpeg" || detectedFormat === "jpg"
+            ? "JPEG"
+            : "PNG";
+        base64Data = matches[2] || imgData;
+      } else {
+        // An unexpected data URL: keep the payload after the comma and guess
+        // the format from the prefix.
+        const dataIndex = imgData.indexOf(",");
+        if (dataIndex > -1) {
+          base64Data = imgData.substring(dataIndex + 1);
+          if (/jpe?g/i.test(imgData.slice(0, dataIndex))) format = "JPEG";
         }
-
-        // Reconstruct the data URL with proper format for jsPDF
-        const properDataUrl = `data:image/${format.toLowerCase()};base64,${base64Data}`;
-
-        // Inspect image to preserve aspect ratio
-        let props: any = { width: 100, height: 100 }; // Default aspect ratio 1:1
-        try {
-          if ((doc as any).getImageProperties) {
-            props = (doc as any).getImageProperties(properDataUrl);
-          }
-        } catch (propsError) {
-          console.warn(
-            "Could not get image properties, using default aspect ratio:",
-            propsError,
-          );
-        }
-
-        const naturalW = Math.max(Number(props.width) || 100, 1);
-        const naturalH = Math.max(Number(props.height) || 100, 1);
-        const aspect = naturalW / naturalH;
-
-        // Determine target height/width in mm based on position and optional branding sizes
-        let targetHeightMm: number;
-        let maxWidthMm: number;
-        if (position === "header" || position === "footer") {
-          // Default small height for header/footer; allow override via branding.logo.height
-          targetHeightMm = Math.min(branding?.logo?.height || 15, 25);
-          maxWidthMm = 60; // Constrain width to avoid overflow
-        } else if (position === "watermark") {
-          // Watermark: large, centered, semi-transparent
-          targetHeightMm = Math.min(branding?.logo?.height || 60, 100);
-          maxWidthMm = Math.min(pageWidth - 2 * margin, 120);
-        } else {
-          // Cover page default; allow override
-          targetHeightMm = Math.min(branding?.logo?.height || 35, 80);
-          maxWidthMm = Math.min(pageWidth - 2 * margin, 150);
-        }
-        // If width is specified but height is not, derive height from width
-        if (branding?.logo?.width && !branding?.logo?.height) {
-          const derivedHeight = branding.logo.width / aspect;
-          // Respect position-based caps
-          const maxHeight =
-            position === "header" || position === "footer"
-              ? 25
-              : position === "watermark"
-                ? 100
-                : 80;
-          targetHeightMm = Math.min(derivedHeight, maxHeight);
-        }
-
-        // Compute scaled dimensions preserving aspect ratio and respecting max width
-        let drawW = targetHeightMm * aspect;
-        let drawH = targetHeightMm;
-        if (drawW > maxWidthMm) {
-          const scale = maxWidthMm / drawW;
-          drawW = drawW * scale;
-          drawH = drawH * scale;
-        }
-
-        if (position === "cover") {
-          const xPos = x ?? pageWidth / 2 - drawW / 2;
-          const yPos = y ?? 20;
-          doc.addImage(
-            properDataUrl,
-            format,
-            xPos,
-            yPos,
-            drawW,
-            drawH,
-            undefined,
-            "FAST",
-          );
-          return drawH;
-        } else if (position === "header") {
-          // Right-aligned in header
-          const xPos = x ?? pageWidth - margin - drawW;
-          const yPos = y ?? 5;
-          doc.addImage(
-            properDataUrl,
-            format,
-            xPos,
-            yPos,
-            drawW,
-            drawH,
-            undefined,
-            "FAST",
-          );
-          return drawH;
-        } else if (position === "footer") {
-          const xPos = x ?? margin;
-          const yPos = y ?? pageHeight - 10 - drawH;
-          doc.addImage(
-            properDataUrl,
-            format,
-            xPos,
-            yPos,
-            drawW,
-            drawH,
-            undefined,
-            "FAST",
-          );
-          return drawH;
-        } else if (position === "watermark") {
-          // Center on page with reduced opacity
-          const xPos = x ?? pageWidth / 2 - drawW / 2;
-          const yPos = y ?? pageHeight / 2 - drawH / 2;
-          // Note: jsPDF doesn't support image opacity directly, but we can use the image itself
-          // The opacity setting in branding.logo.opacity is a suggestion for UI
-          doc.addImage(
-            properDataUrl,
-            format,
-            xPos,
-            yPos,
-            drawW,
-            drawH,
-            undefined,
-            "FAST",
-          );
-          return drawH;
-        }
-      } catch (err) {
-        console.error("Error adding logo:", err);
       }
     }
-    return null;
+    const dataUrl = `data:image/${format.toLowerCase()};base64,${base64Data}`;
+    let width = 100;
+    let height = 100;
+    try {
+      const properties = (doc as any).getImageProperties?.(dataUrl);
+      width = Math.max(Number(properties?.width) || 100, 1);
+      height = Math.max(Number(properties?.height) || 100, 1);
+    } catch (propsError) {
+      console.warn(
+        "Could not get image properties, using default aspect ratio:",
+        propsError,
+      );
+    }
+    return { dataUrl, format, aspect: width / height, size: { width, height } };
+  })();
+  const logoPosition = logoImage ? branding?.logo?.position : undefined;
+
+  // Logo size in mm from the branding size, kept within the given box.
+  const logoBox = (
+    defaultHeight: number,
+    maxHeight: number,
+    maxLogoWidth: number,
+  ) => {
+    if (!logoImage) return null;
+    let height = Math.min(branding?.logo?.height || defaultHeight, maxHeight);
+    if (branding?.logo?.width && !branding?.logo?.height)
+      height = Math.min(branding.logo.width / logoImage.aspect, maxHeight);
+    let width = height * logoImage.aspect;
+    if (width > maxLogoWidth) {
+      height = (height * maxLogoWidth) / width;
+      width = maxLogoWidth;
+    }
+    return { width, height };
   };
 
-  // Add watermark function
+  const drawLogo = (
+    x: number,
+    y: number,
+    box: { width: number; height: number },
+  ) => {
+    if (!logoImage) return;
+    try {
+      doc.addImage(
+        logoImage.dataUrl,
+        logoImage.format,
+        x,
+        y,
+        box.width,
+        box.height,
+        undefined,
+        "FAST",
+      );
+    } catch (err) {
+      console.error("Error adding logo:", err);
+    }
+  };
+
+  // A header logo sits right of the header note, in the same box as in the
+  // Word export; a footer logo sits left of the footer text.
+  const headerLogoSize =
+    logoImage &&
+    (logoPosition === "header" || branding?.header?.includeLogo === true)
+      ? fitLogo(branding?.logo ?? {}, logoImage.size, HEADER_LOGO_BOX)
+      : null;
+  const headerLogo = headerLogoSize
+    ? { width: headerLogoSize.widthMm, height: headerLogoSize.heightMm }
+    : null;
+  const footerLogo = logoPosition === "footer" ? logoBox(15, 5.5, 40) : null;
+  const footerInset = footerLogo ? footerLogo.width + 3 : 0;
+
+  // The footer text and the confidentiality notice wrap instead of being
+  // cut; the content stays above the notice.
+  const footerEnabled = branding?.footer?.enabled === true;
+  const footerLayout = layoutRunningFooter(doc, grid, {
+    text:
+      footerEnabled && branding?.footer?.text
+        ? branding.footer.text
+        : DOCUMENT_PRODUCT_LINE,
+    inset: footerInset,
+    notice: footerEnabled
+      ? branding?.footer?.confidentialityNotice || undefined
+      : undefined,
+  });
+  const frame = { ...grid, contentBottom: footerLayout.contentBottom };
+  const {
+    margin,
+    right,
+    contentWidth,
+    contentTop,
+    contentBottom,
+    pageWidth,
+    pageHeight,
+  } = frame;
+  const maxWidth = contentWidth;
+  let yPosition = contentTop;
+  // The policy whose content is being drawn, named on continuation pages.
+  let currentPolicy: string | undefined;
+
+  // Text and logo watermarks go on each content page as it is created, so
+  // the content draws over them.
   const addWatermark = () => {
     if (branding?.watermark?.enabled && branding?.watermark?.text) {
-      // Set watermark style
       const watermarkFontSize = branding.watermark.fontSize || 50;
-      doc.setFontSize(watermarkFontSize);
-      doc.setFont(fontFamily, "bold");
-
-      // Calculate opacity (jsPDF supports alpha via rgba, but setTextColor only takes RGB)
-      // We'll use light gray with opacity simulation via lighter color
+      // setTextColor takes no alpha, so a lighter grey stands in for opacity.
       const opacity = branding.watermark.opacity || 0.1;
-      const grayValue = Math.round(230 - (230 - 200) * (1 - opacity)); // Adjust gray based on opacity
-      doc.setTextColor(grayValue, grayValue, grayValue);
-
-      const watermarkText = branding.watermark.text;
-      const angle = branding.watermark.angle || -45;
-
-      // Calculate position for centered diagonal text
-      const xPos = pageWidth / 2;
-      const yPos = pageHeight / 2;
-
-      // Add rotated text - jsPDF DOES support text rotation!
-      doc.text(watermarkText, xPos, yPos, {
+      const grayValue = Math.round(230 - (230 - 200) * (1 - opacity));
+      setFont(doc, watermarkFontSize, "bold", [
+        grayValue,
+        grayValue,
+        grayValue,
+      ]);
+      doc.text(branding.watermark.text, pageWidth / 2, pageHeight / 2, {
         align: "center",
-        angle: angle,
+        angle: branding.watermark.angle || -45,
       });
-
-      // Restore to normal
-      doc.setTextColor(0, 0, 0);
+    }
+    if (logoPosition === "watermark") {
+      const box = logoBox(60, 100, Math.min(contentWidth, 120));
+      if (box)
+        drawLogo(
+          pageWidth / 2 - box.width / 2,
+          pageHeight / 2 - box.height / 2,
+          box,
+        );
     }
   };
 
-  // Professional Cover Page Design
-
-  // Don't add page number on cover
-  // addPageNumber();
-
-  // === TOP SECTION: Company/Department Text ===
-  const headerY = 20;
-  let titleStartY = 70;
-
-  // Show company/dept as small text in corners (if provided)
-  if (branding?.companyName || branding?.department) {
-    doc.setFontSize(Math.max(bodyFontSize - 1, 9));
-    doc.setFont(fontFamily, "normal");
-    doc.setTextColor(100, 100, 100);
-
-    if (branding?.companyName) {
-      doc.text(branding.companyName, margin, headerY);
-    }
-
-    if (branding?.department) {
-      doc.text(branding.department, pageWidth - margin, headerY, {
-        align: "right",
-      });
-    }
-  }
-
-  // === LOGO SECTION: Always show logo on title page if available ===
-  if (branding?.logo?.dataUrl) {
-    // Add logo centered above title, preserving aspect ratio
-    const logoY = 35;
-    const usedH = addLogo("cover", undefined, logoY);
-    if (usedH) {
-      titleStartY = logoY + usedH + 15; // Position title below logo
-    }
-  }
-
-  // === COMPLIANCE BADGE (if classification is set) ===
-  if (branding?.metadata?.classification) {
-    const badgeText =
-      branding.metadata.classification === "confidential"
-        ? "CONFIDENTIAL"
-        : branding.metadata.classification === "restricted"
-          ? "RESTRICTED"
-          : "AUDIT READY";
-
-    doc.setFontSize(Math.max(bodyFontSize - 2, 8));
-    doc.setFont(fontFamily, "bold");
-    const badgeColor: [number, number, number] =
-      branding.metadata.classification === "confidential" ||
-      branding.metadata.classification === "restricted"
-        ? [220, 38, 38]
-        : [34, 197, 94];
-    doc.setTextColor(badgeColor[0], badgeColor[1], badgeColor[2]);
-    doc.text(badgeText, pageWidth - margin, headerY + 10, { align: "right" });
-  }
-
-  // === TITLE SECTION: Document Title ===
-  let titleY = titleStartY;
-
-  // Main title - Microsoft Intune (largest, bold)
-  doc.setFontSize(Math.max(headerFontSize * 3, 36));
-  doc.setFont(fontFamily, "bold");
-  const [tr, tg, tb] = hexToRgb(primaryColor);
-  doc.setTextColor(tr, tg, tb);
-
-  if (scope?.title) {
-    // A configuration name can be long: a smaller size, wrapped to at most
-    // three lines.
-    const scopeTitleSize = Math.max(headerFontSize * 2, 26);
-    doc.setFontSize(scopeTitleSize);
-    const wrapped: string[] = doc.splitTextToSize(scope.title, maxWidth);
-    const titleLines = wrapped.slice(0, 3);
-    if (wrapped.length > 3) {
-      let last = titleLines[2] ?? "";
-      while (last && doc.getTextWidth(`${last}...`) > maxWidth) {
-        last = last.slice(0, -1);
-      }
-      titleLines[2] = `${last.trimEnd()}...`;
-    }
-    doc.text(titleLines, pageWidth / 2, titleY, { align: "center" });
-    titleY += 18 + (titleLines.length - 1) * scopeTitleSize * 0.45;
-  } else {
-    const coverTitle = branding?.coverPage?.title || "Microsoft Intune";
-    doc.text(coverTitle, pageWidth / 2, titleY, { align: "center" });
-    titleY += 18;
-  }
-
-  // Subtitle - Configuration Documentation (lighter gray for less emphasis)
-  doc.setFontSize(Math.max(headerFontSize * 1.4, 18));
-  doc.setFont(fontFamily, "normal");
-  doc.setTextColor(140, 140, 140); // Lighter gray instead of secondary color
-  doc.text("Configuration Documentation", pageWidth / 2, titleY, {
-    align: "center",
-  });
-  titleY += 15;
-
-  // Tagline - descriptive subtitle
-  doc.setFontSize(bodyFontSize + 1);
-  doc.setFont(fontFamily, "normal");
-  doc.setTextColor(120, 120, 120);
-  const tagline =
-    scope?.subtitle ||
-    branding?.coverPage?.subtitle ||
-    "Comprehensive export of Intune policies, profiles, and assignments";
-  if (scope?.subtitle) {
-    const taglineLines: string[] = doc
-      .splitTextToSize(tagline, maxWidth)
-      .slice(0, 2);
-    doc.text(taglineLines, pageWidth / 2, titleY, { align: "center" });
-    titleY += 40 + (taglineLines.length - 1) * 6;
-  } else {
-    doc.text(tagline, pageWidth / 2, titleY, { align: "center" });
-    titleY += 40;
-  }
-
-  // === METADATA SECTION: Centered Table ===
-  // Position the metadata box in the center of remaining space
-  // Calculate height based on number of fields
-  const hasContactInfo = branding?.contactEmail || branding?.website;
-  const baseHeight = 37;
-  const rowHeight = 8;
-  const extraRows =
-    (hasContactInfo ? 1 : 0) +
-    (branding?.contactEmail && branding?.website ? 1 : 0);
-  const metadataHeight = baseHeight + extraRows * rowHeight;
-  const metadataWidth = 140; // Narrower for centered look
-  const metadataX = (pageWidth - metadataWidth) / 2;
-  const metadataY = titleY + 20; // Position it higher, closer to title
-
-  // Metadata table background
-  doc.setFillColor(248, 250, 252);
-  doc.rect(metadataX, metadataY, metadataWidth, metadataHeight, "F");
-
-  // Table border
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.5);
-  doc.rect(metadataX, metadataY, metadataWidth, metadataHeight, "S");
-
-  // Table content
-  doc.setFontSize(10);
-  const tableX = metadataX + 10;
-  const labelX = tableX;
-  const valueX = tableX + 45; // Adjusted for narrower table
-  let tableY = metadataY + 8;
-  const tableRowHeight = 8;
-
-  // Helper function to add table row (labels bold, values normal)
-  const addTableRow = (label: string, value: string) => {
-    doc.setFont(fontFamily, "bold");
-    doc.setFontSize(bodyFontSize);
-    doc.setTextColor(60, 60, 60);
-    doc.text(label, labelX, tableY);
-
-    doc.setFont(fontFamily, "normal");
-    doc.setTextColor(80, 80, 80);
-    const maxWidth = metadataX + metadataWidth - valueX - 8;
-    const lines = doc.splitTextToSize(value || "", maxWidth);
-    // Print first line at current Y aligned to valueX
-    doc.text(lines[0] || "", valueX, tableY);
-    // Additional lines below
-    for (let i = 1; i < lines.length; i++) {
-      tableY += tableRowHeight;
-      doc.text(lines[i], valueX, tableY);
-    }
-
-    tableY += tableRowHeight;
+  const drawContinuationCaption = () => {
+    if (!currentPolicy) return;
+    setFont(doc, 7.2, "italic", PALETTE.muted);
+    doc.text(
+      clampLine(
+        doc,
+        `${currentPolicy} (continued)`,
+        contentWidth,
+        7.2,
+        "italic",
+      ),
+      margin,
+      yPosition + 2.6,
+    );
+    yPosition += 6;
   };
 
-  // Company/Department row
-  if (branding?.companyName || branding?.department) {
-    const orgInfo = [branding?.companyName, branding?.department]
-      .filter(Boolean)
-      .join(" / ");
-    addTableRow("Organization:", orgInfo);
-  }
+  const addContentPage = () => {
+    doc.addPage();
+    addWatermark();
+    yPosition = contentTop;
+    drawContinuationCaption();
+  };
 
-  // Prepared by row
-  const preparedBy =
-    branding?.metadata?.author ||
-    branding?.coverPage?.author ||
-    "Intune Documentation Tool";
-  addTableRow("Prepared by:", preparedBy);
+  /** Starts a new page when the next block of this height does not fit. */
+  const ensureSpace = (height: number): boolean => {
+    if (yPosition + height <= contentBottom) return false;
+    addContentPage();
+    return true;
+  };
 
-  // Contact Email row (if provided)
-  if (branding?.contactEmail) {
-    addTableRow("Contact:", branding.contactEmail);
-  }
+  const addText = (
+    text: string,
+    fontSize = bodyFontSize,
+    style: FontStyle = "normal",
+    color: RgbColor = textColor,
+    x = margin,
+  ) => {
+    setFont(doc, fontSize, style);
+    const lines: string[] = doc.splitTextToSize(text, maxWidth - (x - margin));
+    const lineHeight = fontSize * 0.45;
+    for (const line of lines) {
+      ensureSpace(lineHeight);
+      setFont(doc, fontSize, style, color);
+      doc.text(line, x, yPosition + capHeight(fontSize));
+      yPosition += lineHeight;
+    }
+  };
 
-  // Website row (if provided)
-  if (branding?.website) {
-    addTableRow("Website:", branding.website);
-  }
+  /** A bold heading kept on the page with the start of what follows it. */
+  const addSubheading = (text: string, fontSize = 9.5) => {
+    ensureSpace(fontSize * 0.45 + 16);
+    addText(text, fontSize, "bold", primaryColor);
+    yPosition += 1.5;
+  };
 
-  // Generated on row - Simplified format: "31 Aug 2025 · 15:43"
-  const dateTime = new Date();
-  const monthNames = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  const day = dateTime.getDate();
-  const month = monthNames[dateTime.getMonth()];
-  const year = dateTime.getFullYear();
-  const hours = dateTime.getHours().toString().padStart(2, "0");
-  const minutes = dateTime.getMinutes().toString().padStart(2, "0");
-  const formattedDateTime = `${day} ${month} ${year} · ${hours}:${minutes}`;
-  addTableRow("Generated:", formattedDateTime);
+  // Monospaced script source, line by line across pages.
+  const addCode = (text: string) => {
+    doc.setFont("courier", "normal");
+    doc.setFontSize(8);
+    const lines: string[] = doc.splitTextToSize(text, maxWidth - 10);
+    for (const line of lines) {
+      ensureSpace(4);
+      doc.setFont("courier", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...PALETTE.ink);
+      doc.text(line, margin + 5, yPosition + capHeight(8));
+      yPosition += 4;
+    }
+    yPosition += 3;
+  };
 
-  // Version row (using date as version)
-  const version = `v${year}.${(dateTime.getMonth() + 1).toString().padStart(2, "0")}.${day.toString().padStart(2, "0")}`;
-  addTableRow("Version:", version);
-
-  // Classification row if provided
-  if (branding?.metadata?.classification) {
-    doc.setFont(fontFamily, "bold");
-    const classColor: [number, number, number] =
-      branding.metadata.classification === "confidential" ||
-      branding.metadata.classification === "restricted"
-        ? [220, 38, 38]
-        : [80, 80, 80];
-    doc.setTextColor(classColor[0], classColor[1], classColor[2]);
-    doc.text("Classification:", labelX, tableY);
-    doc.text(branding.metadata.classification.toUpperCase(), valueX, tableY);
-  }
-
-  // Page number at the very bottom
-  doc.setFontSize(9);
-  doc.setTextColor(150, 150, 150);
-  doc.text("Page 1", pageWidth / 2, pageHeight - 10, { align: "center" });
-
-  // === TABLE OF CONTENTS ===
-  // Track sections and their page numbers for ToC
+  // Track sections and their page numbers for the contents and bookmarks.
   const tocEntries: {
     title: string;
     pageNum: number;
     children?: PdfOutlineEntry[];
   }[] = [];
 
+  /**
+   * Opens a section on a new page: eyebrow, searchable title and a primary
+   * rule. toc is the contents and bookmark title when it differs.
+   */
+  const startSection = (section: {
+    title: string;
+    eyebrow: string;
+    toc?: string;
+    lead?: string;
+  }) => {
+    currentPolicy = undefined;
+    addContentPage();
+    tocEntries.push({
+      title: section.toc ?? section.title,
+      pageNum: currentPage(),
+    });
+    yPosition = drawPageTitle(doc, theme, frame, yPosition, {
+      eyebrow: section.eyebrow,
+      title: section.title,
+      lead: section.lead,
+      size: sectionTitleSize,
+    });
+    drawRule(doc, margin, yPosition - 2, right, primaryColor, 0.4);
+    yPosition += 3.5;
+  };
+
+  const addConfigHeader = (
+    name: string,
+    assignments: string,
+    createdDate?: string,
+    modifiedDate?: string,
+  ) => {
+    // A break before the header is not a continuation of the previous policy.
+    currentPolicy = undefined;
+    setFont(doc, policyNameSize, "bold");
+    const nameLines: string[] = doc.splitTextToSize(name, maxWidth);
+    const nameLineHeight = policyNameSize * 0.45;
+    setFont(doc, metaFontSize, "normal");
+    const assignmentLines: string[] = doc.splitTextToSize(
+      `Assigned to: ${assignments}`,
+      maxWidth,
+    );
+    const metaLineHeight = metaFontSize * 0.45;
+    const created = formatDocumentDate(createdDate, fixedDate);
+    const modified = formatDocumentDate(modifiedDate, fixedDate);
+    const dates = [
+      created ? `Created: ${created}` : undefined,
+      modified ? `Last Modified: ${modified}` : undefined,
+    ].filter((part): part is string => Boolean(part));
+    const headerHeight =
+      3 +
+      nameLines.length * nameLineHeight +
+      (dates.length ? metaLineHeight : 0) +
+      Math.min(assignmentLines.length, 4) * metaLineHeight +
+      4;
+    // Keep the header with the start of its content.
+    ensureSpace(Math.min(headerHeight + 16, contentBottom - contentTop));
+
+    // Bookmark the policy under the section that is currently being rendered
+    const currentSection = tocEntries[tocEntries.length - 1];
+    if (currentSection) {
+      (currentSection.children ??= []).push({
+        title: name,
+        pageNumber: currentPage(),
+      });
+    }
+
+    yPosition += 2;
+    for (const line of nameLines) {
+      setFont(doc, policyNameSize, "bold", secondaryColor);
+      doc.text(line, margin, yPosition + capHeight(policyNameSize));
+      yPosition += nameLineHeight;
+    }
+    yPosition += 1;
+    if (dates.length) {
+      setFont(doc, metaFontSize, "normal", PALETTE.muted);
+      doc.text(
+        dates.join("     "),
+        margin,
+        yPosition + capHeight(metaFontSize),
+      );
+      yPosition += metaLineHeight;
+    }
+    for (const line of assignmentLines) {
+      ensureSpace(metaLineHeight);
+      setFont(doc, metaFontSize, "normal", PALETTE.muted);
+      doc.text(line, margin, yPosition + capHeight(metaFontSize));
+      yPosition += metaLineHeight;
+    }
+    yPosition += 1;
+    drawRule(doc, margin, yPosition, right);
+    yPosition += 3;
+    currentPolicy = name;
+  };
+
+  const addSettingsTable = (
+    settings: Array<{ name: string; value: string; description?: string }>,
+  ) => {
+    if (settings.length === 0) return;
+
+    // Name, value and description columns
+    const colWidths = [50, 65, 65];
+    const columnX = [margin, margin + 50, margin + 115];
+    const lineHeight = tableFontSize * 0.45;
+    const padding = 1.6;
+
+    // Helper function to wrap long technical strings
+    const wrapTechnicalString = (str: string, width: number): string[] => {
+      // For technical strings like "defender_configuration_enableconvertwarntoblock_1"
+      // Break at underscores if the string is too long
+      if (typeof str === "string" && str.includes("_") && str.length > 40) {
+        const parts = str.split("_");
+        const lines: string[] = [];
+        let currentLine = "";
+
+        parts.forEach((part, idx) => {
+          const separator = idx > 0 ? "_" : "";
+          const testLine = currentLine + separator + part;
+          const testWidth = doc.getTextWidth(testLine);
+
+          if (testWidth > width && currentLine) {
+            lines.push(currentLine);
+            currentLine = part;
+          } else {
+            currentLine = testLine;
+          }
+        });
+
+        if (currentLine) lines.push(currentLine);
+        return lines;
+      }
+
+      // For regular text, use the standard split function
+      return doc.splitTextToSize(str, width);
+    };
+
+    const drawHeader = () => {
+      yPosition =
+        drawTableHeader(doc, theme, frame, yPosition, [
+          { x: columnX[0]!, lines: ["Setting"] },
+          { x: columnX[1]!, lines: ["Value"] },
+          { x: columnX[2]!, lines: ["Description"] },
+        ]) + 0.4;
+    };
+
+    // The header and the first row stay together.
+    ensureSpace(6 + lineHeight + padding * 2);
+    drawHeader();
+
+    // Lines that fit a page below the continuation caption and the header.
+    const pageLines = Math.floor(
+      (contentBottom - contentTop - 12 - padding * 2) / lineHeight,
+    );
+
+    settings.forEach((setting, rowIndex) => {
+      setFont(doc, tableFontSize, "normal");
+      const nameLines: string[] = doc.splitTextToSize(
+        setting.name,
+        (colWidths[0] || 50) - 3,
+      );
+      // Ensure valueText is always a string to avoid .includes() errors
+      const valueText =
+        setting.value != null ? String(setting.value) : "Not configured";
+
+      // Handle newlines in values (e.g., arrays formatted with \n)
+      const valueLines = valueText
+        .split("\n")
+        .flatMap((part) => wrapTechnicalString(part, (colWidths[1] || 65) - 3));
+
+      const descLines: string[] = setting.description
+        ? doc.splitTextToSize(setting.description, (colWidths[2] || 65) - 3)
+        : [];
+      const columns: Array<{ lines: string[]; color: RgbColor }> = [
+        { lines: nameLines, color: textColor },
+        { lines: valueLines, color: textColor },
+        { lines: descLines, color: PALETTE.muted },
+      ];
+      const lineCount = Math.max(
+        nameLines.length,
+        valueLines.length,
+        descLines.length,
+        1,
+      );
+
+      // A row moves to the next page whole; only a row taller than a page
+      // is split, and its header is repeated on every page.
+      let start = 0;
+      let freshPage = false;
+      while (start < lineCount) {
+        const remaining = lineCount - start;
+        const available = Math.floor(
+          (contentBottom - yPosition - padding * 2) / lineHeight,
+        );
+        let take = remaining;
+        if (remaining > available) {
+          if (!freshPage && (remaining <= pageLines || available < 3)) {
+            addContentPage();
+            drawHeader();
+            freshPage = true;
+            continue;
+          }
+          take = Math.max(available, 1);
+        }
+        const rowHeight = take * lineHeight + padding * 2;
+        drawZebraRow(doc, frame, yPosition, rowHeight, rowIndex);
+        columns.forEach(({ lines, color }, columnIndex) => {
+          const slice = lines.slice(start, start + take);
+          if (slice.length === 0) return;
+          drawLines(
+            doc,
+            slice,
+            (columnX[columnIndex] ?? margin) + 1.5,
+            yPosition + padding,
+            tableFontSize,
+            "normal",
+            color,
+            lineHeight,
+          );
+        });
+        yPosition += rowHeight;
+        start += take;
+        freshPage = false;
+      }
+    });
+
+    yPosition += 4;
+  };
+
+  // ------------------------------------------------------------------ Cover
+  const classificationLabel = branding?.metadata?.classification
+    ? branding.metadata.classification.charAt(0).toUpperCase() +
+      branding.metadata.classification.slice(1)
+    : undefined;
+  const generatedText = formatDocumentDate(generatedAt, fixedDate) ?? "";
+  // Only a real collection time is shown; the export time is not one.
+  const collectedText = formatDocumentDate(data.collectedAt, fixedDate);
+  const { year, month, day } = dateParts(generatedAt, fixedDate);
+  const version = `v${year}.${month}.${day}`;
+
+  drawCoverBackground(doc, theme, frame, {
+    ringFraction: showAnalytics ? (glance.assignedShare ?? 0) : 0,
+  });
+  const coverLogo = logoPosition === "cover" ? logoImage : null;
+  drawCoverMasthead(doc, theme, frame, {
+    productName: PRODUCT_NAME,
+    keepLogoRatio: true,
+    ...(coverLogo
+      ? {
+          logo: {
+            dataUrl: coverLogo.dataUrl,
+            ...(branding?.logo?.width ? { width: branding.logo.width } : {}),
+            ...(branding?.logo?.height ? { height: branding.logo.height } : {}),
+          },
+        }
+      : {}),
+    companyName: branding?.companyName,
+  });
+
+  // A configuration name can be long: up to three title lines, which leaves
+  // no room for the description line.
+  const coverTitle =
+    scope?.title || branding?.coverPage?.title || "Microsoft Intune";
+  const titleMaxLines = scope?.title ? 3 : 2;
+  const coverTitleSize = fitFontSize(doc, coverTitle, contentWidth, 36, 24);
+  const coverTitleLines = wrapLines(
+    doc,
+    coverTitle,
+    contentWidth,
+    coverTitleSize,
+    "bold",
+    titleMaxLines,
+  ).length;
+  const coverLead = scope?.subtitle
+    ? "Configuration Documentation"
+    : branding?.coverPage?.subtitle || DEFAULT_TAGLINE;
+  drawCoverHeadline(doc, theme, frame, {
+    eyebrow: "Intune Configuration Export",
+    title: coverTitle,
+    titleMaxLines,
+    subtitle: scope?.subtitle || "Configuration Documentation",
+    lead: coverTitleLines > 2 ? "" : coverLead,
+  });
+  drawCoverTenantBlock(doc, theme, frame, {
+    tenantEyebrow: "Tenant",
+    tenant: data.tenantLabel,
+    facts: [
+      ...(collectedText ? [["Data collected", collectedText] as const] : []),
+      ["Generated", generatedText] as const,
+      ...(classificationLabel
+        ? [["Classification", classificationLabel] as const]
+        : []),
+    ],
+  });
+
+  // At a glance, for the full export only.
+  const collectionLine = (() => {
+    const { collection } = glance;
+    if (!collection.hasWarnings)
+      return "Collection: no collection warnings recorded.";
+    const parts = [
+      collection.partial
+        ? `${plural(collection.partial, "resource", "resources")} partially collected`
+        : undefined,
+      collection.unavailable
+        ? `${plural(collection.unavailable, "resource", "resources")} unavailable`
+        : undefined,
+      collection.skippedFamilies.length
+        ? `${plural(collection.skippedFamilies.length, "policy family", "policy families")} left out of the collection`
+        : undefined,
+    ].filter(Boolean);
+    return `Collection: ${parts.join(", ")}.`;
+  })();
+
+  if (showAnalytics) {
+    const midTop = 142;
+    const cardWidth = 62;
+    const cardHeight = 66;
+    drawCard(doc, margin, midTop, cardWidth, cardHeight, {
+      fill: PALETTE.panel,
+    });
+    const donutX = margin + cardWidth / 2;
+    const donutY = midTop + 25;
+    drawDonut(
+      doc,
+      donutX,
+      donutY,
+      17,
+      4.4,
+      [{ value: glance.assigned, color: secondaryColor }],
+      Math.max(glance.assignmentApplicable, 1),
+    );
+    setFont(doc, 22, "bold", primaryColor);
+    doc.text(
+      glance.assignedShare === null
+        ? "n/a"
+        : `${Math.round(glance.assignedShare * 100)}%`,
+      donutX,
+      donutY + 2.2,
+      { align: "center" },
+    );
+    setFont(doc, 6.6, "normal", PALETTE.muted);
+    doc.text(
+      `${glance.assigned} of ${glance.assignmentApplicable} assignable`,
+      donutX,
+      donutY + 6.6,
+      { align: "center" },
+    );
+    setFont(doc, 8.3, "bold", textColor);
+    doc.text("Assigned configurations", donutX, midTop + 52, {
+      align: "center",
+    });
+    setFont(doc, 7, "normal", PALETTE.muted);
+    wrapLines(
+      doc,
+      "Share of the configurations that take assignments",
+      cardWidth - 8,
+      7,
+      "normal",
+      2,
+    ).forEach((line, index) =>
+      doc.text(line, donutX, midTop + 56 + index * 3, { align: "center" }),
+    );
+
+    const glanceX = margin + cardWidth + 6;
+    const glanceWidth = right - glanceX;
+    drawEyebrow(doc, "At a glance", glanceX, midTop + 2.4, {
+      color: secondaryColor,
+    });
+    drawRule(doc, glanceX, midTop + 5, right, primaryColor, 0.4);
+    const tileGap = 3;
+    const tileWidth = (glanceWidth - tileGap) / 2;
+    const tileHeight = 27.5;
+    const tiles = [
+      {
+        label: "Configurations collected",
+        value: String(glance.configurations),
+        caption: plural(glance.policyTypes, "policy type", "policy types"),
+        marker: "filled" as const,
+        markerColor: primaryColor,
+      },
+      {
+        label: "Assigned",
+        value: String(glance.assigned),
+        caption: "With at least one assignment",
+        marker: "filled" as const,
+        markerColor: secondaryColor,
+      },
+      {
+        label: "Not assigned",
+        value: String(glance.notAssigned),
+        caption: "No assignment found",
+        marker: "outline" as const,
+        markerColor: secondaryColor,
+      },
+      {
+        label: "Assignment unknown",
+        value: String(glance.assignmentUnknown),
+        caption: "Unreadable or unresolved",
+        marker: "half" as const,
+        markerColor: PALETTE.muted,
+      },
+    ];
+    tiles.forEach((tile, index) =>
+      drawKpiTile(
+        doc,
+        glanceX + (index % 2) * (tileWidth + tileGap),
+        midTop + 8 + Math.floor(index / 2) * (tileHeight + tileGap),
+        tileWidth,
+        tileHeight,
+        { ...tile, valueColor: primaryColor },
+      ),
+    );
+    setFont(doc, 7.2, "normal", PALETTE.muted);
+    doc.text(
+      "Unknown assignments are not counted as assigned.",
+      margin,
+      midTop + 72,
+    );
+    drawLines(
+      doc,
+      wrapLines(doc, collectionLine, contentWidth, 7.2, "normal", 2),
+      margin,
+      midTop + 74.6,
+      7.2,
+      "normal",
+      textColor,
+      3.2,
+    );
+  }
+
+  const controlCells = [
+    {
+      label: "Organization",
+      value:
+        [branding?.companyName, branding?.department]
+          .filter(Boolean)
+          .join(" / ") || undefined,
+    },
+    {
+      label: "Prepared by",
+      value: branding?.metadata?.author || branding?.coverPage?.author,
+    },
+    { label: "Contact", value: branding?.contactEmail },
+    { label: "Website", value: branding?.website },
+    { label: "Tenant", value: data.tenantLabel },
+    { label: "Version", value: version },
+    { label: "Classification", value: classificationLabel },
+  ];
+  // The grid moves up to stay clear of a long confidentiality notice. When
+  // even that would reach the glance or the tenant block, the cover leaves
+  // the notice out; every other page still prints it in full.
+  const controlDefaultTop = showAnalytics ? 224 : 144;
+  const controlFloor = showAnalytics ? 226 : 144;
+  const controlHeight = documentControlGridHeight(doc, frame, controlCells);
+  const noticeTop = footerLayout.noticeLines.length
+    ? footerLayout.contentBottom
+    : frame.pageHeight;
+  const controlTop = Math.min(controlDefaultTop, noticeTop - 2 - controlHeight);
+  const coverNotice =
+    footerLayout.noticeLines.length > 0 &&
+    controlTop >= Math.min(controlFloor, controlDefaultTop);
+  drawDocumentControlGrid(
+    doc,
+    theme,
+    frame,
+    coverNotice ? controlTop : controlDefaultTop,
+    "Document control",
+    controlCells,
+  );
+  drawCoverFooter(doc, frame, DOCUMENT_PRODUCT_LINE, DOCUMENT_SOURCE_NOTE);
+  // The confidentiality notice shows on the cover too, as in Word.
+  if (coverNotice) drawFooterNotice(doc, frame, footerLayout);
+
+  // === TABLE OF CONTENTS ===
   // Check if ToC is enabled (default to true if not specified)
   const includeToC =
     !compactScope &&
     branding?.documentSettings?.includeTableOfContents !== false;
 
-  // Variables for ToC page reference (declared outside if block)
+  // The contents page is filled in at the end, once every page is known.
   let tocPageNumber = 0;
-  let tocYStart = 0;
-
   if (includeToC) {
-    // Add ToC page
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-
-    // Save ToC page reference
-    tocPageNumber = pageNumber;
-
-    // ToC Title
-    doc.setFontSize(20);
-    doc.setFont(fontFamily, "bold");
-    const [tocR, tocG, tocB] = hexToRgb(primaryColor);
-    doc.setTextColor(tocR, tocG, tocB);
-    doc.text("Table of Contents", pageWidth / 2, yPosition + 10, {
-      align: "center",
-    });
-    yPosition += 25;
-
-    // Decorative line under title
-    doc.setDrawColor(tocR, tocG, tocB);
-    doc.setLineWidth(0.5);
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 15;
-
-    // Save ToC content start position
-    tocYStart = yPosition;
-
-    // We'll fill in the ToC content at the end after collecting all page numbers
+    addContentPage();
+    tocPageNumber = currentPage();
   }
 
-  // Helper function to add tenant overview with enhanced visuals
   const addTenantOverview = () => {
-    // Tenant Overview Page
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-
-    // Track this section
-    tocEntries.push({ title: "Tenant Overview", pageNum: pageNumber });
-
-    // Start directly with Executive Summary
-    addSectionHeader("Executive Summary");
-
-    // === KEY METRICS WITH VISUAL INDICATORS ===
-    doc.setFontSize(12);
-    doc.setFont(fontFamily, "bold");
-    doc.setTextColor(0, 0, 0);
-    doc.text("Key Metrics", margin, yPosition);
-    yPosition += 10;
-
-    // Calculate assignment rate
-    const assignmentRate =
-      analytics.assignmentApplicableConfigs > 0
-        ? (analytics.assignedConfigs / analytics.assignmentApplicableConfigs) *
-          100
-        : 0;
-
-    // Create metrics cards without emoji icons
-    const metricsData: Array<{
-      label: string;
-      value: string;
-      color: [number, number, number];
-    }> = [
-      {
-        label: "Total Configurations",
-        value: analytics.totalConfigs.toString(),
-        color: [52, 152, 219], // Blue
-      },
-      {
-        label: "Assigned Policies",
-        value: analytics.assignedConfigs.toString(),
-        color: [39, 174, 96], // Green
-      },
-      {
-        label: "Unassigned Policies",
-        value: analytics.unassignedConfigs.toString(),
-        color:
-          analytics.unassignedConfigs > 0 ? [230, 126, 34] : [149, 165, 166], // Orange if > 0, gray if 0
-      },
-    ];
-
-    // Draw metrics cards - improved layout
-    let cardX = margin;
-    const cardWidth = 55;
-    const cardHeight = 25; // Reduced height for cleaner look
-    const cardSpacing = 5;
-
-    metricsData.forEach((metric) => {
-      // Card background with subtle fill
-      doc.setFillColor(250, 251, 252);
-      doc.rect(cardX, yPosition, cardWidth, cardHeight, "F");
-
-      // Top colored bar instead of full border
-      doc.setFillColor(metric.color[0], metric.color[1], metric.color[2]);
-      doc.rect(cardX, yPosition, cardWidth, 3, "F");
-
-      // Card border - subtle
-      doc.setDrawColor(230, 230, 230);
-      doc.setLineWidth(0.5);
-      doc.rect(cardX, yPosition, cardWidth, cardHeight, "S");
-
-      // Value - large and prominent
-      doc.setFontSize(20);
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(metric.color[0], metric.color[1], metric.color[2]);
-      doc.text(metric.value, cardX + cardWidth / 2, yPosition + 12, {
-        align: "center",
-      });
-
-      // Label - centered below value
-      doc.setFontSize(9);
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(100, 100, 100);
-      doc.text(metric.label, cardX + cardWidth / 2, yPosition + 20, {
-        align: "center",
-      });
-
-      cardX += cardWidth + cardSpacing;
+    startSection({
+      toc: "Tenant Overview",
+      eyebrow: "Tenant Overview",
+      title: "Executive Summary",
+      lead: "Counts read from the collected configuration. Unknown assignments are not counted as assigned.",
     });
 
-    yPosition += cardHeight + 6;
-    doc.setFontSize(9);
-    doc.setTextColor(100, 100, 100);
-    doc.text(
-      `Unknown assignments: ${analytics.unknownAssignmentConfigs}`,
-      margin,
+    // Configurations by family, with their assignment counts.
+    yPosition = drawSectionHeading(
+      doc,
+      theme,
+      frame,
       yPosition,
+      "Configurations by family",
+      `${plural(glance.configurations, "configuration", "configurations")} in ${plural(glance.policyTypes, "policy type", "policy types")}`,
     );
-    yPosition += 9;
-
-    if (analytics.assignmentNotApplicableConfigs) {
+    drawRule(doc, margin, yPosition - 1.5, right, primaryColor, 0.4);
+    yPosition -= 1.5;
+    if (glance.families.length === 0) {
+      yPosition += 3;
       addText(
-        `Assignment not applicable: ${analytics.assignmentNotApplicableConfigs} configurations; excluded from assignment coverage.`,
-        9,
+        "No configurations were collected.",
+        8.5,
+        "normal",
+        PALETTE.muted,
       );
-      yPosition += 4;
     }
-    // === ASSIGNMENT RATE VISUALIZATION ===
-    doc.setFontSize(12);
-    doc.setFont(fontFamily, "bold");
-    doc.setTextColor(0, 0, 0);
-    doc.text("Assignment Coverage", margin, yPosition);
+    const familyRowHeight = 7.6;
+    for (const family of glance.families) {
+      ensureSpace(familyRowHeight);
+      const middle = yPosition + familyRowHeight / 2;
+      drawMarker(doc, margin + 1.4, middle, "filled", secondaryColor);
+      setFont(doc, 8.5, "normal", textColor);
+      doc.text(
+        clampLine(doc, family.label, 82, 8.5),
+        margin + 5,
+        middle + capHeight(8.5) / 2,
+      );
+      // Configurations without an assignment relationship count in none of
+      // the three.
+      const notApplicable =
+        family.configurations -
+        family.assigned -
+        family.notAssigned -
+        family.assignmentUnknown;
+      setFont(doc, 7, "normal", PALETTE.muted);
+      doc.text(
+        notApplicable === family.configurations
+          ? "Assignment not applicable"
+          : `${family.assigned} assigned, ${family.notAssigned} not assigned, ${family.assignmentUnknown} unknown${notApplicable > 0 ? `, ${notApplicable} not applicable` : ""}`,
+        right - 16,
+        middle + capHeight(7) / 2,
+        { align: "right" },
+      );
+      setFont(doc, 10, "bold", primaryColor);
+      doc.text(
+        String(family.configurations),
+        right,
+        middle + capHeight(10) / 2,
+        { align: "right" },
+      );
+      yPosition += familyRowHeight;
+      drawRule(doc, margin, yPosition, right);
+    }
+    yPosition += 4;
+    for (const note of summaryNotes(analytics)) {
+      addText(note, 8, "normal", PALETTE.muted);
+      yPosition += 1;
+    }
+    addText(collectionLine, 8, "normal", PALETTE.muted);
+    yPosition += 7;
+
+    // === CONFIGURATION INVENTORY ===
+    const activeInventory = analytics.inventory.filter(
+      (item) => item.total > 0,
+    );
+    const inventoryRowHeight = 6.4;
+    const inventoryColumns = [
+      { x: margin, label: "Policy type" },
+      { x: margin + 96, label: "Total" },
+      { x: margin + 117, label: "Assigned" },
+      { x: margin + 138, label: "Not assigned" },
+      { x: margin + 161, label: "Unknown" },
+    ];
+    const drawInventoryHeader = () => {
+      yPosition =
+        drawTableHeader(
+          doc,
+          theme,
+          frame,
+          yPosition,
+          inventoryColumns.map(({ x, label }) => ({ x, lines: [label] })),
+        ) + 0.4;
+    };
+    // Start on a new page when the whole table fits there but not here.
+    const inventoryHeight = 14 + activeInventory.length * inventoryRowHeight;
+    if (
+      yPosition + inventoryHeight > contentBottom &&
+      inventoryHeight <= contentBottom - contentTop
+    )
+      addContentPage();
+    ensureSpace(14 + inventoryRowHeight);
+    yPosition = drawSectionHeading(
+      doc,
+      theme,
+      frame,
+      yPosition,
+      "Configuration Inventory",
+    );
+    drawInventoryHeader();
+    activeInventory.forEach((item, index) => {
+      if (ensureSpace(inventoryRowHeight)) drawInventoryHeader();
+      drawZebraRow(doc, frame, yPosition, inventoryRowHeight, index);
+      const baseline = yPosition + inventoryRowHeight / 2 + capHeight(8) / 2;
+      const notApplicable = item.notApplicable === item.total;
+      setFont(doc, 8, "normal", textColor);
+      doc.text(
+        clampLine(doc, item.label, 92, 8),
+        inventoryColumns[0]!.x + 1.5,
+        baseline,
+      );
+      setFont(doc, 8, "bold", primaryColor);
+      doc.text(String(item.total), inventoryColumns[1]!.x + 1.5, baseline);
+      setFont(doc, 8, "normal", textColor);
+      [item.assigned, item.unassigned, item.unknown].forEach((count, column) =>
+        doc.text(
+          notApplicable ? "n/a" : String(count),
+          inventoryColumns[column + 2]!.x + 1.5,
+          baseline,
+        ),
+      );
+      yPosition += inventoryRowHeight;
+    });
     yPosition += 8;
 
-    // Progress bar background
-    const progressBarWidth = 120;
-    const progressBarHeight = 12;
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, yPosition, progressBarWidth, progressBarHeight, "F");
-
-    // Progress bar fill based on assignment rate
-    const fillWidth = (assignmentRate / 100) * progressBarWidth;
-    const progressColor: [number, number, number] =
-      assignmentRate >= 80
-        ? [39, 174, 96] // Green for good
-        : assignmentRate >= 60
-          ? [52, 152, 219] // Blue for moderate
-          : assignmentRate >= 40
-            ? [230, 126, 34] // Orange for low
-            : [231, 76, 60]; // Red for critical
-
-    doc.setFillColor(progressColor[0], progressColor[1], progressColor[2]);
-    doc.rect(margin, yPosition, fillWidth, progressBarHeight, "F");
-
-    // Progress bar border
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.5);
-    doc.rect(margin, yPosition, progressBarWidth, progressBarHeight, "S");
-
-    // Assignment rate text only
-    doc.setFontSize(10);
-    doc.setFont(fontFamily, "bold");
-    doc.setTextColor(progressColor[0], progressColor[1], progressColor[2]);
-    doc.text(
-      `${Math.round(assignmentRate)}%`,
-      margin + progressBarWidth + 5,
-      yPosition + 8,
-    );
-
-    yPosition += progressBarHeight + 15;
-
-    // === POTENTIAL GAPS SECTION ===
-    if (analytics.unassignedConfigs > 0 || analytics.staleConfigs > 0) {
-      doc.setFontSize(12);
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(0, 0, 0);
-      doc.text("Potential Gaps", margin, yPosition);
-      yPosition += 8;
-
-      const risks: Array<{
-        level: string;
-        title: string;
-        description: string;
-        color: [number, number, number];
-      }> = [];
-
-      if (analytics.unassignedConfigs > 0) {
-        const criticalRisk =
-          analytics.unassignedConfigs >= analytics.totalConfigs * 0.3; // 30% threshold
-        risks.push({
-          level: criticalRisk ? "critical" : "warning",
-          title: "Unassigned Configurations",
-          description: `${analytics.unassignedConfigs} policies have no group assignments`,
-          color: criticalRisk
-            ? ([231, 76, 60] as [number, number, number])
-            : ([230, 126, 34] as [number, number, number]),
-        });
-      }
-
-      if (analytics.staleConfigs > 0) {
-        const criticalRisk =
-          analytics.staleConfigs >= analytics.totalConfigs * 0.5; // 50% threshold
-        risks.push({
-          level: criticalRisk ? "critical" : "warning",
-          title: "Stale Configurations",
-          description: `${analytics.staleConfigs} policies haven't been updated in 90+ days`,
-          color: criticalRisk
-            ? ([231, 76, 60] as [number, number, number])
-            : ([241, 196, 15] as [number, number, number]),
-        });
-      }
-
-      risks.forEach((risk) => {
-        // Risk card with left border indicator
-        doc.setFillColor(255, 255, 255);
-        doc.rect(margin, yPosition, pageWidth - 2 * margin, 18, "F");
-
-        // Left color indicator bar
-        doc.setFillColor(risk.color[0], risk.color[1], risk.color[2]);
-        doc.rect(margin, yPosition, 3, 18, "F");
-
-        // Card border
-        doc.setDrawColor(risk.color[0], risk.color[1], risk.color[2]);
-        doc.setLineWidth(0.5);
-        doc.rect(margin, yPosition, pageWidth - 2 * margin, 18, "S");
-
-        // Risk level indicator
-        doc.setFillColor(risk.color[0], risk.color[1], risk.color[2]);
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(8);
-        doc.setFont(fontFamily, "bold");
-        const levelText = risk.level.toUpperCase();
-        const levelWidth = doc.getTextWidth(levelText) + 4;
-        doc.rect(margin + 8, yPosition + 3, levelWidth, 5, "F");
-        doc.text(levelText, margin + 10, yPosition + 6.5);
-
-        // Risk title
-        doc.setFontSize(10);
-        doc.setFont(fontFamily, "bold");
-        doc.setTextColor(risk.color[0], risk.color[1], risk.color[2]);
-        doc.text(risk.title, margin + 15 + levelWidth, yPosition + 7);
-
-        // Risk description
-        doc.setFontSize(9);
-        doc.setFont(fontFamily, "normal");
-        doc.setTextColor(80, 80, 80);
-        doc.text(risk.description, margin + 8, yPosition + 13);
-
-        yPosition += 22;
-      });
-
-      yPosition += 5;
-    }
-
-    checkPageBreak(80);
-  };
-
-  // Call the enhanced tenant overview function
-  const addComplianceOverview = () => {
-    let assessment;
-    try {
-      assessment = assessCompliance(data);
-    } catch (error) {
-      console.error("Skipping compliance preview section:", error);
-      return;
-    }
-
-    doc.addPage();
-    yPosition = calculateHeaderHeight();
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({
-      title: "Compliance Evidence Preview",
-      pageNum: pageNumber,
-    });
-    addSectionHeader("Compliance Evidence Preview");
-
-    addText(
-      "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
-      9,
-      "normal",
-      [80, 80, 80],
-    );
-    yPosition += 5;
-
-    const statusLabels = CONTROL_STATUS_LABELS;
-    const statusColors = CONTROL_STATUS_COLORS;
-    const statusRank = CONTROL_STATUS_ORDER;
-
-    for (const framework of assessment.frameworks) {
-      checkPageBreak(45);
-      addText(
-        `${framework.framework.name} (${framework.framework.version})`,
-        12,
-        "bold",
-      );
-      yPosition += 1;
-      const coverageLabel = frameworkCoverageLabel(framework);
-      if (coverageLabel) addText(coverageLabel, 9, "normal", [80, 80, 80]);
-      addText(
-        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
-        9,
-        "normal",
-        [80, 80, 80],
-      );
-      yPosition += 3;
-
-      const maxRows = 8;
-      const ranked = [...framework.controls].sort(
-        (a, b) =>
-          statusRank[a.status] - statusRank[b.status] ||
-          compareControlIds(a.control.id, b.control.id),
-      );
-      for (const assessed of ranked.slice(0, maxRows)) {
-        checkPageBreak(10);
-        const tier = assessed.control.tier ? ` (${assessed.control.tier})` : "";
-        addText(
-          `•  ${assessed.control.id} ${assessed.control.title}${tier}: ${statusLabels[assessed.status]}`,
-          9,
-          "normal",
-          statusColors[assessed.status],
-        );
-        if (framework.framework.id === "essential-eight")
-          addText(assessed.control.summary, 9, "normal", [80, 80, 80]);
-        yPosition += 1;
-      }
-      if (ranked.length > maxRows) {
-        addText(
-          `…and ${ranked.length - maxRows} more controls in the full report.`,
-          9,
-          "italic",
-          [120, 120, 120],
-        );
-      }
-      yPosition += 5;
-    }
-
-    checkPageBreak(30);
-    addText(assessment.disclaimer, 8, "italic", [110, 110, 110]);
-    yPosition += 5;
-    addText(
-      "Generate the full requirement-level compliance report from the Compliance view in your dashboard: intunedocumentation.com/dashboard",
-      9,
-      "bold",
-    );
-  };
-
-  if (!compactScope) addTenantOverview();
-  if (data.includeComplianceEvidence !== false) {
-    addComplianceOverview();
-  }
-
-  if (data.fetchErrors?.length) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "Collection Warnings", pageNum: pageNumber });
-    addSectionHeader("Collection Warnings");
-    addText(
-      "The following resources were only partially collected or were unavailable. Successful sibling resources remain in this document.",
-      9,
-      "normal",
-      [160, 90, 0],
-    );
-    yPosition += 4;
-
-    for (const warning of data.fetchErrors) {
-      addText(
-        `${warning.partial ? "Partial data" : "Collection unavailable"}: ${warning.policyType}: ${warning.policyName}`,
-        10,
-        "bold",
-        [160, 90, 0],
-      );
-      addText(
-        [
-          warning.error,
-          warning.statusCode ? `HTTP ${warning.statusCode}` : undefined,
-          warning.endpoint
-            ? `Microsoft Graph beta ${warning.endpoint}`
-            : undefined,
-          warning.permissionHint
-            ? `Permission hint: ${warning.permissionHint}`
-            : undefined,
-        ]
-          .filter(Boolean)
-          .join(" · "),
-        8,
-        "normal",
-        [100, 100, 100],
-      );
-      yPosition += 4;
-    }
-  }
-
-  // A compact scoped export goes straight from the cover to the details.
-  if (!compactScope) {
-    // Continue with existing content but replace the old metrics section
-    yPosition += 10;
-
-    // === CONFIGURATION INVENTORY WITH ENHANCED FORMATTING ===
-
-    // Enhanced table rows without emoji icons - define first
-    const inventory = analytics.inventory.map((item) => ({
-      type: item.label,
-      count: item.total,
-      assigned: item.assigned,
-      unassigned: item.unassigned,
-      unknown: item.unknown,
-      notApplicable: item.notApplicable,
-    }));
-
-    // Check if we need to start a new page for Configuration Inventory
-    // Calculate total height needed for the table
-    const inventoryHeaderHeight = 12 + 10; // Title + table header
-    const activeInventoryCount = inventory.filter(
-      (item) => item.count > 0,
-    ).length;
-    const inventoryRowHeight = 9;
-    const inventoryTotalHeight =
-      inventoryHeaderHeight + activeInventoryCount * inventoryRowHeight + 20; // +20 for spacing
-
-    // Check if table would overlap with footer (leave 40mm for footer to be safe)
-    if (yPosition + inventoryTotalHeight > pageHeight - 40) {
-      doc.addPage();
-      yPosition = margin;
-      pageNumber++;
-      addPageNumber();
-    }
-
-    doc.setFontSize(12);
-    doc.setFont(fontFamily, "bold");
-    doc.setTextColor(0, 0, 0);
-    doc.text("Configuration Inventory", margin, yPosition);
-    yPosition += 10;
-
-    // Enhanced table header with color
-    const tableWidth = 180;
-    const [thr, thg, thb] = hexToRgb(primaryColor);
-    doc.setFillColor(thr, thg, thb);
-    doc.rect(margin, yPosition, tableWidth, 10, "F");
-
-    doc.setFontSize(10);
-    doc.setFont(fontFamily, "bold");
-    doc.setTextColor(255, 255, 255);
-    doc.text("Policy Type", margin + 3, yPosition + 7);
-    doc.text("Total", margin + 80, yPosition + 7);
-    doc.text("Assigned", margin + 100, yPosition + 7);
-    doc.text("Unassigned", margin + 125, yPosition + 7);
-    doc.text("Unknown", margin + 155, yPosition + 7);
-    yPosition += 10;
-
-    doc.setFont(fontFamily, "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
-
-    const activeInventory = inventory.filter((item) => item.count > 0);
-    activeInventory.forEach((item, index) => {
-      const rowHeight = 9;
-
-      // Check if we're too close to the bottom of the page (leave 40mm for footer to be safe)
-      if (yPosition + rowHeight > pageHeight - 40) {
-        // Start a new page
-        doc.addPage();
-        yPosition = margin;
-        pageNumber++;
-        addPageNumber();
-
-        // Redraw table header on new page
-        doc.setFillColor(thr, thg, thb);
-        doc.rect(margin, yPosition, tableWidth, 10, "F");
-
-        doc.setFontSize(10);
-        doc.setFont(fontFamily, "bold");
-        doc.setTextColor(255, 255, 255);
-        doc.text("Policy Type", margin + 3, yPosition + 7);
-        doc.text("Total", margin + 80, yPosition + 7);
-        doc.text("Assigned", margin + 100, yPosition + 7);
-        doc.text("Unassigned", margin + 125, yPosition + 7);
-        yPosition += 10;
-
-        doc.text("Unknown", margin + 155, yPosition - 3);
-
-        // Reset text settings
-        doc.setFont(fontFamily, "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(0, 0, 0);
-      }
-
-      // Alternating row backgrounds
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 249, 250);
-        doc.rect(margin, yPosition, tableWidth, rowHeight, "F");
-      }
-
-      // Row border
-      doc.setDrawColor(230, 230, 230);
-      doc.setLineWidth(0.1);
-      doc.line(
-        margin,
-        yPosition + rowHeight,
-        margin + tableWidth,
-        yPosition + rowHeight,
-      );
-
-      // Policy type
-      doc.setFontSize(9);
-      doc.setFont(fontFamily, "normal");
-      doc.text(item.type, margin + 3, yPosition + 6);
-
-      // Total count
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(52, 152, 219); // Blue
-      doc.text(item.count.toString(), margin + 85, yPosition + 6);
-
-      // Assigned count
-      doc.setTextColor(39, 174, 96); // Green
-      doc.text(
-        item.notApplicable === item.count ? "N/A" : item.assigned.toString(),
-        margin + 110,
-        yPosition + 6,
-      );
-
-      // Unassigned count (red if > 0, gray if 0)
-      const unassigned = item.unassigned;
-      doc.setTextColor(
-        unassigned > 0 ? 231 : 149,
-        unassigned > 0 ? 76 : 165,
-        unassigned > 0 ? 60 : 166,
-      );
-      doc.text(
-        item.notApplicable === item.count ? "N/A" : unassigned.toString(),
-        margin + 135,
-        yPosition + 6,
-      );
-      doc.setTextColor(100, 100, 100);
-      doc.text(
-        item.notApplicable === item.count ? "N/A" : item.unknown.toString(),
-        margin + 165,
-        yPosition + 6,
-      );
-
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(fontFamily, "normal");
-      yPosition += rowHeight;
-    });
-
-    yPosition += 15;
-
-    // === PLATFORM COVERAGE CHART ===
+    // === PLATFORM COVERAGE ===
     if (Object.keys(analytics.platformCounts).length > 0 || data.deviceCounts) {
-      // Combine configuration counts with device counts first to calculate space needed
+      // Combine configuration counts with device counts to rank platforms
       const platformData: Record<string, { configs: number; devices: number }> =
         {};
-
-      // Add configuration counts
       Object.entries(analytics.platformCounts).forEach(([platform, count]) => {
         platformData[platform] = { configs: count, devices: 0 };
       });
@@ -1600,217 +1113,263 @@ export async function generateDetailedPDF(
         });
       }
 
-      // Sort platforms by total activity
+      // Sort platforms by total activity and show the top five
       const sortedPlatforms = Object.entries(platformData)
         .sort(
           (a, b) => b[1].configs + b[1].devices - (a[1].configs + a[1].devices),
         )
-        .slice(0, 5); // Show top 5 platforms
+        .slice(0, 5);
 
-      // Calculate total space needed for Platform Coverage section
-      const barHeight = 14;
-      const barSpacing = 5;
-      const platformChartHeight =
-        10 + sortedPlatforms.length * (barHeight + barSpacing) + 20; // Title + bars + bottom margin
-
-      // Check if entire Platform Coverage section fits
-      checkPageBreak(platformChartHeight);
-
-      doc.setFontSize(12);
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(0, 0, 0);
-      doc.text("Platform Coverage", margin, yPosition);
-      yPosition += 10;
-
-      // Platform colors
-      const platformColors: Record<string, [number, number, number]> = {
-        Windows: [52, 152, 219], // Blue
-        macOS: [155, 89, 182], // Purple
-        iOS: [46, 204, 113], // Green
-        Android: [230, 126, 34], // Orange
-        Linux: [231, 76, 60], // Red
-      };
-
-      // Find maximum value for chart scaling
+      const platformRowHeight = 7;
+      ensureSpace(8 + sortedPlatforms.length * platformRowHeight);
+      yPosition = drawSectionHeading(
+        doc,
+        theme,
+        frame,
+        yPosition,
+        "Platform Coverage",
+        "Configurations per platform",
+      );
+      drawRule(doc, margin, yPosition - 1.5, right, primaryColor, 0.4);
+      yPosition -= 1.5;
       const maxConfigs = Math.max(
-        ...sortedPlatforms.map(([_, data]) => data.configs),
+        ...sortedPlatforms.map(([, counts]) => counts.configs),
         1,
       );
-      const chartWidth = 100; // Reduced from 120 to fit better
-
-      sortedPlatforms.forEach(([platform, data], index) => {
-        const barY = yPosition + index * (barHeight + barSpacing);
-
-        const color: [number, number, number] = platformColors[platform] || [
-          52, 152, 219,
-        ];
-
-        // Platform name - simple text, no colored box
-        doc.setFontSize(9);
-        doc.setFont(fontFamily, "normal");
-        doc.setTextColor(60, 60, 60);
-        doc.text(platform, margin, barY + 9);
-
-        // Background bar - adjusted position since no colored box
-        const barStartX = margin + 45;
-        doc.setFillColor(245, 245, 245);
-        doc.rect(barStartX, barY, chartWidth, barHeight, "F");
-
-        // Data bar (configurations)
-        if (data.configs > 0) {
-          const barWidth = Math.min(
-            (data.configs / maxConfigs) * chartWidth,
-            chartWidth,
-          );
-          doc.setFillColor(color[0], color[1], color[2]);
-          doc.rect(barStartX, barY, barWidth, barHeight, "F");
-        }
-
-        // Bar border
-        doc.setDrawColor(220, 220, 220);
-        doc.setLineWidth(0.3);
-        doc.rect(barStartX, barY, chartWidth, barHeight, "S");
-
-        // Value labels - positioned to right of bar, showing only configs
-        doc.setFontSize(8);
-        doc.setFont(fontFamily, "bold");
-        doc.setTextColor(color[0], color[1], color[2]);
-
-        // Show only configuration count
-        const labelText = `${data.configs} configs`;
-
-        // Position text to the right of the bar
-        const textX = barStartX + chartWidth + 3;
-        doc.text(labelText, textX, barY + 9);
-      });
-
-      yPosition += sortedPlatforms.length * (barHeight + barSpacing) + 15;
-
-      // Check if we're too close to bottom after drawing platform coverage
-      checkPageBreak(10);
+      for (const [platform, counts] of sortedPlatforms) {
+        const middle = yPosition + platformRowHeight / 2;
+        setFont(doc, 8.5, "normal", textColor);
+        doc.text(
+          clampLine(doc, platform, 38, 8.5),
+          margin,
+          middle + capHeight(8.5) / 2,
+        );
+        drawStackedBar(
+          doc,
+          margin + 42,
+          middle - 1.6,
+          110,
+          3.2,
+          [{ value: counts.configs, color: secondaryColor }],
+          maxConfigs,
+          { track: PALETTE.track },
+        );
+        setFont(doc, 8, "bold", primaryColor);
+        doc.text(
+          plural(counts.configs, "config", "configs"),
+          right,
+          middle + capHeight(8) / 2,
+          {
+            align: "right",
+          },
+        );
+        yPosition += platformRowHeight;
+        drawRule(doc, margin, yPosition, right);
+      }
+      yPosition += 8;
     }
 
-    // === TOP GROUPS TABLE WITH ENHANCED FORMATTING ===
+    // === TOP ASSIGNED GROUPS ===
     if (analytics.topGroups.length > 0) {
-      checkPageBreak(80);
-      doc.setFontSize(12);
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(0, 0, 0);
-      doc.text("Top Assigned Groups", margin, yPosition);
-      yPosition += 10;
-
-      // Table header - adjusted width to fit page
-      const groupTableWidth = pageWidth - 2 * margin; // Use full available width
-      const [gthr, gthg, gthb] = hexToRgb(secondaryColor);
-      doc.setFillColor(gthr, gthg, gthb);
-      doc.rect(margin, yPosition, groupTableWidth, 9, "F");
-
-      doc.setFontSize(9);
-      doc.setFont(fontFamily, "bold");
-      doc.setTextColor(255, 255, 255);
-      doc.text("Rank", margin + 3, yPosition + 6);
-      doc.text("Group Name", margin + 20, yPosition + 6);
-      doc.text("Assignments", margin + 95, yPosition + 6);
-      doc.text("Platforms", margin + 135, yPosition + 6);
-      yPosition += 9;
-
-      // Group data rows
       const topGroupsData = analytics.topGroups.slice(0, 5);
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(0, 0, 0);
-
+      const groupRowHeight = 7;
+      const maxCount = Math.max(...analytics.topGroups.map((g) => g[1]), 1);
+      const groupColumns = [
+        { x: margin, lines: ["Rank"] },
+        { x: margin + 14, lines: ["Group"] },
+        { x: margin + 130, lines: ["Assignments"] },
+      ];
+      ensureSpace(14 + topGroupsData.length * groupRowHeight);
+      yPosition = drawSectionHeading(
+        doc,
+        theme,
+        frame,
+        yPosition,
+        "Top Assigned Groups",
+      );
+      yPosition =
+        drawTableHeader(doc, theme, frame, yPosition, groupColumns) + 0.4;
       topGroupsData.forEach(([groupId, count], index) => {
-        const rowHeight = 10;
-
-        // Alternating row backgrounds
-        if (index % 2 === 0) {
-          doc.setFillColor(248, 249, 250);
-          doc.rect(margin, yPosition, groupTableWidth, rowHeight, "F");
-        }
-
-        // Row border
-        doc.setDrawColor(230, 230, 230);
-        doc.setLineWidth(0.1);
-        doc.line(
-          margin,
-          yPosition + rowHeight,
-          margin + groupTableWidth,
-          yPosition + rowHeight,
-        );
-
-        // Rank number with colored background for top 3
-        if (index < 3) {
-          const rankColors: Array<[number, number, number]> = [
-            [255, 215, 0], // Gold
-            [192, 192, 192], // Silver
-            [205, 127, 50], // Bronze
-          ];
-          const rankColor = rankColors[index]!;
-          doc.setFillColor(rankColor[0], rankColor[1], rankColor[2]);
-          doc.circle(margin + 6, yPosition + 5, 3, "F");
-          doc.setFontSize(7);
-          doc.setFont(fontFamily, "bold");
-          doc.setTextColor(255, 255, 255);
-          doc.text((index + 1).toString(), margin + 6, yPosition + 6.5, {
-            align: "center",
-          });
-        } else {
-          doc.setFontSize(8);
-          doc.setFont(fontFamily, "normal");
-          doc.setTextColor(100, 100, 100);
-          doc.text(`${index + 1}.`, margin + 3, yPosition + 6);
-        }
-
-        // Group name (truncate if too long)
-        doc.setFontSize(9);
-        doc.setFont(fontFamily, "normal");
-        doc.setTextColor(0, 0, 0);
+        drawZebraRow(doc, frame, yPosition, groupRowHeight, index);
+        const baseline = yPosition + groupRowHeight / 2 + capHeight(8) / 2;
+        setFont(doc, 8, "bold", primaryColor);
+        doc.text(String(index + 1), margin + 1.5, baseline);
+        setFont(doc, 8, "normal", textColor);
         const groupName = data.groupNames?.get(groupId) || groupId;
-        // Calculate max width for group name to avoid overflow
-        const maxNameWidth = 70; // Reduced to ensure it fits
-        const nameLines = doc.splitTextToSize(groupName, maxNameWidth);
-        doc.text(nameLines[0], margin + 20, yPosition + 6);
-
-        // Assignment count with visual indicator
-        const barMaxWidth = 18; // Slightly reduced
-        const barWidth = Math.min(
-          (count / Math.max(...analytics.topGroups.map((g) => g[1]))) *
-            barMaxWidth,
-          barMaxWidth,
+        doc.text(clampLine(doc, groupName, 112, 8), margin + 15.5, baseline);
+        drawStackedBar(
+          doc,
+          margin + 131.5,
+          yPosition + groupRowHeight / 2 - 1.2,
+          30,
+          2.4,
+          [{ value: count, color: secondaryColor }],
+          maxCount,
+          { track: PALETTE.track },
         );
-        const barColor: [number, number, number] =
-          count >= 10
-            ? [39, 174, 96] // Green for high activity
-            : count >= 5
-              ? [52, 152, 219] // Blue for moderate
-              : [230, 126, 34]; // Orange for low
-
-        // Small bar chart
-        doc.setFillColor(240, 240, 240);
-        doc.rect(margin + 95, yPosition + 3, barMaxWidth, 4, "F");
-        doc.setFillColor(barColor[0], barColor[1], barColor[2]);
-        doc.rect(margin + 95, yPosition + 3, barWidth, 4, "F");
-
-        // Count number
-        doc.setFont(fontFamily, "bold");
-        doc.setFontSize(8);
-        doc.setTextColor(barColor[0], barColor[1], barColor[2]);
-        doc.text(count.toString(), margin + 115, yPosition + 6);
-
-        // Platform indicator
-        doc.setFont(fontFamily, "normal");
-        doc.setTextColor(100, 100, 100);
-        doc.setFontSize(8);
-        doc.text("Multi", margin + 140, yPosition + 6);
-
-        doc.setTextColor(0, 0, 0);
-        yPosition += rowHeight;
+        setFont(doc, 8, "bold", primaryColor);
+        doc.text(String(count), right - 1.5, baseline, { align: "right" });
+        yPosition += groupRowHeight;
       });
+      yPosition += 8;
+    }
+  };
 
-      yPosition += 15;
+  const addComplianceOverview = () => {
+    let assessment;
+    try {
+      assessment =
+        options.audience === "desktop"
+          ? assessCompliance(data)
+          : withoutDesktopOnlyFrameworks(assessCompliance(data));
+    } catch (error) {
+      console.error("Skipping compliance preview section:", error);
+      return;
+    }
+
+    startSection({
+      title: "Compliance Evidence Preview",
+      eyebrow: "Compliance evidence",
+      lead: "This preview maps the exported configuration to technical evidence for each supported compliance framework. Supporting evidence may describe configuration or a compliance requirement. Device state, effective access and the remaining control requirements are assessed separately.",
+    });
+
+    const statusLabels = CONTROL_STATUS_LABELS;
+    const statusColors = CONTROL_STATUS_COLORS;
+    const statusRank = CONTROL_STATUS_ORDER;
+
+    for (const framework of assessment.frameworks) {
+      ensureSpace(30);
+      addText(
+        `${framework.framework.name} (${framework.framework.version})`,
+        10.5,
+        "bold",
+        primaryColor,
+      );
+      yPosition += 1;
+      const coverageLabel = frameworkCoverageLabel(framework);
+      if (coverageLabel) addText(coverageLabel, 8, "normal", PALETTE.muted);
+      addText(
+        `${framework.summary.withEvidence} with evidence, ${framework.summary.partial} partial, ${framework.summary.withoutEvidence} without evidence (${framework.summary.applicableControls} entries in scope; ${framework.summary.notApplicable} outside scope; ${framework.summary.notAssessed} not assessed; ${framework.summary.conflicting} mixed evidence)`,
+        8,
+        "normal",
+        PALETTE.muted,
+      );
+      yPosition += 2;
+      drawRule(doc, margin, yPosition, right);
+      yPosition += 2.5;
+
+      const maxRows = 8;
+      const ranked = [...framework.controls].sort(
+        (a, b) =>
+          statusRank[a.status] - statusRank[b.status] ||
+          compareControlIds(a.control.id, b.control.id),
+      );
+      for (const assessed of ranked.slice(0, maxRows)) {
+        ensureSpace(5);
+        drawMarker(
+          doc,
+          margin + 1.4,
+          yPosition + capHeight(8) / 2,
+          controlStatusMarker(assessed.status),
+          statusColors[assessed.status],
+        );
+        const tier = assessed.control.tier ? ` (${assessed.control.tier})` : "";
+        addText(
+          `${assessed.control.id} ${assessed.control.title}${tier}: ${statusLabels[assessed.status]}`,
+          8,
+          "normal",
+          textColor,
+          margin + 5,
+        );
+        if (framework.framework.id === "essential-eight")
+          addText(
+            assessed.control.summary,
+            8,
+            "normal",
+            PALETTE.muted,
+            margin + 5,
+          );
+        yPosition += 1;
+      }
+      if (ranked.length > maxRows) {
+        addText(
+          `…and ${ranked.length - maxRows} more controls in the full report.`,
+          8,
+          "italic",
+          PALETTE.muted,
+          margin + 5,
+        );
+      }
+      yPosition += 6;
+    }
+
+    ensureSpace(20);
+    addText(assessment.disclaimer, 8, "italic", PALETTE.muted);
+    yPosition += 4;
+    addText(
+      "Generate the full requirement-level compliance report from the Compliance view in your dashboard: intunedocumentation.com/dashboard",
+      9,
+      "bold",
+      primaryColor,
+    );
+  };
+
+  if (showAnalytics) addTenantOverview();
+  if (data.includeComplianceEvidence !== false) {
+    addComplianceOverview();
+  }
+
+  if (data.fetchErrors?.length) {
+    startSection({
+      title: "Collection Warnings",
+      eyebrow: "Collection",
+      lead: "The following resources were only partially collected or were unavailable. Successful sibling resources remain in this document.",
+    });
+
+    for (const warning of data.fetchErrors) {
+      ensureSpace(12);
+      drawMarker(
+        doc,
+        margin + 1.4,
+        yPosition + capHeight(9) / 2,
+        warning.partial ? "half" : "outline",
+        TONES.partial.text,
+      );
+      addText(
+        `${warning.partial ? "Partial data" : "Collection unavailable"}: ${warning.policyType}: ${warning.policyName}`,
+        9,
+        "bold",
+        TONES.partial.text,
+        margin + 5,
+      );
+      addText(
+        [
+          warning.error,
+          warning.statusCode ? `HTTP ${warning.statusCode}` : undefined,
+          warning.endpoint
+            ? `Microsoft Graph beta ${warning.endpoint}`
+            : undefined,
+          warning.permissionHint
+            ? `Permission hint: ${warning.permissionHint}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        8,
+        "normal",
+        PALETTE.muted,
+        margin + 5,
+      );
+      yPosition += 2;
+      drawRule(doc, margin, yPosition, right);
+      yPosition += 3;
     }
   }
 
+  // The assignment collection status of an item, with its collection
+  // errors matched by family as the engine matches them.
+  const statusOf = (item: Record<string, unknown>, family: string) =>
+    assignmentStatus(item, itemFetchErrors(data.fetchErrors, item, family));
   // Settings Catalog Section
   const enhanceAssignmentText = (text: string): string => {
     if (!text) return text;
@@ -1824,15 +1383,10 @@ export async function generateDetailedPDF(
     return text;
   };
   if (data.settingsCatalog.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({
+    startSection({
       title: "Settings Catalog Policies",
-      pageNum: pageNumber,
+      eyebrow: "Device configuration",
     });
-    addSectionHeader("Settings Catalog Policies");
 
     totalPolicies += data.settingsCatalog.length;
 
@@ -1843,7 +1397,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "settingsCatalog"),
             ),
           ),
           policy.createdDateTime,
@@ -1851,12 +1405,12 @@ export async function generateDetailedPDF(
         );
 
         if (policy.description) {
-          addText(policy.description, 9, "italic", [100, 100, 100]);
+          addText(policy.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
         // Extract and display settings
-        if (policy.settings && policy.settings.length > 0) {
+        if (Array.isArray(policy.settings) && policy.settings.length > 0) {
           const formattedSettings: Array<{
             name: string;
             value: string;
@@ -1867,8 +1421,8 @@ export async function generateDetailedPDF(
           for (const setting of policy.settings) {
             const extracted = extractSettingValue(setting);
 
-            // Skip unconfigured settings
-            if (extracted.value === "Not configured") {
+            // Skip unconfigured settings, told by the value Graph returned
+            if (!extracted.configured) {
               continue;
             }
 
@@ -1891,11 +1445,18 @@ export async function generateDetailedPDF(
           if (formattedSettings.length > 0) {
             addSettingsTable(formattedSettings);
           } else {
-            addText("No settings configured", 9, "normal", [150, 150, 150]);
+            addText("No settings configured", 9, "normal", PALETTE.muted);
             yPosition += 5;
           }
         } else {
-          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          addText(
+            settingsUnavailable(policy, "settingsCatalog")
+              ? SETTINGS_UNAVAILABLE
+              : "No settings configured",
+            9,
+            "normal",
+            PALETTE.muted,
+          );
           yPosition += 5;
         }
 
@@ -1917,12 +1478,10 @@ export async function generateDetailedPDF(
 
   // Device Configurations Section
   if (data.deviceConfigurations.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "Device Configurations", pageNum: pageNumber });
-    addSectionHeader("Device Configurations");
+    startSection({
+      title: "Device Configurations",
+      eyebrow: "Device configuration",
+    });
 
     totalPolicies += data.deviceConfigurations.length;
 
@@ -1933,7 +1492,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               config.assignments,
-              config.collectionStatus?.assignments,
+              statusOf(config, "deviceConfigurations"),
             ),
           ),
           config.createdDateTime,
@@ -1941,7 +1500,7 @@ export async function generateDetailedPDF(
         );
 
         if (config.description) {
-          addText(config.description, 9, "italic", [100, 100, 100]);
+          addText(config.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -1949,8 +1508,7 @@ export async function generateDetailedPDF(
         const categories = parseDeviceConfiguration(config);
         categories.forEach((category) => {
           if (category.settings.length > 0) {
-            addText(category.category, 10, "bold");
-            yPosition += 2;
+            addSubheading(category.category);
             addSettingsTable(category.settings);
           }
         });
@@ -1973,12 +1531,10 @@ export async function generateDetailedPDF(
 
   // Administrative Templates Section
   if (data.administrativeTemplates.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "Administrative Templates", pageNum: pageNumber });
-    addSectionHeader("Administrative Templates");
+    startSection({
+      title: "Administrative Templates",
+      eyebrow: "Device configuration",
+    });
 
     totalPolicies += data.administrativeTemplates.length;
 
@@ -1989,7 +1545,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               template.assignments,
-              template.collectionStatus?.assignments,
+              statusOf(template, "administrativeTemplates"),
             ),
           ),
           template.createdDateTime,
@@ -1997,12 +1553,15 @@ export async function generateDetailedPDF(
         );
 
         if (template.description) {
-          addText(template.description, 9, "italic", [100, 100, 100]);
+          addText(template.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
         // Parse and display definition values
-        if (template.definitionValues && template.definitionValues.length > 0) {
+        if (
+          Array.isArray(template.definitionValues) &&
+          template.definitionValues.length > 0
+        ) {
           const settings = parseAdministrativeTemplate(
             template.definitionValues,
           );
@@ -2017,13 +1576,19 @@ export async function generateDetailedPDF(
 
           Object.entries(groupedSettings).forEach(
             ([category, categorySettings]: [string, any]) => {
-              addText(category, 10, "bold");
-              yPosition += 2;
+              addSubheading(category);
               addSettingsTable(categorySettings);
             },
           );
         } else {
-          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          addText(
+            settingsUnavailable(template, "administrativeTemplates")
+              ? SETTINGS_UNAVAILABLE
+              : "No settings configured",
+            9,
+            "normal",
+            PALETTE.muted,
+          );
           yPosition += 5;
         }
 
@@ -2045,12 +1610,10 @@ export async function generateDetailedPDF(
 
   // Compliance Policies Section
   if (data.compliancePolicies.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "Compliance Policies", pageNum: pageNumber });
-    addSectionHeader("Compliance Policies");
+    startSection({
+      title: "Compliance Policies",
+      eyebrow: "Device compliance",
+    });
 
     totalPolicies += data.compliancePolicies.length;
 
@@ -2061,7 +1624,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "compliancePolicies"),
             ),
           ),
           policy.createdDateTime,
@@ -2069,7 +1632,7 @@ export async function generateDetailedPDF(
         );
 
         if (policy.description) {
-          addText(policy.description, 9, "italic", [100, 100, 100]);
+          addText(policy.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -2082,12 +1645,7 @@ export async function generateDetailedPDF(
           }));
           addSettingsTable(rulesTable);
         } else {
-          addText(
-            "No compliance rules configured",
-            9,
-            "normal",
-            [150, 150, 150],
-          );
+          addText("No compliance rules configured", 9, "normal", PALETTE.muted);
           yPosition += 5;
         }
 
@@ -2109,12 +1667,10 @@ export async function generateDetailedPDF(
 
   // App Protection Policies Section
   if (data.appProtectionPolicies && data.appProtectionPolicies.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "App Protection Policies", pageNum: pageNumber });
-    addSectionHeader("App Protection Policies");
+    startSection({
+      title: "App Protection Policies",
+      eyebrow: "App management",
+    });
 
     totalPolicies += data.appProtectionPolicies.length;
 
@@ -2125,7 +1681,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "appProtectionPolicies"),
             ),
           ),
           policy.createdDateTime,
@@ -2133,15 +1689,14 @@ export async function generateDetailedPDF(
         );
 
         if (policy.description) {
-          addText(policy.description, 9, "italic", [100, 100, 100]);
+          addText(policy.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
         // Display platform type
         if (policy.platformType) {
-          addText("Platform:", 10, "bold");
-          yPosition += 1;
-          addText(policy.platformType, 9, "normal", [80, 80, 80]);
+          addSubheading("Platform:");
+          addText(policy.platformType, 9, "normal", PALETTE.muted);
           yPosition += 3;
         }
 
@@ -2150,11 +1705,8 @@ export async function generateDetailedPDF(
 
         // Helper function to add setting if configured
         const addSettingIfConfigured = (name: string, value: any) => {
-          if (value !== undefined && value !== null) {
-            const formattedValue = formatValue(value);
-            if (formattedValue !== "Not configured") {
-              settings.push({ name, value: formattedValue });
-            }
+          if (!isUnsetValue(value)) {
+            settings.push({ name, value: formatValue(value) });
           }
         };
 
@@ -2286,15 +1838,14 @@ export async function generateDetailedPDF(
         );
 
         if (settings.length > 0) {
-          addText("Protection Settings:", 11, "bold");
-          yPosition += 2;
+          addSubheading("Protection Settings:");
           addSettingsTable(settings);
         } else {
           addText(
             "No protection settings configured",
             9,
             "normal",
-            [150, 150, 150],
+            PALETTE.muted,
           );
           yPosition += 5;
         }
@@ -2317,12 +1868,10 @@ export async function generateDetailedPDF(
 
   // Security Baselines Section
   if (data.securityBaselines.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "Security Baselines", pageNum: pageNumber });
-    addSectionHeader("Security Baselines");
+    startSection({
+      title: "Security Baselines",
+      eyebrow: "Endpoint security",
+    });
 
     totalPolicies += data.securityBaselines.length;
 
@@ -2333,7 +1882,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               baseline.assignments,
-              baseline.collectionStatus?.assignments,
+              statusOf(baseline, "securityBaselines"),
             ),
           ),
           baseline.createdDateTime,
@@ -2341,7 +1890,7 @@ export async function generateDetailedPDF(
         );
 
         if (baseline.description) {
-          addText(baseline.description, 9, "italic", [100, 100, 100]);
+          addText(baseline.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -2350,31 +1899,34 @@ export async function generateDetailedPDF(
             "Baseline settings collection incomplete",
             9,
             "normal",
-            [150, 150, 150],
+            PALETTE.muted,
           );
           yPosition += 5;
         }
         // Parse and display baseline settings
-        if (baseline.settings?.length || baseline.categories?.length) {
+        const unlisted = unlistedSources(baseline, "securityBaselines").size;
+        if (
+          !unlisted &&
+          (baseline.settings?.length || baseline.categories?.length)
+        ) {
           const categories = parseSecurityBaseline(
             baseline.categories || [],
             baseline.settings,
           );
           categories.forEach((category) => {
             if (category.settings.length > 0) {
-              addText(category.category, 10, "bold");
-              yPosition += 2;
+              addSubheading(category.category);
               addSettingsTable(category.settings);
             }
           });
         } else {
           addText(
-            baseline.collectionStatus?.settings === "incomplete"
-              ? "Settings unavailable"
+            settingsUnavailable(baseline, "securityBaselines")
+              ? SETTINGS_UNAVAILABLE
               : "No settings configured",
             9,
             "normal",
-            [150, 150, 150],
+            PALETTE.muted,
           );
           yPosition += 5;
         }
@@ -2397,36 +1949,32 @@ export async function generateDetailedPDF(
 
   // Scripts Section
   if (data.scripts.windows.length > 0 || data.scripts.macOS.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "Scripts", pageNum: pageNumber });
-    addSectionHeader("Scripts");
+    startSection({
+      title: "Scripts",
+      eyebrow: "Scripts",
+    });
 
     totalPolicies += data.scripts.windows.length + data.scripts.macOS.length;
 
     // Windows PowerShell Scripts
     if (data.scripts.windows.length > 0) {
-      addText("Windows PowerShell Scripts", 12, "bold");
-      yPosition += 5;
+      currentPolicy = undefined;
+      addSubheading("Windows PowerShell Scripts", 11);
+      yPosition += 2;
 
       data.scripts.windows.forEach((script) => {
         try {
           addConfigHeader(
             script.displayName,
             enhanceAssignmentText(
-              parseAssignments(
-                script.assignments,
-                script.collectionStatus?.assignments,
-              ),
+              parseAssignments(script.assignments, statusOf(script, "scripts")),
             ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
 
           const scriptInfo = [
-            { name: "File Name", value: script.fileName || "N/A" },
+            { name: "File Name", value: script.fileName || "n/a" },
             {
               name: "Run As",
               value: script.runAsAccount === "system" ? "System" : "User",
@@ -2445,12 +1993,11 @@ export async function generateDetailedPDF(
               "Script content omitted from the export for security.",
               9,
               "italic",
-              [100, 100, 100],
+              PALETTE.muted,
             );
             yPosition += 3;
           } else if (script.scriptContent) {
-            addText("Script Content:", 9, "bold");
-            yPosition += 2;
+            addSubheading("Script Content:", 9);
 
             // Decode base64 script content if needed
             let scriptText = script.scriptContent;
@@ -2469,30 +2016,14 @@ export async function generateDetailedPDF(
               // Not base64, use as is
             }
 
-            doc.setFontSize(8);
-            doc.setFont("courier", "normal");
-            doc.setTextColor(50, 50, 50);
-
-            // Split the full script into lines
-            const lines = doc.splitTextToSize(scriptText, maxWidth - 10);
-
-            // Add all lines with proper page breaks
-            lines.forEach((line: string) => {
-              checkPageBreak();
-              doc.text(line, margin + 5, yPosition);
-              yPosition += 4;
-            });
-
-            doc.setFont(fontFamily, "normal");
-            doc.setTextColor(0, 0, 0);
-            yPosition += 3;
+            addCode(scriptText);
 
             // Add script length info
             addText(
               `Total script length: ${scriptText.length} characters`,
               8,
               "normal",
-              [100, 100, 100],
+              PALETTE.muted,
             );
             yPosition += 2;
           }
@@ -2515,25 +2046,23 @@ export async function generateDetailedPDF(
 
     // macOS Shell Scripts
     if (data.scripts.macOS.length > 0) {
-      addText("macOS Shell Scripts", 12, "bold");
-      yPosition += 5;
+      currentPolicy = undefined;
+      addSubheading("macOS Shell Scripts", 11);
+      yPosition += 2;
 
       data.scripts.macOS.forEach((script) => {
         try {
           addConfigHeader(
             script.displayName,
             enhanceAssignmentText(
-              parseAssignments(
-                script.assignments,
-                script.collectionStatus?.assignments,
-              ),
+              parseAssignments(script.assignments, statusOf(script, "scripts")),
             ),
             script.createdDateTime,
             script.lastModifiedDateTime,
           );
 
           const scriptInfo = [
-            { name: "File Name", value: script.fileName || "N/A" },
+            { name: "File Name", value: script.fileName || "n/a" },
             {
               name: "Run As",
               value: script.runAsAccount === "system" ? "System" : "User",
@@ -2547,12 +2076,11 @@ export async function generateDetailedPDF(
               "Script content omitted from the export for security.",
               9,
               "italic",
-              [100, 100, 100],
+              PALETTE.muted,
             );
             yPosition += 3;
           } else if (script.scriptContent) {
-            addText("Script Content:", 9, "bold");
-            yPosition += 2;
+            addSubheading("Script Content:", 9);
 
             // Decode base64 script content if needed
             let scriptText = script.scriptContent;
@@ -2571,30 +2099,14 @@ export async function generateDetailedPDF(
               // Not base64, use as is
             }
 
-            doc.setFontSize(8);
-            doc.setFont("courier", "normal");
-            doc.setTextColor(50, 50, 50);
-
-            // Split the full script into lines
-            const lines = doc.splitTextToSize(scriptText, maxWidth - 10);
-
-            // Add all lines with proper page breaks
-            lines.forEach((line: string) => {
-              checkPageBreak();
-              doc.text(line, margin + 5, yPosition);
-              yPosition += 4;
-            });
-
-            doc.setFont(fontFamily, "normal");
-            doc.setTextColor(0, 0, 0);
-            yPosition += 3;
+            addCode(scriptText);
 
             // Add script length info
             addText(
               `Total script length: ${scriptText.length} characters`,
               8,
               "normal",
-              [100, 100, 100],
+              PALETTE.muted,
             );
             yPosition += 2;
           }
@@ -2618,15 +2130,10 @@ export async function generateDetailedPDF(
 
   // App Configuration Policies Section
   if (data.appConfigurations && data.appConfigurations.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({
+    startSection({
       title: "App Configuration Policies",
-      pageNum: pageNumber,
+      eyebrow: "App management",
     });
-    addSectionHeader("App Configuration Policies");
 
     totalPolicies += data.appConfigurations.length;
 
@@ -2637,7 +2144,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               config.assignments,
-              config.collectionStatus?.assignments,
+              statusOf(config, "appConfigurations"),
             ),
           ),
           config.createdDateTime,
@@ -2645,7 +2152,7 @@ export async function generateDetailedPDF(
         );
 
         if (config.description) {
-          addText(config.description, 9, "italic", [100, 100, 100]);
+          addText(config.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -2703,12 +2210,11 @@ export async function generateDetailedPDF(
             try {
               const payload = JSON.parse(config.payloadJson);
               Object.entries(payload).forEach(([key, value]) => {
-                const formattedValue = formatValue(value);
-                // Skip unconfigured settings
-                if (formattedValue !== "Not configured") {
+                // Skip unconfigured settings, told by the value Graph returned
+                if (!isUnsetValue(value)) {
                   configSettings.push({
                     name: key,
-                    value: formattedValue,
+                    value: formatValue(value),
                   });
                 }
               });
@@ -2753,10 +2259,9 @@ export async function generateDetailedPDF(
 
         // Show targeted apps if available
         if (config.targetedMobileApps && config.targetedMobileApps.length > 0) {
-          addText("Targeted Apps:", 10, "bold");
-          yPosition += 2;
+          addSubheading("Targeted Apps:");
           config.targetedMobileApps.forEach((appId: string) => {
-            addText(`• ${appId}`, 9, "normal", [100, 100, 100]);
+            addText(`• ${appId}`, 9, "normal", PALETTE.muted);
             yPosition += 1;
           });
           yPosition += 2;
@@ -2780,12 +2285,10 @@ export async function generateDetailedPDF(
 
   // Windows Update Policies Section
   if (data.windowsUpdatePolicies && data.windowsUpdatePolicies.length > 0) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: "Windows Update Policies", pageNum: pageNumber });
-    addSectionHeader("Windows Update Policies");
+    startSection({
+      title: "Windows Update Policies",
+      eyebrow: "Updates",
+    });
 
     totalPolicies += data.windowsUpdatePolicies.length;
 
@@ -2796,7 +2299,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               policy.assignments,
-              policy.collectionStatus?.assignments,
+              statusOf(policy, "windowsUpdatePolicies"),
             ),
           ),
           policy.createdDateTime,
@@ -2804,7 +2307,7 @@ export async function generateDetailedPDF(
         );
 
         if (policy.description) {
-          addText(policy.description, 9, "italic", [100, 100, 100]);
+          addText(policy.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -2813,11 +2316,8 @@ export async function generateDetailedPDF(
 
         // Helper function to add setting if configured
         const addUpdateSettingIfConfigured = (name: string, value: any) => {
-          if (value !== undefined && value !== null) {
-            const formattedValue = formatValue(value);
-            if (formattedValue !== "Not configured") {
-              updateSettings.push({ name, value: formattedValue });
-            }
+          if (!isUnsetValue(value)) {
+            updateSettings.push({ name, value: formatValue(value) });
           }
         };
 
@@ -2861,7 +2361,7 @@ export async function generateDetailedPDF(
         if (updateSettings.length > 0) {
           addSettingsTable(updateSettings);
         } else {
-          addText("No settings configured", 9, "normal", [150, 150, 150]);
+          addText("No settings configured", 9, "normal", PALETTE.muted);
           yPosition += 5;
         }
 
@@ -2886,15 +2386,10 @@ export async function generateDetailedPDF(
     data.conditionalAccessPolicies &&
     data.conditionalAccessPolicies.length > 0
   ) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({
+    startSection({
       title: "Conditional Access Policies",
-      pageNum: pageNumber,
+      eyebrow: "Identity and access",
     });
-    addSectionHeader("Conditional Access Policies");
 
     totalPolicies += data.conditionalAccessPolicies.length;
 
@@ -2912,13 +2407,13 @@ export async function generateDetailedPDF(
             `State: ${conditionalAccessStateLabel(policy.state)}`,
             9,
             "normal",
-            [100, 100, 100],
+            PALETTE.muted,
           );
           yPosition += 2;
         }
 
         if (policy.description) {
-          addText(policy.description, 9, "normal", [100, 100, 100]);
+          addText(policy.description, 9, "normal", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -2931,7 +2426,7 @@ export async function generateDetailedPDF(
             "No additional conditions configured",
             9,
             "normal",
-            [150, 150, 150],
+            PALETTE.muted,
           );
           yPosition += 5;
         }
@@ -2957,15 +2452,10 @@ export async function generateDetailedPDF(
     data.enrollmentConfigurations &&
     data.enrollmentConfigurations.length > 0
   ) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({
+    startSection({
       title: "Enrollment Configurations",
-      pageNum: pageNumber,
+      eyebrow: "Enrollment",
     });
-    addSectionHeader("Enrollment Configurations");
 
     totalPolicies += data.enrollmentConfigurations.length;
 
@@ -2976,7 +2466,7 @@ export async function generateDetailedPDF(
           enhanceAssignmentText(
             parseAssignments(
               config.assignments,
-              config.collectionStatus?.assignments,
+              statusOf(config, "enrollmentConfigurations"),
             ),
           ),
           config.createdDateTime,
@@ -2984,7 +2474,7 @@ export async function generateDetailedPDF(
         );
 
         if (config.description) {
-          addText(config.description, 9, "italic", [100, 100, 100]);
+          addText(config.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -2995,13 +2485,13 @@ export async function generateDetailedPDF(
             .pop()
             ?.replace(/([A-Z])/g, " $1")
             .trim();
-          addText(`Type: ${enrollmentType}`, 9, "normal", [100, 100, 100]);
+          addText(`Type: ${enrollmentType}`, 9, "normal", PALETTE.muted);
           yPosition += 2;
         }
 
         // Add priority if available
         if (config.priority !== undefined) {
-          addText(`Priority: ${config.priority}`, 9, "normal", [100, 100, 100]);
+          addText(`Priority: ${config.priority}`, 9, "normal", PALETTE.muted);
           yPosition += 2;
         }
 
@@ -3131,19 +2621,20 @@ export async function generateDetailedPDF(
       (section.items.length > 0 || section.error),
   );
   for (const section of additionalSections) {
-    doc.addPage();
-    yPosition = margin;
-    pageNumber++;
-    addPageNumber();
-    tocEntries.push({ title: section.label, pageNum: pageNumber });
-    addSectionHeader(section.label);
+    startSection({
+      title: section.label,
+      eyebrow:
+        ADDITIONAL_FAMILY_LABELS[
+          section.familyKey as keyof typeof ADDITIONAL_FAMILY_LABELS
+        ] ?? "Additional configuration",
+    });
 
     if (section.endpoint) {
       addText(
         `Source: Microsoft Graph beta ${section.endpoint}`,
         8,
         "normal",
-        [100, 100, 100],
+        PALETTE.muted,
       );
       yPosition += 2;
     }
@@ -3152,7 +2643,7 @@ export async function generateDetailedPDF(
         `${section.error.partial ? "Partial data" : "Collection unavailable"}: ${section.error.message}`,
         9,
         "normal",
-        [160, 90, 0],
+        TONES.partial.text,
       );
       yPosition += 3;
     }
@@ -3162,17 +2653,19 @@ export async function generateDetailedPDF(
       try {
         addConfigHeader(
           item.displayName || item.name || section.label,
-          enhanceAssignmentText(
-            parseAssignments(
-              item.assignments,
-              item.collectionStatus?.assignments,
-            ),
-          ),
+          assignable(item)
+            ? enhanceAssignmentText(
+                parseAssignments(
+                  item.assignments,
+                  statusOf(item, section.familyKey),
+                ),
+              )
+            : ASSIGNMENTS_NOT_APPLICABLE,
           item.createdDateTime,
           item.lastModifiedDateTime || item.modifiedDateTime,
         );
         if (item.description) {
-          addText(item.description, 9, "italic", [100, 100, 100]);
+          addText(item.description, 9, "italic", PALETTE.muted);
           yPosition += 2;
         }
         const settings = parseDocumentableProperties(item);
@@ -3182,7 +2675,7 @@ export async function generateDetailedPDF(
             "No additional settings returned",
             9,
             "normal",
-            [150, 150, 150],
+            PALETTE.muted,
           );
         yPosition += 5;
         successfulPolicies++;
@@ -3199,93 +2692,68 @@ export async function generateDetailedPDF(
   // === RENDER TABLE OF CONTENTS ===
   // Now go back and fill in the ToC if it was included
   if (includeToC && tocEntries.length > 0) {
-    // Lay out the rows first: rows that do not fit on the first ToC page
-    // continue on pages inserted directly after it
-    const tocContinuationTop = calculateHeaderHeight();
-    let tocPageOffset = 0;
-    let tocRowY = tocYStart;
-    const tocRows = tocEntries.map(() => {
-      if (tocRowY > pageHeight - 40) {
-        tocPageOffset++;
-        tocRowY = tocContinuationTop;
-      }
-      const row = { pageOffset: tocPageOffset, y: tocRowY };
-      tocRowY += 8;
-      return row;
-    });
+    // Rows that do not fit on the first contents page continue on pages
+    // inserted directly after it.
+    const items = tocEntries.map((entry) => ({
+      title: entry.title,
+      page: entry.pageNum,
+      level: 0 as const,
+    }));
+    const { rows, extraPages } = layoutToc(doc, frame, items, contentTop);
 
     // Every recorded page moves back by the number of inserted ToC pages
-    if (tocPageOffset > 0) {
+    if (extraPages > 0) {
       for (const entry of tocEntries) {
-        entry.pageNum += tocPageOffset;
+        entry.pageNum += extraPages;
         for (const child of entry.children ?? []) {
-          child.pageNumber += tocPageOffset;
+          child.pageNumber += extraPages;
         }
       }
-      for (let offset = 1; offset <= tocPageOffset; offset++) {
-        doc.insertPage(tocPageNumber + offset);
-        addPageNumber();
-      }
+      for (const item of items) item.page += extraPages;
     }
-
-    tocEntries.forEach((entry, index) => {
-      const row = tocRows[index];
-      if (!row) return;
-      doc.setPage(tocPageNumber + row.pageOffset);
-      yPosition = row.y;
-      doc.setFontSize(11);
-
-      // Section number
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(60, 60, 60);
-      const sectionNum = `${index + 1}.`;
-      doc.text(sectionNum, margin, yPosition);
-
-      // Section title
-      doc.setFont(fontFamily, "normal");
-      doc.setTextColor(60, 60, 60);
-      doc.text(entry.title, margin + 10, yPosition);
-
-      // Calculate position for dots and page number
-      const titleWidth = doc.getTextWidth(entry.title);
-      const pageNumText = entry.pageNum.toString();
-      const pageNumWidth = doc.getTextWidth(pageNumText);
-
-      // Draw dot leader
-      const dotsStartX = margin + 10 + titleWidth + 5;
-      const dotsEndX = pageWidth - margin - pageNumWidth - 5;
-      const dotSpacing = 3;
-      doc.setFillColor(180, 180, 180);
-
-      for (let x = dotsStartX; x < dotsEndX; x += dotSpacing) {
-        doc.circle(x, yPosition - 1, 0.3, "F");
-      }
-
-      // Page number
-      doc.setFont(fontFamily, "bold");
-      const [pnr, png, pnb] = hexToRgb(primaryColor);
-      doc.setTextColor(pnr, png, pnb);
-      doc.text(pageNumText, pageWidth - margin, yPosition, { align: "right" });
-
-      // Make the whole row a link to the section page
-      doc.link(margin, yPosition - 5, maxWidth, 7, {
-        pageNumber: entry.pageNum,
-      });
+    drawToc(doc, theme, frame, {
+      heading: "Table of Contents",
+      tocPage: tocPageNumber,
+      startY: contentTop,
+      rows,
+      extraPages,
+      onInsertPage: addWatermark,
     });
   }
 
-  // Page numbers for every page after the cover, in the final page order
+  // === RUNNING HEADER AND FOOTER ===
+  // Drawn last, on every page after the cover in the final page order.
   const totalPages = doc.internal.getNumberOfPages();
-  doc.setFontSize(Math.max(bodyFontSize - 2, 8));
-  doc.setFont(fontFamily, "normal");
-  doc.setTextColor(150, 150, 150);
   for (let page = 2; page <= totalPages; page++) {
     doc.setPage(page);
-    doc.text(`Page ${page}`, pageWidth / 2, pageHeight - 10, {
-      align: "center",
-    });
+    if (headerLogo)
+      drawLogo(right - headerLogo.width, 13.8 - headerLogo.height, headerLogo);
+    if (footerLogo)
+      drawLogo(
+        margin,
+        footerLayout.ruleY + 3.1 - footerLogo.height / 2,
+        footerLogo,
+      );
   }
-  doc.setTextColor(0, 0, 0);
+  const headerRightInset = headerLogo ? headerLogo.width + 3 : 0;
+  const runningTitle =
+    scope?.title ||
+    `${branding?.coverPage?.title || "Microsoft Intune"} Configuration Documentation`;
+  const headerNote =
+    branding?.header?.enabled && branding.header.text
+      ? branding.header.text
+      : data.tenantLabel;
+  drawRunningChrome(doc, theme, frame, {
+    title: runningTitle,
+    titleMaxWidth: 90,
+    headerRight: headerNote
+      ? clampLine(doc, headerNote, contentWidth - 94 - headerRightInset, 6.5)
+      : undefined,
+    headerRightInset,
+    footer: footerLayout,
+    footerInset,
+    pageLabel: (page, pageCount) => `Page ${page} of ${pageCount}`,
+  });
 
   // PDF bookmarks: one per section, with its policies nested beneath it
   addPdfOutline(

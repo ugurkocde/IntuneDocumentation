@@ -26,6 +26,9 @@ interface Entitlement {
   status: "granted";
   iat: number;
   exp: number;
+  // Issued by the licensing service only to allowlisted internal
+  // installations; opens CIS Benchmarks before customers can use them.
+  cis?: "internal";
 }
 
 // An activation either comes from this machine's license key, or, with
@@ -82,6 +85,9 @@ const PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
 
 const LICENSE_REQUIRED =
   "A license is required to collect and export. Add your license key under License and account.";
+
+export const MSP_PLAN_REQUIRED =
+  "Portfolio and comparing tenants are part of the MSP plan. The license of the signed in tenant is a Pro license.";
 
 const REASONS: Record<string, string> = {
   invalid_key: "This license key is not valid for Intune Documentation.",
@@ -148,7 +154,10 @@ function decodeToken(token: string): Entitlement | null {
     const payload = JSON.parse(
       Buffer.from(body, "base64url").toString("utf8"),
     ) as Entitlement;
-    return payload.v === 1 ? payload : null;
+    if (payload.v !== 1) return null;
+    // A claim this build does not know is refused, never ignored.
+    if (payload.cis !== undefined && payload.cis !== "internal") return null;
+    return payload;
   } catch {
     return null;
   }
@@ -670,6 +679,32 @@ export class LicenseService {
           : "The license is not valid for this tenant.",
       );
     }
+  }
+
+  // Like requireEntitlement, and the entitlement of the signed in tenant
+  // must be the MSP plan. The plan comes from the signed token, never from
+  // the renderer.
+  async requireMspPlan(tenantId: string | null): Promise<void> {
+    await this.requireEntitlement(tenantId);
+    if (this.valid(tenantId)?.plan !== "msp") {
+      throw new Error(MSP_PLAN_REQUIRED);
+    }
+  }
+
+  // The CIS Benchmarks gate: true only while the tenant's activation is
+  // currently valid and its signed token carries the internal claim. Reads
+  // the cached activation only, never the licensing service.
+  async cisInternal(tenantId: string | null): Promise<boolean> {
+    await this.load();
+    return this.valid(tenantId)?.cis === "internal";
+  }
+
+  // The bearer for the CIS content service, only while the tenant's
+  // activation is currently valid. The service verifies it again.
+  async entitlementToken(tenantId: string | null): Promise<string | null> {
+    await this.load();
+    if (!this.valid(tenantId)) return null;
+    return this.state?.activations[tenantId!.toLowerCase()]?.token ?? null;
   }
 
   // Best effort activation after sign-in so the panel reflects the tenant.

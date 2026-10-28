@@ -83,11 +83,6 @@ export function Compliance() {
                     aria-hidden="true"
                   />
                   {sample.label}
-                  {sample.locale === "de" && (
-                    <span className="text-petrol-600 text-[10px] font-semibold tracking-[0.1em] uppercase">
-                      DE
-                    </span>
-                  )}
                   {sample.desktopOnly && (
                     <span className="text-petrol-600 text-[10px] font-semibold tracking-[0.1em] uppercase">
                       Desktop

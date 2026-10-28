@@ -1,0 +1,255 @@
+import JSZip from "jszip";
+import { describe, expect, it } from "vitest";
+import {
+  benchmarkCsv,
+  benchmarkExportFileName,
+  benchmarkJson,
+  exportBenchmark,
+} from "../export";
+import { REASON_LABELS, RESULT_LABELS } from "../display";
+import {
+  PACK_POLICY,
+  TENANT_POLICY,
+  richAssessment,
+  richPack,
+  unassessedAssessment,
+  unassignedAssessment,
+} from "./export-fixtures";
+
+// Local time: file names carry the local date and time.
+const LOCAL = new Date(2026, 9, 22, 14, 5);
+const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+function keysSorted(value: unknown): boolean {
+  if (Array.isArray(value)) return value.every(keysSorted);
+  if (value === null || typeof value !== "object") return true;
+  const keys = Object.keys(value);
+  return (
+    keys.join() === [...keys].sort().join() &&
+    Object.values(value).every(keysSorted)
+  );
+}
+
+describe("benchmark export file names", () => {
+  it("names the benchmark id, version, Level, tenant and local time only", () => {
+    const assessment = richAssessment();
+    expect(
+      benchmarkExportFileName(assessment, "pdf", {
+        tenantLabel: "Synthetic Tenant",
+        date: LOCAL,
+      }),
+    ).toBe(
+      "CIS-Readiness-synthetic-bench-1.0.0-L1-synthetic-tenant-2026-10-22-1405.pdf",
+    );
+    expect(benchmarkExportFileName(assessment, "csv", { date: LOCAL })).toBe(
+      "CIS-Readiness-synthetic-bench-1.0.0-L1-2026-10-22-1405.csv",
+    );
+    expect(
+      benchmarkExportFileName(assessment, "json", { date: LOCAL }),
+    ).toMatch(/\.json$/);
+    expect(
+      benchmarkExportFileName(assessment, "drafts", { date: LOCAL }),
+    ).toMatch(/-L1-2026-10-22-1405\.zip$/);
+  });
+
+  it("keeps titles out of the file name and unsafe characters out of the tenant part", async () => {
+    const { fileName } = await exportBenchmark(richAssessment(), "csv", {
+      tenantLabel: "../Synthetic: Tenant*",
+      renderDate: LOCAL,
+      benchmarkName: "Synthetic Named Benchmark",
+    });
+    expect(fileName).toBe(
+      "CIS-Readiness-synthetic-bench-1.0.0-L1-synthetic-tenant-2026-10-22-1405.csv",
+    );
+  });
+});
+
+const rowStarting = (lines: readonly string[], start: string) =>
+  lines.find((line) => line.startsWith(`${start},`));
+
+describe("benchmark CSV", () => {
+  it("lists ids, result codes, labels, reasons and open settings without titles", () => {
+    const csv = benchmarkCsv(richAssessment());
+    const lines = csv.replace(/^﻿/, "").trimEnd().split("\r\n");
+    expect(lines[0]).toBe(
+      "Benchmark,Version,Level,Item level,Item,ID,Result code,Result,Reason code,Reason,Open setting IDs,Setting names,Holding policies,Assignment,Current value,Recommended value,Next action",
+    );
+    expect(rowStarting(lines, "synthetic-bench,1.0.0,1,1,Recommendation,1.1,pass,Matches,,,")).toBeTruthy();
+    expect(
+      rowStarting(
+        lines,
+        "synthetic-bench,1.0.0,1,1,Recommendation,2.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_gamma",
+      ),
+    ).toBeTruthy();
+    expect(lines).toHaveLength(1 + richAssessment().recommendations.length);
+    for (const item of richAssessment().recommendations)
+      expect(csv).not.toContain(item.title);
+    // Holding policies are the tenant's own; pack policy names never appear.
+    expect(csv).not.toContain(PACK_POLICY);
+    expect(csv.startsWith("﻿")).toBe(true);
+  });
+
+  it("tells matching, differing and mixed values on unassigned policies apart", () => {
+    const lines = benchmarkCsv(unassignedAssessment()).split("\r\n");
+    expect(
+      rowStarting(
+        lines,
+        "synthetic-bench,1.0.0,1,1,Recommendation,1.1,review,Needs review,notAssigned,The matching value is only on policies that are not assigned.,synthetic_bench_alpha",
+      ),
+    ).toBeTruthy();
+    expect(
+      rowStarting(
+        lines,
+        'synthetic-bench,1.0.0,1,1,Recommendation,1.2,review,Needs review,notAssignedDiffers,"Only policies that are not assigned hold this setting, and none of them matches the recommended value.",synthetic_bench_length',
+      ),
+    ).toBeTruthy();
+    expect(
+      rowStarting(
+        lines,
+        "synthetic-bench,1.0.0,1,1,Recommendation,1.3,review,Needs review,notAssignedMixed,Only policies that are not assigned hold this setting: some match the recommended value and some hold another value.,synthetic_bench_gamma",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("neutralises cells a spreadsheet would read as a formula", () => {
+    const assessment = richAssessment();
+    assessment.recommendations[0] = {
+      ...assessment.recommendations[0]!,
+      id: "=HYPERLINK(1)",
+      openSettingIds: ["+cmd"],
+    };
+    const csv = benchmarkCsv(assessment);
+    expect(csv).toContain(",'=HYPERLINK(1),");
+    expect(csv).toContain(",'+cmd,");
+    for (const line of csv.split("\r\n"))
+      for (const cell of line.split(",")) expect(cell).not.toMatch(/^[=+\-@]/);
+  });
+
+  it("separates open setting ids that hold spaces", () => {
+    const assessment = richAssessment();
+    assessment.recommendations[0] = {
+      ...assessment.recommendations[0]!,
+      openSettingIds: [
+        "com.synthetic.energysaver_display sleep timer",
+        "synthetic_bench_beta",
+      ],
+    };
+    expect(benchmarkCsv(assessment)).toContain(
+      ",com.synthetic.energysaver_display sleep timer; synthetic_bench_beta,",
+    );
+  });
+
+  it("lists settings when the pack has no recommendations", () => {
+    const rich = richAssessment();
+    const assessment = {
+      ...rich,
+      basis: "settings" as const,
+      recommendations: [],
+      levels: rich.levels.map((level) => ({
+        ...level,
+        headline: { ...level.headline, basis: "settings" as const },
+      })),
+    };
+    const csv = benchmarkCsv(assessment);
+    expect(csv).toContain(
+      "synthetic-bench,1.0.0,1,1,Setting,synthetic_bench_beta,fail,Differs,,,synthetic_bench_beta,",
+    );
+  });
+});
+
+describe("benchmark JSON summary", () => {
+  it("is deterministic with sorted keys", () => {
+    // The same assessment gives the same text (fixture policy ids differ per call).
+    const assessment = richAssessment();
+    const text = benchmarkJson(assessment);
+    expect(benchmarkJson(assessment)).toBe(text);
+    expect(keysSorted(JSON.parse(text))).toBe(true);
+  });
+
+  it("holds ids, codes, labels, reasons and counts, no titles or policy names", () => {
+    const text = benchmarkJson(richAssessment());
+    const summary = JSON.parse(text);
+    expect(summary.levels[0].headline.counts).toEqual({
+      pass: 1,
+      fail: 4,
+      review: 2,
+      notAssessed: 1,
+    });
+    expect(summary.levels[0].headline.rate).toBe(0.2);
+    // The base of the rate beside the unchanged numbers.
+    expect(summary.levels[0].headline).toMatchObject({
+      ratePercent: 20,
+      assessed: 5,
+      needsReview: 2,
+    });
+    expect(summary.results[1]).toMatchObject({
+      id: "1.2",
+      resultCode: "fail",
+      result: RESULT_LABELS.Fail,
+    });
+    expect(summary.results[5]).toMatchObject({
+      id: "2.1",
+      reasonCode: "notAssigned",
+    });
+    expect(summary.disclaimer).toBe(
+      "Readiness comparison, not a certification",
+    );
+    // Tenant policies holding the settings are named; pack policies never.
+    expect(text).toContain(TENANT_POLICY);
+    expect(text).not.toContain(PACK_POLICY);
+    for (const item of richAssessment().recommendations)
+      expect(text).not.toContain(item.title);
+  });
+
+  it("holds the reason code and text that fit the unassigned holders", () => {
+    const summary = JSON.parse(benchmarkJson(unassignedAssessment()));
+    expect(
+      summary.results.map(
+        (item: { id: string; reasonCode: string; reason: string }) => [
+          item.id,
+          item.reasonCode,
+          item.reason,
+        ],
+      ),
+    ).toEqual([
+      ["1.1", "notAssigned", REASON_LABELS.notAssigned],
+      ["1.2", "notAssignedDiffers", REASON_LABELS.notAssignedDiffers],
+      ["1.3", "notAssignedMixed", REASON_LABELS.notAssignedMixed],
+    ]);
+    expect(summary.results[1].settings[0]).toMatchObject({
+      reasonCode: "notAssignedDiffers",
+    });
+  });
+
+  it("keeps a null headline when nothing was assessed", () => {
+    const summary = JSON.parse(benchmarkJson(unassessedAssessment()));
+    expect(summary.levels[0].headline.rate).toBeNull();
+    expect(summary.levels[0].headline).toMatchObject({
+      assessed: 0,
+      needsReview: 2,
+    });
+    expect(summary.levels[0].coverage.source).toBe("none");
+  });
+});
+
+describe("exportBenchmark", () => {
+  it("returns PDF bytes", async () => {
+    const result = await exportBenchmark(richAssessment(), "pdf", {
+      renderDate: LOCAL,
+    });
+    expect(decode(result.bytes.subarray(0, 5))).toBe("%PDF-");
+    expect(result.fileName).toMatch(/\.pdf$/);
+  });
+
+  it("returns the drafts ZIP and needs the pack for it", async () => {
+    await expect(exportBenchmark(richAssessment(), "drafts")).rejects.toThrow(
+      /delivered pack/,
+    );
+    const result = await exportBenchmark(richAssessment(), "drafts", {
+      pack: richPack(),
+      renderDate: LOCAL,
+    });
+    const zip = await JSZip.loadAsync(result.bytes);
+    expect(Object.keys(zip.files)[0]).toBe("README.txt");
+  });
+});

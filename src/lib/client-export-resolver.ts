@@ -2,7 +2,12 @@ import { Client } from "@microsoft/microsoft-graph-client";
 import { createGraphClient } from "./graph-client";
 import { GroupResolver } from "./group-resolver";
 import { collectAllPages } from "./graph-paging";
+import { assignmentGroupIds } from "./compliance/graph-rows";
 import type { ConfigurationSectionData } from "./configuration-sections";
+import type {
+  PolicyDeviceStatus,
+  TenantIdentityPolicies,
+} from "./compliance/types";
 
 export interface ExportResolverProgress {
   stage: "groups" | "devices";
@@ -33,6 +38,8 @@ interface SelectedData {
   windowsUpdatePolicies: any[];
   enrollmentConfigurations: any[];
   conditionalAccessPolicies: any[];
+  tenantIdentityPolicies?: TenantIdentityPolicies;
+  policyDeviceStatus?: PolicyDeviceStatus;
   branding?: any;
   includeComplianceEvidence?: boolean;
 }
@@ -79,18 +86,17 @@ export async function resolveExportData(
         ];
 
     allConfigs.forEach((config) => {
-      if (config.assignments) {
-        config.assignments.forEach((assignment: any) => {
-          if (assignment.target?.groupId) {
-            allGroupIds.add(assignment.target.groupId);
-          }
-        });
-      }
+      // A scope tag target names its group by entraObjectId.
+      for (const groupId of assignmentGroupIds(config))
+        allGroupIds.add(groupId);
       // Extract group IDs from CA policy conditions
       if (config.conditions?.users) {
         const users = config.conditions.users;
-        const add = (arr?: string[]) =>
-          Array.isArray(arr) && arr.forEach((id) => allGroupIds.add(id));
+        const add = (arr?: unknown) =>
+          Array.isArray(arr) &&
+          arr.forEach((id) => {
+            if (typeof id === "string" && id) allGroupIds.add(id);
+          });
         add(users.includeGroups);
         add(users.excludeGroups);
       }

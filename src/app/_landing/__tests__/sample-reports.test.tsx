@@ -62,7 +62,7 @@ describe("sample report links", () => {
       );
       expect(nis2?.getAttribute("aria-label")).toContain("desktop app only");
       expect(html).toContain(
-        "NIS2 Directive is available in the desktop app only.",
+        "NIS2 Directive and DORA are available in the desktop app only.",
       );
     }
 

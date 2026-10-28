@@ -1,6 +1,7 @@
 import type { ConfigurationSectionData } from "../../../../src/lib/configuration-sections";
 import { flattenItemSettings } from "../../../../src/lib/settings-flatten";
 import type {
+  AssignmentTargets,
   SectionItemsResult,
   SettingSearchHit,
   SettingsSearchFacet,
@@ -17,16 +18,13 @@ export const MAX_SEARCH_LIMIT = 1000;
 // full but returned shortened.
 const MAX_VALUE_CHARS = 1000;
 
-interface IndexedPolicy {
+interface IndexedPolicy extends AssignmentTargets {
   sectionKey: string;
   sectionLabel: string;
   familyKey: string;
   policyId: string;
   policyName: string;
   platforms: string[];
-  assignmentCount: number | null;
-  assignedToAllUsers: boolean;
-  assignedToAllDevices: boolean;
 }
 
 interface IndexedRow {
@@ -113,8 +111,12 @@ export function buildSettingsIndex(
         policyName: summary.displayName,
         platforms: platformLabels(summary.platforms, summary.odataType),
         assignmentCount: summary.assignmentCount,
+        assignmentUnknown: summary.assignmentUnknown,
+        assignmentUnresolved: summary.assignmentUnresolved,
         assignedToAllUsers: summary.assignedToAllUsers,
         assignedToAllDevices: summary.assignedToAllDevices,
+        assignedToCollections: summary.assignedToCollections,
+        assignedToOrganizationalUnits: summary.assignedToOrganizationalUnits,
       };
       const policyLower = policy.policyName.toLowerCase();
       for (const setting of flattenItemSettings(section.key, item)) {

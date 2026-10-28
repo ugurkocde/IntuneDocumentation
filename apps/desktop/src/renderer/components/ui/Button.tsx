@@ -58,7 +58,7 @@ export function Button({
       type={type}
       disabled={isDisabled}
       aria-busy={loading || undefined}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-xl font-semibold whitespace-nowrap transition-[background-color,border-color,box-shadow,color] focus-visible:ring-2 focus-visible:ring-teal-600/40 focus-visible:outline-none disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-xl font-semibold whitespace-nowrap transition-[background-color,border-color,box-shadow,color] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...rest}
     >
       {loading ? (

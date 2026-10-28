@@ -14,6 +14,8 @@ export interface EntitlementPayload {
   status: "granted";
   iat: number;
   exp: number;
+  /** Internal CIS Benchmarks access, issued only to allowlisted internal installations. */
+  cis?: "internal";
 }
 
 export const TOKEN_LIFETIME_SECONDS = 14 * 24 * 60 * 60;
@@ -66,6 +68,7 @@ export function verifyEntitlement(
     const payload = JSON.parse(
       Buffer.from(body, "base64url").toString("utf8"),
     ) as EntitlementPayload;
+    if (payload.cis !== undefined && payload.cis !== "internal") return null;
     return payload.v === 1 ? payload : null;
   } catch {
     return null;

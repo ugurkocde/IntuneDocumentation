@@ -33,6 +33,7 @@ import {
   displayCheckValue,
 } from "~/lib/compliance/check-results";
 import {
+  alternativeLabel,
   CAPABILITY_STATUS_LABELS,
   frameworkCoverageLabel,
 } from "~/lib/compliance/presentation";
@@ -99,13 +100,6 @@ const FRAMEWORK_OPTIONS: ReadonlyArray<{
     shortLabel: "NIST CSF",
     description:
       "Outcome-based guidance for managing and reducing cybersecurity risk.",
-  },
-  {
-    id: "bsi-it-grundschutz",
-    label: "BSI IT-Grundschutz",
-    shortLabel: "BSI",
-    description:
-      "Baseline safeguards for systematic information security management.",
   },
   {
     id: "def-stan-05-138-i4",
@@ -622,7 +616,8 @@ function ControlRow({
                       )}
                   </div>
                   <span className="text-xs text-slate-600">
-                    {checkSummary(capability.checks)}
+                    {alternativeLabel(capability) ??
+                      checkSummary(capability.checks)}
                   </span>
                 </div>
                 <SettingChecks capability={capability} />
@@ -1354,10 +1349,10 @@ export function ComplianceView({
                         (check) => check.assessmentStatus === "unableToCheck",
                       ).length
                     }{" "}
-                    unable to check. Only Intune and Conditional Access policy
-                    checks are shown. Counts describe setting comparisons, not
-                    passed framework requirements. Assignment is shown
-                    separately.
+                    unable to check. Only Intune, Conditional Access and Entra
+                    tenant policy checks are shown. Counts describe setting
+                    comparisons, not passed framework requirements. Assignment
+                    is shown separately.
                   </p>
                   {selectedFramework.framework.totalRequirements !==
                     undefined && (

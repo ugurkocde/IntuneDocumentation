@@ -4,13 +4,13 @@ export {
   assessFramework,
   compareControlIds,
   COMPLIANCE_DISCLAIMER,
+  isAssessedFramework,
   COMPLIANCE_RULESET_VERSION,
 } from "./engine";
 export { COMPLIANCE_CAPABILITIES } from "./capabilities";
 export { createEvidenceManifest } from "./manifest";
 export { NIST_800_53 } from "./frameworks/nist-800-53";
 export { NIST_CSF } from "./frameworks/nist-csf";
-export { BSI_IT_GRUNDSCHUTZ } from "./frameworks/bsi-it-grundschutz";
 export { ISO_27001 } from "./frameworks/iso-27001";
 export { SOC_2 } from "./frameworks/soc2";
 export {
@@ -29,6 +29,17 @@ export {
   NIS2_OUTSIDE_INTUNE_SCOPE,
   nis2MeasureFromCode,
 } from "./frameworks/nis2";
+export {
+  DORA,
+  DORA_OUTSIDE_INTUNE_SCOPE,
+  DORA_SOURCE_ATTRIBUTION,
+} from "./frameworks/dora";
+export { outsideIntuneScope } from "./outside-scope";
+export {
+  DESKTOP_ONLY_FRAMEWORK_IDS,
+  isDesktopOnlyFramework,
+  withoutDesktopOnlyFrameworks,
+} from "./framework-availability";
 export type {
   AssessmentScope,
   CollectionCoverage,

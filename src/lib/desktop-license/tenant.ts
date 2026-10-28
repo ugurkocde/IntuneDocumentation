@@ -140,11 +140,11 @@ export async function tenantLicense(
 
   const common = { key: key.key, installId: input.installId, tenantId };
   if (input.action === "activate") {
-    const entitlement = await activateLicense(ctx, {
-      ...common,
-      os: input.os,
-      appVersion: input.appVersion,
-    });
+    const entitlement = await activateLicense(
+      ctx,
+      { ...common, os: input.os, appVersion: input.appVersion },
+      { presentedKey: false },
+    );
     return {
       ...entitlement,
       source: "tenant",
@@ -162,10 +162,11 @@ export async function tenantLicense(
     });
     return { success: true };
   }
-  const entitlement = await refreshLicense(ctx, {
-    ...common,
-    activationId: input.activationId,
-  });
+  const entitlement = await refreshLicense(
+    ctx,
+    { ...common, activationId: input.activationId },
+    { presentedKey: false },
+  );
   return {
     ...entitlement,
     source: "tenant",

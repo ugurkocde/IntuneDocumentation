@@ -1,6 +1,6 @@
 ---
 title: "Compliance evidence"
-description: "Map your Intune configuration to frameworks such as NIS2, ISO/IEC 27001, SOC 2, NIST and BSI IT-Grundschutz, and export an evidence report for your auditor."
+description: "Map your Intune configuration to frameworks such as NIS2, ISO/IEC 27001, SOC 2 and NIST, and export an evidence report for your auditor."
 ---
 
 Auditors, insurers and customer questionnaires all ask the same thing: show me that the control is in place. For the technical controls, the answer is in your Intune configuration. Finding it by hand means screenshots, exports and a spreadsheet.
@@ -19,18 +19,18 @@ Auditors, insurers and customer questionnaires all ask the same thing: show me t
 
 ## Supported frameworks [#frameworks]
 
-The app supports twelve frameworks.
+The app supports twelve frameworks. NIS2 and DORA are available in the desktop app only.
 
 | Framework | What is covered |
 | --- | --- |
 | ASD Essential Eight | Australian enterprise IT requirements with target Maturity Levels 1, 2 and 3. Configuration evidence only. |
 | ISO/IEC 27001 | Selected Annex A technology controls mapped to managed-device configuration evidence. |
 | NIS2 Directive | EU Directive 2022/2555 Article 21(2) measures with Danish and German law references. Organisational measures need separate assessment. |
+| DORA | Selected points of Regulation (EU) 2022/2554 and its RTS (EU) 2024/1774, as supporting evidence only. Governance, incident reporting, resilience testing and third-party risk need separate assessment. |
 | SOC 2 | Selected Trust Services Criteria mapped to managed-device configuration evidence. |
 | HIPAA Security Rule | Selected 45 CFR Part 164 safeguards for electronic protected health information. Administrative and physical safeguards need separate assessment. |
 | NIST SP 800-53 | Security and privacy controls for information systems and organizations. |
 | NIST CSF 2.0 | Outcome-based guidance for managing and reducing cybersecurity risk. |
-| BSI IT-Grundschutz | Baseline safeguards for systematic information security management. The report is in German. |
 | Def Stan 05-138 | UK MOD supplier controls under DEFCON 658, with the Cyber Risk Profile levels at which each applies. |
 | Cyber Essentials | The five NCSC control themes mapped to managed-device configuration evidence. |
 | NIST SP 800-171 Rev. 2 | Requirements for protecting controlled unclassified information, as referenced by CMMC 2.0 Level 2. |
@@ -57,7 +57,7 @@ The app remembers your choice. To switch later, use the framework menu at the to
 </Step>
 </Steps>
 
-<Screenshot src="/images/desktop/compliance-picker.png" alt="The Choose a compliance framework screen with cards for ASD Essential Eight, ISO/IEC 27001, NIS2 Directive, SOC 2, NIST SP 800-53, NIST CSF 2.0, BSI IT-Grundschutz, Def Stan 05-138 and Cyber Essentials. The two NIST SP 800-171 cards are further down the screen" caption="Each card shows the framework version and how much of it maps to Intune evidence." width={2880} height={1800} />
+<Screenshot src="/images/desktop/compliance-picker.png" alt="The Choose a compliance framework screen with cards for ASD Essential Eight, ISO/IEC 27001, NIS2 Directive, SOC 2, NIST SP 800-53, NIST CSF 2.0, Def Stan 05-138 and Cyber Essentials. The two NIST SP 800-171 cards are further down the screen" caption="Each card shows the framework version and how much of it maps to Intune evidence." width={2880} height={1800} />
 
 ## Set the scope [#scope]
 
@@ -78,7 +78,7 @@ The framework screen has four parts, from summary to detail.
 3. **Check results.** Three counts across all technical checks in scope: <Ui>Matches expected value</Ui>, <Ui>Different value</Ui> and <Ui>Missing</Ui>, each with how many are in assigned policies.
 4. **Mapped controls.** Every control of the framework that has Intune evidence mappings.
 
-<Screenshot src="/images/desktop/compliance-framework.png" alt="Mapped controls for ISO/IEC 27001, such as 8.8 Technical vulnerability management with 5 of 6 safeguards in place and 7 match, 0 missing, 1 different" caption="Each mapped control shows its safeguards in place and how its checks turned out." width={2880} height={1800} />
+<Screenshot src="/images/desktop/compliance-framework.png" alt="Mapped controls for ISO/IEC 27001, such as 8.8 Operating system updates and minimum versions with 5 of 6 safeguards in place and 7 match, 0 missing, 1 different" caption="Each mapped control shows its safeguards in place and how its checks turned out." width={2880} height={1800} />
 
 Each control shows its id and title, a bar with its safeguards in place, for example <Ui>5 of 6 safeguards in place</Ui>, and a summary of its checks, for example <Ui>7 match, 0 missing, 1 different</Ui>. Controls with mixed policy evidence are listed first.
 
@@ -92,9 +92,15 @@ Use <Ui>Expand all</Ui> to open every control at once.
 
 ### What safeguards in place means [#safeguards-in-place]
 
-A safeguard is one technical capability behind a control, such as requiring device encryption. It counts as **in place** when a recognized setting is configured with a recognized value in an Intune or Conditional Access policy that is assigned. A setting in a policy that is not assigned does not count, because it protects no one.
+A safeguard is one technical capability behind a control, such as requiring device encryption. It counts as **in place** when a recognized setting is configured with a recognized value in an Intune or Conditional Access policy that is assigned, or in a tenant-wide Entra policy such as the authentication methods policy. A setting in a policy that is not assigned does not count, because it protects no one.
 
-Safeguards in place is a coverage figure from your configuration. It is not a compliance score or an audit result. The app does not verify device state or effective access.
+Safeguards in place is a coverage figure from your configuration. It is not a compliance score or an audit result. It does not verify effective access.
+
+The evidence also covers three things beyond Intune policies:
+
+- **Entra tenant policies.** With the Policy.Read.All permission the app already requests for Conditional Access, it also reads the tenant authentication methods policy and security defaults. No new permissions are needed. If these cannot be read, the checks behind them are shown as unable to check, never as missing. Security defaults cannot be combined with Conditional Access. While Conditional Access policies exist, in any state including disabled, security defaults switched off show as not applicable, and the app never suggests turning them on. They only show as not needed when an assigned Conditional Access policy requires MFA; otherwise the Conditional Access MFA safeguards stay open.
+- **Screen lock.** A configured screen lock after inactivity counts as supporting evidence where a framework asks for it.
+- **Device status counts.** Intune's per-policy device status counts are shown next to the evidence and in the report annex. They describe rollout, and they never change a control status. A policy with no reported status is shown as no status reported, not as zero.
 
 ### Statuses in the report [#statuses]
 
@@ -130,6 +136,13 @@ The app resolves group names, generates the report and then asks where to save t
 
 Need the data in machine-readable form, for a GRC tool or your own records? Select <Ui>Download evidence record (JSON)</Ui> in the scope section. The file contains the assessment and records which data and rules the result was based on.
 
+### More ways to save the assessment [#more-downloads]
+
+- **[Evidence register](/desktop/evidence-register-and-purview-pack#register).** The same assessment as an Excel workbook (with Controls, Checks and Policy status sheets) and as a CSV of the Checks table, one row per technical check and control, for review, tracking or import into your own tooling.
+- **[Purview evidence pack](/desktop/evidence-register-and-purview-pack#pack).** One ZIP file with the framework evidence PDF, the JSON evidence record, an index of every assessed control with the matching Microsoft Purview Compliance Manager template name, and short upload instructions. You attach the ZIP, or the framework PDF from it, to the related improvement action in Compliance Manager. See [Intune Documentation and Purview Compliance Manager](/purview-compliance-manager).
+- **[Draft fix pack](/desktop/fix-pack).** For safeguards with no evidence at all, the app can save draft, unassigned Windows Settings Catalog policies as JSON. A draft has no effect until you review it, import it and assign it yourself.
+- **[History](/desktop/history), [compare](/desktop/compare) and [portfolio](/desktop/portfolio).** With local history on, collections are kept encrypted on your computer (see [Security and privacy](/security)), so you can see what changed between two collections, compare against a reference, collect on a schedule while the app is open, and, on the MSP plan, see several tenants side by side in a portfolio view.
+
 ## What the evidence report contains [#report-contents]
 
 Every framework report is designed to go straight to an auditor, an insurer or a customer questionnaire.
@@ -141,10 +154,6 @@ Every framework report is designed to go straight to an auditor, an insurer or a
 - **Evidence register.** Every piece of evidence with its policy, type, setting, value and assignment, with a short guide on how to read the report.
 
 The PDF is bookmarked by control family. Status is always shown with a shape and a label as well as a colour, so the report stays readable when printed in black and white.
-
-### BSI IT-Grundschutz in German [#bsi]
-
-The BSI IT-Grundschutz report is written entirely in German. For each requirement it adds a block for the manual assessment (IT-Grundschutz-Check) with fields for implementation status, the person responsible, a target date and a comment. Your reviewer fills these in, independently of the automated technical evidence.
 
 ### See a sample first [#samples]
 

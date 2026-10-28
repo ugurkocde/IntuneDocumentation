@@ -29,6 +29,10 @@ export const SAMPLE_EXCERPTS: Readonly<
     { controlId: "21.2.h", status: "partialEvidence" },
     { controlId: "21.2.b", status: "noEvidence" },
   ],
+  "dora-2022-2554": [
+    { controlId: "RTS 13(l)", status: "partialEvidence" },
+    { controlId: "DORA 10(1)", status: "noEvidence" },
+  ],
   "soc2-tsc": [
     { controlId: "CC6.7", status: "partialEvidence" },
     { controlId: "CC6.6", status: "noEvidence" },
@@ -59,10 +63,6 @@ export const SAMPLE_EXCERPTS: Readonly<
     { controlId: "ML1-MAC-01", status: "partialEvidence" },
     { controlId: "ML1-PO-07", status: "conflictingEvidence" },
   ],
-  "bsi-it-grundschutz": [
-    { controlId: "SYS.2.2.3.A5", status: "partialEvidence" },
-    { controlId: "SYS.2.2.3.A4", status: "noEvidence" },
-  ],
   "def-stan-05-138-i4": [
     { controlId: "2317", status: "partialEvidence" },
     { controlId: "2426", status: "partialEvidence" },
@@ -73,7 +73,6 @@ export const SAMPLE_EXCERPTS: Readonly<
 const REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-53-r5": "N53",
   "nist-csf-2": "CSF",
-  "bsi-it-grundschutz": "BSI",
   "iso-27001-2022": "ISO",
   "soc2-tsc": "SOC",
   "def-stan-05-138-i4": "DEF",
@@ -82,6 +81,7 @@ const REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nist-800-171-r2": "N171",
   "nist-800-171-r3": "N171R3",
   "nis2-2022-2555": "NIS2",
+  "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA",
 };
 
@@ -103,7 +103,7 @@ export function sampleMetadata(sample: SampleReport) {
     preparedBy: "Endpoint Engineering",
     reportId: sampleReportId(sample.frameworkId),
     revision: "1.0",
-    classification: sample.locale === "de" ? "Intern" : "Internal",
+    classification: "Internal",
   };
 }
 
@@ -119,7 +119,6 @@ export interface SampleManifest {
   files: {
     frameworkId: string;
     file: string;
-    locale: string;
     reportId: string;
     excerptControlIds: string[];
   }[];
@@ -133,7 +132,6 @@ export async function expectedSampleManifest(): Promise<SampleManifest> {
     files: SAMPLE_REPORTS.map((sample) => ({
       frameworkId: sample.frameworkId,
       file: sample.file,
-      locale: sample.locale,
       reportId: sampleReportId(sample.frameworkId),
       excerptControlIds: sampleExcerptControlIds(sample),
     })),

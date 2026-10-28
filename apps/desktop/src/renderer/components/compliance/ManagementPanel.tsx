@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Download,
   ExternalLink,
@@ -7,28 +8,39 @@ import {
   FileText,
   FolderOpen,
   Gauge,
+  GitCompareArrows,
   History,
+  RotateCw,
   Trash2,
   Upload,
 } from "lucide-react";
-import { useState } from "react";
-import { measuresWithSafeguards } from "../../../../../../src/lib/compliance/management/management-summary";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  measuresWithSafeguards,
+  scopeKeyOf,
+} from "../../../../../../src/lib/compliance/management/management-summary";
 import type {
   ManagementLocale,
   NextAction,
   NextActionTier,
 } from "../../../../../../src/lib/compliance/management/types";
+import { CONTROL_STATUS_LABELS } from "../../../../../../src/lib/compliance/presentation";
+import type { ControlStatus } from "../../../../../../src/lib/compliance/types";
 import type {
   ComplianceFrameworkId,
   ComplianceFrameworkView,
   ComplianceRequest,
   CrosswalkImportResult,
+  ManagementChangesResult,
+  ManagementReportChanges,
 } from "../../../shared/ipc-types";
 import { useAsyncAction } from "../../hooks/use-async-action";
-import { ipc, isMac } from "../../lib/ipc";
+import { errorMessage, ipc, isMac } from "../../lib/ipc";
+import { useApp } from "../../state/context";
 import { Alert } from "../ui/Alert";
 import { Button } from "../ui/Button";
 import { DisclosureSummary } from "../ui/DisclosureSummary";
+import { Spinner } from "../ui/Spinner";
 
 // The control list filters the metric tiles toggle on the Compliance screen.
 export type ControlFilter = "all" | "noSafeguards" | "unassigned" | "changed";
@@ -179,6 +191,258 @@ function NextActionItem({
   );
 }
 
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function controlStatusText(status: ControlStatus | null): string {
+  return status === null ? "Not mapped" : CONTROL_STATUS_LABELS[status];
+}
+
+// Control status changes listed before "and N more".
+const SHOWN_CONTROL_CHANGES = 8;
+
+type ChangesState =
+  | { state: "loading" }
+  | { state: "error"; message: string }
+  | ManagementChangesResult;
+
+function ChangeCount({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="bg-surface border-petrol-950/6 rounded-lg border px-3 py-2">
+      <dt className="text-petrol-600 text-[11px] leading-4">{label}</dt>
+      <dd className="text-petrol-950 text-base font-semibold tabular-nums">{value.toLocaleString()}</dd>
+    </div>
+  );
+}
+
+function ReadyChanges({ changes }: { changes: ManagementReportChanges }) {
+  const { policies, controls, identity, collectionGaps } = changes;
+  const counts = [
+    { label: "Policies added", value: policies.added },
+    { label: "Policies removed", value: policies.removed },
+    { label: "Policies renamed", value: policies.renamed },
+    { label: "Policies changed", value: policies.changed },
+    { label: "Setting changes", value: policies.settingChanges },
+    { label: "Assignment changes", value: policies.assignmentChanges },
+  ];
+  // Entra identity settings are tenant-wide, so they are counted on their
+  // own, and only claimed unchanged when both collections read them.
+  const nothing =
+    counts.every((count) => count.value === 0) &&
+    identity.changes === 0 &&
+    controls.length === 0 &&
+    changes.improved === 0 &&
+    changes.regressed === 0;
+  const notCompared = policies.notComparedFamilies + policies.notComparedItems;
+  const hidden = controls.length - SHOWN_CONTROL_CHANGES;
+  const measures = (count: number) => `${count.toLocaleString()} ${count === 1 ? "measure" : "measures"}`;
+  // Moves to or from Not assessed are collection gaps, not evidence changes.
+  const gaps = `Not counted as gained or lost: ${[
+    collectionGaps.opened > 0 && `${measures(collectionGaps.opened)} could not be fully assessed this time`,
+    collectionGaps.closed > 0 && `${measures(collectionGaps.closed)} could be assessed again`,
+  ]
+    .filter(Boolean)
+    .join(" and ")}, usually because data was missing from one of the two collections.`;
+  return (
+    <>
+      <p className="text-petrol-600 mt-1 text-xs leading-5">
+        Compared with the previous snapshot of this tenant on this computer. Current data collected{" "}
+        {formatDateTime(changes.until)}.
+      </p>
+      {nothing ? (
+        <p className="text-petrol-700 mt-3 flex items-start gap-1.5 text-xs leading-5">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-teal-700" aria-hidden="true" />
+          {identity.compared > 0
+            ? "No policy, setting, assignment, Entra identity setting or control status changed since then."
+            : "No policy, setting, assignment or control status changed since then."}
+        </p>
+      ) : (
+        <>
+          <dl className="mt-3 grid grid-cols-2 gap-2 @xl:grid-cols-3 @5xl:grid-cols-6" aria-label="Configuration changes">
+            {counts.map((count) => (
+              <ChangeCount key={count.label} {...count} />
+            ))}
+          </dl>
+          {identity.compared > 0 && (
+            <dl className="mt-2 grid grid-cols-2 gap-2 @xl:grid-cols-3 @5xl:grid-cols-6" aria-label="Entra identity changes">
+              <ChangeCount label="Entra identity setting changes" value={identity.changes} />
+            </dl>
+          )}
+          <p className="text-petrol-800 mt-3 text-xs leading-5 font-medium">
+            {measures(changes.improved)} gained evidence, {changes.regressed.toLocaleString()} lost it.
+          </p>
+          {(collectionGaps.opened > 0 || collectionGaps.closed > 0) && (
+            <p className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{gaps}</span>
+            </p>
+          )}
+          {controls.length > 0 && (
+            <div className="mt-2">
+              <p className="text-petrol-600 text-[10px] font-bold tracking-[0.1em] uppercase">
+                Control status changes ({controls.length.toLocaleString()})
+              </p>
+              <ul className="mt-1 grid gap-x-8 @4xl:grid-cols-2" aria-label="Control status changes">
+                {controls.slice(0, SHOWN_CONTROL_CHANGES).map((control) => (
+                  <li
+                    key={control.id}
+                    className="border-petrol-950/6 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b py-1.5 text-xs"
+                  >
+                    <span className="text-petrol-950 min-w-16 font-mono font-semibold">{control.id}</span>
+                    <span className="text-petrol-700 flex min-w-0 flex-wrap items-center gap-1">
+                      {controlStatusText(control.before)}
+                      <ArrowRight className="text-petrol-600 h-3 w-3 shrink-0" aria-label="to" />
+                      <span className="text-petrol-950 font-medium">{controlStatusText(control.after)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {hidden > 0 && <p className="text-petrol-600 mt-1 text-xs">and {hidden.toLocaleString()} more</p>}
+            </div>
+          )}
+        </>
+      )}
+      {changes.rulesetChanged && (
+        <p className="mt-3 flex items-start gap-1.5 text-xs leading-5 text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">
+            The evidence rules changed from ruleset {changes.fromRuleset} to {changes.toRuleset}; some status changes may
+            come from mapping updates, not from the tenant.
+          </span>
+        </p>
+      )}
+      {(changes.partial || notCompared > 0 || identity.notCompared > 0) && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">
+            {changes.partial ? "One of the two collections is partial. " : ""}
+            {policies.notComparedFamilies > 0 &&
+              `${policies.notComparedFamilies.toLocaleString()} ${policies.notComparedFamilies === 1 ? "family was" : "families were"} not compared. `}
+            {policies.notComparedItems > 0 &&
+              `${policies.notComparedItems.toLocaleString()} ${policies.notComparedItems === 1 ? "policy was" : "policies were"} not compared. `}
+            {identity.notCompared > 0 &&
+              `${identity.notCompared.toLocaleString()} Entra identity ${identity.notCompared === 1 ? "policy was" : "policies were"} not fully compared. `}
+            Changes there are not counted.
+          </span>
+        </p>
+      )}
+      <p className="text-petrol-600 mt-3 text-xs">Included in the management report.</p>
+    </>
+  );
+}
+
+// What changed since the previous snapshot of this tenant, read from the local
+// history. Never blocks the rest of the panel.
+function HistoryChanges({
+  request,
+  generatedAt,
+}: {
+  request: ComplianceRequest & { frameworkId: ComplianceFrameworkId };
+  generatedAt: string;
+}) {
+  const { actions } = useApp();
+  const [result, setResult] = useState<ChangesState>({ state: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const requestId = useRef(0);
+  const scopeKey = scopeKeyOf(request.scope);
+
+  useEffect(() => ipc.onHistoryChanged(() => setAttempt((count) => count + 1)), []);
+
+  useEffect(() => {
+    const id = ++requestId.current;
+    setResult({ state: "loading" });
+    ipc
+      .historyChanges(request)
+      .then((next) => {
+        if (id === requestId.current) setResult(next);
+      })
+      .catch((caught: unknown) => {
+        if (id === requestId.current) setResult({ state: "error", message: errorMessage(caught) });
+      });
+    // request changes identity on every render; the scope is represented by
+    // scopeKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request.frameworkId, scopeKey, generatedAt, attempt]);
+
+  let body: ReactNode;
+  switch (result.state) {
+    case "loading":
+      body = (
+        <p className="text-petrol-600 mt-2 flex items-center gap-2 text-xs" role="status">
+          <Spinner className="h-3.5 w-3.5" /> Comparing with the previous snapshot
+        </p>
+      );
+      break;
+    case "error":
+      body = (
+        <Alert
+          tone="danger"
+          className="mt-3"
+          title="Changes could not be loaded"
+          action={
+            <Button size="sm" variant="secondary" icon={RotateCw} onClick={() => setAttempt((count) => count + 1)}>
+              Retry
+            </Button>
+          }
+        >
+          {result.message}
+        </Alert>
+      );
+      break;
+    case "ready":
+      body = <ReadyChanges changes={result.changes} />;
+      break;
+    case "none":
+      body =
+        result.reason === "noSnapshot" ? (
+          <>
+            <p className="text-petrol-600 mt-1 max-w-3xl text-xs leading-5">
+              There is no earlier snapshot of this tenant on this computer. Turn on Keep history on this computer in
+              History; after the next collection, this panel and the management report show what changed since the
+              previous one.
+            </p>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={History}
+              className="mt-3"
+              onClick={() => actions.navigate("history")}
+            >
+              Open History
+            </Button>
+          </>
+        ) : result.reason === "scope" ? (
+          <p className="text-petrol-600 mt-1 max-w-3xl text-xs leading-5">
+            Changes are shown for the full scope only: all platforms, Essential Eight maturity level 1 and no Def Stan
+            risk level. Snapshots store that scope, so a narrower scope cannot be compared.
+          </p>
+        ) : (
+          <p className="text-petrol-600 mt-1 max-w-3xl text-xs leading-5">
+            History is not available on this computer, so changes since the previous collection cannot be shown.
+          </p>
+        );
+      break;
+  }
+
+  return (
+    <section aria-labelledby="management-changes-title" className="border-petrol-950/6 rounded-xl border p-4">
+      <div className="flex items-center gap-2">
+        <GitCompareArrows className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+        <h3 id="management-changes-title" className="text-petrol-950 text-sm font-semibold">
+          {result.state === "ready"
+            ? `Changes since ${formatDateTime(result.changes.since)}`
+            : "Changes since the previous collection"}
+        </h3>
+      </div>
+      {body}
+    </section>
+  );
+}
+
 // Management view of the selected framework: safeguards in place, the tiles that
 // filter the control list, next actions, baseline, crosswalk and the one-page
 // management report.
@@ -200,6 +464,15 @@ export function ManagementPanel({
   onRefresh: () => void;
 }) {
   const { metrics, nextActions, outsideScope } = selected.management;
+  // Data gaps whose assignments were read but whose targeting could not be
+  // resolved: a review of the overlapping assignments settles them, not a
+  // new collection.
+  const unresolved = Math.min(selected.management.targetingUnresolved ?? 0, metrics.dataGaps);
+  const unread = metrics.dataGaps - unresolved;
+  // Of those that could not be read, the ones whose targeting could not be
+  // resolved either: both a new collection and a review are needed.
+  const partly = Math.min(selected.management.targetingPartlyUnresolved ?? 0, unread);
+  const capabilities = (count: number) => `${count} mapped ${count === 1 ? "capability" : "capabilities"}`;
   const notEvaluated = outsideScope.filter((measure) => measure.notEvaluated);
   const { delta, baseline, crosswalk } = selected;
   const { frameworkId } = request;
@@ -259,7 +532,7 @@ export function ManagementPanel({
           </h2>
           <p className="text-petrol-600 mt-1 max-w-2xl text-xs leading-5">
             {metrics.safeguardsInPlace} of {metrics.safeguardsTotal} technical safeguards are set up and switched on
-            in Intune. A coverage figure, not an audit result.
+            in Intune and Entra. A coverage figure, not an audit result.
           </p>
           <p className="text-petrol-700 mt-1 text-xs font-medium">
             Measures with at least one safeguard:{" "}
@@ -350,7 +623,7 @@ export function ManagementPanel({
           <MetricTile
             label="Safeguards in place"
             value={`${metrics.safeguardsInPlace} of ${metrics.safeguardsTotal}`}
-            hint="Set up and switched on in Intune"
+            hint="Set up and switched on in Intune and Entra"
             active={filter === "all"}
             onClick={() => onFilterChange("all")}
           />
@@ -413,10 +686,25 @@ export function ManagementPanel({
       )}
       {metrics.dataGaps > 0 && (
         <p role="status" className="rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 text-xs leading-5 text-amber-900">
-          Evidence for {metrics.dataGaps} mapped {metrics.dataGaps === 1 ? "capability" : "capabilities"} could not be
-          read. Collect the tenant again to complete the picture.
+          {unread > 0 && (
+            <>
+              Evidence for {capabilities(unread)} could not be read.{" "}
+              {partly > 0
+                ? `For ${partly === unread ? (unread === 1 ? "it" : "them") : `${partly} of them`}, overlapping policy assignments also depend on group membership. Collect the tenant again and review the overlapping assignments.`
+                : "Collect the tenant again to complete the picture."}
+            </>
+          )}
+          {unread > 0 && unresolved > 0 && " "}
+          {unresolved > 0 && (
+            <>
+              The effective targeting of {capabilities(unresolved)} could not be resolved: their policy assignments
+              overlap in a way that depends on group membership. Review the overlapping assignments.
+            </>
+          )}
         </p>
       )}
+
+      <HistoryChanges request={request} generatedAt={selected.management.generatedAt} />
 
       <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <div className="border-petrol-950/6 rounded-xl border p-4">

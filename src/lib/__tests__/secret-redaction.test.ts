@@ -121,8 +121,16 @@ describe("secret redaction for shareable documentation", () => {
               "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance",
             settingDefinitionId: "com.apple.extensiblesso_registrationtoken",
             simpleSettingCollectionValue: [
-              { value: "DUMMY-collection-1" },
-              { value: "DUMMY-collection-2" },
+              {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                value: "DUMMY-collection-1",
+              },
+              {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                value: "DUMMY-collection-2",
+              },
             ],
           },
         },
@@ -136,12 +144,24 @@ describe("secret redaction for shareable documentation", () => {
               {
                 children: [
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "com.apple.wifi.managed_ssid_str",
-                    simpleSettingValue: { value: "Corp WiFi" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "Corp WiFi",
+                    },
                   },
                   {
+                    "@odata.type":
+                      "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
                     settingDefinitionId: "com.apple.wifi.managed_password",
-                    simpleSettingValue: { value: "DUMMY-child" },
+                    simpleSettingValue: {
+                      "@odata.type":
+                        "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                      value: "DUMMY-child",
+                    },
                   },
                 ],
               },
@@ -151,6 +171,8 @@ describe("secret redaction for shareable documentation", () => {
         {
           id: "3",
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
             settingDefinitionId: "vendor_msft_example_unrelatedname",
             simpleSettingValue: {
               "@odata.type":
@@ -163,9 +185,15 @@ describe("secret redaction for shareable documentation", () => {
         {
           id: "4",
           settingInstance: {
+            "@odata.type":
+              "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
             settingDefinitionId:
               "device_vendor_msft_policy_config_devicelock_minimumpasswordlength",
-            simpleSettingValue: { value: 14 },
+            simpleSettingValue: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationIntegerSettingValue",
+              value: 14,
+            },
           },
         },
       ],
@@ -299,6 +327,172 @@ describe("secret redaction for shareable documentation", () => {
         "Password complexity: Large letters",
         "Proxy server: proxy.example.com",
       ].join(", "),
+    );
+  });
+});
+
+describe("Settings Catalog secrets come from Graph marks and documented names", () => {
+  const SIMPLE =
+    "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance";
+  const COLLECTION =
+    "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance";
+  const STRING =
+    "#microsoft.graph.deviceManagementConfigurationStringSettingValue";
+  const SECRET =
+    "#microsoft.graph.deviceManagementConfigurationSecretSettingValue";
+  const definition = (id: string, isSecret: boolean) => ({
+    "@odata.type":
+      "#microsoft.graph.deviceManagementConfigurationSimpleSettingDefinition",
+    id,
+    valueDefinition: {
+      "@odata.type":
+        "#microsoft.graph.deviceManagementConfigurationStringSettingValueDefinition",
+      isSecret,
+    },
+  });
+  const collection = (
+    settingDefinitionId: string,
+    values: string[],
+    type = STRING,
+    isSecret = false,
+  ) => ({
+    id: "0",
+    settingInstance: {
+      "@odata.type": COLLECTION,
+      settingDefinitionId,
+      simpleSettingCollectionValue: values.map((value) => ({
+        "@odata.type": type,
+        value,
+      })),
+    },
+    settingDefinitions: [definition(settingDefinitionId, isSecret)],
+  });
+  const simple = (
+    settingDefinitionId: string,
+    value: string,
+    isSecret: boolean,
+  ) => ({
+    id: "0",
+    settingInstance: {
+      "@odata.type": SIMPLE,
+      settingDefinitionId,
+      simpleSettingValue: { "@odata.type": STRING, value },
+    },
+    settingDefinitions: [definition(settingDefinitionId, isSecret)],
+  });
+  const valueOf = (setting: unknown) =>
+    extractSettingValue(sanitize(setting) as any).value;
+
+  it("keeps the user rights token privileges readable", () => {
+    for (const id of [
+      "device_vendor_msft_policy_config_userrights_createtoken",
+      "device_vendor_msft_policy_config_userrights_replaceprocessleveltoken",
+    ])
+      expect(valueOf(collection(id, ["*S-1-5-32-544", "*S-1-5-19"]))).toBe(
+        "*S-1-5-32-544, *S-1-5-19",
+      );
+  });
+
+  it("still redacts a user rights value Graph marks as secret", () => {
+    const id = "device_vendor_msft_policy_config_userrights_createtoken";
+    const typed = sanitize(collection(id, ["DUMMY-typed"], SECRET));
+    const marked = sanitize(collection(id, ["DUMMY-marked"], STRING, true));
+    expect(containsDummy([typed, marked])).toBe(false);
+    expect(extractSettingValue(marked as any).value).toBe(REDACTED_VALUE);
+  });
+
+  it("redacts the secret value type in any casing or without its namespace", () => {
+    const id = "device_vendor_msft_policy_config_userrights_createtoken";
+    const variants = [
+      "#microsoft.graph.DeviceManagementConfigurationSecretSettingValue",
+      "microsoft.graph.deviceManagementConfigurationSecretSettingValue",
+      "deviceManagementConfigurationSecretSettingValue",
+    ].map((type) => sanitize(collection(id, ["DUMMY-variant"], type)));
+    expect(containsDummy(variants)).toBe(false);
+  });
+
+  it("redacts a nested child Graph marks as secret and survives odd definition lists", () => {
+    const child = "vendor_msft_synthetic_group_child";
+    const grouped = sanitize({
+      id: "0",
+      settingInstance: {
+        "@odata.type":
+          "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance",
+        settingDefinitionId: "vendor_msft_synthetic_group",
+        groupSettingCollectionValue: [
+          {
+            children: [
+              {
+                "@odata.type": SIMPLE,
+                settingDefinitionId: child,
+                simpleSettingValue: {
+                  "@odata.type": STRING,
+                  value: "DUMMY-child",
+                },
+              },
+            ],
+          },
+        ],
+      },
+      settingDefinitions: [null, 7, { id: 3 }, definition(child, true)],
+    });
+    expect(containsDummy(grouped)).toBe(false);
+    const id = "device_vendor_msft_policy_config_userrights_createtoken";
+    for (const settingDefinitions of [undefined, null, "x", [null]]) {
+      const setting = sanitize({
+        ...collection(id, ["*S-1-5-32-544"]),
+        settingDefinitions,
+      }) as any;
+      expect(
+        setting.settingInstance.simpleSettingCollectionValue[0].value,
+      ).toBe("*S-1-5-32-544");
+    }
+  });
+
+  it("redacts a value whose definition Graph marks as secret, whatever its name", () => {
+    const setting = sanitize(
+      simple("vendor_msft_synthetic_onboardingblob", "DUMMY-blob", true),
+    );
+    expect(containsDummy(setting)).toBe(false);
+    expect(extractSettingValue(setting as any).value).toBe(REDACTED_VALUE);
+  });
+
+  it("keeps redacting secret names when Graph does not mark them", () => {
+    const settings = sanitize([
+      simple("com.apple.mcx.filevault2_password", "DUMMY-password", true),
+      simple("com.apple.loginwindow_autologinpassword", "DUMMY-login", false),
+      simple(
+        "com.apple.extensiblesso_registrationtoken",
+        "DUMMY-registration",
+        false,
+      ),
+      simple("softwareupdate_beta_requireprogram_token", "DUMMY-beta", false),
+      simple(
+        "device_vendor_msft_policy_config_userrights_synthetictoken",
+        "DUMMY-other-right",
+        false,
+      ),
+    ]);
+    expect(containsDummy(settings)).toBe(false);
+  });
+
+  it("keeps choice settings with secret words in their id readable", () => {
+    const choice = sanitize({
+      id: "0",
+      settingInstance: {
+        "@odata.type":
+          "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
+        settingDefinitionId:
+          "device_vendor_msft_policy_config_devicelock_allowsimpledevicepassword",
+        choiceSettingValue: {
+          value:
+            "device_vendor_msft_policy_config_devicelock_allowsimpledevicepassword_0",
+          children: [],
+        },
+      },
+    }) as any;
+    expect(choice.settingInstance.choiceSettingValue.value).toBe(
+      "device_vendor_msft_policy_config_devicelock_allowsimpledevicepassword_0",
     );
   });
 });

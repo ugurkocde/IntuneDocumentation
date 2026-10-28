@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { DetailedExportData } from "../configuration-analyzer";
-import { COMPLIANCE_CAPABILITIES } from "../compliance/capabilities";
 import {
   complianceReportFileName,
   generateComplianceReportPDF,
-  GERMAN_CAPABILITY_NAMES,
   readablePropertyName,
 } from "../compliance/report-pdf";
 import { assessCompliance } from "../compliance";
@@ -108,43 +106,9 @@ function createExportData(): DetailedExportData {
   };
 }
 
+const NIS2_REPORT = { frameworkId: "nis2-2022-2555" } as const;
+
 describe("compliance report PDF", () => {
-  it("renders a German BSI report with evidence, gaps, and disclaimer", async () => {
-    const report = await generateComplianceReportPDF(createExportData(), {
-      frameworkId: "bsi-it-grundschutz",
-    });
-    const renderedText = extractPdfStreamText(report);
-
-    expect(Buffer.from(report).subarray(0, 4).toString()).toBe("%PDF");
-    expect(renderedText).toContain("Technischer Nachweisbericht:");
-    expect(renderedText).toContain("Intune-Konfiguration");
-    expect(renderedText).toContain(
-      "BSI IT-Grundschutz-Kompendium, Edition 2023",
-    );
-    expect(renderedText).toContain("Inhaltsverzeichnis");
-    expect(renderedText).toContain("Ergebnisübersicht");
-    expect(renderedText).toContain("Datengrundlage und Geltungsbereich");
-    expect(renderedText).toContain("Anhang A: Nachweisverzeichnis");
-    expect(renderedText).toContain("Manuelle Bewertung");
-    expect(renderedText).toContain("Berichts-ID");
-    expect(renderedText).toContain("Regelwerk-Version");
-    expect(renderedText).toMatch(/E-001/);
-    expect(renderedText).toContain("Die Datenerhebung war unvollständig");
-    expect(renderedText).toContain("Seite 2 von ");
-    expect(renderedText).toContain(
-      "Technischer Konfigurationsnachweis erkannt",
-    );
-    expect(renderedText).toContain("SYS.3.2.2.A17");
-    expect(renderedText).toContain("nicht prüfbar");
-    expect(renderedText).toContain("ersetzt keine");
-    expect(renderedText).toContain("Assigned BitLocker evidence policy");
-    expect(renderedText).toContain("Einstellungskatalog");
-    expect(renderedText).not.toContain("Settings Catalog");
-    expect(renderedText).not.toContain(
-      "Client Bausteine (SYS.2.2.3, SYS.2.4, SYS.3.2.1, SYS.3.2.2) are mapped",
-    );
-  });
-
   it("renders an English NIST 800-53 report", async () => {
     const report = await generateComplianceReportPDF(createExportData(), {
       frameworkId: "nist-800-53-r5",
@@ -157,7 +121,6 @@ describe("compliance report PDF", () => {
     expect(renderedText).toContain("Technical configuration evidence detected");
     expect(renderedText).toContain("not a compliance certification");
     expect(renderedText).toContain("Appendix A: Evidence Register");
-    expect(renderedText).not.toContain("Manuelle Bewertung");
   });
 
   it("renders English ISO 27001 and SOC 2 reports", async () => {
@@ -181,24 +144,23 @@ describe("compliance report PDF", () => {
   });
 
   it("labels assigned and unassigned counter-evidence without overstating risk", async () => {
-    const report = await generateComplianceReportPDF(createExportData(), {
-      frameworkId: "bsi-it-grundschutz",
-    });
+    const report = await generateComplianceReportPDF(
+      createExportData(),
+      NIS2_REPORT,
+    );
     const renderedText = extractPdfStreamText(report);
 
-    expect(renderedText).toContain("Risiko E-");
+    expect(renderedText).toContain("Risk E-");
     expect(renderedText).toContain("blocked");
     expect(renderedText).toContain(
-      "Abweichende Konfiguration erkannt und zugewiesen",
+      "Deviating configuration detected and assigned",
     );
-    expect(renderedText).toContain("jedoch nicht zugewiesen");
+    expect(renderedText).toContain("detected, but not assigned");
   });
 
   it("builds a timestamped framework and tenant-specific file name", () => {
-    expect(
-      complianceReportFileName("bsi-it-grundschutz", "Contoso GmbH"),
-    ).toMatch(
-      /Compliance-Report-BSI-IT-Grundschutz-contoso-gmbh-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
+    expect(complianceReportFileName("nis2-2022-2555", "Contoso GmbH")).toMatch(
+      /Compliance-Report-NIS2-contoso-gmbh-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
     );
     expect(complianceReportFileName("nist-csf-2")).toMatch(
       /Compliance-Report-NIST-CSF-2-\d{4}-\d{2}-\d{2}-\d{4}\.pdf/,
@@ -287,6 +249,8 @@ describe("compliance report PDF", () => {
           settings: [
             {
               settingInstance: {
+                "@odata.type":
+                  "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
                 settingDefinitionId: disabledSettingId,
                 choiceSettingValue: { value: disabledValue },
               },
@@ -300,6 +264,10 @@ describe("compliance report PDF", () => {
           displayName: "Unmapped unassigned configuration",
           "@odata.type":
             "#microsoft.graph.macOSEndpointProtectionConfiguration",
+          // The other properties the engine reads, returned as not set.
+          fileVaultEnabled: false,
+          firewallEnabled: false,
+          gatekeeperAllowedAppSource: null,
           ...unassignedSettings,
           assignments: [],
         },
@@ -326,6 +294,8 @@ describe("compliance report PDF", () => {
         settings: [
           {
             settingInstance: {
+              "@odata.type":
+                "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
               settingDefinitionId:
                 "device_vendor_msft_policy_config_defender_allowrealtimemonitoring",
               choiceSettingValue: {
@@ -357,11 +327,12 @@ describe("compliance report PDF", () => {
   );
 
   it("includes every body evidence reference in the appendix", async () => {
-    const report = await generateComplianceReportPDF(createExportData(), {
-      frameworkId: "bsi-it-grundschutz",
-    });
+    const report = await generateComplianceReportPDF(
+      createExportData(),
+      NIS2_REPORT,
+    );
     const renderedText = extractPdfStreamText(report);
-    const appendixHeading = "(Anhang A: Nachweisverzeichnis) Tj";
+    const appendixHeading = "(Appendix A: Evidence Register) Tj";
     const appendixStart = renderedText.lastIndexOf(appendixHeading);
     expect(appendixStart).toBeGreaterThan(0);
 
@@ -413,7 +384,7 @@ describe("compliance report PDF", () => {
     ]) {
       const data = { ...createExportData(), settingsCatalog: ordering };
       const bytes = await generateComplianceReportPDF(data, {
-        frameworkId: "bsi-it-grundschutz",
+        frameworkId: "iso-27001-2022",
       });
       const text = extractPdfStreamText(bytes);
       // Registry sorts by policy id, so E-001 must always be the aaa policy.
@@ -433,18 +404,8 @@ describe("compliance report PDF", () => {
       },
     ];
 
-    const bytes = await generateComplianceReportPDF(data, {
-      frameworkId: "bsi-it-grundschutz",
-    });
-    expect(extractPdfStreamText(bytes)).toContain(
-      "Weitere Richtlinienfamilien",
-    );
-  });
-
-  it("provides a German name for every compliance capability", () => {
-    for (const capability of COMPLIANCE_CAPABILITIES) {
-      expect(GERMAN_CAPABILITY_NAMES[capability.id]).toBeTruthy();
-    }
+    const bytes = await generateComplianceReportPDF(data, NIS2_REPORT);
+    expect(extractPdfStreamText(bytes)).toContain("Other policy families");
   });
 
   it("does not label counter-evidence with an unreadable assignment as unassigned", async () => {
@@ -612,26 +573,15 @@ describe("readable Graph property names", () => {
   });
 });
 
-it("never breaks German register types inside a word", async () => {
-  const text = extractPdfStreamText(
-    await generateComplianceReportPDF(createExportData(), {
-      frameworkId: "bsi-it-grundschutz",
-    }),
-  );
-  const register = text.slice(
-    text.lastIndexOf("(Anhang A: Nachweisverzeichnis) Tj"),
-  );
-  expect(register).toContain("(Einstellungskatalog) Tj");
-  expect(register).toContain("(Gerätekonformitätsrichtlinie) Tj");
-});
-
 it("renders fixed render dates in UTC with a UTC creation date", async () => {
   const report = await generateComplianceReportPDF(createExportData(), {
-    frameworkId: "bsi-it-grundschutz",
+    ...NIS2_REPORT,
     // 23:30 UTC is already the next day east of UTC.
     renderDate: new Date("2026-10-08T23:30:00Z"),
   });
   const raw = Buffer.from(report).toString("latin1");
   expect(raw).toContain("/CreationDate (D:20261008233000+00'00')");
-  expect(extractPdfStreamText(report)).toContain("08.10.2026");
+  const text = extractPdfStreamText(report);
+  expect(text).toContain("2026-10-08");
+  expect(text).not.toContain("2026-10-09");
 });

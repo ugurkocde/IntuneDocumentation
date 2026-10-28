@@ -40,7 +40,9 @@ export function ComplianceContext({
     setDownloading(true);
     setError(null);
     try {
-      const manifest = await createEvidenceManifest(data, scope);
+      const manifest = await createEvidenceManifest(data, scope, {
+        audience: "web",
+      });
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(manifest, null, 2)], {
           type: "application/json",

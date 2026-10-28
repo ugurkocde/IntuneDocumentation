@@ -1,10 +1,12 @@
 import { ExternalLink, KeyRound, LayoutGrid, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FrameworkBadge } from "../../../../../src/components/dashboard/framework-badge";
+import { READINESS_DISCLAIMER } from "../../../../../src/lib/benchmarks/display";
 import { compareControlIds } from "../../../../../src/lib/compliance/engine";
 import type { AssessmentScope } from "../../../../../src/lib/compliance/types";
 import type { ComplianceFrameworkId, ComplianceView } from "../../shared/ipc-types";
 import { ControlRow, CONTROL_STATUS_ORDER } from "../components/compliance/ControlRow";
+import { ExportsPanel } from "../components/compliance/ExportsPanel";
 import { FrameworkMenu } from "../components/compliance/FrameworkMenu";
 import {
   CONTROL_FILTER_LABELS,
@@ -80,12 +82,80 @@ function SummaryCard({
   );
 }
 
+// The wordmark tile of the benchmarks card, in the geometry and type of the
+// framework badges (FrameworkBadge), so the card sits in the grid as one of them.
+function BenchmarksBadge() {
+  return (
+    <svg width={40} height={40} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+      <rect width="40" height="40" rx="6" fill="#26777c" />
+      <text
+        x="20"
+        y="19"
+        fill="white"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fontSize="10.5"
+        fontWeight="700"
+        textAnchor="middle"
+        letterSpacing="0.6"
+      >
+        CIS
+      </text>
+      <text
+        x="20"
+        y="30"
+        fill="white"
+        fillOpacity="0.85"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fontSize="6.4"
+        fontWeight="600"
+        textAnchor="middle"
+        letterSpacing="0.2"
+        textLength={34}
+        lengthAdjust="spacingAndGlyphs"
+      >
+        BENCHMARKS
+      </text>
+    </svg>
+  );
+}
+
+// CIS Benchmarks next to the frameworks, only with the signed licence claim:
+// until the CIS agreement covers this app, customers see no card at all. It
+// follows the framework cards: badge, name, a teal line under the name, the
+// description and a teal footnote.
+function BenchmarksCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <div role="listitem" className="flex">
+      <button
+        type="button"
+        aria-label="CIS Benchmarks"
+        onClick={onOpen}
+        className="border-petrol-950/8 shadow-card group hover:bg-mint-50/35 flex w-full cursor-pointer flex-col rounded-2xl border bg-white p-6 text-left transition-[border-color,background-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-teal-700/25 hover:shadow-[0_16px_40px_-30px_rgba(8,47,54,0.55)] focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+      >
+        <BenchmarksBadge />
+        <span className="text-petrol-950 mt-5 block text-base font-semibold">CIS Benchmarks</span>
+        <span className="mt-1 block min-h-4 text-xs font-semibold text-teal-700">Internal preview</span>
+        <span className="text-petrol-600 mt-3 block text-sm leading-6">
+          Settings Catalog policies compared with a benchmark delivered from the licensed content service.
+        </span>
+        <span className="mt-auto block pt-3 text-xs font-semibold text-teal-700">
+          {READINESS_DISCLAIMER}.
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function FrameworkPicker({
   view,
   onSelect,
+  benchmarksAvailable,
+  onOpenBenchmarks,
 }: {
   view: ComplianceView | null;
   onSelect: (id: ComplianceFrameworkId) => void;
+  benchmarksAvailable: boolean;
+  onOpenBenchmarks: () => void;
 }) {
   return (
     <div role="list" aria-label="Compliance frameworks" className="grid grid-cols-1 gap-4 @2xl:grid-cols-2 @4xl:grid-cols-3">
@@ -114,6 +184,7 @@ function FrameworkPicker({
           </div>
         );
       })}
+      {benchmarksAvailable && <BenchmarksCard onOpen={onOpenBenchmarks} />}
     </div>
   );
 }
@@ -135,6 +206,7 @@ export function ComplianceScreen() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [recordPath, setRecordPath] = useState<string | null>(null);
   const [requestedFilter, setFilter] = useState<ControlFilter>("all");
+  const [exporting, setExporting] = useState(false);
   const record = useAsyncAction();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const focusTrigger = useRef(false);
@@ -222,6 +294,16 @@ export function ComplianceScreen() {
     blocker ??
     (report.phase === "running"
       ? "A report is already being created."
+      : exporting
+        ? "Available when the export finishes."
+        : loading
+          ? "Available when the assessment is up to date."
+          : null);
+  // The exports panel shows its own running export, so only other work blocks it.
+  const exportsBlocker =
+    blocker ??
+    (report.phase === "running"
+      ? "A report is already being created."
       : loading
         ? "Available when the assessment is up to date."
         : null);
@@ -290,7 +372,12 @@ export function ComplianceScreen() {
             {error}
           </Alert>
         )}
-        <FrameworkPicker view={view} onSelect={(id) => choose(id, true)} />
+        <FrameworkPicker
+          view={view}
+          onSelect={(id) => choose(id, true)}
+          benchmarksAvailable={state.benchmarks === "internal"}
+          onOpenBenchmarks={() => actions.navigate("benchmarks")}
+        />
       </div>
     );
   }
@@ -431,6 +518,14 @@ export function ComplianceScreen() {
               void runComplianceReport(dispatch, frameworkId, scope, () => void actions.refreshLicense())
             }
             onReset={() => dispatch({ type: "complianceReport", patch: initialComplianceReport })}
+          />
+
+          <ExportsPanel
+            request={{ frameworkId, scope }}
+            frameworkLabel={label}
+            ready={!loading}
+            blocker={exportsBlocker}
+            onBusyChange={setExporting}
           />
 
           {(selected.framework.note || selected.framework.source) && (

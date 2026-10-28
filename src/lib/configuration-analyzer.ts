@@ -1,6 +1,16 @@
-import { INTUNE_POLICY_REGISTRY } from "./intune-policy-registry";
-import { summarizeAssignments } from "./compliance/assignments";
-import type { AssessmentScope } from "./compliance/types";
+import {
+  assignmentsIncomplete,
+  itemFetchErrors,
+  resolveAssignments,
+  UNASSIGNABLE_REGISTRY_KEYS,
+} from "./compliance/assignments";
+import { collectionFamilies } from "./compliance/coverage";
+import { canonicalPlatforms } from "./compliance/graph-rows";
+import type {
+  AssessmentScope,
+  PolicyDeviceStatus,
+  TenantIdentityPolicies,
+} from "./compliance/types";
 import type { BrandingOptions } from "~/types/branding";
 import type { ConfigurationSectionData } from "./configuration-sections";
 
@@ -40,9 +50,18 @@ export interface DetailedExportData {
   windowsUpdatePolicies?: any[];
   enrollmentConfigurations?: any[];
   conditionalAccessPolicies?: any[];
+  /** Entra tenant policies; never part of `sections`. */
+  tenantIdentityPolicies?: TenantIdentityPolicies;
+  /** Intune per-policy device status counts; an annex, never assessed. */
+  policyDeviceStatus?: PolicyDeviceStatus;
   groupNames?: Map<string, string>;
   deviceCounts?: Record<string, number>;
   branding?: BrandingOptions;
+  /**
+   * Shortened id of the signed in tenant, for example "1a2b3c4d...", shown on
+   * the cover and in the running header. Absent when the tenant is unknown.
+   */
+  tenantLabel?: string;
   includeComplianceEvidence?: boolean;
   /**
    * Opt in: documents part of a tenant, such as a single configuration or a
@@ -76,7 +95,13 @@ export interface ExportGenerationResult {
   successfulPolicies: number;
 }
 
-export function analyzeConfigurations(data: DetailedExportData) {
+export type ConfigurationAnalytics = ReturnType<typeof analyzeConfigurations>;
+
+/** now is the reference time for the recent and stale counts. */
+export function analyzeConfigurations(
+  data: DetailedExportData,
+  now: Date = new Date(),
+) {
   const allConfigs = data.sections?.length
     ? data.sections.flatMap((section) => section.items)
     : [
@@ -95,14 +120,7 @@ export function analyzeConfigurations(data: DetailedExportData) {
       ];
 
   // Registry types without an assignment relationship have no assignment coverage to assess.
-  const nonAssignableKeys = new Set(
-    INTUNE_POLICY_REGISTRY.filter(
-      (entry) =>
-        !entry.childCollections?.some(
-          (child) => child.property === "assignments",
-        ),
-    ).map((entry) => entry.key),
-  );
+  const nonAssignableKeys = UNASSIGNABLE_REGISTRY_KEYS;
   const nonAssignable = new Set([
     ...(data.conditionalAccessPolicies ?? []),
     ...(data.sections ?? [])
@@ -115,19 +133,39 @@ export function analyzeConfigurations(data: DetailedExportData) {
   ]);
   const uniqueGroups = new Set<string>();
   const groupAssignmentCount: Record<string, number> = {};
+  // Entra object ids are case insensitive, so a group is counted once
+  // however its ids are cased, under the id first seen for it.
+  const groupKeys = new Map<string, string>();
+  const groupKey = (groupId: string) => {
+    const lower = groupId.toLowerCase();
+    if (!groupKeys.has(lower)) groupKeys.set(lower, groupId);
+    return groupKeys.get(lower)!;
+  };
   let assignedCount = 0;
   let unassignedCount = 0;
   let unknownCount = 0;
+  // The family of every item, so its collection errors are matched as the
+  // engine matches them (itemFetchErrors).
+  const familyOf = new Map<unknown, string>();
+  for (const { family, items } of collectionFamilies(data))
+    for (const item of items) familyOf.set(item, family);
+  // Assignments as the engine reads them (compliance/assignments.ts
+  // resolveAssignments): exclusions and removal intents applied.
+  const resolved = (config: any) =>
+    resolveAssignments(
+      config.assignments,
+      undefined,
+      assignmentsIncomplete(
+        config,
+        itemFetchErrors(data.fetchErrors, config, familyOf.get(config)),
+      ),
+    );
   const assignmentState = (config: any) =>
     nonAssignable.has(config) ||
     nonAssignableKeys.has(config.registryKey) ||
     config["@odata.type"] === "#microsoft.graph.conditionalAccessPolicy"
       ? "notApplicable"
-      : summarizeAssignments(
-          config.assignments,
-          undefined,
-          config.collectionStatus?.assignments === "incomplete",
-        ).state;
+      : resolved(config).state;
   const inventoryCounts = (items: any[]) => ({
     total: items.length,
     assigned: items.filter((item) => assignmentState(item) === "assigned")
@@ -144,31 +182,22 @@ export function analyzeConfigurations(data: DetailedExportData) {
     const state = assignmentState(config);
     if (state === "assigned") {
       assignedCount++;
-      config.assignments.forEach((assignment: any) => {
-        const odataType =
-          typeof assignment.target?.["@odata.type"] === "string"
-            ? assignment.target["@odata.type"].toLowerCase()
-            : "";
-
-        if (odataType.includes("exclusiongroupassignmenttarget")) return;
-        if (assignment.target?.groupId) {
-          uniqueGroups.add(assignment.target.groupId);
-          const groupId = assignment.target.groupId;
-          groupAssignmentCount[groupId] =
-            (groupAssignmentCount[groupId] || 0) + 1;
-        } else if (
-          odataType.includes("alllicensedusers") ||
-          odataType.includes("allusers")
-        ) {
-          uniqueGroups.add("All Users");
-          groupAssignmentCount["All Users"] =
-            (groupAssignmentCount["All Users"] || 0) + 1;
-        } else if (odataType.includes("alldevices")) {
-          uniqueGroups.add("All Devices");
-          groupAssignmentCount["All Devices"] =
-            (groupAssignmentCount["All Devices"] || 0) + 1;
-        }
-      });
+      // The targets the policy applies to, once each: a group it both
+      // includes and excludes, or includes and removes, is not assigned.
+      for (const target of resolved(config).effective) {
+        const key =
+          target.type === "alllicensedusersassignmenttarget"
+            ? "All Users"
+            : target.type === "alldevicesassignmenttarget"
+              ? "All Devices"
+              : target.type === "groupassignmenttarget" ||
+                  target.type === "scopetaggroupassignmenttarget"
+                ? groupKey(target.id!)
+                : undefined;
+        if (!key) continue;
+        uniqueGroups.add(key);
+        groupAssignmentCount[key] = (groupAssignmentCount[key] || 0) + 1;
+      }
     } else if (state === "notAssigned") {
       unassignedCount++;
     } else if (state === "unknown") {
@@ -192,8 +221,16 @@ export function analyzeConfigurations(data: DetailedExportData) {
   allConfigs.forEach((config) => {
     let platform: string | null = null;
 
+    // A Settings Catalog policy counts once for each of its platforms, read
+    // as documented members (compliance/graph-rows.ts canonicalPlatforms);
+    // platforms of another shape name none.
     if (config.platforms) {
-      platform = normalizePlatform(config.platforms);
+      const members = canonicalPlatforms(config.platforms)
+        ?.split(",")
+        .filter((member) => member !== "none")
+        .map(normalizePlatform);
+      for (const member of new Set(members))
+        platformCounts[member] = (platformCounts[member] || 0) + 1;
     } else if (config.platformType) {
       platform = normalizePlatform(config.platformType);
     } else if (config["@odata.type"]) {
@@ -212,7 +249,6 @@ export function analyzeConfigurations(data: DetailedExportData) {
     }
   });
 
-  const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);

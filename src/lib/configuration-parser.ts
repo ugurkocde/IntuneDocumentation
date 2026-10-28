@@ -3,6 +3,28 @@ import type {
   ConfigurationSettingDefinition,
   ConfigurationSettingInstance,
 } from "./intune-detailed-client";
+import {
+  childLists,
+  isIdentifier,
+  isInt32,
+  MAX_SETTING_DEPTH,
+  normalizeTargetType,
+  unlistedSources,
+  unreadableAssignment,
+  unreadableCatalogValue,
+  unreadableIntentValue,
+  unreadableOmaValue,
+  unreadablePresentationValue,
+  shownOmaValue,
+} from "./compliance/graph-rows";
+import { exclusionScopeSuffix, removalPrefix } from "./compliance/assignments";
+
+/**
+ * The value shown for an identified setting whose value Graph did not
+ * return readably (compliance/graph-rows.ts): it is unknown, never "Not
+ * configured" or the malformed value.
+ */
+export const UNREADABLE_VALUE = "Value could not be read";
 
 function collectDefinitionIdsFromInstance(
   instance: ConfigurationSettingInstance | undefined,
@@ -128,10 +150,29 @@ function extractNestedSettings(
   if (!Array.isArray(children)) {
     return results;
   }
+  // Settings below the depth limit are not read (compliance/graph-rows.ts),
+  // so they show as unknown, never as no setting.
+  if (depth > MAX_SETTING_DEPTH) {
+    return children.length
+      ? [
+          {
+            name: `${indent}Setting below the depth limit`,
+            value: UNREADABLE_VALUE,
+          },
+        ]
+      : results;
+  }
 
   for (const child of children) {
-    // Skip if child is null/undefined
-    if (!child) continue;
+    // A child Graph returned as no record has no identifier, so it shows as
+    // an unknown setting, never as no setting.
+    if (!child || typeof child !== "object" || Array.isArray(child)) {
+      results.push({
+        name: `${indent}Setting without its identifier`,
+        value: UNREADABLE_VALUE,
+      });
+      continue;
+    }
 
     try {
       // Children in collections are raw settingInstance objects
@@ -147,10 +188,8 @@ function extractNestedSettings(
 
       const childResult = extractSettingValue(configSetting, depth);
 
-      // Skip unconfigured settings
-      if (!childResult || childResult.value === "Not configured") {
-        continue;
-      }
+      // Skip unconfigured settings, told by the value Graph returned
+      if (!childResult?.configured) continue;
 
       // Add the main setting with indentation
       results.push({
@@ -164,14 +203,25 @@ function extractNestedSettings(
         results.push(...childResult.nestedSettings);
       }
     } catch (error) {
-      // If there's an error processing a child setting, log it and continue
+      // A child that cannot be processed is unknown, never left out.
       console.warn("Error processing nested setting:", error);
-      continue;
+      results.push({
+        name: `${indent}${
+          typeof child.settingDefinitionId === "string"
+            ? child.settingDefinitionId
+            : "Setting without its identifier"
+        }`,
+        value: UNREADABLE_VALUE,
+      });
     }
   }
 
   return results;
 }
+
+// A list Graph returned, or none for a value of another shape.
+const list = <T>(value: T[] | undefined): T[] =>
+  Array.isArray(value) ? value : [];
 
 // Helper to extract setting value from complex structures
 export function extractSettingValue(
@@ -180,6 +230,13 @@ export function extractSettingValue(
 ): {
   name: string;
   value: any;
+  /**
+   * Whether the setting is shown: it holds a value as Graph returned it
+   * (isUnsetValue), is a group, or is unreadable. Decided from the raw
+   * value, never from the display text, so a text value that reads "Not
+   * configured" is still a setting.
+   */
+  configured: boolean;
   type: string;
   description?: string;
   nestedSettings?: Array<{ name: string; value: string; description?: string }>;
@@ -193,7 +250,10 @@ export function extractSettingValue(
       ? setting.settingDefinitions[0]
       : undefined);
 
-  let value: any = "Not configured";
+  let value: any;
+  // The value as Graph returned it, which decides whether the setting is
+  // shown; value is what the documentation shows of it.
+  let raw: unknown;
   let type = "Unknown";
   let nestedSettings:
     | Array<{ name: string; value: string; description?: string }>
@@ -204,6 +264,7 @@ export function extractSettingValue(
     return {
       name: settingDef?.displayName || setting.id || "Unknown Setting",
       value: "Not configured",
+      configured: false,
       type: "Unknown",
       description: settingDef?.description,
     };
@@ -211,16 +272,19 @@ export function extractSettingValue(
 
   // Extract value based on setting type
   if (instance.simpleSettingValue) {
-    value = instance.simpleSettingValue.value;
+    value = raw = instance.simpleSettingValue.value;
     type = "Simple";
   } else if (instance.simpleSettingCollectionValue) {
-    // Handle array of simple values (strings, numbers, booleans)
+    // Handle array of simple values (strings, numbers, booleans). A
+    // collection or an entry Graph returned in another shape is unreadable
+    // (unreadableCatalogValue below), so it is read without throwing.
     type = "Simple Collection";
-    const values = instance.simpleSettingCollectionValue.map(
-      (item) => item.value,
+    const values = list(instance.simpleSettingCollectionValue).map(
+      (item) => item?.value,
     );
-    value = values; // formatValue will handle array formatting
+    value = raw = values; // formatValue will handle array formatting
   } else if (instance.choiceSettingValue) {
+    raw = instance.choiceSettingValue.value;
     value = resolveChoiceDisplayValue(
       instance.choiceSettingValue.value,
       settingDef,
@@ -239,19 +303,23 @@ export function extractSettingValue(
       );
     }
   } else if (instance.choiceSettingCollectionValue) {
-    value = instance.choiceSettingCollectionValue.map((choice) =>
-      resolveChoiceDisplayValue(choice.value, settingDef),
+    raw = list(instance.choiceSettingCollectionValue).map(
+      (choice) => choice?.value,
+    );
+    value = list(instance.choiceSettingCollectionValue).map((choice) =>
+      resolveChoiceDisplayValue(choice?.value, settingDef),
     );
     type = "Choice Collection";
-    const allNestedSettings = instance.choiceSettingCollectionValue.flatMap(
-      (choice) =>
-        choice.children?.length
-          ? extractNestedSettings(
-              choice.children,
-              depth + 1,
-              setting.settingDefinitions,
-            )
-          : [],
+    const allNestedSettings = list(
+      instance.choiceSettingCollectionValue,
+    ).flatMap((choice) =>
+      choice?.children?.length
+        ? extractNestedSettings(
+            choice.children,
+            depth + 1,
+            setting.settingDefinitions,
+          )
+        : [],
     );
     if (allNestedSettings.length > 0) nestedSettings = allNestedSettings;
   } else if (instance.groupSettingValue) {
@@ -279,8 +347,8 @@ export function extractSettingValue(
       description?: string;
     }> = [];
 
-    for (const group of instance.groupSettingCollectionValue) {
-      if (group.children && group.children.length > 0) {
+    for (const group of list(instance.groupSettingCollectionValue)) {
+      if (group?.children && group.children.length > 0) {
         allNestedSettings.push(
           ...extractNestedSettings(
             group.children,
@@ -295,20 +363,69 @@ export function extractSettingValue(
       nestedSettings = allNestedSettings;
       value = `${allNestedSettings.length} setting(s) configured`;
     } else {
-      value = `Collection (${instance.groupSettingCollectionValue.length} items)`;
+      value = `Collection (${list(instance.groupSettingCollectionValue).length} items)`;
     }
   }
 
+  // Children are read only through the value the instance's type
+  // documents (compliance/graph-rows.ts childLists). When they cannot be
+  // read, such as on an instance of an undocumented type or with a value
+  // in another type's property, the setting and what it holds are unknown.
+  // An instance without its definition id is unknown too: which setting it
+  // configures is not certain. Below an unreadable or unidentified instance,
+  // whether the children apply is unknown as well, so they show as
+  // unreadable, never with their values (as the compliance engine's
+  // collectCatalogValues reads them).
+  const unknownChildren = childLists(instance) === null;
+  const unreadable =
+    unknownChildren ||
+    !isIdentifier(instance.settingDefinitionId) ||
+    unreadableCatalogValue(instance);
   return {
     name:
       settingDef?.displayName ||
       instance.settingDefinitionId ||
       "Unknown Setting",
-    value: formatValue(value),
+    value: unreadable ? UNREADABLE_VALUE : formatValue(value),
+    // A group shows its children; it holds no value of its own.
+    configured:
+      unreadable ||
+      type === "Group" ||
+      type === "Group Collection" ||
+      !isUnsetValue(raw),
     type,
     description: settingDef?.description,
-    nestedSettings,
+    nestedSettings: unknownChildren
+      ? undefined
+      : unreadable
+        ? nestedSettings?.map((nested) => ({
+            ...nested,
+            value: UNREADABLE_VALUE,
+          }))
+        : nestedSettings,
   };
+}
+
+/**
+ * Whether a value as Graph returned it holds no setting, so the
+ * documentation leaves it out: the values formatValue shows as "Not
+ * configured" (no value, an empty list, a list of one such value, or a
+ * value record without a label holding one). Text is always a value, also
+ * text that reads like a placeholder, such as "Not configured" or "Value
+ * could not be read", so presence is never decided from the display text.
+ */
+export function isUnsetValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (Array.isArray(value))
+    return value.length === 0 || (value.length === 1 && isUnsetValue(value[0]));
+  if (typeof value === "object" && Object.hasOwn(value, "value")) {
+    const record = value as Record<string, unknown>;
+    const label = record.displayName ?? record.name;
+    return (
+      (label === undefined || label === null) && isUnsetValue(record.value)
+    );
+  }
+  return false;
 }
 
 // Format values for display
@@ -428,9 +545,8 @@ export function parseDocumentableProperties(
       return;
     }
 
-    const formatted = formatValue(current);
-    if (formatted !== "Not configured" && path.length > 0) {
-      settings.push({ name: path.join(" › "), value: formatted });
+    if (!isUnsetValue(current) && path.length > 0) {
+      settings.push({ name: path.join(" › "), value: formatValue(current) });
     }
   };
 
@@ -440,23 +556,44 @@ export function parseDocumentableProperties(
 
 export function extractAppConfigurationSettings(config: Record<string, any>) {
   if (!Array.isArray(config.settings)) return [];
-  return config.settings
-    .map((setting: Record<string, any>) => ({
-      name:
-        setting.appConfigKey ||
-        setting.settingName ||
-        setting.name ||
-        setting.key ||
-        "Setting",
-      value: formatValue(
-        setting.appConfigKeyValue ??
-          setting.settingValue ??
-          setting.value ??
-          setting.valueJson,
-      ),
-      type: setting.appConfigKeyType,
-    }))
-    .filter((setting) => setting.value !== "Not configured");
+  return config.settings.flatMap((setting: Record<string, any>) => {
+    const value =
+      setting.appConfigKeyValue ??
+      setting.settingValue ??
+      setting.value ??
+      setting.valueJson;
+    if (isUnsetValue(value)) return [];
+    return [
+      {
+        name:
+          setting.appConfigKey ||
+          setting.settingName ||
+          setting.name ||
+          setting.key ||
+          "Setting",
+        value: formatValue(value),
+        type: setting.appConfigKeyType,
+      },
+    ];
+  });
+}
+
+// Custom OMA-URI rows as formatValue shows them, with a value Graph did not
+// return readably shown as unreadable. Graph returns the value on every row
+// (compliance/graph-rows.ts), so a collected row without one is unreadable
+// too, unless it is encrypted.
+function shownOmaSettings(rows: unknown[]): unknown[] {
+  return rows.map((row: any) =>
+    row &&
+    typeof row === "object" &&
+    (unreadableOmaValue(row) ||
+      (!Object.hasOwn(row, "value") && row.isEncrypted !== true))
+      ? { ...row, value: UNREADABLE_VALUE }
+      : // An XML value is shown as its text (graph-rows.ts shownOmaValue).
+        row && typeof row === "object" && Object.hasOwn(row, "value")
+        ? { ...row, value: shownOmaValue(row) }
+        : row,
+  );
 }
 
 // Parse device configuration properties
@@ -492,12 +629,13 @@ export function parseDeviceConfiguration(config: any): Array<{
       config[key] !== null &&
       config[key] !== undefined
     ) {
-      const formattedValue = formatValue(config[key]);
+      const value =
+        key === "omaSettings" && Array.isArray(config[key])
+          ? shownOmaSettings(config[key])
+          : config[key];
 
-      // Skip unconfigured settings
-      if (formattedValue === "Not configured") {
-        return;
-      }
+      // Skip unconfigured settings, told by the value Graph returned
+      if (isUnsetValue(value)) return;
 
       const category = getCategoryFromKey(key);
       if (!categories[category]) {
@@ -506,7 +644,7 @@ export function parseDeviceConfiguration(config: any): Array<{
 
       categories[category].push({
         name: formatKeyName(key),
-        value: formattedValue,
+        value: formatValue(value),
         description: getPropertyDescription(key),
       });
     }
@@ -543,6 +681,9 @@ export function parseAdministrativeTemplate(definitionValues: any[]): Array<{
     if (presentationValues.length > 0) {
       const values = presentationValues
         .map((pv: any) => {
+          if (unreadablePresentationValue(pv)) {
+            return `${pv?.presentation?.label || "Value"}: ${UNREADABLE_VALUE}`;
+          }
           if (Array.isArray(pv.values)) {
             return `${pv.presentation?.label || "Values"}: ${formatValue(pv.values)}`;
           }
@@ -599,17 +740,13 @@ export function parseComplianceRules(policy: any): Array<{
       policy[key] !== undefined &&
       policy[key] !== null
     ) {
-      const formattedValue = formatValue(policy[key]);
-
-      // Skip unconfigured settings
-      if (formattedValue === "Not configured") {
-        return;
-      }
+      // Skip unconfigured settings, told by the value Graph returned
+      if (isUnsetValue(policy[key])) return;
 
       rules.push({
         category: getCategoryFromKey(key),
         rule: formatKeyName(key),
-        value: formattedValue,
+        value: formatValue(policy[key]),
         action: getComplianceAction(
           policy.scheduledActionsForRule,
           policy.collectionStatus?.scheduledActionsForRule,
@@ -628,7 +765,7 @@ function parseSecurityBaselineSettingName(
   if (!definitionId) return "Unknown Setting";
 
   // Example: "device_vendor_msft_defender_configuration_enablenetworkprotection"
-  // Should become: "Defender Configuration - Enable Network Protection"
+  // Should become: "Defender Configuration › Enable Network Protection"
 
   const parts = definitionId.split("_");
 
@@ -654,7 +791,7 @@ function parseSecurityBaselineSettingName(
     const formattedCategory = formatKeyName(category);
     const formattedSetting = formatKeyName(settingName);
 
-    return `${formattedCategory} - ${formattedSetting}`;
+    return `${formattedCategory} › ${formattedSetting}`;
   }
 
   // Fallback: just format the whole thing
@@ -677,39 +814,30 @@ export function parseSecurityBaseline(
     ? [{ displayName: "Baseline settings", settings: flatSettings }]
     : categories;
   return sourceCategories.map((category) => {
-    const settings = (category.settings || [])
-      .map((setting: any) => {
-        let value = "Not configured";
-
-        if (setting.value !== undefined && setting.value !== null) {
-          value = formatValue(setting.value);
-        } else if (typeof setting.valueJson === "string") {
-          try {
-            value = formatValue(JSON.parse(setting.valueJson));
-          } catch {
-            value = setting.valueJson;
-          }
-        } else if (
-          setting.stringValue !== undefined &&
-          setting.stringValue !== null
-        ) {
-          value = setting.stringValue;
-        } else if (setting.intValue !== undefined) {
-          value = setting.intValue.toString();
-        } else if (setting.boolValue !== undefined) {
-          value = setting.boolValue ? "Enabled" : "Disabled";
-        }
-
-        return {
+    // Unconfigured settings are left out, told by the value Graph
+    // returned, never by its display text.
+    const settings = (category.settings || []).flatMap((setting: any) => {
+      let value: string;
+      if (unreadableIntentValue(setting)) {
+        value = UNREADABLE_VALUE;
+      } else {
+        const raw =
+          setting.value !== undefined && setting.value !== null
+            ? setting.value
+            : typeof setting.valueJson === "string"
+              ? JSON.parse(setting.valueJson)
+              : undefined;
+        if (isUnsetValue(raw)) return [];
+        value = formatValue(raw);
+      }
+      return [
+        {
           name: parseSecurityBaselineSettingName(setting.definitionId),
           value,
           description: setting.description,
-        };
-      })
-      .filter(
-        (setting: { name: string; value: string; description?: string }) =>
-          setting.value !== "Not configured",
-      ); // Filter out unconfigured settings
+        },
+      ];
+    });
 
     return {
       category: category.displayName || "General",
@@ -718,54 +846,80 @@ export function parseSecurityBaseline(
   });
 }
 
-// Parse assignment information
-export function parseAssignments(assignments: any[], status?: string): string {
-  if (!assignments || assignments.length === 0) {
+/** The line of a policy whose settings Graph did not return. */
+export const SETTINGS_UNAVAILABLE = "Settings unavailable";
+
+/**
+ * Whether a policy's settings are unknown, so the documentation says they
+ * are unavailable instead of not configured: Graph did not return its
+ * setting list as a list (compliance/graph-rows.ts), or its settings were
+ * not collected completely.
+ */
+export const settingsUnavailable = (
+  item: Record<string, any>,
+  family: string,
+): boolean =>
+  unlistedSources(item, family).size > 0 ||
+  item.collectionStatus?.settings === "incomplete";
+
+/** The assignment line of a resource type without an assignment relationship. */
+export const ASSIGNMENTS_NOT_APPLICABLE =
+  "Not applicable (this resource type has no assignments)";
+
+/** The label of an assignment whose target cannot be read. */
+export const UNREADABLE_ASSIGNMENT = "Assignment could not be read";
+
+// The label of one assignment, read by its documented target type as the
+// engine reads it (compliance/graph-rows.ts): an assignment of a type Graph
+// does not document, or without what its type targets, may target anyone,
+// so it is marked unreadable rather than labelled.
+function assignmentLabel(assignment: unknown): string {
+  if (unreadableAssignment(assignment)) return UNREADABLE_ASSIGNMENT;
+  const target = (assignment as { target: Record<string, any> }).target;
+  const type = normalizeTargetType(target["@odata.type"]);
+  let label: string;
+  if (type === "groupassignmenttarget") label = `Group: ${target.groupId}`;
+  else if (type === "exclusiongroupassignmenttarget")
+    // An app exclusion names its intent (compliance/assignments.ts
+    // exclusionScopeSuffix); the group id stays right after "Excluded: "
+    // so the exports put the group name in its place.
+    label = `Excluded: ${target.groupId}${exclusionScopeSuffix((assignment as { intent?: unknown }).intent)}`;
+  else if (type === "alldevicesassignmenttarget") label = "All Devices";
+  else if (type === "alllicensedusersassignmenttarget") label = "All Users";
+  else if (type === "configurationmanagercollectionassignmenttarget")
+    label = `CM Collection: ${target.collectionId}`;
+  else if (type === "organizationalunitassignmenttarget")
+    label = `Organizational unit: ${target.organizationalUnitId}`;
+  else if (type === "scopetaggroupassignmenttarget")
+    // "Group: <id>" so the exports put the group name in its place.
+    label = `${target.targetType === "device" ? "Devices" : "Users"} in Group: ${target.entraObjectId}`;
+  else return UNREADABLE_ASSIGNMENT;
+  // A removal intent targets nobody, so it is labelled with it
+  // (compliance/assignments.ts removalPrefix).
+  if (type !== "exclusiongroupassignmenttarget")
+    label = `${removalPrefix((assignment as { intent?: unknown }).intent)}${label}`;
+  const filterType = target.deviceAndAppManagementAssignmentFilterType;
+  if (filterType !== "include" && filterType !== "exclude") return label;
+  return `${label} [Filter (${filterType === "include" ? "Include" : "Exclude"}): ${target.deviceAndAppManagementAssignmentFilterId}]`;
+}
+
+// Parse assignment information. Assignments Graph returned as no list, or
+// as a value that is not one, may hold any assignment, so they are marked
+// unreadable rather than not assigned, as the engine reads them
+// (compliance/assignments.ts).
+export function parseAssignments(
+  assignments: unknown,
+  status?: string,
+): string {
+  if (!Array.isArray(assignments) || assignments.length === 0) {
     return status === "incomplete"
       ? "Assignments unavailable (collection incomplete)"
-      : "Not assigned";
+      : Array.isArray(assignments)
+        ? "Not assigned"
+        : UNREADABLE_ASSIGNMENT;
   }
-
-  const labels: string[] = [];
-
-  for (const assn of assignments) {
-    const target = assn?.target ?? assn ?? {};
-    const typeRaw = target["@odata.type"] || "";
-    const type = typeof typeRaw === "string" ? typeRaw.toLowerCase() : "";
-
-    let label: string | undefined;
-    if (target.groupId) {
-      label = `${type.includes("exclusiongroup") ? "Excluded" : "Group"}: ${target.groupId}`;
-    } else if (type.includes("alldevices")) {
-      label = "All Devices";
-    } else if (type.includes("alllicensedusers") || type.includes("allusers")) {
-      label = "All Users";
-    }
-    if (target.deviceAndAppManagementAssignmentFilterId) {
-      const filterType = target.deviceAndAppManagementAssignmentFilterType;
-      const filter = `Filter (${filterType === "include" ? "Include" : filterType === "exclude" ? "Exclude" : "Unknown"}): ${target.deviceAndAppManagementAssignmentFilterId}`;
-      label = label ? `${label} [${filter}]` : filter;
-    }
-    if (label) {
-      labels.push(label);
-      continue;
-    }
-
-    // ConfigMgr collections
-    if (
-      type.includes("configurationmanagercollectionassignmenttarget") &&
-      target.collectionId
-    ) {
-      labels.push(`CM Collection: ${target.collectionId}`);
-      continue;
-    }
-
-    // Fallback
-    labels.push("Custom Assignment");
-  }
-
   return (
-    labels.join(", ") +
+    assignments.map(assignmentLabel).join(", ") +
     (status === "incomplete" ? " (collection incomplete)" : "")
   );
 }
@@ -826,7 +980,7 @@ function getComplianceAction(scheduledActions: any[], status?: string): string {
     .map((config: any) => {
       const hours = config.gracePeriodHours;
       const timing =
-        typeof hours !== "number" || !Number.isFinite(hours) || hours < 0
+        !isInt32(hours) || hours < 0
           ? " (timing unavailable)"
           : hours === 0
             ? " immediately"

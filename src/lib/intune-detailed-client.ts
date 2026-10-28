@@ -21,6 +21,16 @@ import {
 } from "./configuration-parser";
 
 import { createGraphClient, type TokenProvider } from "./graph-client";
+import {
+  collectPolicyDeviceStatus,
+  collectTenantIdentityPolicies,
+  skippedIdentityPolicies,
+  skippedPolicyDeviceStatus,
+} from "./tenant-signal-collectors";
+import type {
+  PolicyDeviceStatus,
+  TenantIdentityPolicies,
+} from "./compliance/types";
 export { createGraphClient } from "./graph-client";
 
 // Enhanced configuration types with settings
@@ -179,11 +189,20 @@ export type ProgressCallback = (event: {
   section?: ConfigurationSectionData;
 }) => void;
 
+/** Progress step name for the device status annex. */
+export const POLICY_STATUS_STEP = "Policy device status";
+// The annex needs a few report pages; start it only with this much budget
+// left and stop paging this long before the budget ends.
+const POLICY_STATUS_MIN_REMAINING_MS = 20_000;
+const POLICY_STATUS_RESERVE_MS = 10_000;
+
 export class DetailedIntuneService {
   private client: ReturnType<typeof createGraphClient>;
   private signal: AbortSignal;
   private permissionErrors: PermissionError[] = [];
   private fetchErrors: FetchError[] = [];
+  /** Wall-clock end of the collection budget, when there is one. */
+  private deadline?: number;
   private async readComplianceScheduledActions(policy: any) {
     // Some Intune backends reject GET on the scheduledActionsForRule relation.
     // Read the parent policy with both navigation collections expanded instead.
@@ -401,6 +420,51 @@ export class DetailedIntuneService {
     );
     this.client = createGraphClient(accessToken, { signal: this.signal });
     this.progressCallback = progressCallback;
+    this.deadline = budgetMs ? Date.now() + budgetMs : undefined;
+  }
+
+  // Entra tenant policies, read with the Conditional Access token. Kept out of
+  // sections so they never change configuration counts or exports.
+  async getTenantIdentityPolicies(): Promise<TenantIdentityPolicies> {
+    return collectTenantIdentityPolicies(this.client, (request) =>
+      this.retryWithBackoff(request),
+    );
+  }
+
+  // Intune per-policy status counts for the device state annex. Never input
+  // to any assessment status. Skipped when the collection budget is nearly
+  // used, so the web route stays within its time limit.
+  async getPolicyDeviceStatus(): Promise<PolicyDeviceStatus> {
+    const remaining =
+      this.deadline === undefined ? Infinity : this.deadline - Date.now();
+    const result =
+      remaining < POLICY_STATUS_MIN_REMAINING_MS
+        ? skippedPolicyDeviceStatus(
+            "Skipped to stay within the collection time budget.",
+          )
+        : await collectPolicyDeviceStatus(
+            this.client,
+            (request, signal) =>
+              this.retryWithBackoff(request, 2, 1000, signal),
+            {
+              deadline:
+                this.deadline === undefined
+                  ? undefined
+                  : this.deadline - POLICY_STATUS_RESERVE_MS,
+              signal: this.signal,
+            },
+          );
+    const failed = Object.values(result.sources).some(
+      (status) => status !== "collected",
+    );
+    this.progressCallback?.({
+      step: POLICY_STATUS_STEP,
+      type: failed ? "error" : "completed",
+      message: failed
+        ? "Some policy status summaries were not collected"
+        : undefined,
+    });
+    return result;
   }
 
   // Conditional Access Policies with details
@@ -645,6 +709,18 @@ export class DetailedIntuneService {
     });
   }
 
+  // A policy whose detail fetch failed: every part it collects is marked
+  // incomplete, so its assignments read as unknown, never as not assigned.
+  private failedDetails(parts: readonly string[], error: unknown) {
+    return {
+      collectionStatus: Object.fromEntries(
+        parts.map((part) => [part, "incomplete"]),
+      ),
+      hasFetchError: true,
+      fetchErrorMessage: this.graphError(error).message,
+    };
+  }
+
   private partialCollectionItems(error: unknown, configType: string) {
     if (!(error instanceof GraphPaginationError)) return [];
     const message = this.graphError(error).message;
@@ -837,11 +913,12 @@ export class DetailedIntuneService {
     fn: () => Promise<T>,
     maxRetries: number = 5,
     initialDelay: number = 1000,
+    signal: AbortSignal = this.signal,
   ): Promise<T> {
     return retryGraphRequest(fn, {
       maxAttempts: maxRetries,
       initialDelay,
-      signal: this.signal,
+      signal,
     });
   }
 
@@ -1140,6 +1217,7 @@ export class DetailedIntuneService {
               ...config,
               configType: this.getConfigurationType(config["@odata.type"]),
               assignments: [],
+              ...this.failedDetails(["assignments"], error),
             };
           }
         }),
@@ -1361,9 +1439,7 @@ export class DetailedIntuneService {
               definitionValues: [],
               assignments: [],
               version: 1,
-              hasFetchError: true,
-              fetchErrorMessage:
-                error instanceof Error ? error.message : "Detail fetch failed",
+              ...this.failedDetails(["assignments", "settings"], error),
             };
           }
         },
@@ -1434,6 +1510,10 @@ export class DetailedIntuneService {
               configType: "Compliance Policy",
               scheduledActionsForRule: [],
               assignments: [],
+              ...this.failedDetails(
+                ["scheduledActionsForRule", "assignments"],
+                error,
+              ),
             };
           }
         }),
@@ -1574,6 +1654,7 @@ export class DetailedIntuneService {
               configType: "App Protection Policy",
               platformType: policy.platform,
               assignments: [],
+              ...this.failedDetails(["assignments", "apps"], error),
             };
           }
         }),
@@ -1664,6 +1745,10 @@ export class DetailedIntuneService {
               configType: "Security Baseline",
               categories: [],
               assignments: [],
+              ...this.failedDetails(
+                ["categories", "assignments", "settings"],
+                error,
+              ),
             };
           }
         }),
@@ -1758,6 +1843,7 @@ export class DetailedIntuneService {
               configType: "PowerShell Script",
               platformType: "Windows",
               assignments: [],
+              ...this.failedDetails(["details", "assignments"], error),
             };
           }
         }),
@@ -1851,6 +1937,7 @@ export class DetailedIntuneService {
               configType: "Shell Script",
               platformType: "macOS",
               assignments: [],
+              ...this.failedDetails(["details", "assignments"], error),
             };
           }
         }),
@@ -2017,6 +2104,7 @@ export class DetailedIntuneService {
               ...config,
               configType: "App Configuration",
               assignments: [],
+              ...this.failedDetails(["details", "assignments"], error),
             };
           }
         }),
@@ -2301,6 +2389,8 @@ export class DetailedIntuneService {
     console.log("Fetching all detailed Intune configurations...");
     this.permissionErrors = []; // Reset permission errors
     this.fetchErrors = []; // Reset fetch errors
+    // Undefined when a partial retry does not refresh the step.
+    let tenantIdentityPolicies: TenantIdentityPolicies | undefined;
 
     const collect = <T>(
       step: string,
@@ -2338,11 +2428,24 @@ export class DetailedIntuneService {
       collect("Enrollment Configurations", () =>
         this.getEnrollmentConfigurationsDetailed(),
       ),
-      collect("Conditional Access Policies", () =>
-        includeConditionalAccess
-          ? this.getConditionalAccessPoliciesDetailed()
-          : Promise.resolve([]),
-      ),
+      collect("Conditional Access Policies", () => {
+        if (!includeConditionalAccess) {
+          tenantIdentityPolicies = skippedIdentityPolicies(
+            "Conditional Access is not included in this collection.",
+          );
+          return Promise.resolve([]);
+        }
+        // Settle both, so the Entra policies are stored before the step ends.
+        return Promise.allSettled([
+          this.getConditionalAccessPoliciesDetailed(),
+          this.getTenantIdentityPolicies().then((policies) => {
+            tenantIdentityPolicies = policies;
+          }),
+        ]).then(([policies]) => {
+          if (policies.status === "rejected") throw policies.reason;
+          return policies.value;
+        });
+      }),
       collect("Additional Intune coverage", () =>
         this.getAdditionalConfigurationSections(),
       ),
@@ -2410,6 +2513,12 @@ export class DetailedIntuneService {
         });
       }
     });
+
+    // After the policy streams, so a slow tenant spends its budget on policies.
+    // A partial retry leaves the previous annex in place.
+    const policyDeviceStatus = selectedSteps
+      ? undefined
+      : await this.getPolicyDeviceStatus();
 
     // Log summary of what was fetched
     const successfulTypes = results.filter(
@@ -2583,6 +2692,10 @@ export class DetailedIntuneService {
       windowsUpdatePolicies: safeWindowsUpdatePolicies,
       enrollmentConfigurations: safeEnrollmentConfigurations,
       conditionalAccessPolicies: safeConditionalAccessPolicies,
+      tenantIdentityPolicies: tenantIdentityPolicies
+        ? (sanitizeGraphData(tenantIdentityPolicies) as TenantIdentityPolicies)
+        : undefined,
+      policyDeviceStatus,
       sections,
       permissionErrors: this.permissionErrors,
       fetchErrors: this.fetchErrors,

@@ -30,6 +30,13 @@ export const FRAMEWORK_OPTIONS: ReadonlyArray<{
       "EU Directive 2022/2555 Article 21(2) measures with Danish and German law references. Organisational measures need separate assessment.",
   },
   {
+    id: "dora-2022-2554",
+    label: "DORA",
+    shortLabel: "DORA",
+    description:
+      "EU Regulation 2022/2554 and RTS 2024/1774 ICT risk management points with device and Entra ID evidence. Governance, incident reporting, testing and third-party risk need separate assessment.",
+  },
+  {
     id: "soc2-tsc",
     label: "SOC 2",
     shortLabel: "SOC 2",
@@ -56,13 +63,6 @@ export const FRAMEWORK_OPTIONS: ReadonlyArray<{
     shortLabel: "NIST CSF",
     description:
       "Outcome-based guidance for managing and reducing cybersecurity risk.",
-  },
-  {
-    id: "bsi-it-grundschutz",
-    label: "BSI IT-Grundschutz",
-    shortLabel: "BSI",
-    description:
-      "Baseline safeguards for systematic information security management.",
   },
   {
     id: "def-stan-05-138-i4",

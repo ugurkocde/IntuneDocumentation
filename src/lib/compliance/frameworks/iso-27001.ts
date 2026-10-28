@@ -16,7 +16,7 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.1",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "User endpoint devices",
+      title: "Device lock, encryption, integrity and app data",
       summary:
         "Endpoint devices that handle organizational information are secured through managed protections.",
     },
@@ -24,7 +24,7 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.5",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "Secure authentication",
+      title: "Sign-in, unlock and credential protection",
       summary:
         "Authentication is required before users can access managed devices, including through device-unlock controls.",
     },
@@ -32,7 +32,7 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.7",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "Protection against malware",
+      title: "Antivirus and threat scanning",
       summary:
         "Antimalware protections are implemented and maintained on managed endpoints.",
     },
@@ -40,7 +40,7 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.8",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "Technical vulnerability management",
+      title: "Operating system updates and minimum versions",
       summary:
         "Technical vulnerabilities are addressed through timely operating system updates and enforced minimum versions.",
     },
@@ -48,7 +48,7 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.9",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "Configuration management",
+      title: "Hardened security settings",
       summary:
         "Secure device configurations are defined and enforced across managed platforms.",
     },
@@ -56,7 +56,7 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.19",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "Software installation control",
+      title: "Approved apps and app sources",
       summary:
         "Software installation on managed systems is limited to approved sources and trusted applications.",
     },
@@ -64,7 +64,7 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.20",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "Network security",
+      title: "Host firewall enforcement",
       summary:
         "Managed device network connections are protected with enforced host firewall controls.",
     },
@@ -72,12 +72,21 @@ export const ISO_27001: FrameworkDefinition = {
       id: "8.24",
       evidenceStrength: "supporting",
       granularity: "requirement",
-      title: "Use of cryptography",
+      title: "Disk and storage encryption",
       summary:
         "Cryptographic safeguards protect information stored on managed devices.",
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": ["8.1"],
+    "macos-inactivity-lock": ["8.1"],
+    "ios-inactivity-lock": ["8.1"],
+    "android-inactivity-lock": ["8.1"],
+    "tenant-phishing-resistant-method-enabled": ["8.5"],
+    "tenant-weak-methods-disabled": ["8.5"],
+    "tenant-security-defaults-enabled": ["8.5"],
+
     "windows-lsa-protection": ["8.5"],
     "windows-remote-credential-guard": ["8.5"],
     "windows-laps-management": ["8.5"],

@@ -19,12 +19,12 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 is available in the desktop app only. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 and DORA are available in the desktop app only. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, BSI IT-Grundschutz, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 is available in the desktop app only. Sample reports for every framework are free to view.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 and DORA are available in the desktop app only. Sample reports for every framework are free to view.",
     url: "/compliance",
     type: "website",
   },
@@ -33,6 +33,7 @@ export const metadata: Metadata = {
 const sampleDescriptions: Partial<Record<ComplianceFrameworkId, string>> = {
   "iso-27001-2022": "Annex A technology controls with cited policy evidence.",
   "nis2-2022-2555": "The Article 21(2) risk management measures.",
+  "dora-2022-2554": "Selected ICT risk management points of DORA and its RTS.",
   "soc2-tsc": "Trust Services Criteria mapped to device configuration.",
   "hipaa-security-rule":
     "45 CFR 164 safeguards such as encryption and audit controls.",
@@ -41,8 +42,6 @@ const sampleDescriptions: Partial<Record<ComplianceFrameworkId, string>> = {
   "nist-csf-2": "Protect and Detect subcategories.",
   "cyber-essentials-v3": "The five Cyber Essentials control themes.",
   "essential-eight": "All eight strategies at Maturity Level 1.",
-  "bsi-it-grundschutz":
-    "Grundschutz-Check for the client Bausteine. This report is in German.",
   "def-stan-05-138-i4": "Objective B controls for defence suppliers.",
 };
 
@@ -68,6 +67,12 @@ const frameworks: {
     name: "NIS2 Directive (EU) 2022/2555",
     detail:
       "The ten cybersecurity risk management measures of Article 21(2), each cross-referenced to the German BSIG and the Danish NIS 2-loven. Technical measures receive supporting Intune evidence; governance measures remain a manual assessment.",
+  },
+  {
+    id: "dora-2022-2554",
+    name: "DORA, Regulation (EU) 2022/2554 and RTS (EU) 2024/1774",
+    detail:
+      "Selected ICT risk management points, such as encryption, patching, malware protection, session lock, blocking non-compliant endpoints and strong authentication, receive supporting Intune and Entra ID evidence. Governance, incident reporting, resilience testing and third-party risk remain a manual assessment.",
   },
   {
     id: "soc2-tsc",
@@ -109,19 +114,13 @@ const frameworks: {
     id: "nist-800-171-r2",
     name: "NIST SP 800-171 (Rev. 2)",
     detail:
-      "Supporting Intune evidence for 12 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
+      "Supporting Intune evidence for 13 of 110 published requirements in the revision used by CMMC Level 2. Covers selected encryption, authentication, hardening and malware protections. This is not a complete CMMC assessment or an SPRS score.",
   },
   {
     id: "nist-800-171-r3",
     name: "NIST SP 800-171 (Rev. 3)",
     detail:
-      "Supporting Intune evidence for 11 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
-  },
-  {
-    id: "bsi-it-grundschutz",
-    name: "BSI IT-Grundschutz",
-    detail:
-      "Requirement-level mapping (A-Anforderungen) for the client Bausteine SYS.2.2.3, SYS.2.4, SYS.3.2.1, and SYS.3.2.2, verified against the Kompendium Edition 2023, with Basis, Standard, and erhöhter Schutzbedarf tiers. Only technically assessable requirements are mapped; organizational requirements remain a manual assessment.",
+      "Supporting Intune evidence for 12 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
   },
 ];
 
@@ -139,12 +138,7 @@ const reportFeatures = [
   {
     title: "Results overview and key findings",
     detail:
-      "Outcomes grouped by BSI requirement tier or framework control family, with assigned deviations and unassigned configurations flagged up front.",
-  },
-  {
-    title: "Grundschutz-Check ready",
-    detail:
-      "The BSI report is fully German and includes manual assessment fields (Umsetzungsstatus, Verantwortlich, Zieltermin, Bemerkung) for each requirement, so consultants can complete their review directly on the document.",
+      "Outcomes grouped by framework control family, with assigned deviations and unassigned configurations flagged up front.",
   },
   {
     title: "Gap guidance",
@@ -355,12 +349,11 @@ export default function CompliancePage() {
             tenant. They are not a certification and do not replace an audit.
             ISO/IEC 27001 and SOC 2 criteria are referenced by identifier with
             original summaries. NIST publications are used with their
-            public-domain status; BSI IT-Grundschutz is referenced from the
-            freely published Kompendium. Def Stan 05-138 is referenced by
-            control identifier with original summaries. The HIPAA Security Rule
-            is US federal regulation in the public domain. Cyber Essentials
-            content is used under the Open Government Licence v3.0, and evidence
-            never indicates certification. Essential Eight requirement text is
+            public-domain status. Def Stan 05-138 is referenced by control
+            identifier with original summaries. The HIPAA Security Rule is US
+            federal regulation in the public domain. Cyber Essentials content is
+            used under the Open Government Licence v3.0, and evidence never
+            indicates certification. Essential Eight requirement text is
             attributed to the Australian Signals Directorate, © Commonwealth of
             Australia 2026, under CC BY 4.0. Local requirement identifiers and
             evidence mappings are additions by Intune Documentation.{" "}

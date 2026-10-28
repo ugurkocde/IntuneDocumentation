@@ -12,7 +12,9 @@ export interface CollectionStep {
 export const CONNECT_STEP = "connect";
 
 // The twelve policy type streams of getAllDetailedConfigurations, in the
-// order the website dashboard lists them.
+// order the website dashboard lists them, then the policy device status
+// summaries read after them (the Conditional Access step also reads the
+// Entra tenant policies).
 const CANONICAL: Array<{ key: string; label: string }> = [
   { key: "Settings Catalog", label: "Settings Catalog" },
   { key: "Device Configurations", label: "Device configurations" },
@@ -26,6 +28,8 @@ const CANONICAL: Array<{ key: string; label: string }> = [
   { key: "Enrollment Configurations", label: "Enrollment configurations" },
   { key: "Additional Intune coverage", label: "Additional Intune coverage" },
   { key: "Conditional Access Policies", label: "Conditional Access policies" },
+  // POLICY_STATUS_STEP in src/lib/intune-detailed-client.ts.
+  { key: "Policy device status", label: "Policy device status" },
 ];
 
 export function initialSteps(): CollectionStep[] {

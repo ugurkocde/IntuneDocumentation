@@ -1,4 +1,6 @@
 import type {
+  CapabilityAlternative,
+  CapabilityResult,
   CapabilityStatus,
   ControlStatus,
   FrameworkAssessment,
@@ -39,6 +41,37 @@ export const CAPABILITY_STATUS_LABELS: Record<CapabilityStatus, string> = {
   collectionIncomplete: "Collection incomplete",
   notApplicable: "Outside selected scope",
 };
+
+/**
+ * Neutral labels for a capability that is no gap because an alternative is
+ * in use or it cannot be combined with Conditional Access. They replace the
+ * capability status label wherever one is shown; the wording matches the
+ * management summary.
+ */
+export const ALTERNATIVE_STATE_LABELS: Record<
+  Exclude<CapabilityAlternative["state"], "unknown">,
+  string
+> = {
+  inUse: "Not needed, an alternative is set up",
+  notCombinable: "Not applicable while Conditional Access policies exist",
+};
+
+/** The alternative label of a capability, or undefined when it has none. */
+export function alternativeLabel(
+  result: Pick<CapabilityResult, "alternative">,
+): string | undefined {
+  const state = result.alternative?.state;
+  return state && state !== "unknown"
+    ? ALTERNATIVE_STATE_LABELS[state]
+    : undefined;
+}
+
+/** Status label of a capability, with the neutral alternative label first. */
+export function capabilityStatusLabel(
+  result: Pick<CapabilityResult, "alternative" | "status">,
+): string {
+  return alternativeLabel(result) ?? CAPABILITY_STATUS_LABELS[result.status];
+}
 
 export const CONTROL_STATUS_ORDER: Record<ControlStatus, number> = {
   conflictingEvidence: 0,

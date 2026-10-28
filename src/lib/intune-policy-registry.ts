@@ -1,3 +1,5 @@
+import { canonicalJson } from "./canonical-json";
+
 export type AdditionalConfigurationFamily =
   | "windowsUpdateProfiles"
   | "scriptsAndRemediations"
@@ -224,6 +226,18 @@ export const INTUNE_POLICY_REGISTRY: IntuneRegistryEntry[] = [
     family: "assignmentAndRbac",
     path: "/deviceManagement/reusablePolicySettings",
     permissionHint: "DeviceManagementConfiguration.Read.All",
+    // Graph returns settingInstance and version only when they are selected,
+    // on the list and on GET by id alike (lab tenant, 23 October 2026), so
+    // the list selects them and no request per item is needed.
+    select: [
+      "id",
+      "displayName",
+      "description",
+      "settingDefinitionId",
+      "settingInstance",
+      "version",
+      "lastModifiedDateTime",
+    ],
   },
   {
     key: "roleScopeTags",
@@ -429,6 +443,66 @@ const TYPE_REDACTED_FIELDS: Record<string, Set<string>> = {
 
 export const REDACTED_VALUE = "[Redacted]";
 
+// Whether a value is one the collector redacted, in the only forms it writes
+// one (sanitizeGraphData): the marker in place of the whole value, or a list
+// holding only the marker in place of a list. Text that holds the marker
+// among other words, or a list holding it among other entries, is a value.
+export function isRedactedValue(value: unknown): boolean {
+  return (
+    value === REDACTED_VALUE ||
+    (Array.isArray(value) && value.length === 1 && value[0] === REDACTED_VALUE)
+  );
+}
+
+// Digests of values taken right before they are redacted, so the desktop
+// history can tell that a script or secret changed without keeping it. Off
+// unless a digest function is set (desktop main sets SHA-256; the web never
+// does). The digests sit under a symbol key, which JSON, Object.keys and
+// entries, and the structured clone used for IPC all skip, so exports, the
+// search index and the renderer never see them; object spreads of an item
+// keep them. They are private fields, so logs and inspection show none.
+const REDACTED_DIGESTS = Symbol("intunedoc.redactedDigests");
+
+class RedactedDigests {
+  readonly #byField: ReadonlyMap<string, string>;
+
+  constructor(byField: ReadonlyMap<string, string>) {
+    this.#byField = byField;
+  }
+
+  entries(): Array<[string, string]> {
+    return [...this.#byField];
+  }
+}
+
+let redactionDigest: ((content: string) => string) | null = null;
+
+export function setRedactionDigest(
+  digest: ((content: string) => string) | null,
+): void {
+  redactionDigest = digest;
+}
+
+// Field name and digest of every value redacted on this record.
+export function redactedDigests(record: unknown): Array<[string, string]> {
+  const holder =
+    record && typeof record === "object"
+      ? (record as Record<symbol, unknown>)[REDACTED_DIGESTS]
+      : undefined;
+  return holder instanceof RedactedDigests ? holder.entries() : [];
+}
+
+// The content a digest is taken of; nothing for empty values and values
+// that were already redacted. A record is written with its keys sorted
+// (canonical-json.ts), so the same record in another key order has the same
+// fingerprint in History.
+function redactableContent(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  if (isRedactedValue(value)) return undefined;
+  if (typeof value === "string") return value;
+  return canonicalJson(value);
+}
+
 const SENSITIVE_FIELD_PATTERN =
   /(apikey|password|secret|token|privatekey|presharedkey|credential|qrcodecontent|qrcodeimage|scriptcontent|configurationfilecontent|encodedsettingxml|largeicon|payload(?:json)?)$/i;
 
@@ -444,6 +518,47 @@ const SENSITIVE_OMA_LABEL_PATTERN =
 const SENSITIVE_DEFINITION_ID_SUFFIX_PATTERN =
   /(apikey|password|passphrase|secret|token|privatekey|presharedkey|credential)$/i;
 
+// Settings Catalog definitions the name rules above match although their
+// values are documented as not secret: the Policy CSP user rights "Create a
+// token object" and "Replace a process level token" hold lists of accounts
+// and SIDs, and Graph defines them with isSecret false. A value Graph marks
+// as secret (a secret setting value, or isSecret on its definition) is
+// still redacted.
+const NON_SECRET_DEFINITION_IDS = new Set([
+  "device_vendor_msft_policy_config_userrights_createtoken",
+  "device_vendor_msft_policy_config_userrights_replaceprocessleveltoken",
+]);
+
+/** A setting definition id the secret name rules match but that is documented as not secret. */
+export function isDocumentedNonSecretDefinitionId(id: string): boolean {
+  return NON_SECRET_DEFINITION_IDS.has(id.toLowerCase());
+}
+
+function isSensitiveDefinitionId(id: string) {
+  return (
+    !isDocumentedNonSecretDefinitionId(id) &&
+    (SENSITIVE_OMA_URI_PATTERN.test(id) ||
+      SENSITIVE_DEFINITION_ID_SUFFIX_PATTERN.test(id))
+  );
+}
+
+// Ids of the definitions a Settings Catalog setting carries (expanded
+// settingDefinitions) whose value definition Graph marks as secret.
+function secretDefinitionIds(record: Record<string, unknown>) {
+  if (!Array.isArray(record.settingDefinitions)) return [];
+  return record.settingDefinitions.flatMap((definition) => {
+    const { id, valueDefinition } = (definition ?? {}) as Record<
+      string,
+      unknown
+    >;
+    return typeof id === "string" &&
+      (valueDefinition as Record<string, unknown> | null | undefined)
+        ?.isSecret === true
+      ? [id.toLowerCase()]
+      : [];
+  });
+}
+
 // App configuration keys and custom setting names are identifiers such as
 // "apiKey", "api_key" or "ServerToken", matched by suffix without separators.
 const SENSITIVE_CONFIG_KEY_PATTERN =
@@ -452,8 +567,9 @@ const SENSITIVE_CONFIG_KEY_PATTERN =
 const SENSITIVE_PRESENTATION_LABEL_PATTERN =
   /(password|passphrase|passcode|shared secret|pre[- ]?shared key|api key|private key)/i;
 
-const SECRET_SETTING_VALUE_TYPE =
-  "#microsoft.graph.deviceManagementConfigurationSecretSettingValue";
+// The secret value type in any casing, with or without the namespace, as
+// the snapshot layers read it.
+const SECRET_SETTING_VALUE_TYPE = /secretsettingvalue$/i;
 
 const PAIR_VALUE_KEYS = new Set([
   "value",
@@ -499,23 +615,31 @@ export function sanitizeGraphData(
   ]);
 
   // secretValue marks a Settings Catalog value record whose parent
-  // settingInstance names a secret definition id.
-  const visit = (current: unknown, secretValue = false): unknown => {
+  // settingInstance names a secret definition id; secretIds are the
+  // definitions Graph marks as secret on the enclosing setting.
+  const visit = (
+    current: unknown,
+    secretValue = false,
+    secretIds: ReadonlySet<string> = new Set(),
+  ): unknown => {
     if (Array.isArray(current))
-      return current.map((item) => visit(item, secretValue));
+      return current.map((item) => visit(item, secretValue, secretIds));
     if (!current || typeof current !== "object") return current;
 
     const record = current as Record<string, unknown>;
+    const markedSecret = secretDefinitionIds(record);
+    const nestedSecretIds = markedSecret.length
+      ? new Set([...secretIds, ...markedSecret])
+      : secretIds;
     const sensitiveDefinition =
       typeof record.settingDefinitionId === "string" &&
-      (SENSITIVE_OMA_URI_PATTERN.test(record.settingDefinitionId) ||
-        SENSITIVE_DEFINITION_ID_SUFFIX_PATTERN.test(
-          record.settingDefinitionId,
-        ));
+      (nestedSecretIds.has(record.settingDefinitionId.toLowerCase()) ||
+        isSensitiveDefinitionId(record.settingDefinitionId));
     const sensitivePairValue =
       secretValue ||
       sensitiveDefinition ||
-      record["@odata.type"] === SECRET_SETTING_VALUE_TYPE ||
+      (typeof record["@odata.type"] === "string" &&
+        SECRET_SETTING_VALUE_TYPE.test(record["@odata.type"])) ||
       (typeof record.omaUri === "string" &&
         SENSITIVE_OMA_URI_PATTERN.test(record.omaUri)) ||
       [record.displayName, record.name].some(
@@ -530,8 +654,14 @@ export function sanitizeGraphData(
       typeof record["@odata.type"] === "string"
         ? TYPE_REDACTED_FIELDS[record["@odata.type"].toLowerCase()]
         : undefined;
+    // A record sanitized again keeps the digests taken the first time.
+    const digests = new Map(redactedDigests(record));
+    const redact = (key: string, nested: unknown) => {
+      const content = redactionDigest ? redactableContent(nested) : undefined;
+      if (content !== undefined) digests.set(key, redactionDigest!(content));
+    };
 
-    return Object.fromEntries(
+    const sanitized = Object.fromEntries(
       Object.entries(record)
         .filter(([key]) => !["@odata.context", "@odata.nextLink"].includes(key))
         .map(([key, nested]) => {
@@ -541,24 +671,34 @@ export function sanitizeGraphData(
             PAIR_VALUE_KEYS.has(lowerKey) &&
             typeof nested !== "boolean"
           ) {
+            redact(key, nested);
             return [
               key,
               Array.isArray(nested) ? [REDACTED_VALUE] : REDACTED_VALUE,
             ];
           }
-          return [
-            key,
+          if (
             sensitiveFields.has(lowerKey) ||
             typeFields?.has(lowerKey) ||
             SENSITIVE_FIELD_PATTERN.test(key)
-              ? REDACTED_VALUE
-              : visit(
-                  nested,
-                  sensitiveDefinition && SETTING_VALUE_KEYS.has(lowerKey),
-                ),
+          ) {
+            redact(key, nested);
+            return [key, REDACTED_VALUE];
+          }
+          return [
+            key,
+            visit(
+              nested,
+              sensitiveDefinition && SETTING_VALUE_KEYS.has(lowerKey),
+              nestedSecretIds,
+            ),
           ];
         }),
     );
+    if (digests.size)
+      (sanitized as Record<symbol, unknown>)[REDACTED_DIGESTS] =
+        new RedactedDigests(digests);
+    return sanitized;
   };
 
   return visit(value);

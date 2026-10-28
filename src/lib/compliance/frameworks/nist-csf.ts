@@ -81,6 +81,15 @@ export const NIST_CSF: FrameworkDefinition = {
     },
   },
   mappings: {
+    // Screen lock after inactivity and Entra tenant policies (ruleset 2026.10.4).
+    "windows-inactivity-lock": [],
+    "macos-inactivity-lock": [],
+    "ios-inactivity-lock": [],
+    "android-inactivity-lock": [],
+    "tenant-phishing-resistant-method-enabled": [],
+    "tenant-weak-methods-disabled": [],
+    "tenant-security-defaults-enabled": [],
+
     "windows-lsa-protection": [],
     "windows-remote-credential-guard": [],
     "windows-laps-management": ["PR.AA-01", "PR.AA-03"],

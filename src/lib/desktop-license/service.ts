@@ -1,5 +1,6 @@
 import { type KeyObject } from "node:crypto";
 import { GUID, verifyEntraIdToken } from "~/lib/entra-id-token";
+import { cisInternalClaim } from "./cis-claim";
 import {
   PolarNotFound,
   PolarNotPermitted,
@@ -161,15 +162,29 @@ function limitViolation(
   return null;
 }
 
+// The single issuance point for every token, key and tenant paths alike, so
+// the internal CIS claim can only come from the server-side allowlists.
 function issue(
   ctx: LicenseContext,
   now: number,
-  fields: Omit<EntitlementPayload, "v" | "status" | "iat" | "exp">,
+  fields: Omit<EntitlementPayload, "v" | "status" | "iat" | "exp" | "cis">,
+  // Only a caller that presented the license key itself may receive the
+  // internal CIS claim. On the organization sharing path the server supplies
+  // the key and the installation id comes from the caller, so neither proves
+  // the caller is the allowlisted install.
+  presentedKey: boolean,
 ): Entitlement {
   const iat = Math.floor(now / 1000);
   const exp = iat + TOKEN_LIFETIME_SECONDS;
   const token = signEntitlement(
-    { v: 1, status: "granted", iat, exp, ...fields },
+    {
+      v: 1,
+      status: "granted",
+      iat,
+      exp,
+      ...fields,
+      ...(presentedKey ? cisInternalClaim(fields) : {}),
+    },
     ctx.signingKey,
   );
   return {
@@ -237,6 +252,7 @@ interface RefreshInput {
 async function activateKey(
   ctx: LicenseContext,
   input: ActivateInput,
+  presentedKey = true,
 ): Promise<{ entitlement: Entitlement; keyId: string }> {
   const now = ctx.now?.() ?? Date.now();
   const validated = await validateOrDeny(ctx, input.key);
@@ -286,27 +302,37 @@ async function activateKey(
     }
   }
 
-  const entitlement = issue(ctx, now, {
-    sub: validated.id,
-    act: activationId,
-    plan,
-    tenantId: input.tenantId,
-    installId: input.installId,
-    tenants,
-  });
+  const entitlement = issue(
+    ctx,
+    now,
+    {
+      sub: validated.id,
+      act: activationId,
+      plan,
+      tenantId: input.tenantId,
+      installId: input.installId,
+      tenants,
+    },
+    presentedKey,
+  );
   return { entitlement, keyId: validated.id };
 }
 
+// presentedKey is false when the server supplies the key for an organization
+// license install; such tokens never carry the internal CIS claim.
 export async function activateLicense(
   ctx: LicenseContext,
   input: ActivateInput,
+  options: { presentedKey?: boolean } = {},
 ): Promise<Entitlement> {
-  return (await activateKey(ctx, input)).entitlement;
+  return (await activateKey(ctx, input, options.presentedKey ?? true))
+    .entitlement;
 }
 
 async function refreshKey(
   ctx: LicenseContext,
   input: RefreshInput,
+  presentedKey = true,
 ): Promise<{ entitlement: Entitlement; keyId: string }> {
   const now = ctx.now?.() ?? Date.now();
   const validated = await validateOrDeny(ctx, input.key, input.activationId);
@@ -325,22 +351,29 @@ async function refreshKey(
   ]);
   const violation = limitViolation(activationsOf(full), input, tenants);
   if (violation) throw new LicenseDenied(violation);
-  const entitlement = issue(ctx, now, {
-    sub: validated.id,
-    act: current.id,
-    plan,
-    tenantId: input.tenantId,
-    installId: input.installId,
-    tenants,
-  });
+  const entitlement = issue(
+    ctx,
+    now,
+    {
+      sub: validated.id,
+      act: current.id,
+      plan,
+      tenantId: input.tenantId,
+      installId: input.installId,
+      tenants,
+    },
+    presentedKey,
+  );
   return { entitlement, keyId: validated.id };
 }
 
 export async function refreshLicense(
   ctx: LicenseContext,
   input: RefreshInput,
+  options: { presentedKey?: boolean } = {},
 ): Promise<Entitlement> {
-  return (await refreshKey(ctx, input)).entitlement;
+  return (await refreshKey(ctx, input, options.presentedKey ?? true))
+    .entitlement;
 }
 
 // A fresh sign-in, not a token kept around: the desktop app asks MSAL for a

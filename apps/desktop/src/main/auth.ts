@@ -10,6 +10,9 @@ import { createServer } from "node:http";
 import type { IncomingMessage, RequestListener, Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { DesktopAuthConfig } from "./config";
+import { SignInUnreachableError } from "./auth-errors";
+
+export { SIGN_IN_UNREACHABLE, SignInUnreachableError } from "./auth-errors";
 
 export interface AuthStatus {
   signedIn: boolean;
@@ -25,6 +28,10 @@ export interface SignInResult {
 }
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+// While Microsoft sign-in cannot be reached, the refresh is tried again
+// after 30 seconds, doubling up to every 5 minutes.
+const RETRY_FIRST_MS = 30_000;
+const RETRY_MAX_MS = 5 * 60_000;
 // Entra backdates iat by five minutes to allow for clock skew, so a token
 // issued just now reads as five minutes old. Ten minutes means at most five
 // real minutes, well inside the licensing service's 15 minute window.
@@ -49,6 +56,61 @@ main{max-width:420px;padding:32px;border-radius:16px;background:#fff;border:1px 
 h1{font-size:20px;margin:0 0 8px;letter-spacing:-0.02em}p{margin:0;color:#44747a;font-size:14px;line-height:1.5}</style></head>
 <body><main><h1>${title}</h1><p>${text}</p></main></body></html>`;
 const INTERACTIVE_TIMEOUT_MS = 5 * 60_000;
+
+// MSAL network failures, the Node errors beneath them, and Entra saying it
+// cannot issue tokens right now. MSAL reports a 5xx JSON answer as a
+// ServerError "server_error" without its HTTP status. "token_parsing_error"
+// is an answer MSAL could not read: a body that is not JSON, such as a proxy
+// error page, or an HTTP 200 answer whose ID token is not a well formed JWT.
+// Neither is a verdict on the session. Anything else, such as a revoked
+// session, needs a new sign-in.
+const UNREACHABLE_CODES = new Set([
+  "network_error",
+  "temporarily_unavailable",
+  "server_error",
+  "token_parsing_error",
+  "endpoints_resolution_error",
+  "no_network_connectivity",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+]);
+
+// After a 429 or 5xx answer MSAL throttles the request until its
+// Retry-After time, 60 seconds by default, and meanwhile throws a ServerError
+// carrying only the numeric error codes of that answer, or none, without
+// asking Entra again. That replay has no errorNo. An answer Entra actually
+// gave without an error field also has an empty code, but keeps its first
+// error code as errorNo (70008 for an expired grant), so it stays a verdict.
+// An answer with neither an error field nor error codes cannot be told
+// apart from a replay without codes and is treated as one.
+const THROTTLED_CODES = /^[\d ]*$/;
+
+// MSAL keeps no HTTP status on the errors a public client refresh throws
+// (msal-node 6.0.1), so the error code is all there is to go by.
+function isUnreachable(error: unknown): boolean {
+  const { name, errorCode, errorNo, code } = (error ?? {}) as {
+    name?: unknown;
+    errorCode?: unknown;
+    errorNo?: unknown;
+    code?: unknown;
+  };
+  if (
+    name === "ServerError" &&
+    errorNo === undefined &&
+    typeof errorCode === "string" &&
+    THROTTLED_CODES.test(errorCode)
+  ) {
+    return true;
+  }
+  return [errorCode, code].some(
+    (value) => typeof value === "string" && UNREACHABLE_CODES.has(value),
+  );
+}
 
 function base64Url(buffer: Buffer): string {
   return buffer
@@ -175,7 +237,17 @@ export class AuthService {
   private account: AccountInfo | null = null;
   private accessToken: string | null = null;
   private expiresOn: Date | null = null;
+  // The last silent refresh failed because sign-in could not be reached.
+  private unreachable = false;
+  // Delay of the last retry while unreachable, 0 when none is due.
+  private retryDelay = 0;
+  // Advanced by every sign-out and interactive sign-in: a silent result
+  // only counts for the session it was asked for.
   private generation = 0;
+  // An interactive sign-in finishing after a sign-out is discarded. Another
+  // interactive sign-in finishing first does not cancel it.
+  private signOuts = 0;
+  // Cancels the interactive sign-in that waits for the browser, if any.
   private activeCancel: (() => void) | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
   private reported = "false||";
@@ -222,16 +294,17 @@ export class AuthService {
     ) {
       return this.accessToken;
     }
-    if (!this.account) {
+    const account = this.account;
+    if (!account) {
       return null;
     }
     const generation = this.generation;
     try {
       const result = await this.pca.acquireTokenSilent({
-        account: this.account,
+        account,
         scopes: this.scopes,
       });
-      if (generation !== this.generation) {
+      if (!this.isCurrent(generation, account)) {
         return null;
       }
       if (!result) {
@@ -240,10 +313,29 @@ export class AuthService {
       }
       this.accept(result);
       return this.accessToken;
-    } catch {
-      if (generation === this.generation) this.expire();
+    } catch (error) {
+      if (!this.isCurrent(generation, account)) return null;
+      if (isUnreachable(error)) {
+        // Still signed in: the token is renewed once sign-in answers again.
+        this.unreachable = true;
+        this.retryLater();
+        return null;
+      }
+      this.expire();
       return null;
     }
+  }
+
+  // No token because Microsoft sign-in could not be reached, not because the
+  // session needs a new sign-in.
+  signInUnreachable(): boolean {
+    return this.unreachable && this.account !== null;
+  }
+
+  // Why no token is available: Microsoft sign-in could not be reached, or
+  // the session needs a new sign-in, said with the caller's words.
+  noTokenError(signInMessage = "Sign in before continuing."): Error {
+    return this.signInUnreachable() ? new SignInUnreachableError() : new Error(signInMessage);
   }
 
   // A recent Microsoft ID token for the organization license check, or null
@@ -251,16 +343,17 @@ export class AuthService {
   // accepts tokens issued within the last 15 minutes, so an older cached one
   // is renewed with the refresh token.
   async getIdToken(): Promise<string | null> {
-    if (!this.account) return null;
+    const account = this.account;
+    if (!account) return null;
     const generation = this.generation;
     for (const forceRefresh of [false, true]) {
       try {
         const result = await this.pca.acquireTokenSilent({
-          account: this.account,
+          account,
           scopes: this.scopes,
           forceRefresh,
         });
-        if (generation !== this.generation || !result?.idToken) return null;
+        if (!this.isCurrent(generation, account) || !result?.idToken) return null;
         this.accept(result);
         const issued = idTokenIssuedAt(result.idToken);
         if (issued !== null && Date.now() - issued < ID_TOKEN_MAX_AGE_MS) {
@@ -273,9 +366,21 @@ export class AuthService {
     return null;
   }
 
+  // A silent result or failure only counts for the session it was asked
+  // for: a sign-out or an interactive sign-in, as any account, may have
+  // finished while it was in flight.
+  private isCurrent(generation: number, account: AccountInfo): boolean {
+    return (
+      generation === this.generation &&
+      this.account?.homeAccountId === account.homeAccountId
+    );
+  }
+
   // The refresh failed: the session no longer has a usable token. The account
   // is kept so a later silent attempt can recover without a new sign-in.
   private expire(): void {
+    this.unreachable = false;
+    this.retryDelay = 0;
     this.clearExpiryTimer();
     this.accessToken = null;
     this.expiresOn = null;
@@ -311,7 +416,23 @@ export class AuthService {
     this.expiryTimer.unref?.();
   }
 
+  // Tries the refresh again later, so the session recovers, or ends when
+  // the sign-in turns out to be revoked, even while nothing calls Graph.
+  // Shares the refresh timer, so accept, expire and signOut clear it.
+  private retryLater(): void {
+    this.retryDelay =
+      this.retryDelay === 0 ? RETRY_FIRST_MS : Math.min(this.retryDelay * 2, RETRY_MAX_MS);
+    this.clearExpiryTimer();
+    this.expiryTimer = setTimeout(() => {
+      this.expiryTimer = null;
+      void this.getAccessToken();
+    }, this.retryDelay);
+    this.expiryTimer.unref?.();
+  }
+
   private accept(result: AuthenticationResult): SignInResult {
+    this.unreachable = false;
+    this.retryDelay = 0;
     this.accessToken = result.accessToken;
     this.account = result.account ?? null;
     this.expiresOn = result.expiresOn ?? null;
@@ -347,13 +468,20 @@ export class AuthService {
   // The redirect still lands on this app's own loopback listener.
   // blockedBy runs once the browser sign-in has finished. A non-null reason
   // refuses to switch to the new account and becomes the error message.
+  // One sign-in waits for the browser at a time: starting another one, for
+  // example after the browser tab was closed, cancels the waiting one. A
+  // sign-in whose browser step is done still finishes, unless a sign-out
+  // came meanwhile.
   async signInInteractive(
     openBrowser: (url: string) => Promise<void>,
     options: { consent?: boolean; blockedBy?: () => string | null } = {},
   ): Promise<SignInResult> {
-    const generation = this.generation;
+    const signOuts = this.signOuts;
     const state = base64Url(randomBytes(16));
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    this.activeCancel?.();
+    this.activeCancel = cancel;
     let port = 0;
     let resolveCode!: (code: string) => void;
     let rejectCode!: (error: Error) => void;
@@ -366,31 +494,35 @@ export class AuthService {
         { once: true },
       );
     });
-    const listener = await listenLoopback((request, response) => {
-      const outcome = readCallback(request, { state, port });
-      if (outcome.kind === "ignore") {
-        response.writeHead(outcome.status).end();
-        return;
-      }
-      const failed = outcome.kind === "error";
-      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      response.end(
-        callbackPage(
-          failed ? "Sign in did not finish" : "You are signed in",
-          failed
-            ? "Return to Intune Documentation to see what happened and try again."
-            : "Return to Intune Documentation. You can close this browser tab.",
-        ),
-      );
-      if (outcome.kind === "error") rejectCode(new Error(outcome.message));
-      else resolveCode(outcome.code);
-    });
-    port = listener.port;
-    const redirectUri = `http://localhost:${port}`;
-    const { verifier, challenge } = createPkcePair();
-    this.activeCancel = () => controller.abort();
+    // A cancel before the browser opens is reported below, not as an
+    // unhandled rejection.
+    codePromise.catch(() => undefined);
+    let closeListener: () => void = () => undefined;
 
     try {
+      const listener = await listenLoopback((request, response) => {
+        const outcome = readCallback(request, { state, port });
+        if (outcome.kind === "ignore") {
+          response.writeHead(outcome.status).end();
+          return;
+        }
+        const failed = outcome.kind === "error";
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.end(
+          callbackPage(
+            failed ? "Sign in did not finish" : "You are signed in",
+            failed
+              ? "Return to Intune Documentation to see what happened and try again."
+              : "Return to Intune Documentation. You can close this browser tab.",
+          ),
+        );
+        if (outcome.kind === "error") rejectCode(new Error(outcome.message));
+        else resolveCode(outcome.code);
+      });
+      closeListener = listener.close;
+      port = listener.port;
+      const redirectUri = `http://localhost:${port}`;
+      const { verifier, challenge } = createPkcePair();
       const urlRequest: AuthorizationUrlRequest = {
         scopes: this.scopes,
         redirectUri,
@@ -400,6 +532,8 @@ export class AuthService {
         ...(options.consent ? { prompt: "consent" } : {}),
       };
       const authUrl = await this.pca.getAuthCodeUrl(urlRequest);
+      // Cancelled meanwhile: no browser tab for a sign-in nobody waits for.
+      if (controller.signal.aborted) throw new Error("Sign-in was cancelled.");
       await openBrowser(authUrl);
       const code = await withTimeout(
         codePromise,
@@ -413,8 +547,10 @@ export class AuthService {
         codeVerifier: verifier,
       };
       const result = await this.pca.acquireTokenByCode(codeRequest);
-      if (generation !== this.generation) {
-        await this.disposeCache();
+      if (signOuts !== this.signOuts) {
+        // Only what this exchange added: a newer session of the same
+        // account keeps its tokens.
+        await this.forget(result.account);
         throw new Error("Sign-in was cancelled.");
       }
       const blocked = options.blockedBy?.() ?? null;
@@ -422,10 +558,14 @@ export class AuthService {
         await this.forget(result.account);
         throw new Error(blocked);
       }
+      // A new session, also for the same account: a silent refresh still in
+      // flight belongs to the one before and must neither replace nor end it.
+      this.generation += 1;
       return this.accept(result);
     } finally {
-      this.activeCancel = null;
-      listener.close();
+      // A newer sign-in may have taken over: its cancel stays in place.
+      if (this.activeCancel === cancel) this.activeCancel = null;
+      closeListener();
     }
   }
 
@@ -453,12 +593,15 @@ export class AuthService {
 
   async signOut(): Promise<void> {
     this.generation += 1;
+    this.signOuts += 1;
     this.activeCancel?.();
     this.activeCancel = null;
     this.clearExpiryTimer();
     this.account = null;
     this.accessToken = null;
     this.expiresOn = null;
+    this.unreachable = false;
+    this.retryDelay = 0;
     this.report();
     await this.disposeCache();
   }

@@ -1,10 +1,11 @@
 # Compliance evidence engine
 
-Maps an Intune tenant export to evidence for ISO/IEC 27001:2022, SOC 2, NIST
-SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0, BSI IT-Grundschutz,
+Maps an Intune tenant export to evidence for 12 frameworks: ISO/IEC 27001:2022, SOC 2, NIST
+SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0,
 UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, ASD Essential Eight
 with target Maturity Levels 1, 2 and 3, NIS2 (Directive (EU) 2022/2555,
-Art. 21(2)), and the HIPAA Security Rule (45 CFR Part 164, Subpart C).
+Art. 21(2)), DORA (Regulation (EU) 2022/2554 with RTS (EU) 2024/1774) and the
+HIPAA Security Rule (45 CFR Part 164, Subpart C).
 
 ## Design rules
 
@@ -25,20 +26,49 @@ Art. 21(2)), and the HIPAA Security Rule (45 CFR Part 164, Subpart C).
    such as the three Windows firewall profiles, must occur together on one
    assigned policy. Different policies are not combined into a complete profile.
 4. **Assignment-aware.** Enforcing policies that are unassigned (or assigned
-   via exclusions only) yield `configuredNotAssigned`, not `enforced`.
-   Failed or missing assignment reads yield `assignmentUnknown`. Filters and
+   via exclusions or removal intents only) yield `configuredNotAssigned`, not
+   `enforced`. An app exclusion applies only within the intent Graph returns
+   it with (Required, Available, Available without enrollment or
+   Uninstall), before intent conflicts are resolved, so excluding a group
+   from an Uninstall assignment leaves its Required one. Any other exclusion,
+   including those of configuration profiles (one exclusion list per
+   profile; Graph documents no exclusions per apply or remove intent),
+   applies to every assignment of the policy.
+   A deviceConfigAssignmentIntent `remove` or an app `uninstall`
+   targets nobody: a remove of a target is read like an exclusion of it, and
+   an uninstall overrides an available intent of the same target, never a
+   required one. A remove of all users or all devices leaves every other
+   target unresolved, and an uninstall of them every available target not
+   excluded from that uninstall, so the assignment state is unknown
+   (`assignments.ts` resolveAssignments). Exports label an app exclusion
+   with its intent, for example "Excluded: Group: Pilot (uninstall)".
+   Failed or missing assignment reads yield `assignmentUnknown`. An unknown
+   state keeps its reason (`uncertainty`): assignments not fully collected
+   or not readable read "Assignment collection incomplete or unavailable",
+   and a complete list with such a targeting conflict "Effective targeting
+   could not be resolved". Filters and
    exclusion targets are preserved, and effective coverage remains unverified.
+   Every explanation of an unknown state follows its reason
+   (`unknownAssignmentReasons`): limitations, the register, fix pack
+   reasons, alternative reasons and the management summary advise a refresh
+   for assignments not read completely, and only a review of the
+   overlapping assignments for targeting that could not be resolved
+   (`safeguardState` `targetingUnresolved`, "Targeting could not be
+   resolved", counted apart in the management report as
+   `ManagementSummary.targetingUnresolved`; the baseline metric `dataGaps`
+   still counts both). Data that could not be read beside such targeting,
+   such as a failed collection page or an unreadable value on a policy that
+   can take effect (`hasUnreadData`), is judged apart from the status and
+   gets both the refresh and the review, in the limitations too
+   (`ManagementSummary.targetingPartlyUnresolved`).
 5. **No verdicts.** Output statuses are evidence statements
    (`evidenceFound` / `partialEvidence` / `noEvidence`), never "compliant".
    `COMPLIANCE_DISCLAIMER` must accompany any rendered report.
 6. **Mappings are data.** Capability-to-control tables live in `frameworks/`
    and can be reviewed without touching detection logic. ISO/IEC 27001 and the
    SOC 2 Trust Services Criteria are referenced by identifier with original
-   summaries. NIST is public domain; BSI mobile Bausteine (SYS.3.2.1,
-   SYS.3.2.2) are mapped at
-   requirement level, verified against the Edition 2023 Baustein PDFs, while
-   the remaining Bausteine stay at Baustein level until verified the same way.
-   Only requirements with technical Intune evidence are listed as controls;
+   titles and summaries; no ISO title repeats an Annex A title. NIST is public
+   domain. Only requirements with technical Intune evidence are listed as controls;
    organizational requirements are intentionally absent. Def Stan 05-138 is
    marked "Copying Only as Agreed with DStan", so it is referenced by control
    identifier with original titles and summaries, never the official wording.
@@ -48,9 +78,17 @@ Art. 21(2)), and the HIPAA Security Rule (45 CFR Part 164, Subpart C).
    reused; titles are short paraphrases of the Directive. The HIPAA Security
    Rule is US federal regulation in the public domain (17 U.S.C. 105); titles
    are the official specification names with original summaries. Do not add
-   frameworks that require a commercial license (for example CIS Benchmarks,
-   CIS Controls or HITRUST CSF, whose licence excludes security product
-   vendors and derivative works).
+   frameworks that require a commercial license (for example CIS Controls or
+   HITRUST CSF, whose licence excludes security product vendors and derivative
+   works). CIS Controls stay excluded; the only exception is the customer
+   supplied crosswalk, which shows safeguard ids from the customer's own file.
+   CIS Benchmarks are not a framework of this engine: their packs are
+   delivered at runtime from the gated content service with the licence token
+   and are internal only until the CIS commercial-use agreement covers
+   Intune Documentation. No CIS Benchmark content ships in the product, its
+   samples or its published assets; tests use synthetic data with the
+   benchmark id "synthetic-bench", and
+   `src/lib/__tests__/cis-content-guardrails.test.ts` enforces this.
 7. **Match the control's technical requirement.** Firewall activation is not
    evidence of default-deny rules, password presence is not evidence of
    credential quality, and app-source restrictions are not evidence of an
@@ -65,9 +103,9 @@ Art. 21(2)), and the HIPAA Security Rule (45 CFR Part 164, Subpart C).
 ## NIST SP 800-171 revisions
 
 Revision 2 (`nist-800-171-r2`) remains available for CMMC Level 2 and has
-supporting mappings for 12 of its 110 published requirements. Revision 3
+supporting mappings for 13 of its 110 published requirements. Revision 3
 (`nist-800-171-r3`, May 2024) is a separate assessment with supporting mappings
-for 11 of its 97 active requirements. These counts describe mapping coverage,
+for 12 of its 97 active requirements. These counts describe mapping coverage,
 not satisfied requirements or a compliance score. Unmapped requirements need
 separate assessment, including requirements that cannot be assessed through
 Intune. Neither report produces a CMMC certification or an SPRS score.
@@ -150,7 +188,8 @@ macros counts as malware protection under 164.308(a)(5)(ii)(B).
 management summary. Unique user identification, automatic logoff, transmission
 security and its integrity controls and encryption specifications are marked
 `notEvaluated`: Intune or Entra settings could support them, but no detector
-checks them yet. The remaining 40 are organizational or physical. The
+checks them yet. The screen lock capabilities (ruleset 2026.10.4) do not map to
+automatic logoff: a lock does not end the session. The remaining 40 are organizational or physical. The
 January 2025 proposed rule (RIN 0945-AA22) is not final and is not reflected.
 HITRUST CSF content is not shipped.
 
@@ -165,7 +204,8 @@ Everything it produces is identifiers, statuses and counts.
   compliance score, and the report carries `COMPLIANCE_DISCLAIMER`.
 - **Unassigned security configurations** counts distinct capabilities mapped
   to the framework's assessed controls with status `configuredNotAssigned`.
-  `assignmentUnknown` and `collectionIncomplete` count as data gaps instead.
+  `assignmentUnknown`, `collectionIncomplete` and an `unknown` alternative
+  state count as data gaps instead.
 - **Measures outside Intune scope** is `totalRequirements` minus assessed
   controls when the framework publishes a total (NIS2: a, c, d and f), minus
   listed measures marked `notEvaluated`. Those relate to Intune or Entra
@@ -214,13 +254,14 @@ A compliance scheduled action named `block` marks a device noncompliant after
 its grace period. It does not prove resource access is blocked. Enabled
 Conditional Access policies are assessed independently, including grant
 operators and preserved conditions. Report-only, disabled and optional OR
-grants are not counted as mandatory requirements. Effective sign-in access is
+grants are not counted as mandatory requirements. Exclusions take precedence
+over inclusions (ruleset 2026.10.22, Exclusions). Effective sign-in access is
 always unverified by this configuration-only engine.
 
 Pass `assessmentScope` on an export, or the second argument to
 `assessCompliance`, to select platforms and a Def Stan risk level. The dashboard
 provides these controls. Policy absence and empty inventory counts never
-automatically exclude platforms. Platform-specific BSI requirements outside
+automatically exclude platforms. Platform-specific requirements outside
 scope become `notApplicable`; a general control lacking a detector for the
 selected platform becomes `notAssessed`. Outside-scope controls do not affect
 the applicable denominator or deviation counters. Tenant access capabilities
@@ -270,7 +311,7 @@ version, signal definitions, control metadata and mappings. Bump the ruleset
 version whenever evaluation logic changes. Fingerprints detect changes; they
 are not signatures or independent proof of authentic tenant data.
 
-Publisher references use Microsoft, BSI, NIST, NCSC, ISO, AICPA and GOV.UK.
+Publisher references use Microsoft, NIST, NCSC, ISO, AICPA and GOV.UK.
 Reference review dates are not certification or independent validation of every
 licensed standard requirement. Third-party document mirrors are not sources.
 
@@ -396,9 +437,9 @@ outside the legacy positive/negative predicates are retained as comparisons
 instead of disappearing. The shared 14-day update threshold is a supporting
 configuration check, not a framework-specific remediation verdict.
 
-The review covers all ten framework definitions: ISO 27001, SOC 2, NIST 800-53,
-NIST CSF, BSI IT-Grundschutz, Def Stan, Cyber Essentials, both NIST 800-171
-revisions and Essential Eight. Every listed in-scope requirement has mapped
+The review covers every framework definition: ISO 27001, SOC 2, NIST 800-53,
+NIST CSF, Def Stan, Cyber Essentials, both NIST 800-171 revisions and
+Essential Eight. Every listed in-scope requirement has mapped
 checks or an explicit `unavailableCheck` with a reason. Automated tests enforce
 this invariant and exercise matching and different configurations across every
 framework mapping. It does not expand the licensed/selected framework subsets
@@ -445,3 +486,445 @@ central log ingestion, device execution or password escrow results. Source IDs
 and choices were read using seven scoped, read-only Graph beta requests on
 8 September 2026 and are stored in additional-verified-settings.json; no tenant
 policy data was saved. Only DeviceManagementConfiguration.Read.All was needed.
+
+## Screen lock, DORA, Entra tenant policies and device status (since ruleset 2026.10.4)
+
+### Screen lock after inactivity
+
+`windows-inactivity-lock`, `macos-inactivity-lock`, `ios-inactivity-lock` and
+`android-inactivity-lock` read an explicitly configured inactivity limit. Any
+positive value is the observation; the engine invents no maximum, because the
+acceptable period is organisation-defined. Zero (no timeout) is a different
+value and counter-evidence. Not configured template properties read `null` and
+produce no result. Sources:
+
+| Platform | Setting | Unit |
+| --- | --- | --- |
+| Windows | `device_vendor_msft_policy_config_devicelock_maxinactivitytimedevicelock`, only with its parent `devicepasswordenabled_0` (Enabled) on the same policy | minutes, 0 to 999 |
+| Windows | `device_vendor_msft_policy_config_localpoliciessecurityoptions_interactivelogon_machineinactivitylimit_v2` | seconds, 0 to 599940 |
+| Windows, macOS, Android | compliance `passwordMinutesOfInactivityBeforeLock` | minutes |
+| iOS/iPadOS | compliance `passcodeMinutesOfInactivityBeforeScreenTimeout` (not `passcodeMinutesOfInactivityBeforeLock`, which is the grace period before the passcode is required) | minutes |
+
+The Settings Catalog identifiers and options were read with
+`GET /beta/deviceManagement/configurationSettings('<id>')` on 18 October 2026
+and are stored with source and date in `additional-verified-settings.json`; the
+deprecated choice version of the machine inactivity limit is not used. The
+compliance properties were checked against the Graph beta schemas and a lab
+compliance policy (`passwordMinutesOfInactivityBeforeLock: 15`, and `null` when
+not configured). Mappings are supporting: NIST SP 800-53 AC-11, SP 800-171
+3.1.10 and 03.01.10, ISO/IEC 27001 8.1 and DORA RTS Art. 13(l). A lock is not
+a logoff, so HIPAA 164.312(a)(2)(iii) stays `notEvaluated`.
+
+### DORA (desktop only)
+
+`dora-2022-2554` lists selected points of Regulation (EU) 2022/2554 (prefix
+`DORA`, Art. 9(2), 9(4)(c), 9(4)(d), 9(4)(f) and 10(1)) and of Commission
+Delegated Regulation (EU) 2024/1774 (prefix `RTS`, Art. 6(2)(a), 10(4)(c),
+11(2)(b) to (e), 13(d), 13(l), 21(e)(ii) and 21(f)(ii)). Paragraph numbers
+were checked against the Official Journal text on 18 October 2026; the data
+protection duty is Art. 9(2), not 9(3). Every control is `supporting` with
+unassessed aspects. Titles are paraphrased and the framework note carries the
+attribution "Source: EUR-Lex, Regulation (EU) 2022/2554 and Commission
+Delegated Regulation (EU) 2024/1774. Titles paraphrased; only the Official
+Journal text is authentic." Reuse is permitted under Commission Decision
+2011/833/EU and the EUR-Lex legal notice. A minimum OS version is not mapped
+to patch deployment, and behaviour monitoring supports malware protection
+(RTS 11(2)(d)) rather than Art. 10(1), which uses logging only, as NIS2 point
+(b) does. `DORA_OUTSIDE_INTUNE_SCOPE` names governance (Art. 5), the risk
+management framework (Art. 6), identification (Art. 8), response, backup and
+communication (Art. 11 to 14), incident management and reporting (Art. 17 to
+23), resilience testing (Art. 24 to 27), third-party risk (Art. 28 to 30) and
+information sharing (Art. 45). The framework has no published total.
+
+NIS2 and DORA are desktop only (`DESKTOP_ONLY_FRAMEWORK_IDS`). The web picker
+does not offer them, and `createEvidenceManifest(data, scope, { audience:
+"web" })` leaves them out of the web JSON evidence record. The engine still
+assesses them, so desktop output and the ruleset fingerprint are unchanged.
+
+### Entra tenant policy signals
+
+The Conditional Access step also reads two tenant-wide Entra policies with
+the same token (Policy.Read.All, which Microsoft lists as a higher privileged
+permission for each of them): `GET /beta/policies/authenticationMethodsPolicy`
+and `/beta/policies/identitySecurityDefaultsEnforcementPolicy`. The desktop
+app always reads them; the website only when Conditional Access is included.
+The authorization policy is not read (ruleset 2026.10.6): user consent and
+guest invitation settings have no honest control mapping, and a denied read
+would mark the identity collection partial for nothing. Older collections and
+snapshots that contain it stay readable; the field and its status are ignored.
+The policies that are read are stored on the collection as
+`tenantIdentityPolicies` with a status per policy (`collected`,
+`permissionDenied`, `failed`, `skipped`) and never in `sections`, so
+configuration counts, search, classification and the documentation export
+are unchanged.
+
+`tenantPolicy` signals have their own evaluation (`tenant-policies.ts`):
+platform `tenant`, a fixed tenant-wide assignment, supporting evidence only,
+and a caveat that the setting shows what the tenant allows, not what users
+registered or used. A failed, denied, skipped or absent read is a collection
+gap: dependent checks are `unableToCheck` with the reason (and the permission
+hint for 403), never `missing`. A method counts as enabled only when its state
+is `enabled` and it has at least one include target that no exclude target
+names (ruleset 2026.10.22, Exclusions); Microsoft's default email OTP
+configuration for guests (enabled, no include targets) is not enabled for
+users.
+
+| Capability | Evidence | Counter-evidence | Not counter-evidence |
+| --- | --- | --- | --- |
+| `tenant-phishing-resistant-method-enabled` | `Fido2` enabled, or `X509Certificate` enabled with default mode `x509CertificateMultiFactor` | none | both disabled: Windows Hello for Business is phishing resistant and not part of this policy; single-factor certificate mode does not count. One enabled method is enough: the other method's check then has no result ("Not required"), never "different" |
+| `tenant-weak-methods-disabled` | `Sms`, `Voice` and `Email` all readable and none enabled | any of them enabled | legacy per-user MFA and SSPR settings are not read |
+| `tenant-security-defaults-enabled` | `isEnabled: true`, baseline MFA for all users, not phishing resistant | none | `false`: never counter-evidence; not a gap while assigned Conditional Access MFA is in place, and not applicable while any Conditional Access policy exists, disabled ones included (see Alternative capabilities below) |
+
+Mappings: NIST SP 800-53 IA-2 (phishing-resistant method, security defaults)
+and IA-5 (weak methods), ISO/IEC 27001 8.5, SP 800-171 3.5.3 and 03.05.03,
+Cyber Essentials user access control, NIS2 21.2.j and DORA 9(4)(d) and RTS
+21(f)(ii). Essential Eight is not mapped: an enabled method does not show that
+MFA is used. IA-2 also lists the Conditional Access MFA capabilities. Portal links open the
+Entra authentication methods policies page, and the Entra admin center root
+labelled with the security defaults path.
+
+### Policy device status annex
+
+The collector reads Intune's per-policy status summaries after the policy
+streams: `POST /beta/deviceManagement/reports/getConfigurationPolicyNonComplianceSummaryReport`
+(Settings Catalog, ADMX and intents),
+`POST /beta/deviceManagement/reports/getCompliancePolicyNonComplianceSummaryReport`
+and `GET /beta/deviceManagement/deviceConfigurations?$select=id,displayName&$expand=deviceStatusOverview`
+(DeviceManagementConfiguration.Read.All, verified in the lab on 18 October
+2026). Report bodies are read as text and may be JSON or a JSON string; values
+are read by column name from `Schema`, paged with `top` 1000 and `skip` set
+to the number of rows received so far, up to `TotalRowCount`, so a short page
+leaves no hole. Rows repeated across pages are kept once per source and policy
+id (compared without regard to case). Errors are `NumberOfNonCompliantOrErrorDevices` for reports
+and `errorCount + failedCount` for the overview; reports have no pending
+column, so pending is `null`. The website skips the annex with a recorded
+reason when less than 20 seconds of its 105 second budget remain, and the
+annex ends 10 seconds before the budget does: the remaining time is an abort
+signal on every request, page and retry wait, and a source cut off by it is
+`skipped` with the time budget reason (a disconnect stays `failed`). Without
+`TotalRowCount`, a report is paged while its pages are full; a report that
+returns fewer rows than its `TotalRowCount` is `failed` and contributes no
+rows. Policy ids are matched without regard to case. A partial retry keeps
+the previous annex.
+
+The result is `policyDeviceStatus` on the collection. It is not a field on
+`CapabilityEvidence` and never an input to any status; a test asserts that
+statuses, counts, coverage and the management summary are identical with and
+without it. `provenance.deviceState` stays `notCollected` (per-device state is
+not collected) and `provenance.policyStatusSummary` records whether the annex
+was collected (evidence record schema version 2; version 3 adds the
+capability `alternative` states, see Alternative capabilities). The
+framework PDF adds an annex listing the cited device policies; a policy without
+a row in the Intune summary shows "No status reported", never zero.
+
+## Alternative capabilities and review corrections (ruleset 2026.10.5)
+
+### Alternative capabilities
+
+Revised in ruleset 2026.10.6: precision first, an alternative is never named
+as set up unless it is assigned and enforcing. Revised in ruleset 2026.10.7:
+any Conditional Access policy, disabled ones included, makes security
+defaults not combinable.
+
+`ComplianceCapability.alternativeTo` lists capabilities that deliver the same
+safeguard another way, and `exclusiveWithConditionalAccess` marks a capability
+that cannot be turned on while Conditional Access policies exist. Both apply
+only to a capability with status `noEvidence` whose own value was read and
+compared (a `different` or `missing` check). The engine judges them on the
+unchanged first pass, in this order:
+
+- **in use** (`inUse`): an alternative has status `enforced` or
+  `requirementAssigned`, that is assigned enforcing evidence. Only those
+  alternatives are named. Report-only, disabled, untargeted, unassigned and
+  merely compared policies never count, nor do optional OR grants such as
+  "MFA or compliant device" or an unreadable custom authentication strength,
+  because they produce no enforcing evidence;
+- **not combinable** (`notCombinable`, exclusive capabilities only): the
+  collection contains a Conditional Access policy in any state (enabled,
+  report-only or disabled), so the capability cannot be turned on. Nothing is named and nothing is claimed
+  as set up. The wording is "Not applicable while Conditional Access policies
+  exist; require MFA through Conditional Access", and the Conditional Access
+  MFA capabilities stay ordinary gaps;
+- **unknown** (`unknown`): an alternative is `collectionIncomplete` or
+  `assignmentUnknown`, or every check of it is `unableToCheck`, leaving out
+  checks of unassigned (disabled or report-only) policies, whose unreadable
+  value cannot enforce anything; for an
+  exclusive capability also when the collection contains no Conditional
+  Access policy but Conditional Access was not collected, is incomplete or
+  has no collection timestamp;
+- otherwise the capability stays an ordinary gap. Only when a complete
+  collection contains no Conditional Access policy at all do security
+  defaults stay a gap that may be recommended.
+
+`CapabilityResult.alternative` records the state and the named ids. The
+status stays `noEvidence` and the observed value stays visible, but its
+`different` and `missing` checks carry no result (and become `unableToCheck`
+when unknown), with the reason in the check and the limitations. None of the
+three states is in a "Different value" tally, a red PDF row, a next action
+(`rankNextActions`) or the fix pack. In use and not combinable are left out
+of every management summary safeguard count; unknown stays in the safeguard
+totals and counts as a data gap. `safeguardState` reports `alternativeInUse`
+("Not needed, an alternative is set up"), `notCombinable` or `dataMissing`,
+or `targetingUnresolved` when every unknown alternative is unknown only
+because its assignments could not be resolved and none has unread data
+(`CapabilityAlternative.targetingUnresolved`).
+Counter-evidence and unassigned configurations of the capability itself are
+never hidden. `alternativeTo` must name existing capabilities without self
+references or cycles (integrity test).
+
+`tenant-security-defaults-enabled` lists the three Conditional Access MFA
+capabilities (`tenant-mfa-required`, `tenant-mfa-all-apps`,
+`tenant-phishing-resistant-mfa`) and is exclusive with Conditional Access.
+A compliant-device requirement is not the same safeguard and is not an
+alternative; its policy still makes security defaults not combinable.
+Creating Conditional Access policies prevents enabling security defaults,
+with no distinction by policy state: "creating Conditional Access policies
+prevents you from enabling security defaults"
+([Microsoft Learn, Plan a Conditional Access deployment](https://learn.microsoft.com/entra/identity/conditional-access/plan-conditional-access)),
+and where one or more Conditional Access policies exist the admin center
+says they prevent enabling security defaults and does not offer Manage
+security defaults
+([Microsoft Learn, Set up multifactor authentication for Microsoft 365, Manage security defaults](https://learn.microsoft.com/microsoft-365/admin/security-and-compliance/set-up-multi-factor-authentication#manage-security-defaults)).
+Microsoft also only offers automatic enablement to tenants that do not have
+any Conditional Access policies
+([Microsoft Learn, Security defaults in Microsoft Entra ID](https://learn.microsoft.com/entra/fundamentals/security-defaults#enabling-security-defaults)).
+Conditional Access does not list security defaults as its alternative:
+baseline MFA does not replace a configurable policy.
+
+A tenant-wide Entra setting holding the non-enforcing value, such as SMS
+enabled in the authentication methods policy, is `tenantSettingDiffers`
+("Tenant-wide Entra setting differs"), not "Switched off by a policy in use".
+
+### Exports
+
+Register Controls rows and the evidence pack index split the cited evidence
+into assigned evidence (enforcing values on assigned policies),
+counter-evidence (non-enforcing values) and evidence on unassigned policies or
+with unknown assignment, so counter-evidence never reads as support. The index
+note says "No policy evidence found" only for `noEvidence` and "Not assessed,
+see the PDF for the reason." for `notAssessed`. Every assessed framework has
+a Purview template; a framework missing from the template data throws. XLSX cells
+with formula-like text keep their value under a `quotePrefix` cell style;
+CSV keeps the leading apostrophe. The XLSX About sheet states the assessment
+scope from `assessment.scope`: platforms, the Essential Eight target level
+when that framework is included and the Def Stan risk level when set, worded
+as in the evidence pack README. The fix pack requires the collection the
+assessment was made from, and keeps descriptions within 1000 characters:
+Microsoft documents no maximum, the warning is never shortened and the
+README lists every control.
+
+### Lab verification (18 October 2026, GET only)
+
+- Compliance policies in the lab return `null`, not `0`, for unset
+  inactivity limits: `windows10CompliancePolicy`
+  `passwordMinutesOfInactivityBeforeLock` (`15` where set), five
+  `macOSCompliancePolicy` policies, and `iosCompliancePolicy`
+  `passcodeMinutesOfInactivityBeforeScreenTimeout` and
+  `passcodeMinutesOfInactivityBeforeLock`. The lab has no Android compliance
+  policy; the three Android types declare the property as `Int32` like the
+  others, which is not observed behaviour.
+- The default Email OTP configuration reads `state: "enabled"` with
+  `includeTargets: []`, which the engine treats as not enabled for users.
+- The device status report endpoints are POST requests, so this GET-only
+  round did not call them again (their shape was verified earlier the same
+  day, see Policy device status annex) and did not compare their policy id
+  casing with Graph ids; matching ignores case.
+
+## Report and summary consistency (ruleset 2026.10.8)
+
+Corrections from the live PDF review of 21 October 2026.
+
+- **One denominator.** `countedCapabilityIds(control, capabilities)` (engine)
+  leaves out capabilities excluded by an alternative (`inUse` or
+  `notCombinable`, `excludedByAlternative`). The evidence report (overview
+  row and control detail meter), the register Controls sheet and the
+  management summary all count with it, so the report and the summary give
+  the same "N of M" for one collection. Control statuses are unchanged.
+- **Neutral labels.** `alternativeLabel` and `capabilityStatusLabel`
+  (presentation) replace the capability status of such a capability with
+  "Not needed, an alternative is set up" or "Not applicable while
+  Conditional Access policies exist" in the PDF, the register, the desktop
+  control list and the web view; no "No evidence" badge.
+- **Policies read.** `safeguardPolicies` also names the tenant-wide Entra
+  policy that was read (for example Security defaults) and any policy whose
+  value could not be read, so a read policy never shows "No policy found".
+- **Readable Entra values.** Authentication method checks report "Enabled
+  for 1 target", "Enabled, no users targeted" or "Disabled", with the
+  certificate default mode ("single-factor default mode"); security
+  defaults report "On" or "Off". Snapshots store the new text; History shows
+  one value change across the ruleset boundary. The weak methods capability
+  is named "SMS, voice call and email one-time passcode not enabled for
+  users (Entra ID)", true when Email OTP is enabled without targets.
+- **Not configured is a result.** Graph returns `null` for an unset update
+  ring deadline (`deadlineForQualityUpdatesInDays`, and
+  `deadlineGracePeriodInDays` once a deadline is set) and for an unset
+  `defenderScheduledScanTime`, and the enum default `userDefined` ("default
+  value, no intent", Microsoft Learn defenderScanType and weeklySchedule)
+  for an unset scan type or day. These are `checked` and `different` with a
+  plain reason such as "No quality update deadline is configured in this
+  update ring." A field absent from the response stays `unableToCheck`. A
+  Graph property check on `userDefined` or `notConfigured` carries the
+  reason "Not configured in this policy". Lab, GET only: the Pilot Ring and
+  the profile "DR" return exactly these shapes.
+- **Unreadable is a data gap.** A `noEvidence` capability with an
+  `unableToCheck` value on a policy that is not unassigned is
+  `dataMissing` ("Could not be read") in the summary, counts in "Safeguards
+  that could not be read" and is no next action.
+- **Omitted is unknown.** Graph beta returns every template property (null
+  when not set), every Conditional Access grant and target list
+  (`authenticationStrength` null when unset) and every authentication method
+  field (lab, GET only, 21 October 2026). A property, list or state it
+  omitted is `unableToCheck`, never `different`, `missing` or
+  counter-evidence: a Conditional Access state other than enabled, disabled
+  or report-only is an unknown assignment; an OR grant without every list
+  and `authenticationStrength` is no evidence; an omitted app exclusion list
+  is not "no exclusions"; an update ring, scan profile or custom profile
+  whose relevant fields are all omitted is unable to check. The snapshot
+  keeps an omitted Entra target list absent, apart from an empty one, and a
+  null parent property as null. History does not compare a policy whose
+  setting property one snapshot omitted, and lists an Entra setting that
+  one side could not read as not compared, outside the change counts; a
+  reference comparison marks either as not comparable. Explicit nulls and
+  documented not configured enums stay definite.
+- **Measures outside Intune scope.** `outsideIntuneScope(frameworkId)`
+  (NIS2, DORA, HIPAA) feeds both the management summary and the evidence
+  report. The full report lists them on their own page, each needing its own
+  assessment, and the summary and results overview state the count; a sample
+  excerpt keeps the counts only. The summary scope line says "outside the
+  selected scope" for platform scope.
+- **Device status wording.** With Intune status summaries collected, the
+  data basis says per device state is not assessed and the summaries were
+  collected as context only.
+- **Headline.** "N of M technical safeguards are set up and switched on in
+  Intune and Entra."
+
+## Framework set and ISO titles (ruleset 2026.10.22)
+
+BSI IT-Grundschutz is no longer assessed, and the ISO/IEC 27001:2022 control
+titles are paraphrased in original words with the IDs unchanged. Both change
+framework metadata that the ruleset fingerprint covers; detectors, mappings
+of the remaining frameworks and statuses are unchanged. The framework
+evidence report is English only; the management summary keeps English and
+German.
+
+### Exclusions
+
+Entra and Intune give exclusions precedence over inclusions (Microsoft
+Learn: authentication methods "Excluded groups take precedence over include
+groups", Conditional Access "The exclude action overrides the include
+action", Intune "Exclusion takes precedence over inclusion"). The engine
+reads every include list with the exclusions that can cancel it:
+
+- **Authentication methods.** An enabled method targets users only when an
+  include target remains after the ids of its `excludeTargets` are taken
+  out (ids compare without case); an exclude target `all_users` excludes
+  everyone. Graph returns both lists, `{ id, targetType }` entries, on every
+  method (lab, GET only, 23 October 2026). With include targets, an
+  `excludeTargets` list Graph omitted, or one holding an entry without an id
+  or a documented `targetType`, is `unableToCheck`: it may exclude any
+  include target. A method whose only include group is excluded is not
+  enabled for users ("Enabled, every include target excluded"): no passkey
+  evidence and no weak method counter-evidence.
+- **Conditional Access.** Users, groups, roles and applications each target
+  someone only when the include list names an entry its exclusion list does
+  not. The `All` sentinel is no object id, so no exclusion list names it.
+  An exclusion list Graph omitted, or an empty entry in it, leaves a policy
+  whose decision depends on it unknown. Guests or external users are a
+  fourth include axis: a non-null `includeGuestsOrExternalUsers` with
+  documented `guestOrExternalUserTypes` members (a flags value, read with
+  `canonicalFlags`) and readable `externalTenants` targets the types that
+  `excludeGuestsOrExternalUsers` does not exclude for every included tenant,
+  unless `excludeUsers` holds `GuestsOrExternalUsers`; another shape is
+  unknown. Graph returns null for both when no guests are selected.
+- **Intune assignments.** A group both included and excluded in one
+  policy's assignments targets nobody, so it alone does not make the policy
+  assigned (`summarizeAssignments`); all users, all devices or another
+  included group still do. The benchmark comparison treats such a policy as
+  not assigned, and a difference on a policy that is not assigned counts no
+  more than its match: Review (notAssigned), never Fail, unless an assigned
+  policy, or one of unknown assignment, differs.
+- **History.** An assignment filter type `none`, null or omitted is one value
+  in the change keys and labels.
+
+## Removed frameworks and stored data
+
+`isAssessedFramework(id)` (engine) is true only for a framework the engine
+still assesses. Snapshots saved by an earlier version can hold a framework
+that was removed since: `withAssessedFrameworks` (snapshots/projection) and
+the desktop snapshot index drop it on read, so History, Compare and Portfolio
+never show or count it. A stored framework selection naming it falls back to
+the picker, a request naming it is refused as an unknown framework, and a
+management baseline file for it is rejected as another framework.
+
+## How Compare and History read values
+
+These rules change what Compare and History read. They do not change
+assessments, so the ruleset version stays the same.
+
+- **Strict types.** Every type in `graph-property-types.ts` has a strict
+  check in `graph-rows.ts`. Edm primitives are read by their syntax
+  (TimeOfDay, Duration, Date, DateTimeOffset, Guid, Binary, Int32, Int64,
+  Double, Single). Each enum is read against the members listed in
+  `documented-values.ts`. No type accepts every value: a property Graph
+  does not document reads only as an empty list. A template list pair is a
+  text name with a text or null value. A list on a presentation that holds
+  one value, or a value on a JSON intent type, is unreadable.
+- **Raw values first.** The projection checks a value as Graph returned it
+  before it changes it. An unreadable value is kept in a form that stays
+  unreadable, never as null, `[Redacted]`, a fingerprint or a missing
+  property. Device configuration, compliance, Windows Update and enrollment
+  configuration items come from lists that type every item, so an item
+  without a documented `@odata.type` is incomplete.
+- **Reusable policy settings.** The list selects `settingInstance`, which
+  Graph returns only when it is selected. That instance is stored and
+  compared like Settings Catalog settings. An item without it is incomplete
+  and is not compared.
+- **Ids decide.** Choices compare by option id and template values by
+  presentation id (`token` in `settings-flatten.ts` and in reference files).
+  Names and labels are for display only.
+- **Order.** Conditional Access collections, flags members and template
+  list pairs are compared as multisets. Settings Catalog value collections
+  and multi-text lines keep their order (`snapshots/order.ts`). History
+  compares fingerprints of values that are not stored as a multiset for
+  each setting, so inserting an entry does not renumber the others.
+- **Typed values.** A value whose Edm type allows several texts of one value
+  (TimeOfDay, DateTimeOffset, Duration, Guid, Binary, Single, Double) is
+  compared in its canonical form, the one Graph returns, and shown as Graph
+  returned it (`canonicalEdmValue` in `graph-rows.ts`,
+  `snapshots/typed-values.ts`). Only properties the type table names and
+  custom OMA-URI values by their record type are canonicalized; Settings
+  Catalog, intent and template values are integers, booleans and text. A
+  value of a typed record (custom OMA-URI, Settings Catalog simple, intent
+  and template presentation values) is compared with its record's
+  `@odata.type` (`typedToken` in `settings-flatten.ts`, `typed` in reference
+  files), so an integer 1 that became the text "1" is a change. A reference
+  file saved before tokens held the type reads such values as not
+  comparable when they show the same text. History fingerprints of custom
+  OMA-URI values that are not stored hold the type, except String values,
+  which keep the digest of their text.
+- **Identity.** History pairs items by an id of their own: the `id` Graph
+  returned on the resource (`getStableItemId`), never a `templateId`,
+  `policyId` or name; only singleton sections are named by position. An
+  item without one, with an id that is no text, or with an id another item
+  shares is not compared, and while one snapshot holds such an item no policy of that
+  family is reported as added or removed. An item Graph returned as no
+  record is kept as an incomplete item without an id.
+- **Discriminators.** A type field decides how a row is read, so it must be
+  a documented one: typed family items by `FAMILY_ITEM_TYPES` (every
+  concrete subtype in the Graph beta `$metadata`), Settings Catalog
+  instances by their type and the one value property it documents (every
+  reader, the compliance engine and the benchmark comparison included,
+  uses `instanceValueKey` and `childLists` in `graph-rows.ts`),
+  Settings Catalog platforms by the documented flags members, external
+  tenants by subtype and matching membership kind, assignment intents by
+  the documented intent members. Anything else is incomplete or unknown.
+- **Limits.** `MAX_SETTING_DEPTH` (16) is shared by the projection, the
+  checks, the compliance engine, the benchmark comparison, the
+  documentation, flattening, Compare and History; a deeper child reads as
+  an unknown setting. `MAX_ITEM_JSON_DEPTH` bounds every walk over a stored
+  item. Stored check and evidence values longer than 500 characters keep a
+  digest of the full value, and a family whose rows a reference file
+  cannot hold is not compared. Edm syntax follows the OData CSDL ABNF:
+  Duration is a day-time duration, seconds of a time are optional, and
+  custom OMA-URI values are read by their Edm type (DateTimeOffset, Binary
+  and Single included).

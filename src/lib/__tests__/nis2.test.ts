@@ -119,7 +119,13 @@ describe("NIS2 Art. 21(2)", () => {
     );
     expect(complianceReportFileName("nis2-2022-2555")).toContain("NIS2");
     expect(text).toContain("21.2.h");
-    expect(text).not.toContain("21.2.a");
+    // Unmapped measures are no controls; they are listed as outside Intune
+    // scope, each needing its own assessment, as in the management summary.
+    expect(text).toContain("Measures outside Intune scope");
+    expect(text).toContain("21.2.a");
+    expect(text).toContain(
+      "Needs its own assessment; this report holds no evidence for it.",
+    );
   });
 });
 

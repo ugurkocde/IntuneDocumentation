@@ -5,6 +5,7 @@ import {
   generateManagementReportPDF,
   isAllowedPortalUrl,
   managementReportFileName,
+  type ManagementReportChanges,
   type ManagementReportControl,
   type ManagementReportInput,
   type ManagementReportSafeguard,
@@ -102,6 +103,10 @@ const OTHER_STATES: SafeguardState[] = [
   "partial",
   "conflicting",
   "dataMissing",
+  "tenantSettingDiffers",
+  "alternativeInUse",
+  "notCombinable",
+  "targetingUnresolved",
 ];
 
 /** inPlace safeguards first in the input order is not assumed by the renderer. */
@@ -396,12 +401,15 @@ describe.each(["en", "de"] as const)("security summary PDF (%s)", (locale) => {
       for (const text of [...section.paragraphs, ...(section.bullets ?? [])])
         expect(itText).toContain(text);
     }
-    // The fixture has no measures marked as not checked yet, so that figure
-    // is omitted; its own test covers it.
-    const { notEvaluated, ...shownFigures } = strings.figures;
+    // The fixture has no measures marked as not checked yet and no
+    // safeguard whose targeting could not be resolved, so those figures are
+    // omitted; their own tests cover them.
+    const { notEvaluated, targetingUnresolved, ...shownFigures } =
+      strings.figures;
     for (const figure of Object.values(shownFigures))
       expect(itText).toContain(figure.label);
     expect(itText).not.toContain(notEvaluated.label);
+    expect(itText).not.toContain(targetingUnresolved.label);
     expect(itText).toContain(
       `${strings.measuresOf(3, 6)} (${strings.percent(50)})`,
     );
@@ -682,6 +690,334 @@ describe.each(["en", "de"] as const)("security summary PDF (%s)", (locale) => {
     for (const page of pages.slice(1)) expect(page.internal[0]).toBe(1);
   });
 });
+
+function createChanges(
+  overrides: Partial<ManagementReportChanges> = {},
+): ManagementReportChanges {
+  return {
+    since: "2026-09-14T08:30:00.000Z",
+    until: "2026-10-01T09:00:00.000Z",
+    policies: {
+      added: 3,
+      removed: 1,
+      renamed: 2,
+      changed: 5,
+      settingChanges: 27,
+      assignmentChanges: 4,
+      notComparedFamilies: 1,
+      notComparedItems: 2,
+    },
+    identity: { compared: 2, changes: 3, notCompared: 0 },
+    controls: [
+      { id: "21.2.b", before: null, after: "partialEvidence" },
+      { id: "21.2.e", before: "noEvidence", after: "evidenceFound" },
+      { id: "21.2.j", before: "evidenceFound", after: "noEvidence" },
+      { id: "21.2.z", before: "conflictingEvidence", after: null },
+    ],
+    improved: 2,
+    regressed: 1,
+    collectionGaps: { opened: 0, closed: 0 },
+    rulesetChanged: true,
+    fromRuleset: "2026.09.1",
+    toRuleset: "2026.10.2",
+    partial: true,
+    ...overrides,
+  };
+}
+
+describe.each(["en", "de"] as const)(
+  "security summary PDF history changes (%s)",
+  (locale) => {
+    const strings = MANAGEMENT_REPORT_STRINGS[locale];
+    const longDate = new Date("2026-09-14T08:30:00.000Z").toLocaleDateString(
+      strings.dateLocale,
+      { day: "numeric", month: "long", year: "numeric" },
+    );
+    const numericDate = new Date("2026-09-14T08:30:00.000Z").toLocaleDateString(
+      strings.dateLocale,
+      {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      },
+    );
+    const historyPage = (pages: PdfPage[]) =>
+      pages.findIndex(
+        (page, index) =>
+          index > 0 && page.text.includes(strings.historyHeading(longDate)),
+      ) + 1;
+
+    it("adds a history page after the baseline change page", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, { changes: createChanges() }),
+        ),
+      );
+      const history = historyPage(pages);
+      const change =
+        pages.findIndex((page) =>
+          page.text.includes(strings.changeSafeguards),
+        ) + 1;
+      expect(change).toBeGreaterThan(1);
+      expect(history).toBe(change + 1);
+      const text = pages[history - 1]?.text ?? "";
+      expect(text).toContain(strings.itBand.toUpperCase());
+      expect(text).toContain(strings.historyIntro(longDate));
+      const rows = strings.historyPolicyRows;
+      expect(text).toContain(`${rows.added} 3`);
+      expect(text).toContain(`${rows.removed} 1`);
+      expect(text).toContain(`${rows.renamed} 2`);
+      expect(text).toContain(`${rows.changed} 5`);
+      expect(text).toContain(`${rows.settingChanges} 27`);
+      expect(text).toContain(`${rows.assignmentChanges} 4`);
+      expect(text).toContain(strings.historyNotCompared(1, 2));
+      expect(text).toContain(strings.historyPartial);
+      expect(text).toContain(strings.historyIdentityIntro);
+      expect(text).toContain(`${strings.historyIdentityRow} 3`);
+      expect(text).not.toContain(strings.historyIdentityNotCompared(0));
+      expect(text).toContain(strings.historyMovement(2, 1));
+      const status = strings.controlStatuses;
+      expect(text).toContain(
+        `21.2.b Incident handling ${strings.notMapped} ${status.partialEvidence}`,
+      );
+      expect(text).toContain(
+        `21.2.e Secure acquisition ${status.noEvidence} ${status.evidenceFound}`,
+      );
+      // Unknown ids keep an empty title.
+      expect(text).toContain(
+        `21.2.z ${status.conflictingEvidence} ${strings.notMapped}`,
+      );
+      expect(text).toContain(
+        strings.historyRulesetChanged("2026.09.1", "2026.10.2"),
+      );
+      expect(text).toContain(strings.historyNote);
+      expect(text).not.toMatch(BANNED);
+      // With a baseline loaded, page 1 still shows and links the baseline figure.
+      expect(pages[0]?.text).toContain(strings.deltaPoints(4));
+      expect(pages[0]?.text).not.toContain(strings.historyValue(2, 1));
+      expect(pages[0]?.internal[3]).toBe(change);
+      expect(pages[history - 1]?.internal[0]).toBe(1);
+      for (const page of pages)
+        expect(page.positions.every((position) => position >= 28)).toBe(true);
+    });
+
+    it("leaves the history page out without changes", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, { delta: undefined }),
+        ),
+      );
+      const text = pages.map((page) => page.text).join(" ");
+      expect(historyPage(pages)).toBe(0);
+      expect(text).not.toContain(strings.historyPoliciesHeading);
+      expect(text).not.toContain(strings.historyNote);
+      expect(pages[0]?.text).toContain(strings.noBaseline);
+      expect(pages[0]?.text).not.toContain(strings.historyDetail(numericDate));
+    });
+
+    it("notes a ruleset change only when the rules changed", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            changes: createChanges({
+              rulesetChanged: false,
+              fromRuleset: "2026.10.2",
+              partial: false,
+              policies: {
+                ...createChanges().policies,
+                notComparedFamilies: 0,
+                notComparedItems: 0,
+              },
+            }),
+          }),
+        ),
+      );
+      const text = pages[historyPage(pages) - 1]?.text ?? "";
+      expect(text).toContain(strings.historyNote);
+      expect(text).not.toContain(
+        strings.historyRulesetChanged("2026.10.2", "2026.10.2"),
+      );
+      expect(text).not.toContain(strings.historyPartial);
+      expect(text).not.toContain(strings.historyNotCompared(0, 0));
+    });
+
+    it("reports Entra identity changes apart from the policies", async () => {
+      const only = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            changes: createChanges({
+              policies: {
+                added: 0,
+                removed: 0,
+                renamed: 0,
+                changed: 0,
+                settingChanges: 0,
+                assignmentChanges: 0,
+                notComparedFamilies: 0,
+                notComparedItems: 0,
+              },
+              identity: { compared: 1, changes: 1, notCompared: 1 },
+            }),
+          }),
+        ),
+      );
+      const text = only[historyPage(only) - 1]?.text ?? "";
+      expect(text).toContain(`${strings.historyPolicyRows.settingChanges} 0`);
+      expect(text).toContain(`${strings.historyIdentityRow} 1`);
+      expect(text).toContain(strings.historyIdentityNotCompared(1));
+      expect(text).not.toMatch(BANNED);
+
+      // Neither collection read them: nothing is claimed about them.
+      const without = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            changes: createChanges({
+              identity: { compared: 0, changes: 0, notCompared: 0 },
+            }),
+          }),
+        ),
+      );
+      const plain = without[historyPage(without) - 1]?.text ?? "";
+      expect(plain).not.toContain(strings.historyIdentityIntro);
+      expect(plain).not.toContain(strings.historyIdentityRow);
+
+      // Read by one collection only: not compared, and no count.
+      const one = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            changes: createChanges({
+              identity: { compared: 0, changes: 0, notCompared: 2 },
+            }),
+          }),
+        ),
+      );
+      const partly = one[historyPage(one) - 1]?.text ?? "";
+      expect(partly).toContain(strings.historyIdentityNotCompared(2));
+      expect(partly).not.toContain(strings.historyIdentityRow);
+    });
+
+    it("caps the control table with a more line", async () => {
+      const controls = Array.from({ length: 55 }, (_, index) => ({
+        id: `Y.${index + 1}`,
+        before: "noEvidence" as const,
+        after: "evidenceFound" as const,
+      }));
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, { changes: createChanges({ controls }) }),
+        ),
+      );
+      const history = historyPage(pages);
+      const text = pages
+        .slice(history - 1)
+        .map((page) => page.text)
+        .join(" ");
+      expect(text).toContain("Y.40 ");
+      expect(text).not.toContain("Y.41 ");
+      expect(text).toContain(strings.moreItems(15));
+      expect(text).toContain(
+        strings.continued(strings.historyHeading(longDate)),
+      );
+      for (const page of pages)
+        expect(page.positions.every((position) => position >= 28)).toBe(true);
+    });
+
+    it("shows the history figure on page 1 when no baseline is loaded", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, { delta: undefined, changes: createChanges() }),
+        ),
+      );
+      const page1 = pages[0]?.text ?? "";
+      expect(page1).toContain(strings.historyValue(2, 1));
+      expect(page1).toContain(strings.historyDetail(numericDate));
+      expect(page1).not.toContain(strings.noBaseline);
+      // Page 1 still holds everything it should and nothing technical.
+      expect(page1).toContain(strings.page1Note);
+      expect(page1).toContain(disclaimerFor(locale));
+      for (const item of createSummary([]).nextActions)
+        expect(page1).toContain(strings.actionSentence[item.tier](item.name));
+      expect(pages[1]?.text).toContain(strings.itBand.toUpperCase());
+      const plain = page1.replace(disclaimerFor(locale), "");
+      expect(plain).not.toMatch(CONTROL_ID);
+      expect(plain).not.toMatch(TECHNICAL[locale]);
+      expect(plain).not.toMatch(BANNED);
+
+      // The tile opens the history page; the no baseline steps stay in place.
+      const history = historyPage(pages);
+      const steps =
+        pages.findIndex(
+          (page, index) =>
+            index > 0 && page.text.includes(strings.noBaselineHeading),
+        ) + 1;
+      expect(history).toBe(steps + 1);
+      expect(pages[0]?.internal[3]).toBe(history);
+      expect(pages[0]?.internal).toHaveLength(5 + LAB.length);
+      for (const page of pages)
+        expect(page.positions.every((position) => position >= 28)).toBe(true);
+    });
+
+    it("says when nothing changed", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            delta: undefined,
+            changes: createChanges({ controls: [], improved: 0, regressed: 0 }),
+          }),
+        ),
+      );
+      expect(pages[0]?.text).toContain(strings.historyNoChange);
+      const text = pages[historyPage(pages) - 1]?.text ?? "";
+      expect(text).toContain(strings.historyNoControlChanges);
+      expect(text).not.toContain(strings.historyControlHeaders[3]);
+    });
+
+    it("reports collection gaps apart and never counts them on page 1", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            delta: undefined,
+            changes: createChanges({
+              controls: [{ id: "IA-2", before: "partialEvidence", after: "notAssessed" }],
+              improved: 0,
+              regressed: 0,
+              collectionGaps: { opened: 1, closed: 0 },
+            }),
+          }),
+        ),
+      );
+      expect(pages[0]?.text).toContain(strings.historyGapsOnly);
+      expect(pages[0]?.text).not.toContain(strings.historyValue(0, 1));
+      expect(pages[0]?.text).not.toContain(strings.historyNoChange);
+      const text = pages[historyPage(pages) - 1]?.text ?? "";
+      expect(text).toContain(strings.historyMovement(0, 0));
+      expect(text).toContain(strings.historyCollectionGaps(1, 0).slice(0, 30));
+    });
+
+    it("scopes the page 1 no change wording to measures when only policies and Entra settings changed", async () => {
+      const pages = readPages(
+        await generateManagementReportPDF(
+          createInput(locale, {
+            delta: undefined,
+            changes: createChanges({
+              controls: [],
+              improved: 0,
+              regressed: 0,
+              identity: { compared: 2, changes: 1, notCompared: 0 },
+            }),
+          }),
+        ),
+      );
+      expect(strings.historyNoChange).toBe(
+        locale === "en" ? "No change in measures" : "Maßnahmen unverändert",
+      );
+      expect(pages[0]?.text).toContain(strings.historyNoChange);
+      const text = pages[historyPage(pages) - 1]?.text ?? "";
+      expect(text).toContain(strings.historyPoliciesHeading);
+      expect(text).toContain(strings.historyIdentityHeading);
+    });
+  },
+);
 
 describe("security summary helpers", () => {
   it("allows only https links to the Intune and Entra admin centers", () => {

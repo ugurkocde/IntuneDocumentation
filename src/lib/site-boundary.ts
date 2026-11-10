@@ -4,7 +4,7 @@ export function siteBoundary(origin: string) {
   const publicValue = process.env.PUBLIC_SITE_ORIGIN;
   const appValue = process.env.APP_SITE_ORIGIN;
   if (!publicValue && !appValue)
-    return { mode: "app" as const, appOrigin: origin, publicOrigin: "" };
+    return { mode: "app" as const, appOrigin: origin };
   if (!publicValue || !appValue)
     throw new Error("Configure both PUBLIC_SITE_ORIGIN and APP_SITE_ORIGIN");
   const publicOrigin = new URL(publicValue).origin;
@@ -14,7 +14,6 @@ export function siteBoundary(origin: string) {
   return {
     mode: origin === publicOrigin ? ("public" as const) : ("app" as const),
     appOrigin,
-    publicOrigin,
   };
 }
 

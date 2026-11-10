@@ -159,7 +159,6 @@ A self-hosted deployment sends nothing to us.
 
 - **No analytics.** Plausible Analytics only loads on a configured public website origin with the analytics flag turned on. A self-hosted deployment runs in app mode with no third-party scripts.
 - **No usage counters.** The monthly-active-user and export counters need a Supabase database, which is not configured.
-- **No support chat.** The Crisp chat needs a website ID and a separate public origin, neither of which is set.
 - **Same data handling as the hosted app.** Your server collects, normalizes and redacts Graph responses in memory during the request and stores neither configuration nor tokens. Documents are built in the user's browser. See [Security and privacy](/security#web-app).
 
 ## Updating

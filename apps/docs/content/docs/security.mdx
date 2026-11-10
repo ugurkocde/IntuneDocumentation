@@ -80,11 +80,10 @@ The dashboard and every PDF and Word export are generated in your browser. Files
 - **Dashboard snapshot.** To survive a page reload, the dashboard keeps one compressed snapshot of the collected data in the browser tab's session storage. It is scoped to your account, tenant and collection options, and expires one hour after collection. Signing out clears it and tells your other open app tabs to clear theirs. It is never stored on our server, in local storage or in IndexedDB.
 - **Preferences.** Your branding settings and the Conditional Access preference are saved in your browser's local storage.
 
-### Analytics and support chat on the hosted site
+### Analytics on the hosted site
 
 - **Plausible Analytics** runs on the public website only. It is cookieless and collects aggregated metrics such as page views, referrers and device types.
 - **Usage counters.** When you open the dashboard, we store a one-way scrambled form (a hash) of your tenant ID and user principal name to count monthly active users. The original values cannot be read back from it and are not stored. An aggregate counter goes up each time a document is exported. It contains no configuration data and no user identifier.
-- **Support chat (Crisp).** The chat opens in an isolated panel served from the public website. It receives no account details, tokens or tenant configuration from the app. If you use it, Crisp processes the messages and details you choose to share.
 
 ### Revoke access
 

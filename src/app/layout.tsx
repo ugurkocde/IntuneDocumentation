@@ -1,10 +1,7 @@
 import "~/styles/globals.css";
 
 import { type Metadata } from "next";
-import Script from "next/script";
 import { headers } from "next/headers";
-import { AppSupportChat } from "~/components/app-support-chat";
-import { getCrispWebsiteId } from "~/lib/crisp-config";
 import { SiteBoundaryProvider } from "~/components/site-boundary-provider";
 // Removed Google Fonts to allow offline builds in restricted environments
 import { AuthProvider } from "~/components/auth-provider";
@@ -136,9 +133,6 @@ export default async function RootLayout({
   const nonce = requestHeaders.get("x-nonce") ?? "";
   const publicSite = requestHeaders.get("x-site-mode") === "public";
   const appOrigin = requestHeaders.get("x-app-origin") ?? "";
-  const configuredCrispId = getCrispWebsiteId();
-  const crispWebsiteId = publicSite && configuredCrispId;
-  const supportOrigin = requestHeaders.get("x-support-origin") ?? "";
   const app = (
     <SiteBoundaryProvider
       publicSite={publicSite}
@@ -164,13 +158,7 @@ export default async function RootLayout({
           <script nonce={nonce} src="/api/config/script" />
         )}
       </head>
-      <body
-        className={
-          crispWebsiteId || (configuredCrispId && supportOrigin)
-            ? "crisp-chat-enabled"
-            : undefined
-        }
-      >
+      <body>
         {publicSite && process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" ? (
           <PlausibleProvider
             domain="intunedocumentation.com"
@@ -183,26 +171,6 @@ export default async function RootLayout({
           app
         )}
         {publicSite ? <CookieConsentBanner /> : null}
-        {!publicSite && configuredCrispId && supportOrigin ? (
-          <AppSupportChat supportOrigin={supportOrigin} />
-        ) : null}
-        {crispWebsiteId ? (
-          <>
-            <Script
-              nonce={nonce}
-              id="crisp-chat-config"
-              strategy="afterInteractive"
-            >
-              {`window.$crisp = []; window.CRISP_WEBSITE_ID = ${JSON.stringify(crispWebsiteId)};`}
-            </Script>
-            <Script
-              nonce={nonce}
-              id="crisp-chat-loader"
-              src="https://client.crisp.chat/l.js"
-              strategy="lazyOnload"
-            />
-          </>
-        ) : null}
       </body>
     </html>
   );

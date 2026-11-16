@@ -57,7 +57,9 @@ export function DpaGate({
   // The key of the account that is active now; async handlers compare
   // against it so a response for a previous account changes nothing.
   const activeKey = useRef(storageKey);
-  activeKey.current = storageKey;
+  useEffect(() => {
+    activeKey.current = storageKey;
+  }, [storageKey]);
 
   useEffect(() => {
     if (!enabled || !account || !storageKey) return;

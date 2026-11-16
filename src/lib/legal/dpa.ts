@@ -33,7 +33,7 @@ export const SUBPROCESSORS: Subprocessor[] = [
     service: "Hosting of the application server and delivery of the website",
     data: "Microsoft Graph responses and access tokens (transient, in memory), IP addresses, operational logs",
     location:
-      "Server functions in Frankfurt, Germany (fra1). Static assets through Vercel's global edge network, for users in Germany usually from EU locations",
+      "Server functions in Frankfurt, Germany (fra1). Requests enter through Vercel's edge network, for users in Germany usually in Frankfurt. Operational logs may be stored in the USA",
     safeguards:
       "EU-U.S. Data Privacy Framework, EU SCCs, SOC 2 Type II, ISO 27001",
   },
@@ -147,7 +147,7 @@ export const DPA_DE: LegalSection[] = [
           [
             "Tenant-ID, Nutzer-Hash, Anfragekontext, Zeitstempel, IP-Adresse",
             "Betriebs- und Fehlerprotokolle",
-            "Hosting-Protokolle von Vercel",
+            "Hosting-Protokolle von Vercel, Speicherort kann in den USA liegen",
           ],
         ],
       },
@@ -173,7 +173,7 @@ export const DPA_DE: LegalSection[] = [
           "Vertraulichkeit: Alle Personen mit Zugang zu den Daten sind zur Vertraulichkeit verpflichtet, auch über das Ende ihrer Tätigkeit hinaus.",
           "Sicherheit: Der Auftragnehmer trifft die Maßnahmen nach Art. 32 DSGVO, beschrieben in Anlage 2. Er darf sie weiterentwickeln, solange das Schutzniveau nicht sinkt.",
           "Unterstützung: Der Auftragnehmer unterstützt den Auftraggeber bei Anfragen betroffener Personen (Art. 12 bis 23 DSGVO) sowie bei den Pflichten nach Art. 32 bis 36 DSGVO, soweit ihm das möglich ist. Anfragen, die direkt bei ihm eingehen, leitet er unverzüglich weiter. Da keine Konfigurationsdaten gespeichert werden, beschränkt sich dies in der Regel auf die pseudonymen Nutzungsdaten.",
-          "Meldung von Datenschutzverletzungen: Der Auftragnehmer meldet eine Verletzung des Schutzes personenbezogener Daten unverzüglich, spätestens innerhalb von 24 Stunden nach Kenntnis, in Textform an die vom Auftraggeber benannte Stelle. Die Meldung enthält, soweit bekannt, die Angaben nach Art. 33 Abs. 3 DSGVO. Meldungen an Aufsichtsbehörden oder betroffene Personen nimmt er nur auf Weisung des Auftraggebers vor.",
+          "Meldung von Datenschutzverletzungen: Der Auftragnehmer meldet eine Verletzung des Schutzes personenbezogener Daten unverzüglich, spätestens innerhalb von 24 Stunden nach Kenntnis, in Textform an die Kontaktadresse, die der Auftraggeber in Textform an support@ugurlabs.com benennt. Die Meldung enthält, soweit bekannt, die Angaben nach Art. 33 Abs. 3 DSGVO. Meldungen an Aufsichtsbehörden oder betroffene Personen nimmt er nur auf Weisung des Auftraggebers vor.",
           "Verzeichnis: Der Auftragnehmer führt ein Verzeichnis der Verarbeitungstätigkeiten nach Art. 30 Abs. 2 DSGVO.",
           "Zugriffe Dritter: Werden die Daten durch Pfändung, Beschlagnahme, Insolvenz oder Anfragen von Behörden gefährdet, informiert der Auftragnehmer den Auftraggeber unverzüglich, soweit dies rechtlich zulässig ist.",
           "Ansprechpartner: Ugur Koc, Geschäftsführer, support@ugurlabs.com. Ein Datenschutzbeauftragter ist nach § 38 BDSG nicht zu benennen.",
@@ -189,7 +189,7 @@ export const DPA_DE: LegalSection[] = [
         kind: "ol",
         items: [
           "Unterauftragnehmer: Der Auftraggeber genehmigt die in Anlage 1 genannten Unterauftragnehmer. Über neue oder ersetzte Unterauftragnehmer informiert der Auftragnehmer mindestens 30 Tage vorher auf intunedocumentation.com/subprocessors und per E-Mail an alle, die sich dafür angemeldet haben. Der Auftraggeber kann innerhalb von 14 Tagen nach der Mitteilung aus datenschutzrechtlichen Gründen in Textform widersprechen. Finden die Parteien keine Lösung, kann der Auftraggeber die Nutzung ohne Kosten beenden. Der Auftragnehmer erlegt jedem Unterauftragnehmer dieselben Datenschutzpflichten auf (Art. 28 Abs. 4 DSGVO) und haftet gegenüber dem Auftraggeber für deren Einhaltung.",
-          "Drittländer: Intune-Konfigurationsdaten, Tokens und pseudonyme Nutzungsdaten werden in Rechenzentren in Frankfurt verarbeitet. Ausgenommen sind Support-Anfragen über das Kontaktformular: Sie werden über Resend in den USA und über das globale Netz von Cloudflare verarbeitet (Anlage 1). Alle Unterauftragnehmer haben ihren Sitz in den USA, ein Zugriff aus Drittländern ist daher nicht ausgeschlossen. Er ist durch die Zertifizierung nach dem EU-U.S. Data Privacy Framework (Art. 45 DSGVO) und ergänzend durch die EU-Standardvertragsklauseln (Art. 46 Abs. 2 lit. c DSGVO) abgesichert. Entfällt der Angemessenheitsbeschluss, gelten die Standardvertragsklauseln fort, und der Auftragnehmer informiert den Auftraggeber.",
+          "Drittländer: Intune-Konfigurationsdaten, Tokens und pseudonyme Nutzungsdaten werden in Rechenzentren in Frankfurt verarbeitet. Betriebsprotokolle von Vercel können in den USA gespeichert werden. Ausgenommen sind Support-Anfragen über das Kontaktformular: Sie werden über Resend in den USA und über das globale Netz von Cloudflare verarbeitet (Anlage 1). Alle Unterauftragnehmer haben ihren Sitz in den USA, ein Zugriff aus Drittländern ist daher nicht ausgeschlossen. Er ist durch die Zertifizierung nach dem EU-U.S. Data Privacy Framework (Art. 45 DSGVO) und ergänzend durch die EU-Standardvertragsklauseln (Art. 46 Abs. 2 lit. c DSGVO) abgesichert. Entfällt der Angemessenheitsbeschluss, gelten die Standardvertragsklauseln fort, und der Auftragnehmer informiert den Auftraggeber.",
           "Kontrollrechte: Der Auftragnehmer weist die Einhaltung seiner Pflichten vorrangig durch diesen Vertrag, Anlage 2, den öffentlichen Quellcode der Webversion und die Zertifikate der Unterauftragnehmer (SOC 2 Typ II, ISO 27001) nach. Auf Anfrage beantwortet er einmal jährlich einen Fragebogen des Auftraggebers. Darüber hinausgehende Prüfungen, auch vor Ort, sind nach Absprache mit 30 Tagen Vorlauf und auf Kosten des Auftraggebers möglich, höchstens einmal jährlich, außer bei einem konkreten Anlass oder auf Anordnung einer Aufsichtsbehörde.",
           "Löschung und Rückgabe: Intune-Konfigurationsdaten und Tokens werden nach jeder Anfrage verworfen. Nach Vertragsende löscht der Auftragnehmer auf Anfrage die pseudonymen Nutzungsdaten des Auftraggebers innerhalb von 30 Tagen, soweit sie einem Tenant zugeordnet werden können, und bestätigt die Löschung in Textform. Hosting-Protokolle laufen nach den Fristen des Hosting-Anbieters ab.",
           "Haftung: Es gilt Art. 82 DSGVO. Im Innenverhältnis haften die Parteien nach ihrem Anteil an der Verantwortung für den Schaden (Art. 82 Abs. 5 DSGVO).",
@@ -276,7 +276,7 @@ export const DPA_EN: LegalSection[] = [
           [
             "Tenant ID, user hash, request context, timestamp, IP address",
             "Operational and error logs",
-            "Vercel hosting logs",
+            "Vercel hosting logs, may be stored in the USA",
           ],
         ],
       },
@@ -302,7 +302,7 @@ export const DPA_EN: LegalSection[] = [
           "Confidentiality: everyone with access to the data is bound to confidentiality, also after their work ends.",
           "Security: the processor implements the measures required by Art. 32 GDPR, described in Annex 2. It may develop them further as long as the level of protection does not decrease.",
           "Assistance: the processor assists the customer with data subject requests (Art. 12 to 23 GDPR) and with the obligations under Art. 32 to 36 GDPR as far as it is able to. Requests it receives directly are forwarded without delay. Because no configuration data is stored, this usually concerns only the pseudonymous usage data.",
-          "Personal data breaches: the processor notifies the customer's designated contact of a personal data breach without undue delay, at the latest within 24 hours of becoming aware of it, in text form. The notice contains the information under Art. 33(3) GDPR as far as known. The processor notifies supervisory authorities or data subjects only on the customer's instruction.",
+          "Personal data breaches: the processor notifies a personal data breach without undue delay, at the latest within 24 hours of becoming aware of it, in text form to the contact address that the customer designates in text form to support@ugurlabs.com. The notice contains the information under Art. 33(3) GDPR as far as known. The processor notifies supervisory authorities or data subjects only on the customer's instruction.",
           "Records: the processor keeps a record of processing activities under Art. 30(2) GDPR.",
           "Third-party access: if the data is put at risk by seizure, insolvency or requests from authorities, the processor informs the customer without delay where legally permitted.",
           "Contact: Ugur Koc, Managing Director, support@ugurlabs.com. Appointing a data protection officer is not required under Section 38 BDSG.",
@@ -318,7 +318,7 @@ export const DPA_EN: LegalSection[] = [
         kind: "ol",
         items: [
           "Subprocessors: the customer approves the subprocessors listed in Annex 1. The processor announces new or replaced subprocessors at least 30 days in advance on intunedocumentation.com/subprocessors and by email to everyone who signed up for these notices. The customer may object in text form on data protection grounds within 14 days of the notice. If the parties find no solution, the customer may stop using the web app at no cost. The processor imposes the same data protection obligations on every subprocessor (Art. 28(4) GDPR) and remains liable to the customer for their compliance.",
-          "Third countries: Intune configuration data, tokens and pseudonymous usage data are processed in data centers in Frankfurt. Support requests sent through the contact form are the exception: they are processed through Resend in the USA and Cloudflare's global network (Annex 1). All subprocessors are based in the USA, so access from third countries cannot be ruled out. It is covered by certification under the EU-U.S. Data Privacy Framework (Art. 45 GDPR) and additionally by the EU Standard Contractual Clauses (Art. 46(2)(c) GDPR). If the adequacy decision lapses, the Standard Contractual Clauses continue to apply and the processor informs the customer.",
+          "Third countries: Intune configuration data, tokens and pseudonymous usage data are processed in data centers in Frankfurt. Vercel's operational logs may be stored in the USA. Support requests sent through the contact form are the exception: they are processed through Resend in the USA and Cloudflare's global network (Annex 1). All subprocessors are based in the USA, so access from third countries cannot be ruled out. It is covered by certification under the EU-U.S. Data Privacy Framework (Art. 45 GDPR) and additionally by the EU Standard Contractual Clauses (Art. 46(2)(c) GDPR). If the adequacy decision lapses, the Standard Contractual Clauses continue to apply and the processor informs the customer.",
           "Audits: the processor demonstrates compliance primarily through this agreement, Annex 2, the public source code of the web app and the subprocessors' certifications (SOC 2 Type II, ISO 27001). On request it answers one questionnaire from the customer per year. Further audits, including on-site audits, are possible by arrangement with 30 days' notice and at the customer's expense, at most once a year, except where there is a specific reason or a supervisory authority orders one.",
           "Deletion and return: Intune configuration data and tokens are discarded after every request. After the agreement ends, the processor deletes the customer's pseudonymous usage data on request within 30 days, as far as it can be attributed to a tenant, and confirms the deletion in text form. Hosting logs expire according to the hosting provider's retention periods.",
           "Liability: Art. 82 GDPR applies. Between the parties, each is liable according to its share of responsibility for the damage (Art. 82(5) GDPR).",

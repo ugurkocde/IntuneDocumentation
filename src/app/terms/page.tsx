@@ -24,6 +24,7 @@ const sections = [
   { id: "use-of-the-service", label: "Use of the Service" },
   { id: "desktop-app", label: "Desktop App" },
   { id: "privacy", label: "Privacy" },
+  { id: "data-processing", label: "Data Processing" },
   { id: "disclaimer", label: "Disclaimer" },
   { id: "limitation-of-liability", label: "Limitation of Liability" },
   { id: "changes", label: "Changes" },
@@ -39,7 +40,7 @@ export default function TermsOfUsePage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Terms of Use
           </h1>
-          <p className="mb-10 text-slate-600">Effective: September 29, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: November 16, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -219,6 +220,36 @@ export default function TermsOfUsePage() {
                 Privacy Policy
               </a>
               , which explains what we access and how we handle data.
+            </p>
+
+            <h2
+              id="data-processing"
+              className="scroll-mt-24 text-xl font-semibold text-slate-900"
+            >
+              Data Processing
+            </h2>
+            <p>
+              When you use the hosted web app for an organization, we process
+              its Intune configuration on that organization&apos;s behalf. Our{" "}
+              <a href="/dpa" className="text-blue-700 underline">
+                Data Processing Agreement
+              </a>{" "}
+              under Art. 28 GDPR, including its annexes, forms part of these
+              Terms for that use. You confirm that you are authorized to accept
+              these Terms and the Data Processing Agreement on behalf of your
+              organization. The web app asks you to accept them before it reads
+              your tenant for the first time and again when the agreement
+              changes.
+            </p>
+            <p>
+              The Data Processing Agreement does not apply to the desktop app,
+              which never sends tenant data to us, or to self-hosted
+              deployments, which you operate yourself. Our current subprocessors
+              are listed on{" "}
+              <a href="/subprocessors" className="text-blue-700 underline">
+                Subprocessors
+              </a>
+              .
             </p>
 
             <h2

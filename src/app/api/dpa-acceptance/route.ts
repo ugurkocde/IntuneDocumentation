@@ -68,10 +68,15 @@ export async function POST(request: Request) {
 
   const db = store();
   if (!db) {
+    // Without a record there is no evidence of acceptance: keep the gate
+    // closed rather than letting the dashboard open unrecorded.
     console.error(
       "[DPA] No service role store configured; acceptance not recorded",
     );
-    return NextResponse.json({ version: DPA_VERSION, recorded: false });
+    return NextResponse.json(
+      { error: "Could not record acceptance" },
+      { status: 503 },
+    );
   }
   const { error } = await db.from(TABLE).upsert(
     { ...who, dpa_version: DPA_VERSION },

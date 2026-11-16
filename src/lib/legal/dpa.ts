@@ -186,7 +186,7 @@ export const DPA_DE: LegalSection[] = [
         kind: "ol",
         items: [
           "Unterauftragnehmer: Der Auftraggeber genehmigt die in Anlage 1 genannten Unterauftragnehmer. Über neue oder ersetzte Unterauftragnehmer informiert der Auftragnehmer mindestens 30 Tage vorher auf intunedocumentation.com/subprocessors und per E-Mail an alle, die sich dafür angemeldet haben. Der Auftraggeber kann aus wichtigem datenschutzrechtlichem Grund widersprechen und die Nutzung beenden. Der Auftragnehmer erlegt jedem Unterauftragnehmer gleichwertige Datenschutzpflichten auf.",
-          "Drittländer: Die Verarbeitung findet in Rechenzentren in der EU statt (Frankfurt). Einige Unterauftragnehmer haben ihren Sitz in den USA. Ein Zugriff aus Drittländern ist daher nicht ausgeschlossen. Er ist durch die Zertifizierung nach dem EU-U.S. Data Privacy Framework (Art. 45 DSGVO) und ergänzend durch die EU-Standardvertragsklauseln (Art. 46 Abs. 2 lit. c DSGVO) abgesichert.",
+          "Drittländer: Intune-Konfigurationsdaten, Tokens und pseudonyme Nutzungsdaten werden in Rechenzentren in Frankfurt verarbeitet. Ausgenommen sind Support-Anfragen über das Kontaktformular: Sie werden über Resend in den USA und über das globale Netz von Cloudflare verarbeitet (Anlage 1). Alle Unterauftragnehmer haben ihren Sitz in den USA, ein Zugriff aus Drittländern ist daher nicht ausgeschlossen. Er ist durch die Zertifizierung nach dem EU-U.S. Data Privacy Framework (Art. 45 DSGVO) und ergänzend durch die EU-Standardvertragsklauseln (Art. 46 Abs. 2 lit. c DSGVO) abgesichert.",
           "Kontrollrechte: Der Auftragnehmer weist die Einhaltung seiner Pflichten vorrangig durch diesen Vertrag, Anlage 2, den öffentlichen Quellcode der Webversion und die Zertifikate der Unterauftragnehmer (SOC 2 Typ II, ISO 27001) nach. Darüber hinausgehende Prüfungen, auch vor Ort, sind nach Absprache mit 30 Tagen Vorlauf und auf Kosten des Auftraggebers möglich, höchstens einmal jährlich, außer bei einem konkreten Anlass oder auf Anordnung einer Aufsichtsbehörde.",
           "Löschung und Rückgabe: Intune-Konfigurationsdaten und Tokens werden nach jeder Anfrage verworfen. Nach Vertragsende löscht der Auftragnehmer auf Anfrage die pseudonymen Nutzungsdaten des Auftraggebers innerhalb von 30 Tagen, soweit sie einem Tenant zugeordnet werden können. Hosting-Protokolle laufen nach den Fristen des Hosting-Anbieters ab.",
           "Haftung: Es gilt Art. 82 DSGVO.",
@@ -312,7 +312,7 @@ export const DPA_EN: LegalSection[] = [
         kind: "ol",
         items: [
           "Subprocessors: the customer approves the subprocessors listed in Annex 1. The processor announces new or replaced subprocessors at least 30 days in advance on intunedocumentation.com/subprocessors and by email to everyone who signed up for these notices. The customer may object on reasonable data protection grounds and stop using the web app. The processor imposes equivalent data protection obligations on every subprocessor.",
-          "Third countries: processing takes place in data centers in the EU (Frankfurt). Some subprocessors are based in the USA, so access from third countries cannot be ruled out. It is covered by certification under the EU-U.S. Data Privacy Framework (Art. 45 GDPR) and additionally by the EU Standard Contractual Clauses (Art. 46(2)(c) GDPR).",
+          "Third countries: Intune configuration data, tokens and pseudonymous usage data are processed in data centers in Frankfurt. Support requests sent through the contact form are the exception: they are processed through Resend in the USA and Cloudflare's global network (Annex 1). All subprocessors are based in the USA, so access from third countries cannot be ruled out. It is covered by certification under the EU-U.S. Data Privacy Framework (Art. 45 GDPR) and additionally by the EU Standard Contractual Clauses (Art. 46(2)(c) GDPR).",
           "Audits: the processor demonstrates compliance primarily through this agreement, Annex 2, the public source code of the web app and the subprocessors' certifications (SOC 2 Type II, ISO 27001). Further audits, including on-site audits, are possible by arrangement with 30 days' notice and at the customer's expense, at most once a year, except where there is a specific reason or a supervisory authority orders one.",
           "Deletion and return: Intune configuration data and tokens are discarded after every request. After the agreement ends, the processor deletes the customer's pseudonymous usage data on request within 30 days, as far as it can be attributed to a tenant. Hosting logs expire according to the hosting provider's retention periods.",
           "Liability: Art. 82 GDPR applies.",
@@ -391,6 +391,11 @@ export const TOMS: { area: string; measures: string }[] = [
   },
 ];
 
-export function dpaAcceptanceStorageKey(accountId: string): string {
-  return `intune-doc:dpa-accepted:${DPA_VERSION}:${accountId}`;
+// Keyed by tenant too: MSAL tenant profiles of one account share a
+// homeAccountId, and each tenant (organization) accepts separately.
+export function dpaAcceptanceStorageKey(
+  accountId: string,
+  tenantId: string,
+): string {
+  return `intune-doc:dpa-accepted:${DPA_VERSION}:${accountId}:${tenantId}`;
 }

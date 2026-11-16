@@ -11,6 +11,13 @@ import { DPA_VERSION, dpaAcceptanceStorageKey } from "~/lib/legal/dpa";
 
 type GateState = "checking" | "prompt" | "accepted";
 
+// Each result belongs to the account and tenant it was fetched for. A result
+// for another key (an account switch, a late response) counts as "checking".
+interface GateResult {
+  key: string | null;
+  value: GateState;
+}
+
 function readAccepted(key: string): boolean {
   try {
     return window.localStorage.getItem(key) !== null;
@@ -40,9 +47,14 @@ export function DpaGate({
   const { instance, accounts, inProgress } = useMsal();
   const account = accounts[0];
   const storageKey = account
-    ? dpaAcceptanceStorageKey(account.homeAccountId)
+    ? dpaAcceptanceStorageKey(account.homeAccountId, account.tenantId)
     : null;
-  const [state, setState] = useState<GateState>("checking");
+  const [result, setResult] = useState<GateResult>({
+    key: null,
+    value: "checking",
+  });
+  const [outdated, setOutdated] = useState(false);
+  const state = result.key === storageKey ? result.value : "checking";
   const [checked, setChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,12 +62,12 @@ export function DpaGate({
 
   useEffect(() => {
     if (!enabled || !account || !storageKey) return;
-    if (readAccepted(storageKey)) {
-      setState("accepted");
+    const key = storageKey;
+    if (readAccepted(key)) {
+      setResult({ key, value: "accepted" });
       return;
     }
     let cancelled = false;
-    setState("checking");
     void (async () => {
       try {
         const idToken = await getIdToken(instance, account);
@@ -66,13 +78,13 @@ export function DpaGate({
         const body = (await response.json()) as { accepted?: boolean };
         if (cancelled) return;
         if (response.ok && body.accepted) {
-          rememberAccepted(storageKey);
-          setState("accepted");
+          rememberAccepted(key);
+          setResult({ key, value: "accepted" });
         } else {
-          setState("prompt");
+          setResult({ key, value: "prompt" });
         }
       } catch {
-        if (!cancelled) setState("prompt");
+        if (!cancelled) setResult({ key, value: "prompt" });
       }
     })();
     return () => {
@@ -90,6 +102,7 @@ export function DpaGate({
   if (state === "checking") return <Spinner />;
 
   const accept = async () => {
+    const key = storageKey;
     setSubmitting(true);
     setError(null);
     try {
@@ -103,9 +116,14 @@ export function DpaGate({
         },
         body: JSON.stringify({ version: DPA_VERSION }),
       });
+      if (response.status === 409) {
+        // A newer agreement was deployed while this page was open.
+        setOutdated(true);
+        return;
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      rememberAccepted(storageKey);
-      setState("accepted");
+      rememberAccepted(key);
+      setResult({ key, value: "accepted" });
     } catch {
       setError(
         "We could not save your acceptance. Please try again in a moment.",
@@ -163,6 +181,25 @@ export function DpaGate({
           </span>
         </label>
 
+        {outdated && (
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          >
+            <p>
+              The agreement was updated while this page was open. Reload to
+              review the current version before accepting.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-2 font-semibold underline"
+            >
+              Reload
+            </button>
+          </div>
+        )}
+
         {error && (
           <p
             role="alert"
@@ -176,7 +213,7 @@ export function DpaGate({
           <Button
             type="button"
             onClick={accept}
-            disabled={!checked || submitting}
+            disabled={!checked || submitting || outdated}
             className="disabled:opacity-40 disabled:shadow-none"
           >
             {submitting ? "Saving…" : "Accept and continue"}

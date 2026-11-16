@@ -93,7 +93,7 @@ describe("dpa-acceptance", () => {
   it("never writes through the anon client", async () => {
     env.SUPABASE_SERVICE_ROLE_KEY = undefined;
     const response = await POST(post({ version: DPA_VERSION }));
-    expect(await response.json()).toMatchObject({ recorded: false });
+    expect(response.status).toBe(503);
     expect(db.from).not.toHaveBeenCalled();
   });
 

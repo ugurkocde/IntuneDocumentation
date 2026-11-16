@@ -111,3 +111,34 @@ it("offers a reload when a newer agreement was deployed", async () => {
       .hasAttribute("disabled"),
   ).toBe(true);
 });
+
+it("gives another account its own prompt while a request is pending", async () => {
+  const view = render(gate());
+  fireEvent.click(await screen.findByRole("checkbox"));
+
+  const posts: ((response: Response) => void)[] = [];
+  fetchMock.mockImplementation((_url: string, init?: RequestInit) =>
+    init?.method === "POST"
+      ? new Promise<Response>((resolve) => posts.push(resolve))
+      : Promise.resolve(json({ accepted: false })),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Accept and continue" }));
+  await screen.findByRole("button", { name: "Saving…" });
+
+  auth.accounts = [accountB];
+  view.rerender(gate());
+  const checkbox = await screen.findByRole("checkbox");
+  // B gives its own consent; nothing carries over from A.
+  expect((checkbox as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Accept and continue" }));
+  await screen.findByRole("button", { name: "Saving…" });
+
+  // A's late response does not end B's submission.
+  await act(async () => posts[0]?.(json({ recorded: true })));
+  expect(screen.getByRole("button", { name: "Saving…" })).toBeTruthy();
+  expect(screen.queryByText("Dashboard")).toBeNull();
+
+  await act(async () => posts[1]?.(json({ recorded: true })));
+  expect(await screen.findByText("Dashboard")).toBeTruthy();
+});

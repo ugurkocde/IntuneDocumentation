@@ -1,7 +1,7 @@
 "use client";
 
 import { useMsal } from "@azure/msal-react";
-import { InteractionStatus } from "@azure/msal-browser";
+import { InteractionStatus, type AccountInfo } from "@azure/msal-browser";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "~/components/ui/button";
@@ -53,16 +53,11 @@ export function DpaGate({
     key: null,
     value: "checking",
   });
-  const [outdated, setOutdated] = useState(false);
   const state = result.key === storageKey ? result.value : "checking";
   // The key of the account that is active now; async handlers compare
   // against it so a response for a previous account changes nothing.
   const activeKey = useRef(storageKey);
   activeKey.current = storageKey;
-  const [checked, setChecked] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const checkboxId = useId();
 
   useEffect(() => {
     if (!enabled || !account || !storageKey) return;
@@ -105,8 +100,43 @@ export function DpaGate({
   if (state === "accepted") return children;
   if (state === "checking") return <Spinner />;
 
+  // Called with the key the prompt was opened for. A late call for an
+  // account that is no longer active changes nothing.
+  const onAccepted = (key: string) => {
+    if (activeKey.current !== key) return;
+    rememberAccepted(key);
+    setResult({ key, value: "accepted" });
+  };
+
+  // Keyed by account and tenant: each organization gets a fresh prompt with
+  // its own checkbox and submission state.
+  return (
+    <AcceptancePrompt
+      key={storageKey}
+      acceptanceKey={storageKey}
+      account={account}
+      onAccepted={onAccepted}
+    />
+  );
+}
+
+function AcceptancePrompt({
+  acceptanceKey,
+  account,
+  onAccepted,
+}: {
+  acceptanceKey: string;
+  account: AccountInfo;
+  onAccepted: (key: string) => void;
+}) {
+  const { instance } = useMsal();
+  const [checked, setChecked] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [outdated, setOutdated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const checkboxId = useId();
+
   const accept = async () => {
-    const key = storageKey;
     setSubmitting(true);
     setError(null);
     try {
@@ -120,17 +150,14 @@ export function DpaGate({
         },
         body: JSON.stringify({ version: DPA_VERSION }),
       });
-      if (activeKey.current !== key) return;
       if (response.status === 409) {
         // A newer agreement was deployed while this page was open.
         setOutdated(true);
         return;
       }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      rememberAccepted(key);
-      setResult({ key, value: "accepted" });
+      onAccepted(acceptanceKey);
     } catch {
-      if (activeKey.current !== key) return;
       setError(
         "We could not save your acceptance. Please try again in a moment.",
       );

@@ -3,7 +3,7 @@
 import { useMsal } from "@azure/msal-react";
 import { InteractionStatus } from "@azure/msal-browser";
 import Link from "next/link";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import { clearDashboardSession } from "~/lib/dashboard-session-cache";
 import { getIdToken } from "~/lib/id-token";
@@ -55,6 +55,10 @@ export function DpaGate({
   });
   const [outdated, setOutdated] = useState(false);
   const state = result.key === storageKey ? result.value : "checking";
+  // The key of the account that is active now; async handlers compare
+  // against it so a response for a previous account changes nothing.
+  const activeKey = useRef(storageKey);
+  activeKey.current = storageKey;
   const [checked, setChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +120,7 @@ export function DpaGate({
         },
         body: JSON.stringify({ version: DPA_VERSION }),
       });
+      if (activeKey.current !== key) return;
       if (response.status === 409) {
         // A newer agreement was deployed while this page was open.
         setOutdated(true);
@@ -125,6 +130,7 @@ export function DpaGate({
       rememberAccepted(key);
       setResult({ key, value: "accepted" });
     } catch {
+      if (activeKey.current !== key) return;
       setError(
         "We could not save your acceptance. Please try again in a moment.",
       );

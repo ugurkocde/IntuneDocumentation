@@ -43,7 +43,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="mb-6 text-3xl font-bold text-slate-900">
             Privacy Policy
           </h1>
-          <p className="mb-10 text-slate-600">Effective: November 10, 2026</p>
+          <p className="mb-10 text-slate-600">Effective: November 16, 2026</p>
 
           <SectionNavigation sections={sections} />
 
@@ -184,6 +184,14 @@ export default function PrivacyPolicyPage() {
                 a hashed user identifier, the request context, and timestamp.
               </li>
               <li>
+                On the hosted web app, the dashboard asks you to accept the
+                Terms of Use and our Data Processing Agreement before it reads
+                your tenant. We record that acceptance with SHA-256 hashes of
+                your user principal name and tenant ID, the agreement version,
+                and a timestamp, and your browser remembers it in localStorage
+                so you are not asked again.
+              </li>
+              <li>
                 We increment an aggregate export counter when a document is
                 generated. That counter does not contain Intune configuration
                 data or a user identifier.
@@ -263,12 +271,11 @@ export default function PrivacyPolicyPage() {
             </ul>
             <p>
               <strong>Purpose and legal basis:</strong> we use this data only to
-              validate your subscription, to enforce the tenant and
-              installation limits of your plan, and to let other
-              administrators who sign in to that tenant&apos;s Intune
-              Documentation app registration use a license that its key holder
-              shares with the tenant. The processing is necessary to
-              perform our contract with you (Art. 6(1)(b) GDPR).
+              validate your subscription, to enforce the tenant and installation
+              limits of your plan, and to let other administrators who sign in
+              to that tenant&apos;s Intune Documentation app registration use a
+              license that its key holder shares with the tenant. The processing
+              is necessary to perform our contract with you (Art. 6(1)(b) GDPR).
             </p>
             <p>
               <strong>Retention:</strong> each activation (installation ID,
@@ -289,26 +296,26 @@ export default function PrivacyPolicyPage() {
               purchase, under its own privacy policy. The licensing service is
               hosted on Vercel Inc., which processes request data such as IP
               addresses on our behalf. Supabase Inc. hosts the database that
-              holds shared tenant licenses. These providers may process data outside
-              the European Economic Area under appropriate safeguards such as
-              the EU Standard Contractual Clauses.
+              holds shared tenant licenses. These providers may process data
+              outside the European Economic Area under appropriate safeguards
+              such as the EU Standard Contractual Clauses.
             </p>
             <p>
               <strong>Update checks:</strong> unless you turn off automatic
               update checks in the app&apos;s settings, the app asks our update
-              service for the latest version shortly after launch and every
-              four hours. The request contains no tenant or account data. It
-              includes a random identifier that the update component creates on
-              your device for staged rollouts, and our hosting provider
-              processes your IP address at the request level.
-              Installer files are downloaded from GitHub, which receives
-              standard request data such as your IP address.
+              service for the latest version shortly after launch and every four
+              hours. The request contains no tenant or account data. It includes
+              a random identifier that the update component creates on your
+              device for staged rollouts, and our hosting provider processes
+              your IP address at the request level. Installer files are
+              downloaded from GitHub, which receives standard request data such
+              as your IP address.
             </p>
             <p>
               <strong>On your device:</strong> the app stores the signed license
-              token and, if you entered one, your license key encrypted with the operating system
-              keychain (Keychain on macOS, DPAPI on Windows). The token does not
-              contain your license key.
+              token and, if you entered one, your license key encrypted with the
+              operating system keychain (Keychain on macOS, DPAPI on Windows).
+              The token does not contain your license key.
             </p>
 
             <h2
@@ -321,6 +328,18 @@ export default function PrivacyPolicyPage() {
               We do not sell or share your configuration data with third
               parties. Data accessed from Microsoft Graph is used solely to
               generate your documentation.
+            </p>
+            <p>
+              For the hosted web app, we process your tenant configuration on
+              your organization&apos;s behalf under our{" "}
+              <a href="/dpa" className="text-blue-700 underline">
+                Data Processing Agreement
+              </a>{" "}
+              (Art. 28 GDPR). The providers involved are listed on{" "}
+              <a href="/subprocessors" className="text-blue-700 underline">
+                Subprocessors
+              </a>
+              .
             </p>
 
             <h2

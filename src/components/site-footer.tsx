@@ -133,6 +133,22 @@ export function SiteFooter() {
               </li>
               <li>
                 <Link
+                  href="/dpa"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Data Processing Agreement
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/subprocessors"
+                  className="transition-colors hover:text-teal-700"
+                >
+                  Subprocessors
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/impressum"
                   className="transition-colors hover:text-teal-700"
                 >

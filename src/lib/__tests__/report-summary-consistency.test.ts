@@ -106,6 +106,8 @@ describe("measures outside Intune scope in the evidence report", () => {
       );
       expect(text).not.toContain("outside scope; ");
       expect(text).toContain("outside the selected scope;");
+      // Every row is one measure, so no grouping sentence.
+      expect(text).not.toContain("Some rows cover a group");
     },
   );
 
@@ -129,6 +131,12 @@ describe("measures outside Intune scope in the evidence report", () => {
     }
     expect(text).toContain(
       "190 measures are outside Intune scope; each needs its own assessment.",
+    );
+    const flat = plainText(
+      await generateComplianceReportPDF(CONTOSO_TENANT, { frameworkId }),
+    ).replace(/\s+/g, " ");
+    expect(flat).toContain(
+      `Some rows cover a group of requirements, so the ${measures.length} rows below stand for all 190 measures.`,
     );
   });
 });

@@ -3040,6 +3040,14 @@ export async function generateComplianceReportPDF(
       {
         lead: [
           summaryStrings.outsideScopeIntro,
+          ...(outsideCount > outsideMeasures.length - notEvaluatedCount
+            ? [
+                summaryStrings.outsideScopeGrouped(
+                  outsideCount,
+                  outsideMeasures.length - notEvaluatedCount,
+                ),
+              ]
+            : []),
           ...(notEvaluatedCount > 0 ? [summaryStrings.notEvaluatedIntro] : []),
         ].join(" "),
       },

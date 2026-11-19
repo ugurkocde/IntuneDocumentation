@@ -1480,7 +1480,15 @@ export async function generateManagementReportPDF(
   // Measures outside Intune scope
   if (summary.outsideScope.length > 0) {
     startItPage("outsideScope", strings.outsideScopeHeading);
-    paragraph(strings.outsideScopeIntro, { after: notEvaluated > 0 ? 2 : 4 });
+    const outsideRows = summary.outsideScope.length - notEvaluated;
+    const grouped =
+      metrics.outsideIntuneScope !== null &&
+      metrics.outsideIntuneScope > outsideRows
+        ? ` ${strings.outsideScopeGrouped(metrics.outsideIntuneScope, outsideRows)}`
+        : "";
+    paragraph(`${strings.outsideScopeIntro}${grouped}`, {
+      after: notEvaluated > 0 ? 2 : 4,
+    });
     if (notEvaluated > 0) paragraph(strings.notEvaluatedIntro, { after: 4 });
     table(
       strings.outsideScopeHeaders,

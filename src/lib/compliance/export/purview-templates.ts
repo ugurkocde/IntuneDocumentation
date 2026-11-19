@@ -13,7 +13,8 @@ export type ExportFrameworkId =
   | "essential-eight"
   | "nis2-2022-2555"
   | "hipaa-security-rule"
-  | "dora-2022-2554";
+  | "dora-2022-2554"
+  | "nca-ecc-2-2024";
 
 export interface PurviewTemplate {
   /** Regulation name as listed in Purview Compliance Manager. */
@@ -86,6 +87,11 @@ export const PURVIEW_TEMPLATES: Readonly<
   "dora-2022-2554": {
     displayName: "Digital Operational Resilience Act",
     verifiedAt,
+  },
+  "nca-ecc-2-2024": {
+    displayName: "Saudi Arabia - National Cybersecurity Authority (NCA)",
+    note: "The Purview template name does not state the ECC version. Check in the tenant that it covers ECC-2:2024 before attaching evidence.",
+    verifiedAt: "2026-11-19",
   },
 };
 

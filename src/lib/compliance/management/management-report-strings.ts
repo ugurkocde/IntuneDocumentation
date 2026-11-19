@@ -165,6 +165,8 @@ export interface ManagementReportStrings {
   historyNote: string;
   outsideScopeHeading: string;
   outsideScopeIntro: string;
+  /** Shown when one row stands for several published requirements. */
+  outsideScopeGrouped: (count: number, rows: number) => string;
   outsideScopeHeaders: readonly [string, string];
   notEvaluatedNote: string;
   notEvaluatedIntro: string;
@@ -475,6 +477,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     outsideScopeHeading: "Measures outside Intune scope",
     outsideScopeIntro:
       "These measures cannot be checked from the Intune configuration. They need a separate review, for example of processes, contracts or other systems.",
+    outsideScopeGrouped: (count, rows) =>
+      `Some rows cover a group of requirements, so the ${rows} rows below stand for all ${count} measures.`,
     outsideScopeHeaders: ["Measure", "Description"],
     notEvaluatedNote:
       "Not checked yet: related Intune or Entra settings exist, review them in the admin center.",
@@ -783,6 +787,8 @@ export const MANAGEMENT_REPORT_STRINGS: Record<
     outsideScopeHeading: "Maßnahmen außerhalb des Intune-Umfangs",
     outsideScopeIntro:
       "Diese Maßnahmen lassen sich nicht anhand der Intune-Konfiguration prüfen. Sie brauchen eine gesonderte Bewertung, zum Beispiel von Prozessen, Verträgen oder anderen Systemen.",
+    outsideScopeGrouped: (count, rows) =>
+      `Einige Zeilen fassen mehrere Anforderungen zusammen, die ${rows} Zeilen unten stehen daher für alle ${count} Maßnahmen.`,
     outsideScopeHeaders: ["Maßnahme", "Beschreibung"],
     notEvaluatedNote:
       "Noch nicht geprüft: Es gibt passende Intune- oder Entra-Einstellungen, bewerten Sie diese im Admin Center.",

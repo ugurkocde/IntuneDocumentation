@@ -33,7 +33,7 @@ const desktopOnlyFrameworks = SAMPLE_REPORTS.filter(
 
 export const desktopOnlyFrameworksNote =
   desktopOnlyFrameworks.length > 0
-    ? `${desktopOnlyFrameworks.join(" and ")} ${desktopOnlyFrameworks.length === 1 ? "is" : "are"} available in the desktop app only.`
+    ? `${[desktopOnlyFrameworks.slice(0, -1).join(", "), desktopOnlyFrameworks.at(-1)].filter(Boolean).join(" and ")} ${desktopOnlyFrameworks.length === 1 ? "is" : "are"} available in the desktop app only.`
     : "";
 
 export const FEATURED_SAMPLE_REPORT = sampleReportFor("iso-27001-2022");

@@ -64,6 +64,7 @@ const matrix = [
   ["essential-eight", "ML1-MAC-01"],
   ["nis2-2022-2555", "21.2.g"],
   ["dora-2022-2554", "RTS 11(2)(b)"],
+  ["nca-ecc-2-2024", "ECC 2-3-2"],
 ];
 describe("working detectors across every framework", () => {
   it.each(matrix)(

@@ -1,11 +1,12 @@
 # Compliance evidence engine
 
-Maps an Intune tenant export to evidence for 12 frameworks: ISO/IEC 27001:2022, SOC 2, NIST
+Maps an Intune tenant export to evidence for 13 frameworks: ISO/IEC 27001:2022, SOC 2, NIST
 SP 800-53 rev 5, NIST SP 800-171 revisions 2 and 3, NIST CSF 2.0,
 UK MOD Def Stan 05-138 Issue 4, NCSC Cyber Essentials, ASD Essential Eight
 with target Maturity Levels 1, 2 and 3, NIS2 (Directive (EU) 2022/2555,
-Art. 21(2)), DORA (Regulation (EU) 2022/2554 with RTS (EU) 2024/1774) and the
-HIPAA Security Rule (45 CFR Part 164, Subpart C).
+Art. 21(2)), DORA (Regulation (EU) 2022/2554 with RTS (EU) 2024/1774), the
+HIPAA Security Rule (45 CFR Part 164, Subpart C) and the Saudi NCA Essential
+Cybersecurity Controls (ECC-2:2024).
 
 ## Design rules
 
@@ -536,7 +537,7 @@ communication (Art. 11 to 14), incident management and reporting (Art. 17 to
 23), resilience testing (Art. 24 to 27), third-party risk (Art. 28 to 30) and
 information sharing (Art. 45). The framework has no published total.
 
-NIS2 and DORA are desktop only (`DESKTOP_ONLY_FRAMEWORK_IDS`). The web picker
+NIS2, DORA and NCA ECC are desktop only (`DESKTOP_ONLY_FRAMEWORK_IDS`). The web picker
 does not offer them, and `createEvidenceManifest(data, scope, { audience:
 "web" })` leaves them out of the web JSON evidence record. The engine still
 assesses them, so desktop output and the ruleset fingerprint are unchanged.
@@ -845,6 +846,78 @@ reads every include list with the exclusions that can cancel it:
   policy, or one of unknown assignment, differs.
 - **History.** An assignment filter type `none`, null or omitted is one value
   in the change keys and labels.
+
+## NCA Essential Cybersecurity Controls (ruleset 2026.11.19)
+
+`nca-ecc-2-2024` lists selected controls of the Essential Cybersecurity
+Controls ECC-2:2024 of the National Cybersecurity Authority (NCA) of Saudi
+Arabia. It is desktop only, like NIS2 and DORA (`DESKTOP_ONLY_FRAMEWORK_IDS`):
+the web picker does not offer it and the web JSON evidence record leaves it
+out.
+
+**Licence.** The English PDF is marked TLP: White and Document
+Classification: Public, but it carries no open licence. The framework
+therefore ships control IDs and our own short paraphrased English titles,
+summaries and unassessed aspects only; no NCA requirement sentence is copied,
+and `nca-ecc.test.ts` checks that a set of short NCA phrases appears nowhere
+in the shipped text. The Arabic version is the binding text. The framework
+note carries the attribution "Source: National Cybersecurity Authority (NCA),
+Essential Cybersecurity Controls ECC-2:2024. Titles and summaries
+paraphrased; only the Arabic text is binding."
+
+**IDs.** The PDF prints main controls with dashes (2-2-3) and subcontrols
+with dots (2.2.3.2). IDs here use dashes throughout, with the prefix `ECC`
+(`ECC 2-2-3-2`), as the PDF itself does for 2-5-3-9 and as ECC-1 did.
+`totalRequirements` is 200: the 108 main controls and 92 subcontrols as the
+document counts them. `NCA_ECC_REQUIREMENT_IDS` lists all 200 in document
+order.
+
+**Mappings.** Ten controls of the Cybersecurity Defense domain, each
+`supporting` with one unassessed aspect:
+
+| Control | Paraphrased title | Mapped capabilities |
+| --- | --- | --- |
+| ECC 2-2-3-2 | Multi-factor sign-in for remote and privileged access | Conditional Access MFA, phishing-resistant MFA and methods, weak methods disabled, security defaults |
+| ECC 2-2-3-4 | Managing privileged access | Windows LAPS |
+| ECC 2-3-2 | Protection of workstations and systems in place (`theme`) | host firewalls, secure boot, code and system integrity, credential protection, Office macro and browser hardening |
+| ECC 2-3-3-1 | Antimalware and untrusted software control on endpoints | Defender antimalware, ASR rules, application control, AppLocker, Gatekeeper, Android app sources |
+| ECC 2-3-3-3 | Keeping systems, apps and devices patched | automatic updates, quality update deadline |
+| ECC 2-6-3-1 | Separating and encrypting entity data on mobile devices | disk and storage encryption, app data transfer rules |
+| ECC 2-6-3-2 | Restricting how mobile devices are used | unlock credentials, inactivity lock, jailbreak and integrity checks, app data transfer rules, compliant device required |
+| ECC 2-8-3-3 | Encrypting stored data | disk and storage encryption |
+| ECC 2-10-3-4 | Installing updates that fix vulnerabilities | automatic updates, quality update deadline |
+| ECC 2-12-3-1 | Security event logging on critical assets | process creation auditing, PowerShell module, script block and transcription logging |
+
+ECC-2:2024 has no separate secure configuration control. Hardening settings
+therefore support ECC 2-3-2, the implemented protection of workstations and
+systems, which is mapped as a `theme` because it stands for the whole
+subdomain's requirements. Subdomain ECC 2-6 covers laptops as well as phones
+and tablets, so Windows and macOS unlock and encryption settings count there.
+Jailbreak and device integrity checks support the restricted use of mobile
+devices (ECC 2-6-3-2), not workstation hardening. A minimum OS version is not
+patch deployment and stays unmapped, as do telemetry, Cortana, Microsoft
+account blocking and the Office V3 signature setting. Encryption in transit
+(ECC 2-8-3-3), key management (ECC 2-8-3-2), testing updates in a
+non-production environment (ECC 2-10-3-4) and central log collection,
+monitoring and 12 month retention (ECC 2-12-3-3 to 2-12-3-5) are named as
+unassessed aspects.
+
+**Outside Intune scope.** `NCA_ECC_OUTSIDE_INTUNE_SCOPE` has one row per
+subdomain with paraphrased English and German titles: the ten governance
+subdomains (ECC 1-1 to 1-10), every Cybersecurity Defense subdomain without a
+mapped control (2-1, 2-4, 2-5, 2-7, 2-9, 2-11, 2-13, 2-14, 2-15), resilience
+(3-1) and third party and cloud (4-1, 4-2). The six subdomains with mapped
+controls (2-2, 2-3, 2-6, 2-8, 2-10, 2-12) get an "Other ..." row as well, so
+every unmapped requirement belongs to a row. Because a row stands for several
+requirements, the evidence report states the management summary's figure
+(`totalRequirements` minus assessed controls, 190) rather than the row count
+whenever the framework publishes a total.
+
+**Purview.** Compliance Manager lists the regulation as "Saudi Arabia -
+National Cybersecurity Authority (NCA)" (Microsoft's name, copied exactly,
+verified on 19 November 2026). The name does not state the ECC version, so
+the template note asks to check in the tenant that it covers ECC-2:2024
+before attaching evidence.
 
 ## Removed frameworks and stored data
 

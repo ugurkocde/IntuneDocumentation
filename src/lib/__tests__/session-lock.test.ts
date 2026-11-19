@@ -254,6 +254,7 @@ describe("screen lock after inactivity", () => {
       ["nist-800-171-r3", "03.01.10"],
       ["iso-27001-2022", "8.1"],
       ["dora-2022-2554", "RTS 13(l)"],
+      ["nca-ecc-2-2024", "ECC 2-6-3-2"],
     ] as const) {
       const row = control(frameworkId, controlId);
       expect(row?.enforcedCapabilityIds, frameworkId).toContain(

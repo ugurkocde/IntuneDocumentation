@@ -158,9 +158,9 @@ class SectionBookmark extends Bookmark {
 
 export interface DetailedDocxOptions {
   /**
-   * "web" (the default) leaves desktop-only frameworks such as NIS2 and DORA
-   * out of the compliance evidence preview. The desktop app passes "desktop"
-   * to keep every framework.
+   * "web" (the default) leaves desktop-only frameworks such as NIS2, DORA and
+   * NCA ECC out of the compliance evidence preview. The desktop app passes
+   * "desktop" to keep every framework.
    */
   audience?: "desktop" | "web";
   /**

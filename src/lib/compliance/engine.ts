@@ -49,6 +49,7 @@ import { HIPAA_SECURITY_RULE } from "./frameworks/hipaa-security-rule";
 import { NIST_CSF } from "./frameworks/nist-csf";
 import { NIS2 } from "./frameworks/nis2";
 import { DORA } from "./frameworks/dora";
+import { NCA_ECC } from "./frameworks/nca-ecc";
 import { SOC_2 } from "./frameworks/soc2";
 import type {
   AssessmentScope,
@@ -74,7 +75,7 @@ export type ComplianceExportData = Omit<DetailedExportData, "groupNames"> & {
 export const COMPLIANCE_DISCLAIMER =
   "This assessment reports technical evidence found in the Intune tenant configuration. It is not a compliance certification and does not replace an audit. Absence of evidence means no matching Intune policy was detected, not that a requirement is unmet through other means.";
 
-export const COMPLIANCE_RULESET_VERSION = "2026.10.22";
+export const COMPLIANCE_RULESET_VERSION = "2026.11.19";
 
 const TENANT_POLICY_FAMILY_KEYS = new Set(
   Object.values(TENANT_POLICY_FAMILIES),
@@ -1307,6 +1308,7 @@ function assessedFrameworks(
     NIS2,
     DORA,
     HIPAA_SECURITY_RULE,
+    NCA_ECC,
   ];
 }
 

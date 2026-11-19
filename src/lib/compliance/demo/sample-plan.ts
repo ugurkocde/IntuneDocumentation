@@ -67,6 +67,10 @@ export const SAMPLE_EXCERPTS: Readonly<
     { controlId: "2317", status: "partialEvidence" },
     { controlId: "2426", status: "partialEvidence" },
   ],
+  "nca-ecc-2-2024": [
+    { controlId: "ECC 2-8-3-3", status: "partialEvidence" },
+    { controlId: "ECC 2-12-3-1", status: "noEvidence" },
+  ],
 };
 
 // Mirrors the report code used by default report IDs in report-pdf.ts.
@@ -83,6 +87,7 @@ const REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nis2-2022-2555": "NIS2",
   "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA",
+  "nca-ecc-2-2024": "ECC",
 };
 
 export function sampleReportId(frameworkId: ComplianceFrameworkId): string {

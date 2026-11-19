@@ -317,6 +317,7 @@ describe("Entra tenant policy signals", () => {
       ["cyber-essentials-v3", "User access control"],
       ["nis2-2022-2555", "21.2.j"],
       ["dora-2022-2554", "RTS 21(f)(ii)"],
+      ["nca-ecc-2-2024", "ECC 2-2-3-2"],
     ] as const) {
       const row = control(frameworkId, controlId);
       expect(row.status, `${frameworkId} ${controlId}`).not.toBe(
@@ -399,6 +400,7 @@ describe("security defaults as an alternative to Conditional Access", () => {
     "cyber-essentials-v3",
     "nis2-2022-2555",
     "dora-2022-2554",
+    "nca-ecc-2-2024",
   ];
   const MFA_CAPABILITIES = [
     "tenant-mfa-required",

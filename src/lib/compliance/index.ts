@@ -34,6 +34,12 @@ export {
   DORA_OUTSIDE_INTUNE_SCOPE,
   DORA_SOURCE_ATTRIBUTION,
 } from "./frameworks/dora";
+export {
+  NCA_ECC,
+  NCA_ECC_OUTSIDE_INTUNE_SCOPE,
+  NCA_ECC_REQUIREMENT_IDS,
+  NCA_ECC_SOURCE_ATTRIBUTION,
+} from "./frameworks/nca-ecc";
 export { outsideIntuneScope } from "./outside-scope";
 export {
   DESKTOP_ONLY_FRAMEWORK_IDS,

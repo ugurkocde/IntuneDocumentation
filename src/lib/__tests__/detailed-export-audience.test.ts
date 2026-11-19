@@ -41,20 +41,22 @@ async function previewText(
 
 describe("compliance evidence preview audience", () => {
   it.each(["PDF", "Word"])(
-    "leaves NIS2 and DORA out of the web %s preview by default",
+    "leaves NIS2, DORA and NCA ECC out of the web %s preview by default",
     async (format) => {
       const text = await previewText(format);
       expect(text).not.toContain("NIS2");
       expect(text).not.toContain("DORA");
+      expect(text).not.toContain("NCA ECC");
     },
   );
 
   it.each(["PDF", "Word"])(
-    "keeps NIS2 and DORA in the desktop %s preview",
+    "keeps NIS2, DORA and NCA ECC in the desktop %s preview",
     async (format) => {
       const text = await previewText(format, "desktop");
       expect(text).toContain("NIS2");
       expect(text).toContain("DORA");
+      expect(text).toContain("NCA ECC");
     },
   );
 });

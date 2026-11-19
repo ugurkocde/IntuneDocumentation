@@ -1,5 +1,6 @@
 import { DORA_OUTSIDE_INTUNE_SCOPE } from "./frameworks/dora";
 import { HIPAA_OUTSIDE_INTUNE_SCOPE } from "./frameworks/hipaa-security-rule";
+import { NCA_ECC_OUTSIDE_INTUNE_SCOPE } from "./frameworks/nca-ecc";
 import { NIS2_OUTSIDE_INTUNE_SCOPE } from "./frameworks/nis2";
 import type { OutsideScopeMeasure } from "./management/types";
 
@@ -14,6 +15,7 @@ const OUTSIDE_INTUNE_SCOPE: Readonly<
   "nis2-2022-2555": NIS2_OUTSIDE_INTUNE_SCOPE,
   "dora-2022-2554": DORA_OUTSIDE_INTUNE_SCOPE,
   "hipaa-security-rule": HIPAA_OUTSIDE_INTUNE_SCOPE,
+  "nca-ecc-2-2024": NCA_ECC_OUTSIDE_INTUNE_SCOPE,
 };
 
 export function outsideIntuneScope(

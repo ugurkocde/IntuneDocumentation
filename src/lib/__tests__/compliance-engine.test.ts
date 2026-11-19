@@ -16,6 +16,7 @@ import {
   NIS2,
   DORA,
   HIPAA_SECURITY_RULE,
+  NCA_ECC,
 } from "../compliance";
 import { defenderForEndpointPolicyFixture } from "./fixtures/intune-beta";
 
@@ -579,6 +580,7 @@ describe("framework assessment", () => {
       "nis2-2022-2555",
       "dora-2022-2554",
       "hipaa-security-rule",
+      "nca-ecc-2-2024",
     ]);
     for (const framework of assessment.frameworks) {
       expect(
@@ -750,6 +752,7 @@ describe("framework assessment", () => {
       NIS2,
       DORA,
       HIPAA_SECURITY_RULE,
+      NCA_ECC,
     ]) {
       for (const [capabilityId, controlIds] of Object.entries(
         framework.mappings,

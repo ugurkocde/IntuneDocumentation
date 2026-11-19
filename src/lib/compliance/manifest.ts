@@ -9,9 +9,9 @@ import type { AssessmentScope } from "./types";
 
 export interface EvidenceManifestOptions {
   /**
-   * "web" leaves desktop-only frameworks (NIS2, DORA) out of the record. The
-   * ruleset fingerprint always covers every framework, so it matches the
-   * desktop record and the framework PDF.
+   * "web" leaves desktop-only frameworks (NIS2, DORA, NCA ECC) out of the
+   * record. The ruleset fingerprint always covers every framework, so it
+   * matches the desktop record and the framework PDF.
    */
   audience?: "desktop" | "web";
 }

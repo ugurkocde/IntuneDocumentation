@@ -276,7 +276,8 @@ export type ComplianceFrameworkId =
   | "nist-800-171-r3"
   | "nis2-2022-2555"
   | "dora-2022-2554"
-  | "hipaa-security-rule";
+  | "hipaa-security-rule"
+  | "nca-ecc-2-2024";
 
 export interface ComplianceRequest {
   frameworkId: ComplianceFrameworkId | null;

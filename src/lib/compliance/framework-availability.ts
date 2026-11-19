@@ -8,6 +8,7 @@ import type { ComplianceAssessment } from "./types";
 export const DESKTOP_ONLY_FRAMEWORK_IDS: ReadonlySet<string> = new Set([
   "nis2-2022-2555",
   "dora-2022-2554",
+  "nca-ecc-2-2024",
 ]);
 
 export function isDesktopOnlyFramework(frameworkId: string): boolean {

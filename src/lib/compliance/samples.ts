@@ -66,6 +66,12 @@ export const SAMPLE_REPORTS: readonly SampleReport[] = [
     label: "Def Stan 05-138",
     file: "def-stan-05-138.pdf",
   },
+  {
+    frameworkId: "nca-ecc-2-2024",
+    label: "NCA ECC",
+    file: "nca-ecc.pdf",
+    desktopOnly: true,
+  },
 ];
 
 export function sampleReportUrl(sample: SampleReport): string {

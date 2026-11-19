@@ -92,6 +92,13 @@ export const FRAMEWORK_OPTIONS: ReadonlyArray<{
     description:
       "May 2024 requirements for protecting controlled unclassified information. Organization-defined parameters need separate review. Select Revision 2 for CMMC Level 2.",
   },
+  {
+    id: "nca-ecc-2-2024",
+    label: "NCA ECC",
+    shortLabel: "NCA ECC",
+    description:
+      "Saudi Essential Cybersecurity Controls ECC-2:2024, selected Cybersecurity Defense controls with device and Entra ID evidence. Governance, resilience, third-party and cloud controls need separate assessment.",
+  },
 ];
 
 const STORAGE_KEY = "intunedoc.compliance.framework";

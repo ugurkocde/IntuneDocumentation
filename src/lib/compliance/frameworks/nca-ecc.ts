@@ -123,7 +123,7 @@ const CONTROLS: FrameworkControl[] = [
   control(
     "ECC 2-3-3-3",
     "Keeping systems, apps and devices patched",
-    "Windows Update rings install quality updates automatically and with a deadline on managed devices.",
+    "Windows Update rings install updates automatically on managed devices, and a quality update deadline limits how long installation can wait.",
     "Application, firmware and server patching, the documented patch process and the time actually taken to install updates need separate evidence.",
   ),
   control(

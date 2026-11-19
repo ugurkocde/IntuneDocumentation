@@ -897,7 +897,7 @@ Jailbreak and device integrity checks support the restricted use of mobile
 devices (ECC 2-6-3-2), not workstation hardening. A minimum OS version is not
 patch deployment and stays unmapped, as do telemetry, Cortana, Microsoft
 account blocking and the Office V3 signature setting. Encryption in transit
-and key management (ECC 2-8-3-1, 2-8-3-2), testing updates in a
+(ECC 2-8-3-3), key management (ECC 2-8-3-2), testing updates in a
 non-production environment (ECC 2-10-3-4) and central log collection,
 monitoring and 12 month retention (ECC 2-12-3-3 to 2-12-3-5) are named as
 unassessed aspects.

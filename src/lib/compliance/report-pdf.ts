@@ -84,6 +84,7 @@ import type { BrandingOptions } from "~/types/branding";
 import type { DetailedExportData } from "../configuration-analyzer";
 import { compareControlIds, COMPLIANCE_RULESET_VERSION } from "./engine";
 import { DEF_STAN_FAMILIES } from "./frameworks/def-stan-05-138";
+import { NCA_ECC_SUBDOMAINS } from "./frameworks/nca-ecc";
 import { addPdfOutline, type PdfOutlineEntry } from "../pdf-outline";
 import type {
   CapabilityEvidence,
@@ -110,7 +111,8 @@ export type ComplianceFrameworkId =
   | "essential-eight"
   | "nis2-2022-2555"
   | "dora-2022-2554"
-  | "hipaa-security-rule";
+  | "hipaa-security-rule"
+  | "nca-ecc-2-2024";
 
 interface ReportStrings {
   title: string;
@@ -275,6 +277,7 @@ const STRINGS: ReportStrings = {
     "nis2-2022-2555": "NIS2",
     "dora-2022-2554": "DORA",
     "hipaa-security-rule": "HIPAA-Security-Rule",
+    "nca-ecc-2-2024": "NCA-ECC",
   },
 };
 
@@ -350,6 +353,7 @@ const FRAMEWORK_REPORT_CODES: Record<ComplianceFrameworkId, string> = {
   "nis2-2022-2555": "NIS2",
   "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA",
+  "nca-ecc-2-2024": "ECC",
 };
 
 function frameworkReportCode(frameworkId: ComplianceFrameworkId): string {
@@ -686,6 +690,7 @@ const SHORT_FRAMEWORK_NAMES: Record<ComplianceFrameworkId, string> = {
   "nis2-2022-2555": "NIS2 Directive",
   "dora-2022-2554": "DORA",
   "hipaa-security-rule": "HIPAA Security Rule",
+  "nca-ecc-2-2024": "NCA ECC",
 };
 
 const ISO_THEMES: Readonly<Record<string, string>> = {
@@ -790,6 +795,8 @@ function groupLabel(
       };
     case "hipaa-security-rule":
       return { code: `§ ${key}`, name: HIPAA_SECTIONS[key] };
+    case "nca-ecc-2-2024":
+      return { code: key, name: NCA_ECC_SUBDOMAINS[key] };
     case "essential-eight":
     case "def-stan-05-138-i4":
       return { name: key };
@@ -817,7 +824,9 @@ function controlFamily(
               ? control.control.id.replace(/^(\w+) (\d+).*$/, "$1 Art. $2")
               : frameworkId === "hipaa-security-rule"
                 ? control.control.id.split("(")[0]
-                : control.control.id.split(".")[0];
+                : frameworkId === "nca-ecc-2-2024"
+                  ? control.control.id.replace(/^(ECC \d+-\d+).*$/, "$1")
+                  : control.control.id.split(".")[0];
 }
 
 /**
@@ -1501,13 +1510,6 @@ export async function generateComplianceReportPDF(
   const notEvaluatedCount = outsideMeasures.filter(
     (measure) => measure.notEvaluated,
   ).length;
-  const outsideCount = outsideMeasures.length - notEvaluatedCount;
-  const outsideScopeLines = [
-    ...(outsideCount > 0 ? [layout.outsideScopeCount(outsideCount)] : []),
-    ...(notEvaluatedCount > 0
-      ? [MANAGEMENT_REPORT_STRINGS.en.notEvaluatedLine(notEvaluatedCount)]
-      : []),
-  ];
   // Same formulas as the management summary so both reports agree.
   const metrics = computeMetrics(
     framework,
@@ -1515,6 +1517,20 @@ export async function generateComplianceReportPDF(
     framework.framework.totalRequirements,
     notEvaluatedCount,
   );
+  // With a published requirement count, the summary's figure counts every
+  // unmapped requirement, also where one list row stands for a whole
+  // subdomain (NCA ECC); without one, each listed measure counts once.
+  const outsideCount =
+    outsideMeasures.length === 0
+      ? 0
+      : (metrics.outsideIntuneScope ??
+        outsideMeasures.length - notEvaluatedCount);
+  const outsideScopeLines = [
+    ...(outsideCount > 0 ? [layout.outsideScopeCount(outsideCount)] : []),
+    ...(notEvaluatedCount > 0
+      ? [MANAGEMENT_REPORT_STRINGS.en.notEvaluatedLine(notEvaluatedCount)]
+      : []),
+  ];
   // Safeguards per control, without capabilities excluded by an alternative,
   // the same denominator as the management summary.
   const countedIds = (control: ControlAssessment) =>

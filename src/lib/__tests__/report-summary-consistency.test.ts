@@ -108,6 +108,29 @@ describe("measures outside Intune scope in the evidence report", () => {
       expect(text).toContain("outside the selected scope;");
     },
   );
+
+  it("gives the security summary's count for NCA ECC, whose rows stand for subdomains", async () => {
+    const frameworkId = "nca-ecc-2-2024";
+    const measures = outsideIntuneScope(frameworkId);
+    const summary = buildManagementSummary(
+      assessCompliance(CONTOSO_TENANT),
+      frameworkId,
+      { outsideScope: measures },
+    );
+    // 200 requirements minus the 10 listed controls.
+    expect(summary.metrics.outsideIntuneScope).toBe(190);
+    expect(summary.outsideScope).toEqual(measures);
+    const text = extractPdfStreamText(
+      await generateComplianceReportPDF(CONTOSO_TENANT, { frameworkId }),
+    );
+    for (const measure of measures) {
+      expect(text).toContain(`(${measure.id}) Tj`);
+      expect(text).toContain(measure.title.en);
+    }
+    expect(text).toContain(
+      "190 measures are outside Intune scope; each needs its own assessment.",
+    );
+  });
 });
 
 describe("data basis wording for device status", () => {

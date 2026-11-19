@@ -150,6 +150,7 @@ describe("buildEvidencePack", () => {
     for (const [frameworkId, data] of [
       ["nis2-2022-2555", CONTOSO_TENANT],
       ["dora-2022-2554", CONTOSO_TENANT],
+      ["nca-ecc-2-2024", CONTOSO_TENANT],
       ["essential-eight", CONTOSO_TENANT],
       ["iso-27001-2022", incomplete],
       ["nis2-2022-2555", incomplete],

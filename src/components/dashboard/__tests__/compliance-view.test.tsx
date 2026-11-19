@@ -115,9 +115,9 @@ describe("ComplianceView", () => {
       screen.getByRole("button", { name: "HIPAA Security Rule" }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(10);
-    // NIS2 and DORA are desktop only.
+    // NIS2, DORA and NCA ECC are desktop only.
     expect(
-      screen.queryByRole("button", { name: /NIS2|DORA/ }),
+      screen.queryByRole("button", { name: /NIS2|DORA|NCA ECC/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Download report/ }),

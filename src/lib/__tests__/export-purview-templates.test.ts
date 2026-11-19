@@ -26,8 +26,10 @@ describe("Purview template mapping", () => {
     expect(PURVIEW_TEMPLATE_SOURCE.url).toContain(
       "compliance-manager-regulations-list",
     );
-    for (const entry of Object.values(PURVIEW_TEMPLATES))
-      expect(entry.verifiedAt).toBe("2026-10-18");
+    for (const [id, entry] of Object.entries(PURVIEW_TEMPLATES))
+      expect(entry.verifiedAt).toBe(
+        id === "nca-ecc-2-2024" ? "2026-11-19" : "2026-10-18",
+      );
   });
 
   it("resolves names and notes", () => {
@@ -40,6 +42,10 @@ describe("Purview template mapping", () => {
     expect(purviewTemplateFor("dora-2022-2554")?.displayName).toBe(
       "Digital Operational Resilience Act",
     );
+    expect(purviewTemplateFor("nca-ecc-2-2024")?.displayName).toBe(
+      "Saudi Arabia - National Cybersecurity Authority (NCA)",
+    );
+    expect(purviewTemplateFor("nca-ecc-2-2024")?.note).toContain("ECC-2:2024");
     expect(purviewTemplateFor("nist-800-171-r3")?.note).toContain("revision");
     expect(purviewTemplateFor("unknown-framework")).toBeUndefined();
   });

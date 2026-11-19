@@ -91,8 +91,8 @@ export async function runExport(
           }
         : {}),
     };
-    // The desktop keeps every framework, NIS2 and DORA included, in the
-    // compliance preview.
+    // The desktop keeps every framework, NIS2, DORA and NCA ECC included, in
+    // the compliance preview.
     const result =
       format === "docx"
         ? await generateDetailedDOCX(exportData, { audience: "desktop" })

@@ -1,5 +1,5 @@
 {
-  "rulesetVersion": "2026.10.22",
+  "rulesetVersion": "2026.11.19",
   "fixtureHash": "405045d393f7b282db8789e94668745749ff1eb205c0ecf94f1a384305d85ab1",
   "files": [
     {
@@ -99,6 +99,15 @@
       "excerptControlIds": [
         "2317",
         "2426"
+      ]
+    },
+    {
+      "frameworkId": "nca-ecc-2-2024",
+      "file": "nca-ecc.pdf",
+      "reportId": "IDOC-ECC-20261008-CTSO",
+      "excerptControlIds": [
+        "ECC 2-8-3-3",
+        "ECC 2-12-3-1"
       ]
     }
   ]

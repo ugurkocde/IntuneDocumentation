@@ -10,7 +10,8 @@ export type FrameworkId =
   | "essential-eight"
   | "nis2-2022-2555"
   | "dora-2022-2554"
-  | "hipaa-security-rule";
+  | "hipaa-security-rule"
+  | "nca-ecc-2-2024";
 
 // Text-forward wordmarks only: official logos, insignia, and association marks
 // must not be reproduced. The standards are named in our own typography for
@@ -55,6 +56,7 @@ const WORDMARK_DETAILS: Record<
     line1: "HIPAA",
     line2: "SECURITY",
   },
+  "nca-ecc-2-2024": { fill: "#166534", line1: "NCA", line2: "ECC-2:2024" },
 };
 
 const FONT_FAMILY = "ui-sans-serif, system-ui, sans-serif";

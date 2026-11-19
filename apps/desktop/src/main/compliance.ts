@@ -10,6 +10,7 @@ import {
   essentialEightFramework,
   HIPAA_SECURITY_RULE,
   ISO_27001,
+  NCA_ECC,
   NIS2,
   NIST_800_171,
   NIST_800_171_R3,
@@ -95,6 +96,7 @@ const FRAMEWORKS: Record<ComplianceFrameworkId, () => FrameworkDefinition> = {
   "nis2-2022-2555": () => NIS2,
   "dora-2022-2554": () => DORA,
   "hipaa-security-rule": () => HIPAA_SECURITY_RULE,
+  "nca-ecc-2-2024": () => NCA_ECC,
 };
 const FRAMEWORK_IDS = Object.keys(FRAMEWORKS) as ComplianceFrameworkId[];
 const PLATFORMS: readonly CompliancePlatform[] = [

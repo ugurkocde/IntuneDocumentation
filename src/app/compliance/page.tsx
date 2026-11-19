@@ -19,12 +19,12 @@ import { BackToTopButton } from "~/components/back-to-top-button";
 export const metadata: Metadata = {
   title: "Compliance Evidence for Intune",
   description:
-    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 and DORA are available in the desktop app only. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
+    "Map your Microsoft Intune configuration to ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, UK MOD Def Stan 05-138, Cyber Essentials, ASD Essential Eight target Maturity Levels 1, 2 and 3, and the Saudi NCA Essential Cybersecurity Controls (ECC-2:2024). NIS2, DORA and NCA ECC are available in the desktop app only. Audit-ready evidence reports, generated from your tenant documentation, with free sample reports for every framework.",
   alternates: { canonical: "/compliance" },
   openGraph: {
     title: "Compliance Evidence for Intune | Intune Documentation",
     description:
-      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, UK MOD Def Stan 05-138, Cyber Essentials, and ASD Essential Eight target Maturity Levels 1, 2 and 3. NIS2 and DORA are available in the desktop app only. Sample reports for every framework are free to view.",
+      "Turn your Intune tenant documentation into audit evidence for ISO/IEC 27001, NIS2, DORA, SOC 2, the HIPAA Security Rule, NIST SP 800-53, NIST SP 800-171, NIST CSF 2.0, UK MOD Def Stan 05-138, Cyber Essentials, ASD Essential Eight target Maturity Levels 1, 2 and 3, and the Saudi NCA Essential Cybersecurity Controls (ECC-2:2024). NIS2, DORA and NCA ECC are available in the desktop app only. Sample reports for every framework are free to view.",
     url: "/compliance",
     type: "website",
   },
@@ -43,6 +43,8 @@ const sampleDescriptions: Partial<Record<ComplianceFrameworkId, string>> = {
   "cyber-essentials-v3": "The five Cyber Essentials control themes.",
   "essential-eight": "All eight strategies at Maturity Level 1.",
   "def-stan-05-138-i4": "Objective B controls for defence suppliers.",
+  "nca-ecc-2-2024":
+    "Selected Cybersecurity Defense controls of the Saudi NCA ECC.",
 };
 
 const frameworks: {
@@ -121,6 +123,12 @@ const frameworks: {
     name: "NIST SP 800-171 (Rev. 3)",
     detail:
       "Supporting Intune evidence for 12 of 97 published requirements in the May 2024 revision, including MFA, application control, storage encryption and malicious code protection. Organization-defined parameters and remaining requirements need separate assessment. Revision 2 remains separately available for CMMC Level 2.",
+  },
+  {
+    id: "nca-ecc-2-2024",
+    name: "Saudi NCA Essential Cybersecurity Controls (ECC-2:2024)",
+    detail:
+      "Supporting Intune and Entra ID evidence for 10 of the 200 main controls and subcontrols, all in the Cybersecurity Defense domain: MFA, privileged access, workstation protection, malware protection, patching, mobile device security, encryption at rest and event logs. Governance, resilience, third-party and cloud controls remain a manual assessment.",
   },
 ];
 
@@ -351,12 +359,15 @@ export default function CompliancePage() {
             original summaries. NIST publications are used with their
             public-domain status. Def Stan 05-138 is referenced by control
             identifier with original summaries. The HIPAA Security Rule is US
-            federal regulation in the public domain. Cyber Essentials content is
-            used under the Open Government Licence v3.0, and evidence never
-            indicates certification. Essential Eight requirement text is
-            attributed to the Australian Signals Directorate, © Commonwealth of
-            Australia 2026, under CC BY 4.0. Local requirement identifiers and
-            evidence mappings are additions by Intune Documentation.{" "}
+            federal regulation in the public domain. NCA ECC controls are
+            referenced by identifier with original summaries; only the Arabic
+            text published by the National Cybersecurity Authority is binding.
+            Cyber Essentials content is used under the Open Government Licence
+            v3.0, and evidence never indicates certification. Essential Eight
+            requirement text is attributed to the Australian Signals
+            Directorate, © Commonwealth of Australia 2026, under CC BY 4.0.
+            Local requirement identifiers and evidence mappings are additions by
+            Intune Documentation.{" "}
             <a
               href="https://www.cyber.gov.au/business-government/asds-cyber-security-frameworks/essential-eight/essential-eight-maturity-model"
               className="underline"

@@ -147,7 +147,7 @@ const CONTROLS: FrameworkControl[] = [
   control(
     "ECC 2-10-3-4",
     "Installing updates that fix vulnerabilities",
-    "Automatic quality updates with an installation deadline deploy security fixes for known vulnerabilities to managed Windows devices.",
+    "Automatic updates, with an installation deadline for quality updates, deploy security fixes for known vulnerabilities to managed Windows devices.",
     "Testing updates in a non-production environment before release, confirming that each fix works and remediation by severity need separate evidence.",
   ),
   control(
